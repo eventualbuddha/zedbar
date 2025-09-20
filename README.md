@@ -96,15 +96,6 @@ package instead.
 
 - <http://www.imagemagick.org/>
 
-Java Widget
------------
-
-The Java ZBar widget uses Java Native Interface (JNI), meaning that the
-widget will contain machine-dependent code. It works with Java version
-7 and above.  Java open JDK is available from:
-
-- <https://openjdk.java.net/>
-
 RUNNING
 =======
 

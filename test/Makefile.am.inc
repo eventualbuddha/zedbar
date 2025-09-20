@@ -126,16 +126,9 @@ else
 check-dbus:
 endif
 
-if HAVE_JAVA_UNIT
-check-java: zbar/libzbar.la
-	JAVA_HOME=${JAVA_HOME} $(MAKE) -C java check-java
-else
-check-java:
-endif
-
 regress: regress-decoder
 
-check-local: check-images-py check-decoder check-images check-java \
+check-local: check-images-py check-decoder check-images \
 	     check-python regress
 
 other-tests: check-cpp check-convert check-video check-jpeg

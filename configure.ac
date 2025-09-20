@@ -549,93 +549,6 @@ Install the development package for python-$am_cv_python_version, or configure
 AS_IF([test "x$PYTHON_VERSION_MAJOR" != "x2"])
 AM_CONDITIONAL([HAVE_PYTHON], [test "x$with_python" != "xno"])
 
-dnl Java
-have_java="maybe"
-
-AC_ARG_VAR([JAVA_HOME], [root location of JDK])
-
-AC_ARG_VAR([JAVAC], [location of Java language compiler])
-AC_ARG_VAR([JAVAH], [location of Java header generator])
-
-dnl If $JAVA_HOME not defined, try to autodetect it
-AS_IF([test -z "$JAVA_HOME"],
-      [AC_PATH_PROGS([JAVAC], [javac jikes ecj gcj], [:], [$PATH])
-       AS_IF([test ! -z "$JAVAC"],
-	     [JAVA_HOME=$( readlink -f ${JAVAC} | rev | cut -d/ -f3- | rev )])])
-
-dnl If $JAVA_HOME is defined, set JAVA_PATH and JAVAC
-AS_IF([test ! -z "$JAVA_HOME"],
-      [JAVA_PATH="$JAVA_HOME/bin$PATH_SEPARATOR$PATH"
-       AS_IF([test -z "$JAVAC"],
-             [AC_PATH_PROGS([JAVAC], [javac jikes ecj gcj], [:], [$JAVA_PATH])])])
-
-AC_ARG_WITH([java],
-  [AS_HELP_STRING([--without-java],
-    [disable support for Java interface])],
-  [],
-  [with_java="check"])
-
-JAVAC=$(echo $JAVAC |sed 's/ecj/ecj -1.5/')
-
-dnl Javah was obsoleted on Java 8 and removed on Java 11. So, we need to
-dnl look strictly at the $JAVA_HOME in order to avoid mixing different versions
-AS_IF([test -z "$JAVAH"],
-      [AC_PATH_PROGS([JAVAH], [javah], [], [$JAVA_HOME/bin])])
-
-AM_CONDITIONAL([HAVE_JAVAH], [test "x$JAVAH" != "x"])
-
-AC_ARG_VAR([JAR], [location of Java archive tool])
-AC_PATH_PROGS([JAR], [jar], [:], [$JAVA_PATH])
-AS_IF([test "x$JAR" = "x:"], [have_java="no"])
-
-AC_ARG_VAR([JAVA], [location of Java application launcher])
-AC_PATH_PROGS([JAVA], [java], [/bin/false], [$JAVA_PATH])
-
-AC_ARG_VAR([CLASSPATH], [Java class path (include JUnit to run java tests)])
-AS_IF([test "x$CLASSPATH" = "x"], [CLASSPATH="."])
-
-dnl Search for Java unit test library
-AS_IF([test -z "$JUNIT_HOME"],
-      [JUNIT_HOME="/usr/share/java"])
-
-AS_IF([test -f "$JUNIT_HOME/junit4.jar"],
-      [JUNIT="$JUNIT_HOME/junit4.jar"],
-      [AS_IF([test -f "$JUNIT_HOME/junit.jar"],
-	    [JUNIT="$JUNIT_HOME/junit.jar"])])
-
-AS_IF([test "x$JUNIT" != "x"],
-      [AS_IF([test -f "/usr/share/java/hamcrest/all.jar"],
-	     [CLASSPATH="$JUNIT:/usr/share/java/hamcrest/all.jar:$CLASSPATH"
-              AC_SUBST(CLASSPATH)
-              with_java_unit="yes"])],
-      [AS_IF([test -f "/usr/share/java/hamcrest-all.jar"],
-             [CLASSPATH="$JUNIT:/usr/share/java/hamcrest-all.jar:$CLASSPATH"
-              AC_SUBST(CLASSPATH)
-              with_java_unit="yes"])])
-
-AM_CONDITIONAL([HAVE_JAVA_UNIT], [test "x$with_java_unit" = "xyes"])
-
-AC_ARG_VAR([JAVA_CFLAGS], [compiler flags for building JNI extensions])
-AS_IF([test "x$JAVA_CFLAGS" = "x" && test "x$JAVA_HOME" != "x"],
-  [JAVA_CFLAGS="-I$JAVA_HOME/include"])
-
-AS_IF([test -d "$JAVA_HOME/include/linux"],
-  [JAVA_CFLAGS="$JAVA_CFLAGS -I$JAVA_HOME/include/linux"])
-
-AS_IF([test "x$with_java" != "xno"],
-  [CPPFLAGS_save="$CPPFLAGS"
-   CPPFLAGS="$CPPFLAGS $JAVA_CFLAGS"
-   AC_CHECK_HEADERS([jni.h], [], [have_java="no"])
-   CPPFLAGS="$CPPFLAGS_save"
-   AS_IF([test "x$have_java" != "xno"],
-     [with_java="yes"],
-     [test "x$with_java" = "xyes"],
-     [AC_MSG_FAILURE([unable to find Java JNI! ensure CFLAGS are set appropriately or configure --without-java])],
-     [with_java="no"])
-])
-AM_CONDITIONAL([HAVE_JAVA], [test "x$with_java" = "xyes"])
-
-
 dnl header files
 
 dnl FIXME switches for shm, mmap
@@ -696,7 +609,6 @@ echo "Generating config files"
 
 AC_CONFIG_FILES([
 Makefile
-java/Makefile
 po/Makefile.in
 zbar/Makefile
 zbar.pc
@@ -731,7 +643,6 @@ echo    "v4l                    --enable-video=$enable_video"
 echo    "jpeg                   --with-jpeg=$with_jpeg"
 echo -e "Python                 --with-python=$with_python $pyver"
 echo    "GObject introspection  --with-gir=$with_gir"
-echo    "Java                   --with-java=$with_java"
 
 AS_IF([test "x$win32" = "xno"],
   [echo "Dbus                   --with-dbus=$with_dbus"])
@@ -740,8 +651,6 @@ AS_IF([test "x$have_GM" = "xyes"],
   [echo "ImageMagick            --with-imagemagick=$with_imagemagick"])
 echo "Enabled codes:        $enabled_codes"
 echo "Disabled codes:       $disabled_codes"
-AS_IF([test "x$with_java" = "xyes"],
-  [echo "JAVA_HOME              $JAVA_HOME"])
 
 dnl Display "warnings" about disabled and experimental features
 
@@ -756,10 +665,6 @@ AS_IF([test "x$have_IM" != "xyes" && test "x$have_GM" != "xyes"],
   [echo "        => the zbarimg file scanner will *NOT* be built"])
 AS_IF([test "x$have_GM" = "xyes"],
   [echo "        => ImageMagick is preferred, as GraphicsMagick doesn't support https"])
-AS_IF([test "x$with_java" != "xyes"],
-  [echo "        => the Java interface will *NOT* be built"])
-AS_IF([test "x$with_java_unit" != "xyes"],
-  [echo "        => the Java unit test will *NOT* be enabled"])
 dnl echo "NPAPI Plugin     --with-npapi=$with_npapi"
 dnl AS_IF([test "x$with_mozilla" != "xyes"],
 dnl  [echo "       => the Mozilla/Firefox/OpenOffice plugin will *NOT* be built"])

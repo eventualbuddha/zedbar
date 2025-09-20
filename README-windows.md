@@ -145,7 +145,7 @@ Then, build Zbar with:
 
     CC=i686-w64-mingw32-gcc ./configure --host=i686-w64-mingw32 \
  --prefix=/usr/local/win32 --with-directshow \
- --without-python --without-java \
+ --without-python \
  --without-imagemagick --enable-pthread
 
     make
@@ -176,7 +176,7 @@ building environment is, you can build ZBar with:
 
     ./configure \
  --host=i686-w64-mingw32 --prefix=/usr/local/win32 \
- --without-python --without-java \
+ --without-python \
  --without-imagemagick --enable-pthread \
   --with-directshow --disable-dependency-tracking
 

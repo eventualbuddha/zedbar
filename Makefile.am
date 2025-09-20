@@ -55,9 +55,6 @@ endif
 if HAVE_PYTHON
 include $(srcdir)/python/Makefile.am.inc
 endif
-if HAVE_JAVA
-SUBDIRS += java
-endif
 if HAVE_NPAPI
 include $(srcdir)/plugin/Makefile.am.inc
 endif
