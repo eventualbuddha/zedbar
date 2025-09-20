@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: zbar 0.23\n"
 "Report-Msgid-Bugs-To: https://github.com/mchehab/zbar/issues\n"
-"POT-Creation-Date: 2024-01-09 10:11+0100\n"
+"POT-Creation-Date: 2025-09-20 11:32-0700\n"
 "PO-Revision-Date: 2020-04-12 17:01+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -19,7 +19,7 @@ msgstr ""
 "X-Generator: Poedit 2.3\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
-#: zbarcam/zbarcam.c:50
+#: zbarcam/zbarcam.c:45
 msgid ""
 "usage: zbarcam [options] [/dev/video?]\n"
 "\n"
@@ -65,11 +65,7 @@ msgstr ""
 "                    configura parâmetro <CONFIG> para <VALUE> (ou 1)\n"
 "\n"
 
-#: zbarcam/zbarcam.c:73 zbarimg/zbarimg.c:104
-msgid "    --nodbus        disable dbus message\n"
-msgstr "    --nodbus        desabilita mensagens no dbus\n"
-
-#: zbarimg/zbarimg.c:81
+#: zbarimg/zbarimg.c:77
 #, fuzzy
 #| msgid ""
 #| "usage: zbarimg [options] <image>...\n"
@@ -135,7 +131,7 @@ msgstr ""
 "                    configura parâmetro <CONFIG> para <VALUE> (ou 1)\n"
 "\n"
 
-#: zbarimg/zbarimg.c:108
+#: zbarimg/zbarimg.c:106
 msgid ""
 "\n"
 "WARNING: barcode data was not detected in some image(s)\n"
@@ -149,7 +145,7 @@ msgstr ""
 "  - Há suporte para códigos de barras desse tipo? As simbologias suportadas "
 "são:\n"
 
-#: zbarimg/zbarimg.c:114
+#: zbarimg/zbarimg.c:113
 msgid ""
 "  - is the barcode large enough in the image?\n"
 "  - is the barcode mostly in focus?\n"
@@ -180,54 +176,54 @@ msgstr ""
 "    $ zbarimg -Sisbn10.enable <files>\n"
 "\n"
 
-#: zbarimg/zbarimg.c:517
+#: zbarimg/zbarimg.c:501
 #, c-format
 msgid ""
 "\t. EAN/UPC (EAN-13, EAN-8, EAN-2, EAN-5, UPC-A, UPC-E, ISBN-10, ISBN-13)\n"
 msgstr ""
 "\t. EAN/UPC (EAN-13, EAN-8, EAN-2, EAN-5, UPC-A, UPC-E, ISBN-10, ISBN-13)\n"
 
-#: zbarimg/zbarimg.c:520
+#: zbarimg/zbarimg.c:505
 #, c-format
 msgid "\t. DataBar, DataBar Expanded\n"
 msgstr "\t. DataBar, DataBar Expandido\n"
 
-#: zbarimg/zbarimg.c:523
+#: zbarimg/zbarimg.c:508
 #, c-format
 msgid "\t. Code 128\n"
 msgstr "\t. Código 128\n"
 
-#: zbarimg/zbarimg.c:526
+#: zbarimg/zbarimg.c:511
 #, c-format
 msgid "\t. Code 93\n"
 msgstr "\t. Código 93\n"
 
-#: zbarimg/zbarimg.c:529
+#: zbarimg/zbarimg.c:514
 #, c-format
 msgid "\t. Code 39\n"
 msgstr "\t. Código 39\n"
 
-#: zbarimg/zbarimg.c:532
+#: zbarimg/zbarimg.c:517
 #, c-format
 msgid "\t. Codabar\n"
 msgstr "\t. Codabar\n"
 
-#: zbarimg/zbarimg.c:535
+#: zbarimg/zbarimg.c:520
 #, c-format
 msgid "\t. Interleaved 2 of 5\n"
 msgstr "\t. Entrelaçado 2 de 5\n"
 
-#: zbarimg/zbarimg.c:538
+#: zbarimg/zbarimg.c:523
 #, c-format
 msgid "\t. QR code\n"
 msgstr "\t. Código QR\n"
 
-#: zbarimg/zbarimg.c:541
+#: zbarimg/zbarimg.c:526
 #, c-format
 msgid "\t. SQ code\n"
 msgstr "\t. Código SQ\n"
 
-#: zbarimg/zbarimg.c:544
+#: zbarimg/zbarimg.c:529
 #, c-format
 msgid "\t. PDF 417\n"
 msgstr "\t. PDF 417\n"

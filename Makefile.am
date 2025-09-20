@@ -59,13 +59,7 @@ if HAVE_DOC
 include $(srcdir)/doc/Makefile.am.inc
 endif
 
-if HAVE_DBUS
-dbusconfdir = @DBUS_CONFDIR@
-dbusconf_DATA = $(srcdir)/dbus/org.linuxtv.Zbar.conf
-endif
-
-EXTRA_DIST += zbar.ico zbar.nsi \
-    dbus/org.linuxtv.Zbar.conf
+EXTRA_DIST += zbar.ico zbar.nsi
 
 EXTRA_DIST += examples/*.png examples/sha1sum \
     examples/scan_image.c examples/scan_image.cpp examples/scan_image.vcproj

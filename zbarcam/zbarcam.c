@@ -64,11 +64,6 @@ static const char *note_usage =
        /* FIXME overlay level */
        "\n");
 
-#ifdef HAVE_DBUS
-static const char *note_usage2 =
-    N_("    --nodbus        disable dbus message\n");
-#endif
-
 static const char *xml_head =
     "<barcodes xmlns='http://zbar.sourceforge.net/2008/barcode'>"
     "<source device='%s'>\n";
@@ -84,9 +79,6 @@ static unsigned xml_len = 0;
 static int usage(int rc) {
   FILE *out = (rc) ? stderr : stdout;
   fprintf(out, "%s", _(note_usage));
-#ifdef HAVE_DBUS
-  fprintf(out, "%s", _(note_usage2));
-#endif
   return (rc);
 }
 
@@ -181,9 +173,6 @@ int main(int argc, const char *argv[]) {
   zbar_processor_set_data_handler(proc, data_handler, NULL);
 
   video_device = "";
-#ifdef HAVE_DBUS
-  int dbus = 1;
-#endif
   display = 1;
   infmt = 0, outfmt = 0;
   for (i = 1; i < argc; i++) {
@@ -241,12 +230,6 @@ int main(int argc, const char *argv[]) {
       format = XML;
     else if (!strcmp(argv[i], "--raw"))
       format = RAW;
-    else if (!strcmp(argv[i], "--nodbus"))
-#ifdef HAVE_DBUS
-      dbus = 0;
-#else
-      ; /* silently ignore the option */
-#endif
     else if (!strcmp(argv[i], "--nodisplay"))
       display = 0;
     else if (!strcmp(argv[i], "--verbose"))
@@ -284,10 +267,6 @@ int main(int argc, const char *argv[]) {
 
   if (infmt || outfmt)
     zbar_processor_force_format(proc, infmt, outfmt);
-
-#ifdef HAVE_DBUS
-  zbar_processor_request_dbus(proc, dbus);
-#endif
 
   /* open video device, open window */
   if (zbar_processor_init(proc, video_device, display) ||

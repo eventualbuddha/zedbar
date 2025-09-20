@@ -10,9 +10,6 @@ Included with the library are basic applications for decoding captured bar
 code images and using a video device (e.g. webcam) as a bar code scanner.
 For application developers, language bindings are included for C and C++.
 
-Zbar also supports sending the scanned codes via dbus, allowing its
-integration with other applications.
-
 Check the ZBar home page for the latest release, mailing lists, etc.:
 
 - <https://github.com/mchehab/zbar>
@@ -104,32 +101,6 @@ RUNNING
 to decode a saved image file.
 
 Check the manual to find specific options for each program.
-
-DBUS TESTING
-============
-
-In order to test if dbus is working, you could use:
-
- dbus-monitor --system interface=org.linuxtv.Zbar1.Code
-
-or build the test programs with:
-
- make test_progs
-
-And run:
- $ ./test/test_dbus
-
-With that, running this command on a separate shell:
-
- $ ./zbarimg/zbarimg examples/code-128.png
- CODE-128:<https://github.com/mchehab/zbar>
- scanned 1 barcode symbols from 1 images in 0.01 seconds
-
-Will produce this output at test_dbus shell window:
-
- Waiting for Zbar events
- Type = CODE-128
- Value = <https://github.com/mchehab/zbar>
 
 REPORTING BUGS
 ==============

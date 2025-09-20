@@ -31,10 +31,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <zbar.h>
 #include "error.h"
 #include "event.h"
 #include "thread.h"
+#include <zbar.h>
 
 /* max time to wait for input before looking for the next frame.
  * only used in unthreaded mode with blocking (non-pollable) video.
@@ -47,60 +47,58 @@ typedef struct processor_state_s processor_state_t;
 
 /* specific notification tracking */
 typedef struct proc_waiter_s {
-    struct proc_waiter_s *next;
-    zbar_event_t notify;
-    zbar_thread_id_t requester;
-    unsigned events;
+  struct proc_waiter_s *next;
+  zbar_event_t notify;
+  zbar_thread_id_t requester;
+  unsigned events;
 } proc_waiter_t;
 
 /* high-level API events */
-#define EVENT_INPUT    0x01 /* user input */
-#define EVENT_OUTPUT   0x02 /* decoded output data available */
+#define EVENT_INPUT 0x01    /* user input */
+#define EVENT_OUTPUT 0x02   /* decoded output data available */
 #define EVENT_CANCELED 0x80 /* cancellation flag */
 #define EVENTS_PENDING (EVENT_INPUT | EVENT_OUTPUT)
 
 struct zbar_processor_s {
-    errinfo_t err;	  /* error reporting */
-    const void *userdata; /* application data */
+  errinfo_t err;        /* error reporting */
+  const void *userdata; /* application data */
 
-    zbar_video_t *video;	   /* input video device abstraction */
-    zbar_window_t *window;	   /* output window abstraction */
-    zbar_image_scanner_t *scanner; /* barcode scanner */
+  zbar_video_t *video;           /* input video device abstraction */
+  zbar_window_t *window;         /* output window abstraction */
+  zbar_image_scanner_t *scanner; /* barcode scanner */
 
-    zbar_image_data_handler_t *handler; /* application data handler */
+  zbar_image_data_handler_t *handler; /* application data handler */
 
-    unsigned req_width, req_height; /* application requested video size */
-    int req_intf, req_iomode;	    /* application requested interface */
-    uint32_t force_input;	    /* force input format (debug) */
-    uint32_t force_output;	    /* force format conversion (debug) */
+  unsigned req_width, req_height; /* application requested video size */
+  int req_intf, req_iomode;       /* application requested interface */
+  uint32_t force_input;           /* force input format (debug) */
+  uint32_t force_output;          /* force format conversion (debug) */
 
-    int input; /* user input status */
+  int input; /* user input status */
 
-    /* state flags */
-    int threaded;
-    int visible;   /* output window mapped to display */
-    int streaming; /* video enabled */
-    int dumping;   /* debug image dump */
+  /* state flags */
+  int threaded;
+  int visible;   /* output window mapped to display */
+  int streaming; /* video enabled */
+  int dumping;   /* debug image dump */
 
-    void *display;	/* X display connection */
-    unsigned long xwin; /* toplevel window */
+  void *display;      /* X display connection */
+  unsigned long xwin; /* toplevel window */
 
-    zbar_thread_t input_thread; /* video input handler */
-    zbar_thread_t video_thread; /* window event handler */
+  zbar_thread_t input_thread; /* video input handler */
+  zbar_thread_t video_thread; /* window event handler */
 
-    const zbar_symbol_set_t *syms; /* previous decode results */
+  const zbar_symbol_set_t *syms; /* previous decode results */
 
-    zbar_mutex_t mutex; /* shared data mutex */
+  zbar_mutex_t mutex; /* shared data mutex */
 
-    /* API serialization lock */
-    int lock_level;
-    zbar_thread_id_t lock_owner;
-    proc_waiter_t *wait_head, *wait_tail, *wait_next;
-    proc_waiter_t *free_waiter;
+  /* API serialization lock */
+  int lock_level;
+  zbar_thread_id_t lock_owner;
+  proc_waiter_t *wait_head, *wait_tail, *wait_next;
+  proc_waiter_t *free_waiter;
 
-    processor_state_t *state;
-
-    int is_dbus_enabled; /* dbus enabled flag */
+  processor_state_t *state;
 };
 
 /* processor lock API */

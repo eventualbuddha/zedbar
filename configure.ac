@@ -62,7 +62,6 @@ AC_CANONICAL_HOST
 case $host_os in
   *cygwin* | *mingw* | *uwin* | *djgpp* | *ems* )
     win32="yes"
-    with_dbus="no"
     AC_DEFINE([_WIN32_WINNT], [0x0500], [Minimum Windows API version])
     AC_FUNC_ALLOCA
     AC_FUNC_ERROR_AT_LINE
@@ -296,34 +295,6 @@ specify XV_LIBS or configure --without-xv to disable the extension])],
 ])
 AM_CONDITIONAL([HAVE_XV], [test "x$with_xv" = "xyes"])
 
-dnl dbus
-AC_ARG_WITH([dbus],
-  [AS_HELP_STRING([--without-dbus],
-    [disable support for dbus])],
-  [],
-  [with_dbus="check"])
-
-AS_IF([test "x$with_dbus" != "xno"],
-  [PKG_CHECK_MODULES(DBUS, dbus-1 >= 1.0, have_dbus="yes", have_dbus="no")
-  AS_IF([test "x$have_dbus$with_dbus" = "xnoyes"],
-    [AC_MSG_FAILURE([DBus development libraries not found])],
-    [with_dbus="$have_dbus"])
-])
-AM_CONDITIONAL([HAVE_DBUS], [test "x$with_dbus" = "xyes"])
-
-AS_IF([test "x$with_dbus" = "xyes"],
-  [CPPFLAGS="$CPPFLAGS $DBUS_CFLAGS"
-  AC_ARG_VAR([DBUS_LIBS], [linker flags for building dbus])
-  AC_DEFINE([HAVE_DBUS], [1], [Define to 1 to use dbus])
-  AC_ARG_WITH(dbusconfdir, AS_HELP_STRING([--with-dbusconfdir=PATH],[path to D-Bus config directory]),
-  [path_dbusconf=$withval],
-  [path_dbusconf="`$PKG_CONFIG --variable=sysconfdir dbus-1`"])
-  AS_IF([test -z "$path_dbusconf"],
-    DBUS_CONFDIR="$sysconfdir/dbus-1/system.d",
-    DBUS_CONFDIR="$path_dbusconf/dbus-1/system.d")
-  AC_SUBST(DBUS_CONFDIR)
-])
-
 dnl libjpeg
 AC_ARG_WITH([jpeg],
   [AS_HELP_STRING([--without-jpeg],
@@ -544,7 +515,6 @@ zbar.pc
 doc/doxygen.conf])
 
 AC_CONFIG_FILES([test/test_examples.sh],[chmod 755 test/test_examples.sh])
-AC_CONFIG_FILES([test/check_dbus.sh],[chmod 755 test/check_dbus.sh])
 
 AC_OUTPUT
 
@@ -569,8 +539,6 @@ echo    "doc                    --enable-doc=$enable_doc"
 echo    "v4l                    --enable-video=$enable_video"
 echo    "jpeg                   --with-jpeg=$with_jpeg"
 
-AS_IF([test "x$win32" = "xno"],
-  [echo "Dbus                   --with-dbus=$with_dbus"])
 AS_IF([test "x$have_GM" = "xyes"],
   [echo "GraphicsMagick         --with-graphicsmagick=yes"],
   [echo "ImageMagick            --with-imagemagick=$with_imagemagick"])

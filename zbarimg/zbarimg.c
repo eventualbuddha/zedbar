@@ -97,11 +97,6 @@ static const char *note_usage =
        // FIXME overlay level
        "\n");
 
-#ifdef HAVE_DBUS
-static const char *note_usage2 =
-    N_("    --nodbus        disable dbus message\n");
-#endif
-
 static const char *warning_not_found_head =
     N_("\n"
        "WARNING: barcode data was not detected in some image(s)\n"
@@ -289,9 +284,6 @@ int usage(int rc, const char *msg, const char *arg) {
     fprintf(out, "\n\n");
   }
   fprintf(out, "%s", _(note_usage));
-#ifdef HAVE_DBUS
-  fprintf(out, "%s", _(note_usage2));
-#endif
   return (rc);
 }
 
@@ -311,9 +303,6 @@ static inline int parse_config(const char *cfgstr, const char *arg) {
 int main(int argc, const char *argv[]) {
   // option pre-scan
   int quiet = 0;
-#ifdef HAVE_DBUS
-  int dbus = 1;
-#endif
   int display = 0;
   int i, j;
 
@@ -371,12 +360,6 @@ int main(int argc, const char *argv[]) {
       zbar_increase_verbosity();
     else if (!strncmp(arg, "--verbose=", 10))
       zbar_set_verbosity(strtol(argv[i] + 10, NULL, 0));
-    else if (!strcmp(arg, "--nodbus"))
-#ifdef HAVE_DBUS
-      dbus = 0;
-#else
-      ; /* silently ignore the option */
-#endif
     else if (!strcmp(arg, "--display"))
       display++;
     else if (!strcmp(arg, "--xml")) {
@@ -408,10 +391,6 @@ int main(int argc, const char *argv[]) {
 
   processor = zbar_processor_create(0);
   assert(processor);
-
-#ifdef HAVE_DBUS
-  zbar_processor_request_dbus(processor, dbus);
-#endif
 
   if (zbar_processor_init(processor, NULL, display)) {
     zbar_processor_error_spew(processor, 0);

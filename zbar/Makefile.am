@@ -129,9 +129,5 @@ libzbar_la_SOURCES += processor/null.c window/null.c
 endif
 endif
 
-if HAVE_DBUS
-libzbar_la_LDFLAGS += $(DBUS_LIBS)
-endif
-
 libzbar_la_LDFLAGS += $(AM_LDFLAGS)
 libzbar_la_LIBADD += $(AM_LIBADD)

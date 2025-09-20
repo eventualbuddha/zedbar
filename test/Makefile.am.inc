@@ -45,12 +45,6 @@ test_dbg_scan_CPPFLAGS = $(MAGICK_CFLAGS) $(AM_CPPFLAGS)
 test_dbg_scan_LDADD = $(MAGICK_LIBS) -lMagick++ zbar/libzbar.la $(AM_LDADD)
 endif
 
-if HAVE_DBUS
-check_PROGRAMS += test/test_dbus
-test_test_dbus_SOURCES = test/test_dbus.c
-test_test_dbus_LDFLAGS = $(DBUS_LIBS)
-endif
-
 # automake bug in "monolithic mode"?
 CLEANFILES += test/.libs/test_decode test/.libs/test_proc \
     test/.libs/test_convert test/.libs/test_window \
@@ -64,7 +58,7 @@ NORMAL_IMAGES = codabar.png code-128.png code-39.png code-93.png \
 		qr-code.png sqcode1-generated.png sqcode1-scanned.png
 
 EXAMPLES = @abs_top_builddir@/examples
-ZBARIMG = @abs_top_builddir@/zbarimg/zbarimg --nodbus
+ZBARIMG = @abs_top_builddir@/zbarimg/zbarimg
 
 gen_checksum: all
 	for i in $(NORMAL_IMAGES); do $(ZBARIMG) $(EXAMPLES)/$$i 2>/dev/null|sha1sum|sed "s,-,zbarimg $$i,"; done >$(EXAMPLES)/sha1sum
@@ -106,22 +100,14 @@ check-video: test/test_video
 check-jpeg: test/test_jpeg
 	@abs_top_srcdir@/test/test_jpeg -q
 
-if HAVE_DBUS
-# Require a working D-Bus - may fail with containers
-check-dbus: test/test_dbus
-	@abs_top_builddir@/test/check_dbus.sh
-else
-check-dbus:
-endif
-
 regress: regress-decoder
 
 check-local: check-decoder check-images regress
 
 other-tests: check-cpp check-convert check-video check-jpeg
 
-tests: check-local check-dbus other-tests
+tests: check-local other-tests
 
 .NOTPARALLEL: check-local regress tests
 
-PHONY += gen_checksum check-cpp check-decoder check-images check-dbus regress-decoder regress-images regress
+PHONY += gen_checksum check-cpp check-decoder check-images regress-decoder regress-images regress
