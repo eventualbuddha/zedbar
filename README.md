@@ -8,8 +8,7 @@ Code 93, Code 39, Codabar, Interleaved 2 of 5, QR Code and SQ Code.
 
 Included with the library are basic applications for decoding captured bar
 code images and using a video device (e.g. webcam) as a bar code scanner.
-For application developers, language bindings are included for C, C++,
-Python 2 and Perl as well as GUI widgets for Qt.0.
+For application developers, language bindings are included for C and C++.
 
 Zbar also supports sending the scanned codes via dbus, allowing its
 integration with other applications.
@@ -97,24 +96,6 @@ package instead.
 
 - <http://www.imagemagick.org/>
 
-Qt Widget
----------
-
-The Qt widget requires Qt4 or Qt5. You will need Qt if you would like to
-use or develop a Qt GUI application with an integrated bar code
-scanning widget. Qt4 may be obtained from:
-
-- <https://www.qt.io/>
-
-Python widgets
-**Python bindings**
-
-The Python bindings require Python 2 or 3 and provide only non-GUI functions.
-You will need Python and PIL or Pillow if you would like to scan images or
-video directly using Python. Python is available from:
-
-- <http://python.org/>
-
 Java Widget
 -----------
 
@@ -128,7 +109,7 @@ RUNNING
 =======
 
 `make install` will install the library and application programs.  Run
-`zbarcam-qt` or `zbarcam` to start the video scanner. Use `zbarimg <file>`
+`zbarcam` to start the video scanner. Use `zbarimg <file>`
 to decode a saved image file.
 
 Check the manual to find specific options for each program.

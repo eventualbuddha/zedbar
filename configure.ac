@@ -29,9 +29,6 @@ dnl     then set age to 0.
 AC_SUBST([LIB_VERSION], [3:0:3])
 AC_SUBST([RELDATE], [2017-04-11])
 
-dnl widget libraries use their own versioning.
-AC_SUBST([ZQT_LIB_VERSION], [1:2:1])
-
 AC_DEFINE_UNQUOTED([ZBAR_VERSION_MAJOR],
   [[`echo "$PACKAGE_VERSION" | sed -e 's/\..*$//'`]],
   [Program major version (before the '.') as a number])
@@ -136,14 +133,6 @@ AM_GNU_GETTEXT([external])
 AM_GNU_GETTEXT_VERSION(0.20)
 AM_GNU_GETTEXT_REQUIRE_VERSION(0.18)
 AM_CONDITIONAL([USE_NLS], [test "x${USE_NLS}" = "xyes"])
-
-dnl libraries linkage
-AC_ARG_ENABLE([static_qt],
-  [AS_HELP_STRING([--enable-static-qt],
-    [Produce a static library for libzbarcam-qt])])
-
-AS_IF([test x$enable_static_qt = xyes], [AC_SUBST([LIBQT_EXTRA_LDFLAGS], ["-static"])])
-
 
 dnl poll support
 
@@ -560,54 +549,6 @@ Install the development package for python-$am_cv_python_version, or configure
 AS_IF([test "x$PYTHON_VERSION_MAJOR" != "x2"])
 AM_CONDITIONAL([HAVE_PYTHON], [test "x$with_python" != "xno"])
 
-dnl Qt
-AC_ARG_WITH([qt],
-  [AS_HELP_STRING([--without-qt],
-    [disable support for Qt widget])],
-  [],
-  [with_qt="yes"])
-
-dnl Qt6
-AC_ARG_WITH([qt6],
-  [AS_HELP_STRING([--with-qt6],
-    [If --with-qt, enable experimental support for Qt6 widget (currently broken)])],
-  [],
-  [with_qt6="no"])
-
-AS_IF([test "x$with_qt" != "xno"],
-      [AS_IF([test "x$with_qt6" != "xno"],
-	     [PKG_CHECK_MODULES([QT],
-                               [Qt6],
-                               [MOC=`$PKG_CONFIG Qt6 --variable=moc`
-                                QT_VERSION=`$PKG_CONFIG Qt6 --modversion`
-                                QT6_HEADERS=`$PKG_CONFIG Qt6 --variable=headerdir`
-                                CPPFLAGS="$CPPFLAGS -I$QT6_HEADERS -I$QT6_HEADERS/QtWidgets -I$QT6_HEADERS/QtCore -I$QT6_HEADERS/QtGui"
-                                qt_pkgconfig_file="zbar-qt5.pc"
-                               ],
-                               [with_qt6="no"])])
-       AS_IF([test "x$with_qt6" = "xno"],
-             [PKG_CHECK_MODULES([QT],
-                               [Qt5Core >= 5 Qt5Gui >= 5 Qt5Widgets >= 5.0 Qt5X11Extras >= 5.0],
-                               [AC_CHECK_PROGS([MOC], [moc-qt5 moc])
-                                QT_VERSION=`$PKG_CONFIG Qt5Gui --modversion`;
-                                qt_pkgconfig_file="zbar-qt5.pc"
-                               ],
-                               [with_qt="no"])])
-      ])
-
-AC_ARG_VAR([MOC], [full path to Qt moc program])
-
-AM_CONDITIONAL([HAVE_QT], [test "x$with_qt" = "xyes"])
-
-AM_COND_IF([HAVE_QT],
-           [AC_MSG_NOTICE([using Qt version $QT_VERSION])
-            AC_MSG_NOTICE([using moc from $MOC])
-            CPPFLAGS="$CPPFLAGS $QT_CPPFLAGS"
-            LIBS="$LIBS $QT_LIBS"
-            AC_CONFIG_FILES([zbar-qt.pc:"${qt_pkgconfig_file}.in"])
-            #dnl -fPIC has no effect on Windows and breaks windres
-            AS_IF([test "x$win32" = "xno"], [CPPFLAGS="$CPPFLAGS -fPIC"])])
-
 dnl Java
 have_java="maybe"
 
@@ -783,7 +724,6 @@ AS_IF([test "x$win32" != "xno"],
 )
 
 AS_IF([test "x$with_python" != "xno"], pyver="\tpython${PYTHON_VERSION}")
-AS_IF([test "x$with_qt" != "xno"], qtver="\tQt${QT_VERSION}")
 
 echo    "pthreads               --enable-pthread=$enable_pthread"
 echo    "doc                    --enable-doc=$enable_doc"
@@ -791,7 +731,6 @@ echo    "v4l                    --enable-video=$enable_video"
 echo    "jpeg                   --with-jpeg=$with_jpeg"
 echo -e "Python                 --with-python=$with_python $pyver"
 echo    "GObject introspection  --with-gir=$with_gir"
-echo -e "Qt                     --with-qt=$with_qt         $qtver"
 echo    "Java                   --with-java=$with_java"
 
 AS_IF([test "x$win32" = "xno"],
@@ -817,10 +756,6 @@ AS_IF([test "x$have_IM" != "xyes" && test "x$have_GM" != "xyes"],
   [echo "        => the zbarimg file scanner will *NOT* be built"])
 AS_IF([test "x$have_GM" = "xyes"],
   [echo "        => ImageMagick is preferred, as GraphicsMagick doesn't support https"])
-AS_IF([test "x$with_qt" != "xyes"],
-  [echo "        => the Qt widget will *NOT* be built"])
-AS_IF([test "x$with_qt" = "xyes" && test "x$enable_static_qt" = "xyes" ],
-  [echo "        => Building a static Qt library"])
 AS_IF([test "x$with_java" != "xyes"],
   [echo "        => the Java interface will *NOT* be built"])
 AS_IF([test "x$with_java_unit" != "xyes"],

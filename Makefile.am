@@ -55,10 +55,6 @@ endif
 if HAVE_PYTHON
 include $(srcdir)/python/Makefile.am.inc
 endif
-if HAVE_QT
-include $(srcdir)/qt/Makefile.am.inc
-pkgconfig_DATA += zbar-qt.pc
-endif
 if HAVE_JAVA
 SUBDIRS += java
 endif
@@ -75,7 +71,7 @@ dbusconfdir = @DBUS_CONFDIR@
 dbusconf_DATA = $(srcdir)/dbus/org.linuxtv.Zbar.conf
 endif
 
-EXTRA_DIST += zbar.ico zbar.nsi zbar-qt5.pc.in \
+EXTRA_DIST += zbar.ico zbar.nsi \
     dbus/org.linuxtv.Zbar.conf
 
 EXTRA_DIST += examples/*.png examples/sha1sum \
