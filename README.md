@@ -40,8 +40,7 @@ License information can be found in `COPYING`.
 You may find some outdated documentation at the original ZBar's
 site at Sourceforge, but please notice that the content there is not
 updated for ages:
-	http://zbar.sourceforge.net/
-
+ <http://zbar.sourceforge.net/>
 
 BUILDING
 ========
@@ -52,7 +51,7 @@ Please notice that at least autotools related packages and a
 C compiler are needed, in order to generate the configure script.
 
 So, on Debian, at least those packages are needed:
-	autoconf autopoint pkg-config libtool gcc make
+ autoconf autopoint pkg-config libtool gcc make
 
 If you have installed all needed dependencies, all you need to do is to run:
 
@@ -62,9 +61,7 @@ autoreconf -vfi
 make
 ```
 
-
-* NOTES
-
+- NOTES
 
   1) Currently, we maintain a Continuous Integration build test at
      TravisCI:
@@ -80,6 +77,7 @@ make
 
      If you want to use gtk3 and python3, you should have the development
      packages for them, and run:
+
 ```
 autoreconf -vfi
 ./configure --with-gtk=auto --with-python=auto
@@ -169,23 +167,6 @@ video directly using Python. Python is available from:
 
 - <http://python.org/>
 
-Perl Widget
------------
-
-The Perl bindings require Perl (version 5).  You will need Perl if you
-would like to scan images or video directly using Perl.  Perl is
-available from:
-
-- <http://www.perl.org/>
-
-If required libraries are not available you may disable building for
-the corresponding component using configure (see configure --help).
-
-The Perl bindings must be built separately after installing the
-library.  see:
-
-- `perl/README`
-
 Java Widget
 -----------
 
@@ -209,26 +190,26 @@ DBUS TESTING
 
 In order to test if dbus is working, you could use:
 
-	$ dbus-monitor --system interface=org.linuxtv.Zbar1.Code
+ dbus-monitor --system interface=org.linuxtv.Zbar1.Code
 
 or build the test programs with:
 
-	$ make test_progs
+ make test_progs
 
 And run:
-	$ ./test/test_dbus
+ $ ./test/test_dbus
 
 With that, running this command on a separate shell:
 
-	$ ./zbarimg/zbarimg examples/code-128.png
-	CODE-128:https://github.com/mchehab/zbar
-	scanned 1 barcode symbols from 1 images in 0.01 seconds
+ $ ./zbarimg/zbarimg examples/code-128.png
+ CODE-128:https://github.com/mchehab/zbar
+ scanned 1 barcode symbols from 1 images in 0.01 seconds
 
 Will produce this output at test_dbus shell window:
 
-	Waiting for Zbar events
-	Type = CODE-128
-	Value = https://github.com/mchehab/zbar
+ Waiting for Zbar events
+ Type = CODE-128
+ Value = https://github.com/mchehab/zbar
 
 REPORTING BUGS
 ==============

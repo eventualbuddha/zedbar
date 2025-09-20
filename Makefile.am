@@ -96,17 +96,8 @@ EXTRA_DIST += zbar.ico zbar.nsi zbar-qt5.pc.in \
     dbus/org.linuxtv.Zbar.conf
 
 EXTRA_DIST += examples/*.png examples/sha1sum \
-    examples/upcrpc.py examples/upcrpc.pl \
+    examples/upcrpc.py \
     examples/scan_image.c examples/scan_image.cpp examples/scan_image.vcproj
-
-EXTRA_DIST += perl/MANIFEST perl/README perl/Changes perl/COPYING.LIB \
-    perl/Makefile.PL perl/typemap perl/ZBar.xs perl/ppport.h \
-    perl/ZBar.pm perl/inc/Devel/CheckLib.pm perl/ZBar/Image.pod \
-    perl/ZBar/ImageScanner.pod perl/ZBar/Processor.pod perl/ZBar/Symbol.pod \
-    perl/examples/paginate.pl perl/examples/processor.pl \
-    perl/examples/read_one.pl perl/examples/scan_image.pl \
-    perl/t/barcode.png perl/t/ZBar.t perl/t/Decoder.t perl/t/Image.t \
-    perl/t/Processor.t perl/t/Scanner.t perl/t/pod.t perl/t/pod-coverage.t
 
 if WIN32
 dist_doc_DATA += README-windows.md
