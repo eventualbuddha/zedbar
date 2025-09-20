@@ -478,77 +478,6 @@ AM_CONDITIONAL([HAVE_NPAPI], [test "x$with_npapi" = "xyes"])
 
 AC_ARG_VAR([GLIB_GENMARSHAL], [full path to glib-genmarshal])
 
-dnl Python
-dnl For now, keep python2 as default
-dnl If both PYTHON and --with-python=foo are defined, PYTHON takes precedence
-
-AC_ARG_WITH([python],
-  [AS_HELP_STRING([--with-python],
-    [Specify support for Python. Valid values are: no, auto, python2, python3
-(default is auto).
-Please notice that PYTHON var, if especified, takes precedence.])],
-  [AS_IF([test "x$with_python" != "xno"      && test "x$with_python" != "xauto" &&
-          test "x$with_python" != "xpython2" && test "x$with_python" != "xpython3"],
-         [echo "Invalid value for --with-python. Falling back to 'no'"
-          with_python="xno"])],
-  [with_python="auto"])
-
-AC_ARG_VAR([PYTHON_CONFIG], [full path to python-config program])
-AC_ARG_VAR([PYTHON_CFLAGS], [compiler flags for building python extensions])
-AC_ARG_VAR([PYTHON_LDFLAGS], [linker flags for building python extensions])
-
-AS_IF([test -z "$PYTHON"],
-      [AS_IF([test "x$with_python" = "xauto"],
-             [AC_PATH_PROGS([PYTHON], [python3 python2 python], [:], [$PATH])],
-             [AS_IF([test "x$with_python" = "xpython3"],
-                    [AC_PATH_PROGS([PYTHON], [python3 python], [:], [$PATH])],
-                    [AS_IF([test "x$with_python" = "xpython2"],
-                           [AC_PATH_PROGS([PYTHON], [python2 python], [:], [$PATH])],
-                           [with_python="no"])
-                    ])
-             ]
-      )],
-      [with_python="auto"]
-)
-
-AS_IF([test "x$with_python" != "xno"],
-      [AM_PATH_PYTHON([2.7.0])])
-
-AS_IF([test "x$PYTHON_VERSION" != "x" && test "x$with_python" != "xno"],
-  [PYTHON_VERSION_MAJOR="`echo $PYTHON_VERSION | cut -d'.' -f 1`"
-
-   AS_IF([test "x$PYTHON_CFLAGS" != "x"],
-     [],
-     [test "x$PYTHON_CONFIG" != "x" && test -x "$PYTHON_CONFIG"],
-     [PYTHON_CFLAGS=`$PYTHON_CONFIG --cflags`],
-     [test -x "$PYTHON-config"],
-     [PYTHON_CFLAGS=`$PYTHON-config --cflags`],
-     [PYTHON_CFLAGS=`$PYTHON -c 'import distutils.sysconfig as s, sys; sys.stdout.write(" ".join(s.get_config_vars("CFLAGS")) + " -I"+s.get_python_inc() + " -I"+s.get_python_inc(plat_specific=True))'`])
-   AS_IF([test "x$PYTHON_LDFLAGS" != "x"],
-     [],
-     [test "x$PYTHON_CONFIG" != "x" && test -x "$PYTHON_CONFIG"],
-     [PYTHON_LDFLAGS=`$PYTHON_CONFIG --ldflags`],
-     [test -x "$PYTHON-config"],
-     [PYTHON_LDFLAGS=`$PYTHON-config --ldflags`],
-     [PYTHON_LDFLAGS=`$PYTHON -c 'import distutils.sysconfig as s, sys; sys.stdout.write(" ".join(s.get_config_vars("LDFLAGS")) + " -I"+s.get_python_inc() + " -I"+s.get_python_inc(plat_specific=True))'`])
-
-   dnl check that #include <Python.h> compiles (bug #3092663)
-   CPPFLAGS_save="$CPPFLAGS"
-   CPPFLAGS="$CPPFLAGS $PYTHON_CFLAGS"
-   AS_IF([test "x$win32" = "xyes"], PYTHON_LDFLAGS="$PYTHON_LDFLAGS -no-undefined")
-   AC_CHECK_HEADERS([Python.h], [],
-     [AS_IF([test "x$with_python" = "xauto"],with_python="no",
-       [AC_MSG_ERROR([dnl
-Python module enabled, but unable to compile Python.h.
-Install the development package for python-$am_cv_python_version, or configure
---without-python to disable the python bindings.dnl
-])])])
-   CPPFLAGS="$CPPFLAGS_save"
-], [with_python="no"])
-
-AS_IF([test "x$PYTHON_VERSION_MAJOR" != "x2"])
-AM_CONDITIONAL([HAVE_PYTHON], [test "x$with_python" != "xno"])
-
 dnl header files
 
 dnl FIXME switches for shm, mmap
@@ -635,14 +564,10 @@ AS_IF([test "x$win32" != "xno"],
   [echo "X                      --with-x=$have_x"]
 )
 
-AS_IF([test "x$with_python" != "xno"], pyver="\tpython${PYTHON_VERSION}")
-
 echo    "pthreads               --enable-pthread=$enable_pthread"
 echo    "doc                    --enable-doc=$enable_doc"
 echo    "v4l                    --enable-video=$enable_video"
 echo    "jpeg                   --with-jpeg=$with_jpeg"
-echo -e "Python                 --with-python=$with_python $pyver"
-echo    "GObject introspection  --with-gir=$with_gir"
 
 AS_IF([test "x$win32" = "xno"],
   [echo "Dbus                   --with-dbus=$with_dbus"])

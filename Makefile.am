@@ -5,7 +5,6 @@ bin_PROGRAMS =
 check_PROGRAMS =
 EXTRA_PROGRAMS =
 lib_LTLIBRARIES =
-pyexec_LTLIBRARIES =
 CLEANFILES =
 DISTCLEANFILES = \
 	ABOUT-NLS \
@@ -52,9 +51,6 @@ endif
 if HAVE_VIDEO
 include $(srcdir)/zbarcam/Makefile.am.inc
 endif
-if HAVE_PYTHON
-include $(srcdir)/python/Makefile.am.inc
-endif
 if HAVE_NPAPI
 include $(srcdir)/plugin/Makefile.am.inc
 endif
@@ -72,37 +68,7 @@ EXTRA_DIST += zbar.ico zbar.nsi \
     dbus/org.linuxtv.Zbar.conf
 
 EXTRA_DIST += examples/*.png examples/sha1sum \
-    examples/upcrpc.py \
     examples/scan_image.c examples/scan_image.cpp examples/scan_image.vcproj
-
-if WIN32
-dist_doc_DATA += README-windows.md
-pkgdata_DATA = $(srcdir)/python/test/barcode.png \
-    $(srcdir)/examples/scan_image.cpp $(srcdir)/examples/scan_image.vcproj
-
-%-rc.o: %.rc
-	$(RC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
-	$(AM_CPPFLAGS) $(CPPFLAGS) -o $@ $<
-%-rc.lo: %.rc
-	$(LIBTOOL) --tag=RC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
-	--mode=compile $(RC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
-	$(AM_CPPFLAGS) $(CPPFLAGS) -o $@ $<
-
-# install to tmp dest and run NSIS to generate installer
-dist-nsis: html-local
-	test ! -e _nsis || test -d _nsis && rm -rf _nsis
-	mkdir _nsis
-	tmpinst=`cd _nsis && pwd | sed -e 's,^[^:\\/]:[\\/],/,'` \
-	  && $(MAKE) $(AM_MAKEFLAGS) DESTDIR=$$tmpinst prefix=/ install
-	cp zbar/.libs/libzbar-0.dll.def _nsis/lib/libzbar-0.def
-	cp -r doc/html _nsis/share/doc/zbar/
-	$(WINEXEC) lib.exe /machine:x86 /def:_nsis/lib/libzbar-0.def /out:_nsis/lib/libzbar-0.lib
-	cd _nsis && \
-	  makensis -NOCD -V2 -DVERSION=$(VERSION) $(builddir)/zbar.nsi
-	@ls -l _nsis/zbar-$(VERSION)-setup.exe
-
-PHONY += dist-nsis
-endif
 
 SUBDIRS += .
 

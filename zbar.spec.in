@@ -8,7 +8,7 @@ URL: http://zbar.sourceforge.net
 Packager: Vit Hrachovy <fangorn34@users.sourceforge.net>
 Source: zbar-%{version}.tar.gz
 Requires: ImageMagick-c++
-BuildPreReq: pkgconfig, libX11-devel, python-devel, ImageMagick-c++-devel
+BuildPreReq: pkgconfig, libX11-devel, ImageMagick-c++-devel
 Prefix: %{_prefix}
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 

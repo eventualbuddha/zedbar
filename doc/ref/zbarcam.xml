@@ -131,36 +131,6 @@
   </refsection>
 
   <refsection>
-    <title>Examples</title>
-
-    <para>Scan for barcodes using the second video device and pipe the
-    resulting data through a script that searches for each code in a
-    database and does something useful with them:
-
-      <screen><command>zbarcam</command> <filename>/dev/video1</filename> | <command>upcrpc.py</command></screen>
-
-    The <command>upcrpc.py</command> example script included in the
-    <filename>examples/</filename> subdirectory of the distribution
-    will make an XMLRPC call to a popular internet UPC database and
-    print the product description if found.</para>
-
-    <para>Scan for barcodes using the default video device and stream
-    results to stdout in XML format, also disable recognition of
-    Interleaved 2 of 5 codes to prevent confusion with other
-    symbologies or background noise:
-
-      <screen><command>zbarcam</command> <option>--xml</option> <option>-Si25.disable</option></screen>
-    </para>
-
-    <para>Scan only for Code 39, without using the preview window -
-    maybe for a fixed installation.  To enable only Code 39, first all
-    symbologies are disabled, then Code 39 is re-enabled:
-
-      <screen><command>zbarcam</command> <option>--nodisplay</option> <option>-Sdisable</option> <option>-Scode39.enable</option></screen>
-    </para>
-  </refsection>
-
-  <refsection>
     <title>Exit Status</title>
 
     <para><command>zbarcam</command> returns an exit code to indicate the
