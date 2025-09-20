@@ -30,8 +30,6 @@ AC_SUBST([LIB_VERSION], [3:0:3])
 AC_SUBST([RELDATE], [2017-04-11])
 
 dnl widget libraries use their own versioning.
-dnl NB pygtk wrapper is *unversioned*
-AC_SUBST([ZGTK_LIB_VERSION], [0:2:0])
 AC_SUBST([ZQT_LIB_VERSION], [1:2:1])
 
 AC_DEFINE_UNQUOTED([ZBAR_VERSION_MAJOR],
@@ -489,57 +487,7 @@ AS_IF([test "x$with_npapi" != "xno"],
 
 AM_CONDITIONAL([HAVE_NPAPI], [test "x$with_npapi" = "xyes"])
 
-dnl GTK
-dnl For now, defaults to GTK version 3
-
-AC_ARG_WITH([gtk],
-  [AS_HELP_STRING([--with-gtk],
-    [Specify support for GTK. Valid values are: no, auto, gtk2, gtk3 (default is auto)])],
-  [AS_IF([test "x$with_gtk" != "xno"   && test "x$with_gtk" != "xauto" &&
-          test "x$with_gtk" != "xgtk2" && test "x$with_gtk" != "xgtk3"],
-         [echo "Invalid value for --with-gtk. Falling back to 'no'"
-          with_gtk="no"])],
-  [with_gtk="auto"])
-
 AC_ARG_VAR([GLIB_GENMARSHAL], [full path to glib-genmarshal])
-AC_ARG_VAR([GTK_VERSION_MAJOR])
-
-AS_IF([test "x$with_gtk" = "xgtk3" || test "x$with_gtk" = "xauto"],
-  [PKG_CHECK_MODULES([GTK3], [gtk+-3.0],
-    [GLIB_GENMARSHAL=`$PKG_CONFIG glib-2.0 --variable=glib_genmarshal`
-     GTK_VERSION=`$PKG_CONFIG gtk+-3.0 --modversion`
-     AC_MSG_NOTICE([using GTK+ version $GTK_VERSION])
-     GTK_VERSION_MAJOR=3.0
-     with_gtk="gtk3"
-     GTK_CFLAGS=$GTK3_CFLAGS
-     GTK_LIBS=$GTK3_LIBS
-    ],[libgtk3=false])
-  ])
-
-AS_IF([test "x$with_gtk" = "xgtk2" || test "x$with_gtk" = "xauto"],
-  [PKG_CHECK_MODULES([GTK2], [gtk+-2.0],
-    [GLIB_GENMARSHAL=`$PKG_CONFIG glib-2.0 --variable=glib_genmarshal`
-     GTK_VERSION=`$PKG_CONFIG gtk+-2.0 --modversion`
-     AC_MSG_NOTICE([using GTK+ version $GTK_VERSION])
-     GTK_VERSION_MAJOR=2.0
-     with_gtk="gtk2"
-     GTK_CFLAGS=$GTK2_CFLAGS
-     GTK_LIBS=$GTK2_LIBS
-    ],[libgtk2=false])
-  ])
-
-dnl GTK not found
-AS_IF([test "x$with_gtk" = "xauto"], [with_gtk="no"])
-
-AC_SUBST(GTK_LIBS)
-AC_SUBST(GTK_CFLAGS)
-
-AM_CONDITIONAL([HAVE_GTK], [test "x$with_gtk" != "xno"])
-
-AC_ARG_WITH([gir],
-  [AS_HELP_STRING([--with-gir], [enable support for GObject Introspection])],
-  [],
-  [with_gir="yes"])
 
 dnl Python
 dnl For now, keep python2 as default
@@ -559,10 +507,6 @@ Please notice that PYTHON var, if especified, takes precedence.])],
 AC_ARG_VAR([PYTHON_CONFIG], [full path to python-config program])
 AC_ARG_VAR([PYTHON_CFLAGS], [compiler flags for building python extensions])
 AC_ARG_VAR([PYTHON_LDFLAGS], [linker flags for building python extensions])
-
-AC_ARG_VAR([PYGTK_H2DEF], [full path to PyGTK h2def.py module (python2 only)])
-AC_ARG_VAR([PYGTK_CODEGEN], [full path to pygtk-codegen program (python2 only)])
-AC_ARG_VAR([PYGTK_DEFS], [directory where PyGTK definitions may be found (python2 only)])
 
 AS_IF([test -z "$PYTHON"],
       [AS_IF([test "x$with_python" = "xauto"],
@@ -611,41 +555,10 @@ Install the development package for python-$am_cv_python_version, or configure
 --without-python to disable the python bindings.dnl
 ])])])
    CPPFLAGS="$CPPFLAGS_save"
-
-   dnl PyGTK
-   dnl disable pygtk when we're on Python 3
-   AS_IF([test "x$with_gtk" != "xno"],
-     [AS_IF([test "x$PYTHON_VERSION_MAJOR" = "x2"],
-       [PKG_CHECK_MODULES([PYGTK], [pygtk-2.0], [with_pygtk2="yes"], [with_pygtk2="no"])
-        AC_CHECK_PROGS([PYGTK_CODEGEN], [pygobject-codegen-2.0 pygtk-codegen-2.0 pygtk-codegen], [:])
-
-        AS_IF([test "x$PYGTK_H2DEF" = "x"],
-          [PYGTK_H2DEF=`$PKG_CONFIG pygtk-2.0 --variable=codegendir`/h2def.py
-           AS_IF([test -f "$PYGTK_H2DEF"], [], [PYGTK_H2DEF=":"])])
-        AS_IF([test "x$PYGTK_DEFS" = "x"],
-          [PYGTK_DEFS=`$PKG_CONFIG pygtk-2.0 --variable=defsdir`])
-     ])
-   ])
 ], [with_python="no"])
 
-AS_IF([test "x$PYTHON_VERSION_MAJOR" != "x2"], [with_pygtk2="no"])
+AS_IF([test "x$PYTHON_VERSION_MAJOR" != "x2"])
 AM_CONDITIONAL([HAVE_PYTHON], [test "x$with_python" != "xno"])
-AM_CONDITIONAL([HAVE_PYGTK2], [test "x$with_pygtk2" != "xno"])
-
-dnl GObject Introspection (GIR)
-
-AS_IF([test "x$with_gir" = "xyes" && test "x$with_gtk" != "xno"],
-  [m4_ifdef([GOBJECT_INTROSPECTION_CHECK],
-    [GOBJECT_INTROSPECTION_CHECK([0.6.7])
-     AS_IF([test "x$found_introspection" = "xyes"],
-       [INTROSPECTION_TYPELIBDIR=`$PKG_CONFIG --variable=typelibdir --define-variable="libdir=${libdir}" gobject-introspection-1.0`
-        INTROSPECTION_GIRDIR=`$PKG_CONFIG --variable=girdir --define-variable="datadir=${datadir}" gobject-introspection-1.0`
-        AC_SUBST(INTROSPECTION_TYPELIBDIR)
-        AC_SUBST(INTROSPECTION_GIRDIR)])])
- ])
-
-AS_IF([test "x$found_introspection" != "xyes"], [with_gir="no"])
-AM_CONDITIONAL([HAVE_INTROSPECTION], [test "x$with_gir" = "xyes"])
 
 dnl Qt
 AC_ARG_WITH([qt],
@@ -842,12 +755,10 @@ echo "Generating config files"
 
 AC_CONFIG_FILES([
 Makefile
-gtk/Makefile
 java/Makefile
 po/Makefile.in
 zbar/Makefile
 zbar.pc
-zbar-gtk.pc
 doc/doxygen.conf])
 
 AC_CONFIG_FILES([test/test_examples.sh],[chmod 755 test/test_examples.sh])
@@ -872,7 +783,6 @@ AS_IF([test "x$win32" != "xno"],
 )
 
 AS_IF([test "x$with_python" != "xno"], pyver="\tpython${PYTHON_VERSION}")
-AS_IF([test "x$with_gtk" != "xno"], gtkver="\tGtk${GTK_VERSION}")
 AS_IF([test "x$with_qt" != "xno"], qtver="\tQt${QT_VERSION}")
 
 echo    "pthreads               --enable-pthread=$enable_pthread"
@@ -880,7 +790,6 @@ echo    "doc                    --enable-doc=$enable_doc"
 echo    "v4l                    --enable-video=$enable_video"
 echo    "jpeg                   --with-jpeg=$with_jpeg"
 echo -e "Python                 --with-python=$with_python $pyver"
-echo -e "GTK                    --with-gtk=$with_gtk       $gtkver"
 echo    "GObject introspection  --with-gir=$with_gir"
 echo -e "Qt                     --with-qt=$with_qt         $qtver"
 echo    "Java                   --with-java=$with_java"
@@ -908,10 +817,6 @@ AS_IF([test "x$have_IM" != "xyes" && test "x$have_GM" != "xyes"],
   [echo "        => the zbarimg file scanner will *NOT* be built"])
 AS_IF([test "x$have_GM" = "xyes"],
   [echo "        => ImageMagick is preferred, as GraphicsMagick doesn't support https"])
-AS_IF([test "x$with_gtk" = "xno"],
-  [echo "        => GTK support will *NOT* be built"])
-AS_IF([test "x$with_pygtk2" != "xyes" && test "xPYTHON_VERSION_MAJOR" = "x2"],
-  [echo "        => the Python 2 GTK widget wrapper will *NOT* be built"])
 AS_IF([test "x$with_qt" != "xyes"],
   [echo "        => the Qt widget will *NOT* be built"])
 AS_IF([test "x$with_qt" = "xyes" && test "x$enable_static_qt" = "xyes" ],

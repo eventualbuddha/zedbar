@@ -51,12 +51,10 @@ test_test_dbus_SOURCES = test/test_dbus.c
 test_test_dbus_LDFLAGS = $(DBUS_LIBS)
 endif
 
-EXTRA_DIST += test/test_pygtk.py test/test_gi.py test/test_python.py
-
 # automake bug in "monolithic mode"?
 CLEANFILES += test/.libs/test_decode test/.libs/test_proc \
     test/.libs/test_convert test/.libs/test_window \
-    test/.libs/test_video test/.libs/dbg_scan test/.libs/test_gtk
+    test/.libs/test_video test/.libs/dbg_scan
 
 
 # Images that work out of the box without needing to enable
@@ -104,14 +102,6 @@ check-convert: test/test_convert
 	   echo "convert FAILED"; else echo "convert PASSED."; fi
 	@rm /tmp/base.I420.zimg 2>/dev/null
 
-if HAVE_PYGTK2
-check-pygtk: pygtk/zbarpygtk.la
-	PYTHONPATH=@abs_top_srcdir@/pygtk/.libs/ \
-		@PYTHON@ @abs_top_srcdir@/test/test_pygtk.py
-else
-check-pygtk:
-endif
-
 if HAVE_PYTHON
 check-python: python/zbar.la
 	PYTHONPATH=@abs_top_srcdir@/python/.libs/ \
@@ -120,11 +110,6 @@ check-python: python/zbar.la
 else
 check-python:
 endif
-
-check-gi: gtk/ZBar-1.0.typelib
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH):@abs_top_srcdir@/gtk/.libs:@abs_top_srcdir@/zbar/.libs \
-		GI_TYPELIB_PATH=@abs_top_srcdir@/gtk/ \
-		@PYTHON@ @abs_top_srcdir@/test/test_gi.py
 
 # Require a camera device for it to work
 check-video: test/test_video

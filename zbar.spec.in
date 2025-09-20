@@ -8,7 +8,7 @@ URL: http://zbar.sourceforge.net
 Packager: Vit Hrachovy <fangorn34@users.sourceforge.net>
 Source: zbar-%{version}.tar.gz
 Requires: ImageMagick-c++
-BuildPreReq: pkgconfig, libX11-devel, python-devel, gtk2-devel, pygtk2-devel, qt-devel >= 4, ImageMagick-c++-devel
+BuildPreReq: pkgconfig, libX11-devel, python-devel, qt-devel >= 4, ImageMagick-c++-devel
 Prefix: %{_prefix}
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
 
@@ -33,52 +33,6 @@ fast, streaming interface with a minimal memory footprint.
 
 This package contains header files and additional libraries used for
 developing applications that read bar codes with this library.
-
-%package gtk
-Group: Development/Libraries
-Summary: bar code reader GTK widget
-Requires: %{name} = %{version}, gtk2
-
-%description gtk
-The ZBar Bar Code Reader is a library for scanning and decoding bar
-codes from various sources such as video streams, image files or raw
-intensity sensors.  It supports EAN, UPC, Code 128, Code 93, Code 39
-and Interleaved 2 of 5. The flexible, layered architecture features a
-fast, streaming interface with a minimal memory footprint.
-
-This package contains a bar code scanning widget for use with GUI
-applications based on GTK+-2.0.
-
-%package gtk-devel
-Group: Development/Libraries
-Summary: bar code reader GTK widget extra development files
-Requires: %{name}-gtk = %{version}, %{name}-devel = %{version}, gtk2-devel
-
-%description gtk-devel
-The ZBar Bar Code Reader is a library for scanning and decoding bar
-codes from various sources such as video streams, image files or raw
-intensity sensors.  It supports EAN, UPC, Code 128, Code 93, Code 39
-and Interleaved 2 of 5. The flexible, layered architecture features a
-fast, streaming interface with a minimal memory footprint.
-
-This package contains header files and additional libraries used for
-developing GUI applications based on GTK+-2.0 that include a bar code
-scanning widget.
-
-%package pygtk
-Group: Development/Libraries
-Summary: bar code reader PyGTK widget
-Requires: %{name} = %{version}, pygtk2
-
-%description pygtk
-The ZBar Bar Code Reader is a library for scanning and decoding bar
-codes from various sources such as video streams, image files or raw
-intensity sensors.  It supports EAN, UPC, Code 128, Code 93, Code 39
-and Interleaved 2 of 5. The flexible, layered architecture features a
-fast, streaming interface with a minimal memory footprint.
-
-This package contains a bar code scanning widget for use in GUI
-applications based on PyGTK.
 
 %package qt
 Group: Development/Libraries
@@ -165,22 +119,6 @@ ldconfig
 %{_includedir}/zbar/Video.h
 %{_includedir}/zbar/Window.h
 %{_includedir}/zbar/Processor.h
-
-%files gtk
-%defattr(-,root,root)
-%{_libdir}/libzbargtk.so.*
-
-%files gtk-devel
-%defattr(-,root,root)
-%{_libdir}/libzbargtk.la
-%{_libdir}/libzbargtk.a
-%{_libdir}/libzbargtk.so
-%{_libdir}/pkgconfig/zbar-gtk.pc
-%{_includedir}/zbar/zbargtk.h
-
-%files pygtk
-%defattr(-,root,root)
-%{_libdir}/python*
 
 %files qt
 %defattr(-,root,root)
