@@ -20,7 +20,6 @@ SUBDIRS = zbar
 zbar/libzbar.la:
 	$(MAKE) -C @builddir@/zbar libzbar.la
 
-include $(srcdir)/test/Makefile.am.inc
 if HAVE_DOC
 include $(srcdir)/doc/Makefile.am.inc
 endif

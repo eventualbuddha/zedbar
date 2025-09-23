@@ -396,8 +396,6 @@ zbar/Makefile
 zbar.pc
 doc/doxygen.conf])
 
-AC_CONFIG_FILES([test/test_examples.sh],[chmod 755 test/test_examples.sh])
-
 AC_OUTPUT
 
 dnl summary log
