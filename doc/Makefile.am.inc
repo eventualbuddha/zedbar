@@ -6,9 +6,6 @@ MAINTAINERCLEANFILES += doc/man/man.stamp doc/version.xml doc/reldate.xml
 
 # man page targets to distribute and install
 dist_man_MANS =
-if HAVE_MAGICK
-dist_man_MANS += doc/man/zbarimg.1
-endif
 if HAVE_VIDEO
 dist_man_MANS += doc/man/zbarcam.1
 endif

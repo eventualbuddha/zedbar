@@ -67,11 +67,7 @@
 
     <para>Note that "<filename><replaceable>image</replaceable></filename>"
 
-    in this context refers to any format supported by ImageMagick,
-    including many vector formats such as PDF and PostScript.  Keep in
-    mind that vector formats are rasterized before scanning; manually
-    rasterize vector images before scanning to avoid unintentionally
-    corrupting embedded barcode bitmaps.</para>
+    in this context refers to JPEG and PNG images.</para>
 
   </refsection>
 
@@ -84,64 +80,6 @@
 
     <variablelist>
       &refcommonoptions;
-
-      <varlistentry>
-        <term><option>--polygon</option></term>
-        <listitem>
-          <simpara>Ouput points of the polygon containing the code bar.
-          Using a format compatible with The &lt;polygon&gt; element
-          of the Scalable Vector Graphics (SVG) markup language</simpara>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><option>-q</option></term>
-        <term><option>--quiet</option></term>
-        <listitem>
-          <simpara>Quiet operation; only output decoded symbol data.
-          specifically this disables the statistics line printed (to
-          stderr) before exiting, as well as the warning message
-          printed (also to stderr) when no barcodes are found in an
-          image</simpara>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><option>-d</option></term>
-        <term><option>--display</option></term>
-        <term><option>-D</option></term>
-        <term><option>--nodisplay</option></term>
-        <listitem>
-          <simpara>Enable/disable display of subsequent
-          <filename><replaceable>image</replaceable></filename> files,
-          until next <option>--display</option> or
-          <option>--nodisplay</option> is encountered.  This option
-          may appear multiple times to enable display of specific
-          images.  Image display is disabled by default</simpara>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><option>--xml</option></term>
-        <term><option>--noxml</option></term>
-        <listitem>
-          <simpara>Enable/disable result output using an XML format.
-          This format wraps the raw data from the symbol with
-          information about the scan (such as page indices) in an
-          easy to parse format.  The latest schema is available from
-          <link xlink:href="http://zbar.sourceforge.net/2008/barcode.xsd"/>.</simpara>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term><option>--raw</option></term>
-        <listitem>
-          <simpara>Enable raw symbol data output.  This format prints symbol
-          data separated by newlines without the additional symbology type
-          information that is printed by default</simpara>
-        </listitem>
-      </varlistentry>
-
     </variablelist>
   </refsection>
 
@@ -165,14 +103,7 @@
         <listitem>
           <para>An error occurred while processing some image(s).  This
           includes bad arguments, I/O errors and image handling errors from
-          ImageMagick.</para>
-        </listitem>
-      </varlistentry>
-
-      <varlistentry>
-        <term>2</term>
-        <listitem>
-          <para>ImageMagick fatal error.</para>
+          libpng or libjpeg.</para>
         </listitem>
       </varlistentry>
 

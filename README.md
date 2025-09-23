@@ -84,14 +84,8 @@ pkg-config may be obtained from:
 
 - <http://pkg-config.freedesktop.org/>
 
-The `zbarimg` program uses `ImageMagick` to read image files in many
-different formats.  You will need at least `ImageMagick` version 6.2.6
-if you want to scan image files. You may also use `GraphicsMagick`
-package instead.
-
-`ImageMagick` may be obtained from:
-
-- <http://www.imagemagick.org/>
+The `zbarimg` program uses `libjpeg` and `libpng` to read image files in their respective
+formats.
 
 RUNNING
 =======

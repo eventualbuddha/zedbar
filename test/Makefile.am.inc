@@ -38,13 +38,6 @@ test_test_jpeg_SOURCES = test/test_jpeg.c
 test_test_jpeg_LDADD = zbar/libzbar.la $(AM_LDADD)
 endif
 
-if HAVE_MAGICK
-EXTRA_PROGRAMS += test/dbg_scan
-test_dbg_scan_SOURCES = test/dbg_scan.cpp
-test_dbg_scan_CPPFLAGS = $(MAGICK_CFLAGS) $(AM_CPPFLAGS)
-test_dbg_scan_LDADD = $(MAGICK_LIBS) -lMagick++ zbar/libzbar.la $(AM_LDADD)
-endif
-
 # automake bug in "monolithic mode"?
 CLEANFILES += test/.libs/test_decode test/.libs/test_proc \
     test/.libs/test_convert test/.libs/test_window \

@@ -45,9 +45,6 @@ endif
 zbar/libzbar.la:
 	$(MAKE) -C @builddir@/zbar libzbar.la
 
-if HAVE_MAGICK
-include $(srcdir)/zbarimg/Makefile.am.inc
-endif
 if HAVE_VIDEO
 include $(srcdir)/zbarcam/Makefile.am.inc
 endif
