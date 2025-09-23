@@ -335,20 +335,6 @@ set appropriately or configure --without-png])],
 ])
 AM_CONDITIONAL([HAVE_PNG], [test "x$with_png" = "xyes"])
 
-dnl Mozilla NPAPI
-AC_ARG_WITH([npapi],
-  [AS_HELP_STRING([--with-npapi],
-    [enable support for Firefox/Mozilla/OpenOffice plugin])],
-  [],
-  [with_npapi="no"])
-
-AS_IF([test "x$with_npapi" != "xno"],
-  [PKG_CHECK_MODULES([NPAPI], [firefox-plugin])
-   NPAPI_VERSION=`$PKG_CONFIG firefox-plugin --modversion`
-   AC_MSG_NOTICE([using firefox-plugin version $NPAPI_VERSION])])
-
-AM_CONDITIONAL([HAVE_NPAPI], [test "x$with_npapi" = "xyes"])
-
 AC_ARG_VAR([GLIB_GENMARSHAL], [full path to glib-genmarshal])
 
 dnl header files

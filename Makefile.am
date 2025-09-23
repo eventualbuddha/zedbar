@@ -48,15 +48,12 @@ zbar/libzbar.la:
 if HAVE_VIDEO
 include $(srcdir)/zbarcam/Makefile.am.inc
 endif
-if HAVE_NPAPI
-include $(srcdir)/plugin/Makefile.am.inc
-endif
 include $(srcdir)/test/Makefile.am.inc
 if HAVE_DOC
 include $(srcdir)/doc/Makefile.am.inc
 endif
 
-EXTRA_DIST += zbar.ico zbar.nsi
+EXTRA_DIST += zbar.ico
 
 EXTRA_DIST += examples/*.png examples/sha1sum \
     examples/scan_image.c examples/scan_image.cpp examples/scan_image.vcproj
