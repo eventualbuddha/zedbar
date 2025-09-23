@@ -60,30 +60,12 @@ typedef struct proc_waiter_s {
 #define EVENTS_PENDING (EVENT_INPUT | EVENT_OUTPUT)
 
 struct zbar_processor_s {
-  errinfo_t err;        /* error reporting */
-  const void *userdata; /* application data */
+  errinfo_t err; /* error reporting */
 
-  zbar_video_t *video;           /* input video device abstraction */
-  zbar_window_t *window;         /* output window abstraction */
   zbar_image_scanner_t *scanner; /* barcode scanner */
-
-  zbar_image_data_handler_t *handler; /* application data handler */
-
-  unsigned req_width, req_height; /* application requested video size */
-  int req_intf, req_iomode;       /* application requested interface */
-  uint32_t force_input;           /* force input format (debug) */
-  uint32_t force_output;          /* force format conversion (debug) */
-
-  int input; /* user input status */
 
   /* state flags */
   int threaded;
-  int visible;   /* output window mapped to display */
-  int streaming; /* video enabled */
-  int dumping;   /* debug image dump */
-
-  void *display;      /* X display connection */
-  unsigned long xwin; /* toplevel window */
 
   zbar_thread_t input_thread; /* video input handler */
   zbar_thread_t video_thread; /* window event handler */

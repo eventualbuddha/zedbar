@@ -68,7 +68,6 @@ struct zbar_image_s {
   /* cleanup handler */
   zbar_image_cleanup_handler_t *cleanup;
   refcnt_t refcnt;    /* reference count */
-  zbar_video_t *src;  /* originator */
   int srcidx;         /* index used by originator */
   zbar_image_t *next; /* internal image lists */
 
@@ -105,8 +104,7 @@ static inline void _zbar_image_refcnt(zbar_image_t *img, int delta) {
   if (!_zbar_refcnt(&img->refcnt, delta) && delta <= 0) {
     if (img->cleanup)
       img->cleanup(img);
-    if (!img->src)
-      _zbar_image_free(img);
+    _zbar_image_free(img);
   }
 }
 

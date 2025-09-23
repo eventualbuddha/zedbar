@@ -125,19 +125,7 @@ void zbar_image_set_crop(zbar_image_t *img, unsigned x, unsigned y, unsigned w,
 inline void zbar_image_free_data(zbar_image_t *img) {
   if (!img)
     return;
-  if (img->src) {
-    zbar_image_t *newimg;
-    /* replace video image w/new copy */
-    assert(img->refcnt); /* FIXME needs lock */
-    newimg = zbar_image_create();
-    memcpy(newimg, img, sizeof(zbar_image_t));
-    /* recycle video image */
-    newimg->cleanup(newimg);
-    /* detach old image from src */
-    img->cleanup = NULL;
-    img->src = NULL;
-    img->srcidx = -1;
-  } else if (img->cleanup && img->data) {
+  if (img->cleanup && img->data) {
     if (img->cleanup != zbar_image_free_data) {
       /* using function address to detect this case is a bad idea;
        * windows link libraries add an extra layer of indirection...

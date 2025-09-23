@@ -35,9 +35,6 @@ int zbar_window_attach(zbar_window_t *w, void *display,
   return 0;
 }
 
-static void window_outline_symbol(zbar_window_t *w, uint32_t color,
-                                  const zbar_symbol_t *sym) {}
-
 static inline int window_draw_overlay(zbar_window_t *w) { return 0; }
 
 inline int zbar_window_redraw(zbar_window_t *w) { return 0; }
