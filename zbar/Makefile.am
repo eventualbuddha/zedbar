@@ -50,78 +50,13 @@ libzbar_la_SOURCES += sqcode.h sqcode.c \
     decoder/sq_finder.h decoder/sq_finder.c
 endif
 
-if WIN32
-
-%-rc.o: %.rc
-	$(RC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
-	$(AM_CPPFLAGS) $(CPPFLAGS) -o $@ $<
-%-rc.lo: %.rc
-	$(LIBTOOL) --tag=RC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
-	--mode=compile $(RC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
-	$(AM_CPPFLAGS) $(CPPFLAGS) -o $@ $<
-
-libzbar_la_SOURCES += processor/win.c libzbar.rc
-libzbar_la_CPPFLAGS += -mthreads
-libzbar_la_LDFLAGS += -mthreads
-# FIXME broken
-libzbar_la_LIBADD += libzbar-rc.lo
-else
 libzbar_la_SOURCES += processor/posix.h processor/posix.c
-endif
-
-if HAVE_V4L2
-libzbar_la_SOURCES += video/v4l.c video/v4l2.c
-endif
-if HAVE_V4L1
-if !HAVE_V4L2
-libzbar_la_SOURCES += video/v4l.c
-endif
-libzbar_la_SOURCES += video/v4l1.c
-endif
-if WIN32
-if HAVE_VIDEO
-if !WITH_DIRECTSHOW
-libzbar_la_SOURCES += video/vfw.c
-libzbar_la_LIBADD += -lvfw32
-else
-libzbar_la_SOURCES += video/dshow.c
-libzbar_la_CPPFLAGS += -DCOBJMACROS
-libzbar_la_LIBADD += -loleaut32 -lole32
-endif
-endif
-endif
-if !HAVE_VIDEO
 libzbar_la_SOURCES += video/null.c
-endif
-
-if HAVE_LIBV4L
-libzbar_la_LIBADD += $(V4L2_LIBS)
-endif
 
 if HAVE_JPEG
 libzbar_la_SOURCES += jpeg.c
 endif
 
-if HAVE_X
-libzbar_la_SOURCES +=  processor/x.c \
-    window/x.h window/x.c window/ximage.c
-libzbar_la_CPPFLAGS += $(X_CFLAGS)
-libzbar_la_LDFLAGS += $(X_LIBS)
-libzbar_la_LIBADD += $(X_PRE_LIBS) -lX11 $(X_EXTRA_LIBS)
-if HAVE_XV
-libzbar_la_SOURCES += window/xv.c
-libzbar_la_LIBADD += $(XV_LIBS)
-endif
-else
-if WIN32
-libzbar_la_SOURCES += window/win.h window/win.c \
-    window/dib.c
-# window/vfw.c -lvfw32
-libzbar_la_LIBADD += -lgdi32 -lwinmm
-else
 libzbar_la_SOURCES += processor/null.c window/null.c
-endif
-endif
-
 libzbar_la_LDFLAGS += $(AM_LDFLAGS)
 libzbar_la_LIBADD += $(AM_LIBADD)

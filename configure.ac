@@ -11,8 +11,7 @@ m4_pattern_allow([AM_PROG_AR])
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_SRCDIR(zbar/scanner.c)
 LT_PREREQ([2.2])
-LT_INIT([dlopen win32-dll])
-LT_LANG([Windows Resource])
+LT_INIT([dlopen])
 AM_SILENT_RULES([yes])
 
 dnl update these just before each release (along w/package version above)
@@ -55,24 +54,6 @@ AM_CXXFLAGS="$AM_CFLAGS"
 AC_SUBST([AM_CPPFLAGS])
 AC_SUBST([AM_CFLAGS])
 AC_SUBST([AM_CXXFLAGS])
-
-dnl windows build
-
-AC_CANONICAL_HOST
-case $host_os in
-  *cygwin* | *mingw* | *uwin* | *djgpp* | *ems* )
-    win32="yes"
-    AC_DEFINE([_WIN32_WINNT], [0x0500], [Minimum Windows API version])
-    AC_FUNC_ALLOCA
-    AC_FUNC_ERROR_AT_LINE
-    AC_FUNC_FSEEKO
-    AC_CHECK_HEADERS([arpa/inet.h malloc.h mntent.h netdb.h netinet/in.h shadow.h sys/file.h sys/mount.h sys/param.h sys/socket.h sys/statfs.h sys/statvfs.h sys/vfs.h unistd.h values.h])
-  ;;
-  * )
-    win32="no"
-  ;;
-esac
-AM_CONDITIONAL([WIN32], [test "x$win32" = "xyes"])
 
 dnl programs
 
@@ -141,7 +122,7 @@ AC_ARG_ENABLE([pthread],
   [AS_HELP_STRING([--disable-pthread],
     [omit support for threaded applications])],
   [],
-  [AS_IF([test "x$win32" = "xno"],
+  [AS_IF([test "xno" = "xno"],
    [enable_pthread="yes"],
    [enable_pthread="no"
 ])])
@@ -174,64 +155,16 @@ AS_IF([test "x$XMLTO" = "x"], enable_doc="no")
 AM_CONDITIONAL([HAVE_DOC], [test "x$enable_doc" != "xno"])
 
 dnl video
-AC_ARG_ENABLE([video],
-  [AS_HELP_STRING([--disable-video],
-    [exclude video scanner features])],
-  [],
-  [enable_video="yes"])
-
-dnl video, directshow
-AC_ARG_WITH([directshow],
-  [AS_HELP_STRING([--with-directshow],
-     [compile directshow driver on windows instead of vfw,
-available only when video support is enabled])],
-  [],
-  [with_directshow="no"])
-
+enable_video="no"
 have_v4l1="no"
 have_v4l2="no"
 have_libv4l="no"
-AS_IF([test "x$enable_video" = "xno"],
-  [],
-  [test "x$win32" = "xno"],
-  [AC_CHECK_HEADERS([linux/videodev.h], [have_v4l1="yes"])
-   AC_CHECK_HEADERS([linux/videodev2.h], [have_v4l2="yes"])
-   AC_CHECK_HEADERS([libv4l2.h], [have_libv4l="yes"])
-   AS_IF([test "x$have_v4l2" = "xno" && test "x$have_v4l1" = "xno"],
-         [AC_MSG_FAILURE([test for video support failed!
-rebuild your kernel to include video4linux support or
-configure --disable-video to skip building video support.])],
-         [AS_IF([test "x$have_v4l2" = "xno"],
-               [AC_MSG_WARN([v4l2 API not detected, upgrade your kernel!])])]
-        )],
-  [AS_IF([test "x$with_directshow" != "xno"],
-    [with_video="directshow"],
-    [AC_CHECK_HEADERS([vfw.h], [with_video="vfw"],
-      [AC_MSG_FAILURE([test for VfW video support failed!
-configure --disable-video to skip building video support.])],[#include <windows.h>])])])
 
-AS_IF([test "x$have_libv4l" = "xyes"],
-   [PKG_CHECK_MODULES([V4L2], [libv4l2], [],
-     [AC_MSG_FAILURE([unable to find libv4l2.so])])],
-  [AC_MSG_WARN([libv4l not detected. Install it to support more cameras!])])
-
-AM_CONDITIONAL([HAVE_VIDEO], [test "x$enable_video" != "xno"])
-AM_CONDITIONAL([HAVE_V4L1], [test "x$have_v4l1" != "xno"])
-AM_CONDITIONAL([HAVE_V4L2], [test "x$have_v4l2" != "xno"])
-AM_CONDITIONAL([HAVE_LIBV4L], [test "x$have_libv4l" != "xno"])
-AM_CONDITIONAL([WITH_DIRECTSHOW], [test "x$with_directshow" != "xno"])
-
-dnl X
-AC_ARG_VAR([XSHM_LIBS], [linker flags for X shared memory extension])
-
-AS_IF([test "x$win32" != "xno"],
-  [have_x="no"],
-  [AC_PATH_XTRA
-   AH_BOTTOM([#ifndef X_DISPLAY_MISSING
-# define HAVE_X
-#endif
-])])
-AM_CONDITIONAL([HAVE_X], [test "x$have_x" = "xyes"])
+AM_CONDITIONAL([HAVE_VIDEO], [test "xno" != "xno"])
+AM_CONDITIONAL([HAVE_V4L1], [test "xno" != "xno"])
+AM_CONDITIONAL([HAVE_V4L2], [test "xno" != "xno"])
+AM_CONDITIONAL([HAVE_LIBV4L], [test "xno4l" != "xno"])
+AM_CONDITIONAL([WITH_DIRECTSHOW], [test "xnoctshow" != "xno"])
 
 AS_IF([test "x$XSHM_LIBS" = "x"], [XSHM_LIBS="-lXext"])
 AC_ARG_WITH([xshm],
@@ -260,36 +193,6 @@ specify XSHM_LIBS or configure --without-xshm to disable the extension])],
        ["$X_LIBS" "$X_PRE_LIBS" -lX11 "$X_EXTRA_LIBS" "$XSHM_LIBS"])
    ])
 ])
-AM_CONDITIONAL([HAVE_XSHM], [test "x$with_xshm" = "xyes"])
-
-AC_ARG_VAR([XV_LIBS], [linker flags for XVideo extension])
-AS_IF([test "x$XV_LIBS" = "x"], [XV_LIBS="-lXv"])
-AC_ARG_WITH([xv],
-  [AS_HELP_STRING([--without-xv],
-    [disable support for XVideo extension])],
-  [],
-  [with_xv="check"])
-
-AS_IF([test "x$with_xv" != "xno"],
-  [AC_CHECK_HEADERS([X11/extensions/Xvlib.h],
-    [with_xv="yes"],
-    [AS_IF([test "x$with_xv" = "xcheck"],
-      [with_xv="no"],
-      [AC_MSG_FAILURE([test for XVideo extension failed!
-install the XVideo extension, specify --x-includes or
-configure --without-xv to disable the extension])])],
-    [[#include <X11/Xlib.h>
-]])
-   AS_IF([test "x$with_xv" != "xno"],
-     [AC_CHECK_LIB([Xv], [XvQueryExtension],
-       [with_xv="yes"],
-       [AC_MSG_FAILURE([unable to find XvQueryExtension in $XV_LIBS!
-specify XV_LIBS or configure --without-xv to disable the extension])],
-       ["$X_LIBS" "$X_PRE_LIBS" -lX11 "$X_EXTRA_LIBS" "$XV_LIBS"])
-   ])
-])
-AM_CONDITIONAL([HAVE_XV], [test "x$with_xv" = "xyes"])
-
 dnl libjpeg
 AC_ARG_WITH([jpeg],
   [AS_HELP_STRING([--without-jpeg],
@@ -403,13 +306,6 @@ dnl summary log
 echo ""
 echo "please verify that the detected configuration matches your expectations:"
 echo "------------------------------------------------------------------------"
-AS_IF([test "x$win32" != "xno"],
-  [AS_IF([test "x$with_directshow" != "xno"],
-    [echo "DirectShow driver      --with-directshow=$with_directshow"],
-    [echo "VfW driver             --with-directshow=$with_directshow"]
-  )],
-  [echo "X                      --with-x=$have_x"]
-)
 
 echo    "pthreads               --enable-pthread=$enable_pthread"
 echo    "doc                    --enable-doc=$enable_doc"
@@ -423,8 +319,6 @@ echo "Disabled codes:       $disabled_codes"
 dnl Display "warnings" about disabled and experimental features
 
 echo ""
-AS_IF([test "x$have_libv4l" != "xyes"],
-  [echo "        => libv4l will *NOT* be used"])
 AS_IF([test "x$with_jpeg" != "xyes"],
   [echo "        => JPEG image conversions will *NOT* be supported"])
 AS_IF([test "x$with_png" != "xyes"],
