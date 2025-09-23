@@ -122,7 +122,6 @@ ZBAR_CHK_CODE([codabar], [Codabar symbology])
 ZBAR_CHK_CODE([i25], [Interleaved 2 of 5 symbology])
 ZBAR_CHK_CODE([qrcode], [QR Code])
 ZBAR_CHK_CODE([sqcode], [SQ Code])
-ZBAR_CHK_CODE([pdf417], [PDF417 symbology (incomplete)])
 
 dnl libraries
 
@@ -432,5 +431,3 @@ AS_IF([test "x$with_jpeg" != "xyes"],
   [echo "        => JPEG image conversions will *NOT* be supported"])
 AS_IF([test "x$with_png" != "xyes"],
   [echo "        => PNG image conversions will *NOT* be supported"])
-AS_IF([test "x$enable_pdf417" = "xyes"],
-  [echo "        => the pdf417 code support is incomplete!"])

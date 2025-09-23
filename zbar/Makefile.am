@@ -35,10 +35,6 @@ endif
 if ENABLE_I25
 libzbar_la_SOURCES += decoder/i25.h decoder/i25.c
 endif
-if ENABLE_PDF417
-libzbar_la_SOURCES += decoder/pdf417.h decoder/pdf417.c \
-    decoder/pdf417_hash.h
-endif
 if ENABLE_QRCODE
 libzbar_la_SOURCES += qrcode.h \
     decoder/qr_finder.h decoder/qr_finder.c \

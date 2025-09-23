@@ -23,10 +23,6 @@ wrappers
 symbologies
 ===========
 
-* PDF417
-  * extract/resolve symbol matrix parameters (NB multiple symbols)
-  * error detection/correction
-  * high-level decode
 * Code 39, i25 optional features (check digit and ASCII escapes)
 * handle Code 128 function characters (FNC1-4)
 * Code 128 trailing quiet zone checks
@@ -34,7 +30,7 @@ symbologies
 decoder
 =======
 
-* start/stop/abort and location detail APIs (PDF417, OMR)
+* start/stop/abort and location detail APIs (OMR)
 * more configuration options
   * disable for at least UPC-E (maybe UPC-A?)
   * Code-39/i25 check digit (after implementation)
@@ -49,7 +45,7 @@ image scanner
 =============
 
 * extract and track symbol polygons
-  * dynamic scan density (PDF417, OMR)
+  * dynamic scan density (OMR)
 * add multi-sample array interface to linear scanner
 
 image formats

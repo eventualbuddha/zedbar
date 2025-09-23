@@ -1,5 +1,5 @@
 check_PROGRAMS += test/test_decode
-test_test_decode_SOURCES = test/test_decode.c test/pdf417_encode.h
+test_test_decode_SOURCES = test/test_decode.c
 test_test_decode_CFLAGS = -Wno-unused $(AM_CFLAGS)
 test_test_decode_LDADD = zbar/libzbar.la $(AM_LDADD)
 

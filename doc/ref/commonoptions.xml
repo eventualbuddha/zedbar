@@ -141,8 +141,8 @@
           (inclusive), it will not be reported.  Set to 0 to disable the
           corresponding check.  This setting applies to variable-length
           symbologies: <option>i25</option>, <option>codabar</option>,
-          <option>code39</option>, <option>code128</option> and
-          <option>pdf417</option>. <option>min-length</option> defaults to 6
+            <option>code39</option> and <option>code128</option>.
+            <option>min-length</option> defaults to 6
           for <option>i25</option> and 1 for <option>code39</option> (per Code
           39 autodiscrimination recommendation); all others default to
           0</simpara>

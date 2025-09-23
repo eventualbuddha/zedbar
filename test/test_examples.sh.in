@@ -76,12 +76,6 @@ if [ "@ENABLE_SQCODE@" == "1" ]; then
   test sqcode1-scanned.png
 fi
 
-# The pdf417 code is incomplete: it doesn't output any results
-#
-#if [ "@ENABLE_PDF417@" == "1" ]; then
-#        test code-pdf417.png
-#fi
-
 if [ "$ERR" == "" ]; then
   echo "zbarimg PASSED."
 else

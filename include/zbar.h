@@ -101,7 +101,6 @@ typedef enum zbar_symbol_type_e {
   ZBAR_DATABAR_EXP = 35, /**< GS1 DataBar Expanded. @since 0.11 */
   ZBAR_CODABAR = 38,     /**< Codabar. @since 0.11 */
   ZBAR_CODE39 = 39,      /**< Code 39. @since 0.4 */
-  ZBAR_PDF417 = 57,      /**< PDF417. @since 0.6 */
   ZBAR_QRCODE = 64,      /**< QR Code. @since 0.10 */
   ZBAR_SQCODE = 80,      /**< SQ Code. @since 0.20.1 */
   ZBAR_CODE93 = 93,      /**< Code 93. @since 0.11 */
