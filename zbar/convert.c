@@ -1098,7 +1098,7 @@ int _zbar_best_format(uint32_t src, uint32_t *dst, const uint32_t *dsts)
     if (!srcfmt)
 	return (-1);
 
-    zprintf(8, "from %.4s(%08" PRIx32 ") to", (char *)&src, src);
+    zprintf(8, "from %.4s(%08x) to", (char *)&src, src);
     for (; *dsts; dsts++) {
 	const zbar_format_def_t *dstfmt = _zbar_format_lookup(*dsts);
 	int cost;
@@ -1110,7 +1110,7 @@ int _zbar_best_format(uint32_t src, uint32_t *dst, const uint32_t *dsts)
 	    cost = conversions[srcfmt->group][dstfmt->group].cost;
 
 	if (_zbar_verbosity >= 8)
-	    fprintf(stderr, " %.4s(%08" PRIx32 ")=%d", (char *)dsts, *dsts,
+	    fprintf(stderr, " %.4s(%08x)=%d", (char *)dsts, *dsts,
 		    cost);
 	if (cost >= 0 && min_cost > cost) {
 	    min_cost = cost;
@@ -1164,11 +1164,11 @@ int zbar_negotiate_format(zbar_video_t *vdo, zbar_window_t *win)
 	    continue;
 	cost = _zbar_best_format(*fmt, &win_fmt, dsts);
 	if (cost < 0) {
-	    zprintf(4, "%.4s(%08" PRIx32 ") -> ? (unsupported)\n", (char *)fmt,
+	    zprintf(4, "%.4s(%08x) -> ? (unsupported)\n", (char *)fmt,
 		    *fmt);
 	    continue;
 	}
-	zprintf(4, "%.4s(%08" PRIx32 ") -> %.4s(%08" PRIx32 ") (%d)\n",
+	zprintf(4, "%.4s(%08x) -> %.4s(%08x) (%d)\n",
 		(char *)fmt, *fmt, (char *)&win_fmt, win_fmt, cost);
 	if (min_cost > cost) {
 	    min_cost = cost;
@@ -1201,11 +1201,11 @@ int zbar_negotiate_format(zbar_video_t *vdo, zbar_window_t *win)
 		continue;
 	    cost = _zbar_best_format(*fmt, &win_fmt, dsts);
 	    if (cost < 0) {
-		zprintf(4, "%.4s(%08" PRIx32 ") -> ? (unsupported)\n",
+		zprintf(4, "%.4s(%08x) -> ? (unsupported)\n",
 			(char *)fmt, *fmt);
 		continue;
 	    }
-	    zprintf(4, "%.4s(%08" PRIx32 ") -> %.4s(%08" PRIx32 ") (%d)\n",
+	    zprintf(4, "%.4s(%08x) -> %.4s(%08x) (%d)\n",
 		    (char *)fmt, *fmt, (char *)&win_fmt, win_fmt, cost);
 	    if (min_cost > cost) {
 		min_cost = cost;
@@ -1223,7 +1223,7 @@ int zbar_negotiate_format(zbar_video_t *vdo, zbar_window_t *win)
 	return (err_capture(errdst, SEV_ERROR, ZBAR_ERR_UNSUPPORTED, __func__,
 			    "no supported image formats available"));
 
-    zprintf(2, "setting best format %.4s(%08" PRIx32 ") (%d)\n",
+    zprintf(2, "setting best format %.4s(%08x) (%d)\n",
 	    (char *)&min_fmt, min_fmt, min_cost);
     return (zbar_video_init(vdo, min_fmt));
 }

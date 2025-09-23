@@ -796,7 +796,7 @@ static int v4l2_query_controls(zbar_video_t *vdo) {
               query.name, query.id, ignore ? " - Ignored" : "");
 
       for (i = 0; i < ptr->s.menu_size; i++)
-        zprintf(1, "           %" PRId64 ": %s\n", ptr->s.menu[i].value,
+        zprintf(1, "           %ld: %s\n", ptr->s.menu[i].value,
                 ptr->s.menu[i].name);
 
       old_class = class;

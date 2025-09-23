@@ -73,8 +73,8 @@ static inline int ximage_init(zbar_window_t *w, zbar_image_t *img,
     w->scale_num = w->scale_den = 1;
 
     zprintf(3,
-	    "new XImage %.4s(%08" PRIx32 ") %dx%d"
-	    " from %.4s(%08" PRIx32 ") %dx%d\n",
+	    "new XImage %.4s(%08x) %dx%d"
+	    " from %.4s(%08x) %dx%d\n",
 	    (char *)&w->format, w->format, ximg->width, ximg->height,
 	    (char *)&img->format, img->format, img->width, img->height);
     zprintf(4, "    masks: %08lx %08lx %08lx\n", ximg->red_mask,
@@ -177,7 +177,7 @@ int _zbar_window_probe_ximage(zbar_window_t *w)
 	int j, n = 0;
 	for (j = 0; ximage_formats[fmtidx][j]; j++)
 	    if (!ximage_probe_format(w, ximage_formats[fmtidx][j])) {
-		zprintf(2, "    [%d] depth=%d bpp=%d: %.4s(%08" PRIx32 ")\n", i,
+		zprintf(2, "    [%d] depth=%d bpp=%d: %.4s(%08x)\n", i,
 			formats[i].depth, formats[i].bits_per_pixel,
 			(char *)&ximage_formats[fmtidx][j],
 			ximage_formats[fmtidx][j]);

@@ -204,11 +204,11 @@ int zbar_image_write(const zbar_image_t *img, const char *filebase) {
   if ((img->format & 0xff) >= ' ')
     n = snprintf(filename, len, "%s.%.4s.zimg", filebase, (char *)&img->format);
   else
-    n = snprintf(filename, len, "%s.%08" PRIx32 ".zimg", filebase, img->format);
+    n = snprintf(filename, len, "%s.%08x.zimg", filebase, img->format);
   assert(n < len - 1);
   filename[len - 1] = '\0';
 
-  zprintf(1, "dumping %.4s(%08" PRIx32 ") image to %s\n", (char *)&img->format,
+  zprintf(1, "dumping %.4s(%08x) image to %s\n", (char *)&img->format,
           img->format, filename);
 
   f = fopen(filename, "w");

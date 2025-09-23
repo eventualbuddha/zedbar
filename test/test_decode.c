@@ -750,7 +750,7 @@ static uint64_t encode_databar_char(unsigned val, const struct rss_group *grp,
   for (i = 0; i < nelems; i++)
     units = (units << 8) | (odd[i] << 4) | even[i];
 
-  zprintf(3, " raw=%" PRIx64 "\n", units);
+  zprintf(3, " raw=%x\n", units);
   return (units);
 }
 
