@@ -1053,11 +1053,6 @@ int test_numeric(char *data) {
   encode_i25(data, FWD);
 
   encode_junk(rnd_size);
-#if 0 /* FIXME encoding broken */
-    encode_i25(data, REV);
-
-    encode_junk(rnd_size);
-#endif
 
   char *cdb = convert_codabar(data);
   expect(ZBAR_CODABAR, cdb);
