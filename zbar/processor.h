@@ -114,7 +114,6 @@ extern int _zbar_processor_input_wait(zbar_processor_t *, zbar_event_t *, int);
 extern int _zbar_processor_enable(zbar_processor_t *);
 
 extern int _zbar_process_image(zbar_processor_t *, zbar_image_t *);
-extern int _zbar_processor_handle_input(zbar_processor_t *, int);
 
 /* windowing platform API */
 extern int _zbar_processor_open(zbar_processor_t *, char *, unsigned, unsigned);
