@@ -71,13 +71,6 @@ make
 The scanner/decoder library itself only requires a few standard
 library functions which should be available almost anywhere.
 
-The zbarcam program uses the video4linux API (v4l1 or v4l2) to access
-the video device.  This interface is part of the linux kernel, a 3.16
-kernel or upper is recommended for full support.  More information is
-available at:
-
-- <http://www.linuxtv.org/wiki/>
-
 `pkg-config` is used to locate installed libraries.  You should have
 installed `pkg-config` if you need any of the remaining components.
 pkg-config may be obtained from:
@@ -90,8 +83,8 @@ formats.
 RUNNING
 =======
 
-`make install` will install the library and application programs.  Run
-`zbarcam` to start the video scanner. Use `zbarimg <file>`
+`make install` will install the library and application programs.
+Use `zbarimg <file>`
 to decode a saved image file.
 
 Check the manual to find specific options for each program.

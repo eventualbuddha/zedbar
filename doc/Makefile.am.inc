@@ -1,14 +1,11 @@
 # documentation sources
 DOCSOURCES = doc/manual.xml doc/version.xml doc/reldate.xml \
-    doc/ref/zbarimg.xml doc/ref/zbarcam.xml doc/ref/commonoptions.xml
+    doc/ref/zbarimg.xml doc/ref/commonoptions.xml
 
 MAINTAINERCLEANFILES += doc/man/man.stamp doc/version.xml doc/reldate.xml
 
 # man page targets to distribute and install
 dist_man_MANS =
-if HAVE_VIDEO
-dist_man_MANS += doc/man/zbarcam.1
-endif
 
 # witness to man page build (many-to-many workaround)
 man_stamp = doc/man/man.stamp

@@ -8,7 +8,6 @@
 
   <!ENTITY refcommonoptions SYSTEM "ref/commonoptions.xml">
   <!ENTITY refzbarimg SYSTEM "ref/zbarimg.xml">
-  <!ENTITY refzbarcam SYSTEM "ref/zbarcam.xml">
 ]>
 
 <book>
@@ -43,7 +42,6 @@
   <reference id="ref">
     <title>ZBar Barcode Reader - Command Reference</title>
 
-    &refzbarcam;
     &refzbarimg;
 
   </reference>

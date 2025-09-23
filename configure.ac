@@ -128,10 +128,6 @@ dnl libraries
 
 AC_SEARCH_LIBS([clock_gettime], [rt pthread])
 AM_ICONV()
-AM_GNU_GETTEXT([external])
-AM_GNU_GETTEXT_VERSION(0.20)
-AM_GNU_GETTEXT_REQUIRE_VERSION(0.18)
-AM_CONDITIONAL([USE_NLS], [test "x${USE_NLS}" = "xyes"])
 
 dnl poll support
 
@@ -397,7 +393,6 @@ echo "Generating config files"
 
 AC_CONFIG_FILES([
 Makefile
-po/Makefile.in
 zbar/Makefile
 zbar.pc
 doc/doxygen.conf])
@@ -411,9 +406,6 @@ dnl summary log
 echo ""
 echo "please verify that the detected configuration matches your expectations:"
 echo "------------------------------------------------------------------------"
-AS_IF([test "x$USE_NLS" = "xyes"],
-  [echo    "gettext                $USE_NLS"]
-)
 AS_IF([test "x$win32" != "xno"],
   [AS_IF([test "x$with_directshow" != "xno"],
     [echo "DirectShow driver      --with-directshow=$with_directshow"],
@@ -434,8 +426,6 @@ echo "Disabled codes:       $disabled_codes"
 dnl Display "warnings" about disabled and experimental features
 
 echo ""
-AS_IF([test "x$enable_video" != "xyes"],
-  [echo "        => zbarcam video scanner will *NOT* be built"])
 AS_IF([test "x$have_libv4l" != "xyes"],
   [echo "        => libv4l will *NOT* be used"])
 AS_IF([test "x$with_jpeg" != "xyes"],

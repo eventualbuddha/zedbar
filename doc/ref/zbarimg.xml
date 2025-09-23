@@ -127,12 +127,6 @@
   </refsection>
 
   <refsection>
-    <title>See Also</title>
-    <para><xref linkend="zbarcam"/></para>
-    <para><link xlink:href="http://zbar.sf.net/"/></para>
-  </refsection>
-
-  <refsection>
     <title>Bugs</title>
 
     <para>See <link xlink:href="http://sf.net/tracker/?group_id=189236&amp;atid=928515"/></para>

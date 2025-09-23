@@ -74,9 +74,8 @@ window
   * decoded result(?)
   * stats
 
-zbarcam/zbarimg
+zbarimg
 ===============
 
 * zbarimg multi-frame duplicate suppression
-* stats/fps at zbarcam exit
 * decode hook (program/script)? (also zbarimg?)
