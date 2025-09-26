@@ -24,83 +24,15 @@
 #define _PROCESSOR_H_
 
 #include "config.h"
-#ifdef HAVE_INTTYPES_H
-#include <inttypes.h>
-#endif
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
 #include "error.h"
-#include "event.h"
-#include "thread.h"
+#include "img_scanner.h"
 #include <zbar.h>
 
-/* max time to wait for input before looking for the next frame.
- * only used in unthreaded mode with blocking (non-pollable) video.
- * NB subject to precision of whatever timer is in use
- */
-#define MAX_INPUT_BLOCK 15 /*ms*/
-
-/* platform specific state wrapper */
-typedef struct processor_state_s processor_state_t;
-
-/* specific notification tracking */
-typedef struct proc_waiter_s {
-  struct proc_waiter_s *next;
-  zbar_event_t notify;
-  zbar_thread_id_t requester;
-  unsigned events;
-} proc_waiter_t;
-
-/* high-level API events */
-#define EVENT_INPUT 0x01    /* user input */
-#define EVENT_OUTPUT 0x02   /* decoded output data available */
-#define EVENT_CANCELED 0x80 /* cancellation flag */
-#define EVENTS_PENDING (EVENT_INPUT | EVENT_OUTPUT)
-
+/* Simplified processor structure - no threading or complex state */
 struct zbar_processor_s {
-  errinfo_t err; /* error reporting */
-
-  zbar_image_scanner_t *scanner; /* barcode scanner */
-
-  /* state flags */
-  int threaded;
-
-  zbar_thread_t input_thread; /* video input handler */
-
-  const zbar_symbol_set_t *syms; /* previous decode results */
-
-  zbar_mutex_t mutex; /* shared data mutex */
-
-  /* API serialization lock */
-  int lock_level;
-  zbar_thread_id_t lock_owner;
-  proc_waiter_t *wait_head, *wait_tail, *wait_next;
-  proc_waiter_t *free_waiter;
-
-  processor_state_t *state;
+    errinfo_t err;                        /* error reporting */
+    zbar_image_scanner_t *scanner;        /* barcode scanner */
+    const zbar_symbol_set_t *syms;        /* previous decode results */
 };
-
-/* processor lock API */
-extern int _zbar_processor_lock(zbar_processor_t *);
-extern int _zbar_processor_unlock(zbar_processor_t *, int);
-extern void _zbar_processor_notify(zbar_processor_t *, unsigned);
-extern int _zbar_processor_wait(zbar_processor_t *, unsigned, zbar_timer_t *);
-
-/* platform API */
-extern int _zbar_processor_init(zbar_processor_t *);
-extern int _zbar_processor_cleanup(zbar_processor_t *);
-extern int _zbar_processor_input_wait(zbar_processor_t *, zbar_event_t *, int);
-extern int _zbar_processor_enable(zbar_processor_t *);
-
-extern int _zbar_process_image(zbar_processor_t *, zbar_image_t *);
-
-/* windowing platform API */
-extern int _zbar_processor_open(zbar_processor_t *, char *, unsigned, unsigned);
-extern int _zbar_processor_close(zbar_processor_t *);
-extern int _zbar_processor_set_visible(zbar_processor_t *, int);
-extern int _zbar_processor_set_size(zbar_processor_t *, unsigned, unsigned);
-extern int _zbar_processor_invalidate(zbar_processor_t *);
 
 #endif

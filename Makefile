@@ -3,7 +3,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -fPIC -Iinclude -Izbar
-LDFLAGS = -ljpeg -lpng -lpthread -lm
+LDFLAGS = -ljpeg -lpng -lm
 
 # Library source files
 LIB_SOURCES = \
@@ -33,10 +33,7 @@ LIB_SOURCES = \
 	zbar/qrcode/qrdec.c \
 	zbar/qrcode/qrdectxt.c \
 	zbar/qrcode/rs.c \
-	zbar/qrcode/util.c \
-	zbar/processor/lock.c \
-	zbar/processor/null.c \
-	zbar/processor/posix.c
+	zbar/qrcode/util.c
 
 # Application source files
 ZBARIMG_SOURCES = \

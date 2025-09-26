@@ -33,9 +33,7 @@
 #define HAVE_STRSTR 1
 #define HAVE_STRTOL 1
 #define HAVE_STRTOUL 1
-#define HAVE_GETTIMEOFDAY 1
-#define HAVE_CLOCK_GETTIME 1
-#define HAVE_PTHREAD 1
+
 
 /* Image format support */
 #define HAVE_LIBJPEG 1

@@ -35,7 +35,7 @@
 
 #include "error.h"
 #include "image.h"
-#include "timer.h"
+
 #include <zbar.h>
 #if ENABLE_QRCODE == 1
 #include "qrcode.h"
@@ -679,10 +679,11 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
   char filter;
   int nean, naddon;
 
-  /* timestamp image
+  /* timestamp image with simple counter
    * FIXME prefer video timestamp
    */
-  iscn->time = _zbar_timer_now();
+  static unsigned int scan_counter = 0;
+  iscn->time = scan_counter++;
 
 #if ENABLE_QRCODE == 1
   _zbar_qr_reset(iscn->qr);
