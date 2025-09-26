@@ -26,7 +26,7 @@
 #include <stdlib.h> /* malloc, free, abs */
 #include <string.h> /* memset */
 
-#include <zbar.h>
+#include "zbar.h"
 
 #ifdef DEBUG_SCANNER
 #define DEBUG_LEVEL (DEBUG_SCANNER)

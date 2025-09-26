@@ -126,9 +126,7 @@ typedef enum zbar_symbol_type_e {
   ZBAR_ADDON = 0x0700,
 } zbar_symbol_type_t;
 
-/** decoded symbol coarse orientation.
- * @since 0.11
- */
+/** decoded symbol coarse orientation. */
 typedef enum zbar_orientation_e {
   ZBAR_ORIENT_UNKNOWN = -1, /**< unable to determine orientation */
   ZBAR_ORIENT_UP,           /**< upright, read left to right */
@@ -290,10 +288,41 @@ extern zbar_error_t _zbar_get_error_code(const void *object);
 
 /*@}*/
 
-struct zbar_symbol_s;
+/** Point structure for symbol location */
+typedef struct point_s {
+    int x, y;
+} point_t;
+
+/** Symbol structure */
+struct zbar_symbol_s {
+    zbar_symbol_type_t type;     /* symbol type */
+    unsigned int configs;        /* symbology boolean config bitmask */
+    unsigned int modifiers;      /* symbology modifier bitmask */
+    unsigned int data_alloc;     /* allocation size of data */
+    unsigned int datalen;        /* length of binary symbol data */
+    char *data;                  /* symbol data */
+    
+    unsigned pts_alloc;          /* allocation size of pts */
+    unsigned npts;               /* number of points in location polygon */
+    point_t *pts;                /* list of points in location polygon */
+    zbar_orientation_t orient;   /* coarse orientation */
+    
+    int refcnt;                  /* reference count */
+    struct zbar_symbol_s *next;  /* linked list of results (or siblings) */
+    struct zbar_symbol_set_s *syms; /* components of composite result */
+    unsigned long time;          /* relative symbol capture time */
+    int cache_count;             /* cache state */
+    int quality;                 /* relative symbol reliability metric */
+};
 typedef struct zbar_symbol_s zbar_symbol_t;
 
-struct zbar_symbol_set_s;
+/** Symbol set structure */
+struct zbar_symbol_set_s {
+    int refcnt;                  /* reference count */
+    int nsyms;                   /* number of filtered symbols */
+    zbar_symbol_t *head;         /* first of decoded symbol results */
+    zbar_symbol_t *tail;         /* last of unfiltered symbol results */
+};
 typedef struct zbar_symbol_set_s zbar_symbol_set_t;
 
 /*------------------------------------------------------------*/
@@ -488,9 +517,6 @@ zbar_symbol_set_first_unfiltered(const zbar_symbol_set_t *symbols);
 /*@{*/
 
 struct zbar_image_s;
-/**
- * zbar_image_t: opaque image object.
- */
 typedef struct zbar_image_s zbar_image_t;
 
 /** cleanup handler callback function.
@@ -503,6 +529,24 @@ typedef void(zbar_image_cleanup_handler_t)(zbar_image_t *image);
  */
 typedef void(zbar_image_data_handler_t)(zbar_image_t *image,
                                         const void *userdata);
+
+/** Image structure */
+struct zbar_image_s {
+    uint32_t format;                      /* fourcc image format code */
+    unsigned width, height;               /* image size */
+    const void *data;                     /* image sample data */
+    unsigned long datalen;                /* allocated/mapped size of data */
+    void *userdata;                       /* user specified data associated w/image */
+    
+    /* cleanup handler */
+    zbar_image_cleanup_handler_t *cleanup;
+    int refcnt;                           /* reference count */
+    int srcidx;                           /* index used by originator */
+    struct zbar_image_s *next;            /* internal image lists */
+    
+    unsigned seq;                         /* page/frame sequence number */
+    zbar_symbol_set_t *syms;              /* decoded result set */
+};
 
 /** new image constructor.
  * @returns a new image object with uninitialized data and format.
@@ -983,6 +1027,7 @@ struct zbar_decoder_s;
 typedef struct zbar_decoder_s zbar_decoder_t;
 
 /** decoder data handler callback function.
+ * @param decoder active decoder object
  * called by decoder when new data has just been decoded
  */
 typedef void(zbar_decoder_handler_t)(zbar_decoder_t *decoder);
@@ -1188,5 +1233,7 @@ extern unsigned zbar_scanner_get_edge(const zbar_scanner_t *scn,
 extern zbar_color_t zbar_scanner_get_color(const zbar_scanner_t *scanner);
 
 /*@}*/
+/** opaque image scanner object. */
+typedef struct zbar_image_scanner_s zbar_image_scanner_t;
 
 #endif

@@ -56,22 +56,7 @@ typedef enum zbar_format_group_e {
   ZBAR_FMT_NUM
 } zbar_format_group_t;
 
-struct zbar_image_s {
-  uint32_t format;         /* fourcc image format code */
-  unsigned width, height;  /* image size */
-  const void *data;        /* image sample data */
-  unsigned long datalen;   /* allocated/mapped size of data */
-  void *userdata; /* user specified data associated w/image */
-
-  /* cleanup handler */
-  zbar_image_cleanup_handler_t *cleanup;
-  refcnt_t refcnt;    /* reference count */
-  int srcidx;         /* index used by originator */
-  zbar_image_t *next; /* internal image lists */
-
-  unsigned seq;            /* page/frame sequence number */
-  zbar_symbol_set_t *syms; /* decoded result set */
-};
+/* Struct definition moved to zbar.h - this is just a forward declaration */
 
 /* description of an image format */
 typedef struct zbar_format_def_s {

@@ -2,7 +2,7 @@
 # This is a simplified build system for preparing the codebase for Rust migration
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -fPIC -Iinclude -Izbar
+CFLAGS = -Wall -Wextra -O2 -fPIC -Izbar
 LDFLAGS = -ljpeg -lpng -lm
 
 # Library source files
@@ -77,8 +77,7 @@ install: libzbar.a zbarimg-bin
 	install -d /usr/local/lib /usr/local/bin /usr/local/include
 	install -m 644 libzbar.a /usr/local/lib/
 	install -m 755 zbarimg/zbarimg /usr/local/bin/zbarimg
-	cp -r include/zbar.h /usr/local/include/
-	cp -r include/zbar /usr/local/include/
+	install -m 644 zbar/zbar.h /usr/local/include/
 
 # Show source files (useful for Rust migration planning)
 list-sources:

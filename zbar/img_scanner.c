@@ -36,7 +36,7 @@
 #include "error.h"
 #include "image.h"
 
-#include <zbar.h>
+#include "zbar.h"
 #if ENABLE_QRCODE == 1
 #include "qrcode.h"
 #endif

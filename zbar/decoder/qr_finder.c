@@ -24,7 +24,7 @@
 #include "config.h"
 #include <assert.h>
 
-#include <zbar.h>
+#include "zbar.h"
 
 #include "debug.h"
 #include "decoder.h"

@@ -26,7 +26,7 @@
 #include <stdlib.h> /* malloc, calloc, free */
 #include <string.h> /* memset, strlen */
 
-#include <zbar.h>
+#include "zbar.h"
 
 #include "debug.h"
 #include "decoder.h"

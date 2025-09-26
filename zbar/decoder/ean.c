@@ -22,7 +22,7 @@
  *------------------------------------------------------------------------*/
 
 #include "config.h"
-#include <zbar.h>
+#include "zbar.h"
 
 #ifdef DEBUG_EAN
 #define DEBUG_LEVEL (DEBUG_EAN)

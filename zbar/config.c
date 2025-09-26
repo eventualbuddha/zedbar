@@ -28,7 +28,7 @@
 #include <errno.h>
 #endif
 
-#include <zbar.h>
+#include "zbar.h"
 
 int zbar_parse_config(const char *cfgstr, zbar_symbol_type_t *sym,
                       zbar_config_t *cfg, int *val) {

@@ -29,7 +29,7 @@
 
 #include <jpeglib.h>
 #include <png.h>
-#include <zbar.h>
+#include "zbar.h"
 
 static const char *note_usage =
     ("usage: zbarimg [options] <image>...\n"

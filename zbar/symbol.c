@@ -27,7 +27,7 @@
 #include <string.h>
 
 #include "symbol.h"
-#include <zbar.h>
+#include "zbar.h"
 
 const char *zbar_get_symbol_name(zbar_symbol_type_t sym) {
   switch (sym & ZBAR_SYMBOL) {
