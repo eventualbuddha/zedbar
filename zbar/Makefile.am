@@ -10,7 +10,6 @@ libzbar_la_SOURCES = debug.h config.c \
     processor.c processor.h processor/lock.c \
     refcnt.h refcnt.c timer.h mutex.h \
     event.h thread.h \
-    window.h window.c \
     img_scanner.h img_scanner.c scanner.c \
     decoder.h decoder.c misc.h misc.c
 
@@ -56,6 +55,6 @@ if HAVE_JPEG
 libzbar_la_SOURCES += jpeg.c
 endif
 
-libzbar_la_SOURCES += processor/null.c window/null.c
+libzbar_la_SOURCES += processor/null.c
 libzbar_la_LDFLAGS += $(AM_LDFLAGS)
 libzbar_la_LIBADD += $(AM_LIBADD)

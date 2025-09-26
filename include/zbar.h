@@ -928,85 +928,6 @@ zbar_processor_get_error_code(const zbar_processor_t *processor) {
 /*@}*/
 
 /*------------------------------------------------------------*/
-/** @name Window interface
- * @anchor c-window
- * mid-level output window abstraction.
- * displays images to user-specified platform specific output window
- */
-/*@{*/
-
-struct zbar_window_s;
-/** opaque window object. */
-typedef struct zbar_window_s zbar_window_t;
-
-/** constructor. */
-extern zbar_window_t *zbar_window_create(void);
-
-/** destructor. */
-extern void zbar_window_destroy(zbar_window_t *window);
-
-/** associate reader with an existing platform window.
- * This can be any "Drawable" for X Windows or a "HWND" for windows.
- * input images will be scaled into the output window.
- * pass NULL to detach from the resource, further input will be
- * ignored
- */
-extern int zbar_window_attach(zbar_window_t *window, void *x11_display_w32_hwnd,
-                              unsigned long x11_drawable);
-
-/** control content level of the reader overlay.
- * the overlay displays graphical data for informational or debug
- * purposes.  higher values increase the level of annotation (possibly
- * decreasing performance). @verbatim
-    0 = disable overlay
-    1 = outline decoded symbols (default)
-    2 = also track and display input frame rate
-@endverbatim
- */
-extern void zbar_window_set_overlay(zbar_window_t *window, int level);
-
-/** retrieve current content level of reader overlay.
- * @see zbar_window_set_overlay()
- * @since 0.10
- */
-extern int zbar_window_get_overlay(const zbar_window_t *window);
-
-/** draw a new image into the output window. */
-extern int zbar_window_draw(zbar_window_t *window, zbar_image_t *image);
-
-/** redraw the last image (exposure handler). */
-extern int zbar_window_redraw(zbar_window_t *window);
-
-/** resize the image window (reconfigure handler).
- * this does @em not update the contents of the window
- * @since 0.3, changed in 0.4 to not redraw window
- */
-extern int zbar_window_resize(zbar_window_t *window, unsigned width,
-                              unsigned height);
-
-/** display detail for last window error to stderr.
- * @returns a non-zero value suitable for passing to exit()
- */
-static inline int zbar_window_error_spew(const zbar_window_t *window,
-                                         int verbosity) {
-  return (_zbar_error_spew(window, verbosity));
-}
-
-/** retrieve the detail string for the last window error. */
-static inline const char *zbar_window_error_string(const zbar_window_t *window,
-                                                   int verbosity) {
-  return (_zbar_error_string(window, verbosity));
-}
-
-/** retrieve the type code for the last window error. */
-static inline zbar_error_t
-zbar_window_get_error_code(const zbar_window_t *window) {
-  return (_zbar_get_error_code(window));
-}
-
-/*@}*/
-
-/*------------------------------------------------------------*/
 /** @name Image Scanner interface
  * @anchor c-imagescanner
  * mid-level image scanner interface.
@@ -1340,7 +1261,6 @@ extern zbar_color_t zbar_scanner_get_color(const zbar_scanner_t *scanner);
 #include "zbar/Processor.h"
 #include "zbar/Scanner.h"
 #include "zbar/Symbol.h"
-#include "zbar/Window.h"
 #endif
 
 #endif

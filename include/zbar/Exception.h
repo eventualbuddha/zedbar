@@ -141,16 +141,6 @@ public:
     }
 };
 
-/// output window is closed.
-class ClosedError : public Exception
-{
-public:
-    /// create exception from C library error
-    ClosedError(const void *obj) : Exception(obj)
-    {
-    }
-};
-
 /// image format error
 class FormatError : public Exception
 {
