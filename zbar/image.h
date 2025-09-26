@@ -96,7 +96,6 @@ typedef struct zbar_format_def_s {
   } p;
 } zbar_format_def_t;
 
-extern const zbar_format_def_t *_zbar_format_lookup(uint32_t);
 extern void _zbar_image_free(zbar_image_t *);
 
 static inline void _zbar_image_refcnt(zbar_image_t *img, int delta) {

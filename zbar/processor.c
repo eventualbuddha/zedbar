@@ -45,32 +45,18 @@ static inline int proc_open(zbar_processor_t *proc) {
 /* API lock is already held */
 int _zbar_process_image(zbar_processor_t *proc, zbar_image_t *img) {
   if (img) {
-    uint32_t format;
-    zbar_image_t *tmp;
     int nsyms;
-
-    format = zbar_image_get_format(img);
-    zprintf(16, "processing: %.4s(%08x) %dx%d @%p\n", (char *)&format, format,
-            zbar_image_get_width(img), zbar_image_get_height(img),
-            zbar_image_get_data(img));
 
     /* FIXME locking all other interfaces while processing is conservative
      * but easier for now and we don't expect this to take long...
      */
-    tmp = zbar_image_convert(img, fourcc('Y', '8', '0', '0'));
-    if (!tmp)
-      goto error;
-
     if (proc->syms) {
       zbar_symbol_set_ref(proc->syms, -1);
       proc->syms = NULL;
     }
     zbar_image_scanner_recycle_image(proc->scanner, img);
-    nsyms = zbar_scan_image(proc->scanner, tmp);
-    _zbar_image_swap_symbols(img, tmp);
+    nsyms = zbar_scan_image(proc->scanner, img);
 
-    zbar_image_destroy(tmp);
-    tmp = NULL;
     if (nsyms < 0)
       goto error;
 

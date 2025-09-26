@@ -181,45 +181,6 @@ specify XSHM_LIBS or configure --without-xshm to disable the extension])],
        ["$X_LIBS" "$X_PRE_LIBS" -lX11 "$X_EXTRA_LIBS" "$XSHM_LIBS"])
    ])
 ])
-dnl libjpeg
-AC_ARG_WITH([jpeg],
-  [AS_HELP_STRING([--without-jpeg],
-    [disable support for JPEG image conversions])],
-  [],
-  [with_jpeg="check"])
-
-have_jpeg="maybe"
-AS_IF([test "x$with_jpeg" != "xno"],
-  [AC_CHECK_HEADERS([jpeglib.h jerror.h], [], [have_jpeg="no"])
-   AC_CHECK_LIB([jpeg], [jpeg_read_header], [], [have_jpeg="no"])
-   AS_IF([test "x$have_jpeg" != "xno"],
-     [with_jpeg="yes"],
-     [test "x$with_jpeg" = "xyes"],
-     [AC_MSG_FAILURE([unable to find libjpeg! ensure CFLAGS/LDFLAGS are
-set appropriately or configure --without-jpeg])],
-     [with_jpeg="no"])
-])
-AM_CONDITIONAL([HAVE_JPEG], [test "x$with_jpeg" = "xyes"])
-
-dnl libpng
-AC_ARG_WITH([png],
-  [AS_HELP_STRING([--without-png],
-    [disable support for png image conversions])],
-  [],
-  [with_png="check"])
-
-have_png="maybe"
-AS_IF([test "x$with_png" != "xno"],
-  [AC_CHECK_HEADERS([pnglib.h jerror.h], [], [have_png="no"])
-   AC_CHECK_LIB([png], [png_access_version_number], [], [have_png="no"])
-   AS_IF([test "x$have_png" != "xno"],
-     [with_png="yes"],
-     [test "x$with_png" = "xyes"],
-     [AC_MSG_FAILURE([unable to find libpng! ensure CFLAGS/LDFLAGS are
-set appropriately or configure --without-png])],
-     [with_png="no"])
-])
-AM_CONDITIONAL([HAVE_PNG], [test "x$with_png" = "xyes"])
 
 AC_ARG_VAR([GLIB_GENMARSHAL], [full path to glib-genmarshal])
 
@@ -297,8 +258,6 @@ echo "------------------------------------------------------------------------"
 
 echo    "pthreads               --enable-pthread=$enable_pthread"
 echo    "doc                    --enable-doc=$enable_doc"
-echo    "jpeg                   --with-jpeg=$with_jpeg"
-echo    "png                    --with-png=$with_png"
 
 echo "Enabled codes:        $enabled_codes"
 echo "Disabled codes:       $disabled_codes"
@@ -306,7 +265,3 @@ echo "Disabled codes:       $disabled_codes"
 dnl Display "warnings" about disabled and experimental features
 
 echo ""
-AS_IF([test "x$with_jpeg" != "xyes"],
-  [echo "        => JPEG image conversions will *NOT* be supported"])
-AS_IF([test "x$with_png" != "xyes"],
-  [echo "        => PNG image conversions will *NOT* be supported"])

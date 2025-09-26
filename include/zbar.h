@@ -538,32 +538,6 @@ extern void zbar_image_destroy(zbar_image_t *image);
  */
 extern void zbar_image_ref(zbar_image_t *image, int refs);
 
-/** image format conversion.  refer to the documentation for supported
- * image formats
- * @returns a @em new image with the sample data from the original image
- * converted to the requested format.  the original image is
- * unaffected.
- * @note the converted image size may be rounded (up) due to format
- * constraints
- */
-extern zbar_image_t *zbar_image_convert(const zbar_image_t *image,
-                                        unsigned long format);
-
-/** image format conversion with crop/pad.
- * if the requested size is larger than the image, the last row/column
- * are duplicated to cover the difference.  if the requested size is
- * smaller than the image, the extra rows/columns are dropped from the
- * right/bottom.
- * @returns a @em new image with the sample data from the original
- * image converted to the requested format and size.
- * @note the image is @em not scaled
- * @see zbar_image_convert()
- * @since 0.4
- */
-extern zbar_image_t *zbar_image_convert_resize(const zbar_image_t *image,
-                                               unsigned long format,
-                                               unsigned width, unsigned height);
-
 /** retrieve the image format.
  * @returns the fourcc describing the format of the image sample data
  */
@@ -635,7 +609,6 @@ extern const zbar_symbol_t *zbar_image_first_symbol(const zbar_image_t *image);
 /** specify the fourcc image format code for image sample data.
  * refer to the documentation for supported formats.
  * @note this does not convert the data!
- * (see zbar_image_convert() for that)
  */
 extern void zbar_image_set_format(zbar_image_t *image, unsigned long format);
 
@@ -1024,7 +997,6 @@ zbar_image_scanner_get_results(const zbar_image_scanner_t *scanner);
  * "Y800" or "GRAY".
  * @returns >0 if symbols were successfully decoded from the image,
  * 0 if no symbols were found or -1 if an error occurs
- * @see zbar_image_convert()
  * @since 0.9 - changed to only accept grayscale images
  */
 extern int zbar_scan_image(zbar_image_scanner_t *scanner, zbar_image_t *image);
