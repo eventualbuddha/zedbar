@@ -62,7 +62,6 @@ test/test_dbus
 test/test_decode
 test/test_jpeg
 test/test_proc
-test/test_video
 zbarcam/moc_*.h
 zbarcam/zbarcam
 zbarcam/zbarcam-gtk

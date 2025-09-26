@@ -154,18 +154,6 @@ AS_IF([test "x$XMLTO" = "x"], enable_doc="no")
 
 AM_CONDITIONAL([HAVE_DOC], [test "x$enable_doc" != "xno"])
 
-dnl video
-enable_video="no"
-have_v4l1="no"
-have_v4l2="no"
-have_libv4l="no"
-
-AM_CONDITIONAL([HAVE_VIDEO], [test "xno" != "xno"])
-AM_CONDITIONAL([HAVE_V4L1], [test "xno" != "xno"])
-AM_CONDITIONAL([HAVE_V4L2], [test "xno" != "xno"])
-AM_CONDITIONAL([HAVE_LIBV4L], [test "xno4l" != "xno"])
-AM_CONDITIONAL([WITH_DIRECTSHOW], [test "xnoctshow" != "xno"])
-
 AS_IF([test "x$XSHM_LIBS" = "x"], [XSHM_LIBS="-lXext"])
 AC_ARG_WITH([xshm],
   [AS_HELP_STRING([--without-xshm],
@@ -309,7 +297,6 @@ echo "------------------------------------------------------------------------"
 
 echo    "pthreads               --enable-pthread=$enable_pthread"
 echo    "doc                    --enable-doc=$enable_doc"
-echo    "v4l                    --enable-video=$enable_video"
 echo    "jpeg                   --with-jpeg=$with_jpeg"
 echo    "png                    --with-png=$with_png"
 

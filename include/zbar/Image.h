@@ -37,8 +37,6 @@
 
 namespace zbar
 {
-class Video;
-
 /// stores image data samples along with associated format and size
 /// metadata
 
@@ -293,8 +291,6 @@ public:
     }
 
 protected:
-    friend class Video;
-
     /// constructor.
     /// @internal
     /// create a new Image from a zbar_image_t C object

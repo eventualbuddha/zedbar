@@ -30,7 +30,6 @@
 
 #undef HAVE_STDLIB_H
 #include "image.h"
-#include "video.h"
 #include <zbar.h>
 
 #define HAVE_LONGJMP

@@ -164,7 +164,6 @@ int zbar_processor_init(zbar_processor_t *proc, const char *dev,
 
   _zbar_mutex_lock(&proc->mutex);
   _zbar_thread_stop(&proc->input_thread, &proc->mutex);
-  _zbar_thread_stop(&proc->video_thread, &proc->mutex);
 
   _zbar_processor_lock(proc);
   _zbar_mutex_unlock(&proc->mutex);
@@ -236,7 +235,7 @@ int zbar_processor_set_active(zbar_processor_t *proc, int active) {
   int rc;
   proc_enter(proc);
   rc = err_capture(proc, SEV_ERROR, ZBAR_ERR_INVALID, __func__,
-                   "video input not initialized");
+                   "input not initialized");
   proc_leave(proc);
   return (rc);
 }
@@ -248,7 +247,7 @@ int zbar_process_one(zbar_processor_t *proc, int timeout) {
   _zbar_mutex_unlock(&proc->mutex);
 
   rc = err_capture(proc, SEV_ERROR, ZBAR_ERR_INVALID, __func__,
-                   "video input not initialized");
+                   "input not initialized");
   _zbar_mutex_lock(&proc->mutex);
   proc_leave(proc);
   return (rc);

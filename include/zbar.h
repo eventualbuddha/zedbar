@@ -203,63 +203,6 @@ typedef enum zbar_modifier_e {
   ZBAR_MOD_NUM,
 } zbar_modifier_t;
 
-typedef enum video_control_type_e {
-  VIDEO_CNTL_INTEGER = 1,
-  VIDEO_CNTL_MENU,
-  VIDEO_CNTL_BUTTON,
-  VIDEO_CNTL_INTEGER64,
-  VIDEO_CNTL_STRING,
-  VIDEO_CNTL_BOOLEAN,
-} video_control_type_t;
-
-/** store video control menu
- * @param name name of the menu item
- * @param val integer value associated with the item
- */
-typedef struct video_control_menu_s {
-  char *name;
-  int64_t value;
-} video_control_menu_t;
-
-/** store video controls
- * @param name name of the control
- * @param group name of the control group/class
- * @param type type of the control
- * @param min minimum value of control (if control is integer)
- * @param max maximum value of control (if control is integer)
- * @param def default value of control (if control is integer)
- * @param step increment steps (if control is integer)
- * @param menu menu array
- * @param menu_size menu size
- * @since 0.20
- */
-typedef struct video_controls_s {
-  char *name;
-  char *group;
-  video_control_type_t type;
-
-  int64_t min, max, def;
-  uint64_t step;
-
-  unsigned int menu_size;
-  video_control_menu_t *menu;
-
-  void *next;
-
-  // video drivers may add extra private data in the end of this struct
-} video_controls_t;
-
-/** store a video resolution
- * @param width width of the video window
- * @param height length of the video window
- * @param max_fps maximum streaming speed, in frames per second
- * @since 0.22
- */
-struct video_resolution_s {
-  unsigned int width, height;
-  float max_fps;
-};
-
 /** retrieve runtime library version information.
  * @param major set to the running major version (unless NULL)
  * @param minor set to the running minor version (unless NULL)
@@ -985,147 +928,6 @@ zbar_processor_get_error_code(const zbar_processor_t *processor) {
 /*@}*/
 
 /*------------------------------------------------------------*/
-/** @name Video interface
- * @anchor c-video
- * mid-level video source abstraction.
- * captures images from a video device
- */
-/*@{*/
-
-struct zbar_video_s;
-/** opaque video object. */
-typedef struct zbar_video_s zbar_video_t;
-
-/** constructor. */
-extern zbar_video_t *zbar_video_create(void);
-
-/** destructor. */
-extern void zbar_video_destroy(zbar_video_t *video);
-
-/** open and probe a video device.
- * the device specified by platform specific unique name
- * (v4l device node path in *nix eg "/dev/video",
- *  DirectShow DevicePath property in windows).
- * @returns 0 if successful or -1 if an error occurs
- */
-extern int zbar_video_open(zbar_video_t *video, const char *device);
-
-/** retrieve file descriptor associated with open *nix video device
- * useful for using select()/poll() to tell when new images are
- * available (NB v4l2 only!!).
- * @returns the file descriptor or -1 if the video device is not open
- * or the driver only supports v4l1
- */
-extern int zbar_video_get_fd(const zbar_video_t *video);
-
-/** request a preferred size for the video image from the device.
- * the request may be adjusted or completely ignored by the driver.
- * @returns 0 if successful or -1 if the video device is already
- * initialized
- * @since 0.6
- */
-extern int zbar_video_request_size(zbar_video_t *video, unsigned width,
-                                   unsigned height);
-
-/** request a preferred driver interface version for debug/testing.
- * @note must be called before zbar_video_open()
- * @since 0.6
- */
-extern int zbar_video_request_interface(zbar_video_t *video, int version);
-
-/** request a preferred I/O mode for debug/testing.  You will get
- * errors if the driver does not support the specified mode.
- * @verbatim
-    0 = auto-detect
-    1 = force I/O using read()
-    2 = force memory mapped I/O using mmap()
-    3 = force USERPTR I/O (v4l2 only)
-@endverbatim
- * @note must be called before zbar_video_open()
- * @since 0.7
- */
-extern int zbar_video_request_iomode(zbar_video_t *video, int iomode);
-
-/** retrieve current output image width.
- * @returns the width or 0 if the video device is not open
- */
-extern int zbar_video_get_width(const zbar_video_t *video);
-
-/** retrieve current output image height.
- * @returns the height or 0 if the video device is not open
- */
-extern int zbar_video_get_height(const zbar_video_t *video);
-
-/** initialize video using a specific format for debug.
- * use zbar_negotiate_format() to automatically select and initialize
- * the best available format
- */
-extern int zbar_video_init(zbar_video_t *video, unsigned long format);
-
-/** start/stop video capture.
- * all buffered images are retired when capture is disabled.
- * @returns 0 if successful or -1 if an error occurs
- */
-extern int zbar_video_enable(zbar_video_t *video, int enable);
-
-/** retrieve next captured image.  blocks until an image is available.
- * @returns NULL if video is not enabled or an error occurs
- */
-extern zbar_image_t *zbar_video_next_image(zbar_video_t *video);
-
-/** set video control value (integer).
- * @returns 0 for success, non-0 for failure
- * @since 0.20
- * @see zbar_processor_set_control()
- */
-extern int zbar_video_set_control(zbar_video_t *video, const char *control_name,
-                                  int value);
-
-/** get video control value (integer).
- * @returns 0 for success, non-0 for failure
- * @since 0.20
- * @see zbar_processor_get_control()
- */
-extern int zbar_video_get_control(zbar_video_t *video, const char *control_name,
-                                  int *value);
-
-/** get available controls from video source
- * @returns 0 for success, non-0 for failure
- * @since 0.20
- */
-extern struct video_controls_s *
-zbar_video_get_controls(const zbar_video_t *video, int index);
-
-/** get available video resolutions from video source
- * @returns 0 for success, non-0 for failure
- * @since 0.22
- */
-extern struct video_resolution_s *
-zbar_video_get_resolutions(const zbar_video_t *vdo, int index);
-
-/** display detail for last video error to stderr.
- * @returns a non-zero value suitable for passing to exit()
- */
-static inline int zbar_video_error_spew(const zbar_video_t *video,
-                                        int verbosity) {
-  return (_zbar_error_spew(video, verbosity));
-}
-
-/** retrieve the detail string for the last video error. */
-static inline const char *zbar_video_error_string(const zbar_video_t *video,
-                                                  int verbosity) {
-  return (_zbar_error_string(video, verbosity));
-}
-
-/** retrieve the type code for the last video error. */
-static inline zbar_error_t
-zbar_video_get_error_code(const zbar_video_t *video) {
-  return (_zbar_get_error_code(video));
-}
-
-/*@}*/
-
-/*------------------------------------------------------------*/
 /** @name Window interface
  * @anchor c-window
  * mid-level output window abstraction.
@@ -1201,14 +1003,6 @@ static inline zbar_error_t
 zbar_window_get_error_code(const zbar_window_t *window) {
   return (_zbar_get_error_code(window));
 }
-
-/** select a compatible format between video input and output window.
- * the selection algorithm attempts to use a format shared by
- * video input and window output which is also most useful for
- * barcode scanning.  if a format conversion is necessary, it will
- * heuristically attempt to minimize the cost of the conversion
- */
-extern int zbar_negotiate_format(zbar_video_t *video, zbar_window_t *window);
 
 /*@}*/
 
@@ -1546,7 +1340,6 @@ extern zbar_color_t zbar_scanner_get_color(const zbar_scanner_t *scanner);
 #include "zbar/Processor.h"
 #include "zbar/Scanner.h"
 #include "zbar/Symbol.h"
-#include "zbar/Video.h"
 #include "zbar/Window.h"
 #endif
 

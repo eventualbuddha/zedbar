@@ -68,7 +68,6 @@ struct zbar_processor_s {
   int threaded;
 
   zbar_thread_t input_thread; /* video input handler */
-  zbar_thread_t video_thread; /* window event handler */
 
   const zbar_symbol_set_t *syms; /* previous decode results */
 
