@@ -151,22 +151,32 @@ static int load_image(const char *filename, zbar_image_t *zimage) {
     if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
       png_set_expand_gray_1_2_4_to_8(png);
 
+    // Convert RGB to grayscale
+    if (color_type & PNG_COLOR_MASK_COLOR)
+      png_set_rgb_to_gray(png, 1, -1, -1);
+
+    // Update info after transformations
+    png_read_update_info(png, info);
+
     size_t bloblen = width * height;
     unsigned char *blob = malloc(bloblen);
     zbar_image_set_format(zimage, zbar_fourcc('Y', '8', '0', '0'));
     zbar_image_set_size(zimage, width, height);
     zbar_image_set_data(zimage, blob, bloblen, zbar_image_free_data);
 
-    png_bytep row_pointers[height];
-    for (unsigned int i = 0; i < height; i += 1) {
+    png_bytep *row_pointers = malloc(height * sizeof(png_bytep));
+    for (int i = 0; i < height; i += 1) {
       row_pointers[i] = blob + i * width;
     }
 
     png_read_image(png, row_pointers);
+    free(row_pointers);
 
     fclose(fp);
 
     png_destroy_read_struct(&png, &info, NULL);
+
+    return 0;
   }
 
   return -1;
