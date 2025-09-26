@@ -674,7 +674,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
   zbar_symbol_set_t *syms;
   const uint8_t *data;
   zbar_scanner_t *scn = iscn->scn;
-  unsigned w, h, cx1, cy1;
+  unsigned w, h;
   int density;
   char filter;
   int nean, naddon;
@@ -711,10 +711,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
 
   w = img->width;
   h = img->height;
-  cx1 = img->crop_x + img->crop_w;
-  assert(cx1 <= w);
-  cy1 = img->crop_y + img->crop_h;
-  assert(cy1 <= h);
   data = img->data;
 
   zbar_scanner_new_scan(scn);
@@ -724,23 +720,19 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
     const uint8_t *p = data;
     int x = 0, y = 0;
 
-    int border = (((img->crop_h - 1) % density) + 1) / 2;
-    if (border > img->crop_h / 2)
-      border = img->crop_h / 2;
-    border += img->crop_y;
+    int border = (((img->height - 1) % density) + 1) / 2;
+    if (border > img->height / 2)
+      border = img->height / 2;
     assert(border <= h);
     iscn->dy = 0;
 
-    movedelta(img->crop_x, border);
+    movedelta(0, border);
     iscn->v = y;
 
-    while (y < cy1) {
-      int cx0 = img->crop_x;
-      ;
-      zprintf(128, "img_x+: %04d,%04d @%p\n", x, y, p);
+    while (y < h) {
       iscn->dx = iscn->du = 1;
-      iscn->umin = cx0;
-      while (x < cx1) {
+      iscn->umin = 0;
+      while (x < w) {
         uint8_t d = *p;
         movedelta(1, 0);
         zbar_scan_y(scn, d);
@@ -750,13 +742,12 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
 
       movedelta(-1, density);
       iscn->v = y;
-      if (y >= cy1)
+      if (y >= h)
         break;
 
-      zprintf(128, "img_x-: %04d,%04d @%p\n", x, y, p);
       iscn->dx = iscn->du = -1;
-      iscn->umin = cx1;
-      while (x >= cx0) {
+      iscn->umin = w;
+      while (x >= 0) {
         uint8_t d = *p;
         movedelta(-1, 0);
         zbar_scan_y(scn, d);
@@ -775,20 +766,18 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
     const uint8_t *p = data;
     int x = 0, y = 0;
 
-    int border = (((img->crop_w - 1) % density) + 1) / 2;
-    if (border > img->crop_w / 2)
-      border = img->crop_w / 2;
-    border += img->crop_x;
+    int border = (((img->width - 1) % density) + 1) / 2;
+    if (border > img->width / 2)
+      border = img->width / 2;
     assert(border <= w);
-    movedelta(border, img->crop_y);
+    movedelta(border, 0);
     iscn->v = x;
 
-    while (x < cx1) {
-      int cy0 = img->crop_y;
+    while (x < w) {
       zprintf(128, "img_y+: %04d,%04d @%p\n", x, y, p);
       iscn->dy = iscn->du = 1;
-      iscn->umin = cy0;
-      while (y < cy1) {
+      iscn->umin = 0;
+      while (y < h) {
         uint8_t d = *p;
         movedelta(0, 1);
         zbar_scan_y(scn, d);
@@ -798,13 +787,13 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
 
       movedelta(density, -1);
       iscn->v = x;
-      if (x >= cx1)
+      if (x >= w)
         break;
 
       zprintf(128, "img_y-: %04d,%04d @%p\n", x, y, p);
       iscn->dy = iscn->du = -1;
-      iscn->umin = cy1;
-      while (y >= cy0) {
+      iscn->umin = h;
+      while (y >= 0) {
         uint8_t d = *p;
         movedelta(0, -1);
         zbar_scan_y(scn, d);

@@ -70,18 +70,6 @@ void zbar_image_get_size(const zbar_image_t *img, unsigned *w, unsigned *h) {
     *h = img->height;
 }
 
-void zbar_image_get_crop(const zbar_image_t *img, unsigned *x, unsigned *y,
-                         unsigned *w, unsigned *h) {
-  if (x)
-    *x = img->crop_x;
-  if (y)
-    *y = img->crop_y;
-  if (w)
-    *w = img->crop_w;
-  if (h)
-    *h = img->crop_h;
-}
-
 const void *zbar_image_get_data(const zbar_image_t *img) { return (img->data); }
 
 unsigned long zbar_image_get_data_length(const zbar_image_t *img) {
@@ -97,29 +85,8 @@ void zbar_image_set_sequence(zbar_image_t *img, unsigned seq) {
 }
 
 void zbar_image_set_size(zbar_image_t *img, unsigned w, unsigned h) {
-  img->crop_x = img->crop_y = 0;
-  img->width = img->crop_w = w;
-  img->height = img->crop_h = h;
-}
-
-void zbar_image_set_crop(zbar_image_t *img, unsigned x, unsigned y, unsigned w,
-                         unsigned h) {
-  unsigned img_h;
-  unsigned img_w = img->width;
-  if (x > img_w)
-    x = img_w;
-  if (x + w > img_w)
-    w = img_w - x;
-  img->crop_x = x;
-  img->crop_w = w;
-
-  img_h = img->height;
-  if (y > img_h)
-    y = img_h;
-  if (y + h > img_h)
-    h = img_h - y;
-  img->crop_y = y;
-  img->crop_h = h;
+  img->width = w;
+  img->height = h;
 }
 
 inline void zbar_image_free_data(zbar_image_t *img) {
@@ -146,14 +113,6 @@ void zbar_image_set_data(zbar_image_t *img, const void *data, unsigned long len,
   img->data = data;
   img->datalen = len;
   img->cleanup = cleanup;
-}
-
-void zbar_image_set_userdata(zbar_image_t *img, void *userdata) {
-  img->userdata = userdata;
-}
-
-void *zbar_image_get_userdata(const zbar_image_t *img) {
-  return (img->userdata);
 }
 
 zbar_image_t *zbar_image_copy(const zbar_image_t *src) {

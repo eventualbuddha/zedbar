@@ -564,15 +564,6 @@ extern unsigned zbar_image_get_height(const zbar_image_t *image);
 extern void zbar_image_get_size(const zbar_image_t *image, unsigned *width,
                                 unsigned *height);
 
-/** retrieve the crop rectangle.
- * fills in the image coordinates of the upper left corner and size
- * of an axis-aligned rectangular area of the image that will be scanned.
- * defaults to the full image
- * @since 0.11
- */
-extern void zbar_image_get_crop(const zbar_image_t *image, unsigned *x,
-                                unsigned *y, unsigned *width, unsigned *height);
-
 /** return the image sample data.  the returned data buffer is only
  * valid until zbar_image_destroy() is called
  */
@@ -625,13 +616,6 @@ extern void zbar_image_set_sequence(zbar_image_t *image, unsigned sequence_num);
 extern void zbar_image_set_size(zbar_image_t *image, unsigned width,
                                 unsigned height);
 
-/** specify a rectangular region of the image to scan.
- * the rectangle will be clipped to the image boundaries.
- * defaults to the full image specified by zbar_image_set_size()
- */
-extern void zbar_image_set_crop(zbar_image_t *image, unsigned x, unsigned y,
-                                unsigned width, unsigned height);
-
 /** specify image sample data.  when image data is no longer needed by
  * the library the specific data cleanup handler will be called
  * (unless NULL)
@@ -645,16 +629,6 @@ extern void zbar_image_set_data(zbar_image_t *image, const void *data,
  * passes the image data buffer to free()
  */
 extern void zbar_image_free_data(zbar_image_t *image);
-
-/** associate user specified data value with an image.
- * @since 0.5
- */
-extern void zbar_image_set_userdata(zbar_image_t *image, void *userdata);
-
-/** return user specified data value associated with the image.
- * @since 0.5
- */
-extern void *zbar_image_get_userdata(const zbar_image_t *image);
 
 /** dump raw image data to a file for debug.
  * the data will be prefixed with a 16 byte header consisting of:
