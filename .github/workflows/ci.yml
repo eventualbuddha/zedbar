@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make libjpeg-dev libpng-dev
+
+    - name: Build library
+      run: make
+
+    - name: Test zbarimg with QR code images
+      run: |
+        echo "Testing with test-qr.png..."
+        OUTPUT_PNG=$(./zbarimg/zbarimg examples/test-qr.png)
+        EXPECTED="Hello, simplified zbar!"
+
+        if [ "$OUTPUT_PNG" != "$EXPECTED" ]; then
+          echo "Error: Unexpected output from test-qr.png"
+          echo "Expected: '$EXPECTED'"
+          echo "Got: '$OUTPUT_PNG'"
+          exit 1
+        fi
+        echo "✓ test-qr.png output verified"
+
+        echo "Testing with test-qr.jpg..."
+        OUTPUT_JPG=$(./zbarimg/zbarimg examples/test-qr.jpg)
+
+        if [ "$OUTPUT_JPG" != "$EXPECTED" ]; then
+          echo "Error: Unexpected output from test-qr.jpg"
+          echo "Expected: '$EXPECTED'"
+          echo "Got: '$OUTPUT_JPG'"
+          exit 1
+        fi
+        echo "✓ test-qr.jpg output verified"
+
+        echo "All tests passed!"
