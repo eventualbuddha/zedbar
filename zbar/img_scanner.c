@@ -154,7 +154,7 @@ void _zbar_image_scanner_recycle_syms(zbar_image_scanner_t *iscn,
         sym->syms = NULL;
       }
       for (i = 0; i < RECYCLE_BUCKETS; i++)
-        if (sym->data_alloc < 1 << (i * 2))
+        if ((int)sym->data_alloc < (1 << (i * 2)))
           break;
       if (i == RECYCLE_BUCKETS) {
         assert(sym->data);
@@ -246,7 +246,7 @@ inline zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
 
   if (datalen > 0) {
     sym->datalen = datalen - 1;
-    if (sym->data_alloc < datalen) {
+    if (sym->data_alloc < (unsigned)datalen) {
       if (sym->data)
         free(sym->data);
       sym->data_alloc = datalen;
@@ -722,18 +722,18 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
     int x = 0, y = 0;
 
     int border = (((img->height - 1) % density) + 1) / 2;
-    if (border > img->height / 2)
+    if ((unsigned)border > img->height / 2)
       border = img->height / 2;
-    assert(border <= h);
+    assert((unsigned)border <= h);
     iscn->dy = 0;
 
     movedelta(0, border);
     iscn->v = y;
 
-    while (y < h) {
+    while ((unsigned)y < h) {
       iscn->dx = iscn->du = 1;
       iscn->umin = 0;
-      while (x < w) {
+      while ((unsigned)x < w) {
         uint8_t d = *p;
         movedelta(1, 0);
         zbar_scan_y(scn, d);
@@ -743,7 +743,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
 
       movedelta(-1, density);
       iscn->v = y;
-      if (y >= h)
+      if ((unsigned)y >= h)
         break;
 
       iscn->dx = iscn->du = -1;
@@ -768,17 +768,17 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
     int x = 0, y = 0;
 
     int border = (((img->width - 1) % density) + 1) / 2;
-    if (border > img->width / 2)
+    if ((unsigned)border > img->width / 2)
       border = img->width / 2;
-    assert(border <= w);
+    assert((unsigned)border <= w);
     movedelta(border, 0);
     iscn->v = x;
 
-    while (x < w) {
+    while ((unsigned)x < w) {
       zprintf(128, "img_y+: %04d,%04d @%p\n", x, y, p);
       iscn->dy = iscn->du = 1;
       iscn->umin = 0;
-      while (y < h) {
+      while ((unsigned)y < h) {
         uint8_t d = *p;
         movedelta(0, 1);
         zbar_scan_y(scn, d);
@@ -788,7 +788,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img) {
 
       movedelta(density, -1);
       iscn->v = x;
-      if (x >= w)
+      if ((unsigned)x >= w)
         break;
 
       zprintf(128, "img_y-: %04d,%04d @%p\n", x, y, p);

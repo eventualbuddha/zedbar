@@ -19,42 +19,42 @@ static void isaac_update(isaac_ctx *_ctx)
     m = _ctx->m;
     r = _ctx->r;
     a = _ctx->a;
-    b = _ctx->b + (++_ctx->c) & ISAAC_MASK;
+    b = (_ctx->b + (++_ctx->c)) & ISAAC_MASK;
     for (i = 0; i < ISAAC_SZ / 2; i++) {
 	x    = m[i];
-	a    = (a ^ a << 13) + m[i + ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a    = ((a ^ (a << 13)) + m[i + ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
 	x	 = m[++i];
-	a	 = (a ^ a >> 6) + m[i + ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a	 = ((a ^ (a >> 6)) + m[i + ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
 	x	 = m[++i];
-	a	 = (a ^ a << 2) + m[i + ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a	 = ((a ^ (a << 2)) + m[i + ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
 	x	 = m[++i];
-	a	 = (a ^ a >> 16) + m[i + ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a	 = ((a ^ (a >> 16)) + m[i + ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
     }
     for (i = ISAAC_SZ / 2; i < ISAAC_SZ; i++) {
 	x    = m[i];
-	a    = (a ^ a << 13) + m[i - ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a    = ((a ^ (a << 13)) + m[i - ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
 	x	 = m[++i];
-	a	 = (a ^ a >> 6) + m[i - ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a	 = ((a ^ (a >> 6)) + m[i - ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
 	x	 = m[++i];
-	a	 = (a ^ a << 2) + m[i - ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a	 = ((a ^ (a << 2)) + m[i - ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
 	x	 = m[++i];
-	a	 = (a ^ a >> 16) + m[i - ISAAC_SZ / 2] & ISAAC_MASK;
-	m[i] = y = m[(x & ISAAC_SZ - 1 << 2) >> 2] + a + b & ISAAC_MASK;
-	r[i] = b = m[y >> ISAAC_SZ_LOG + 2 & ISAAC_SZ - 1] + x & ISAAC_MASK;
+	a	 = ((a ^ (a >> 16)) + m[i - ISAAC_SZ / 2]) & ISAAC_MASK;
+	m[i] = y = (m[(x & ((ISAAC_SZ - 1) << 2)) >> 2] + a + b) & ISAAC_MASK;
+	r[i] = b = (m[(y >> (ISAAC_SZ_LOG + 2)) & (ISAAC_SZ - 1)] + x) & ISAAC_MASK;
     }
     _ctx->b = b;
     _ctx->a = a;
@@ -66,13 +66,13 @@ static void isaac_mix(unsigned _x[8])
     static const unsigned char SHIFT[8] = { 11, 2, 8, 16, 10, 4, 8, 9 };
     int i;
     for (i = 0; i < 8; i++) {
-	_x[i] ^= _x[i + 1 & 7] << SHIFT[i];
-	_x[i + 3 & 7] += _x[i];
-	_x[i + 1 & 7] += _x[i + 2 & 7];
+	_x[i] ^= _x[(i + 1) & 7] << SHIFT[i];
+	_x[(i + 3) & 7] += _x[i];
+	_x[(i + 1) & 7] += _x[(i + 2) & 7];
 	i++;
-	_x[i] ^= _x[i + 1 & 7] >> SHIFT[i];
-	_x[i + 3 & 7] += _x[i];
-	_x[i + 1 & 7] += _x[i + 2 & 7];
+	_x[i] ^= _x[(i + 1) & 7] >> SHIFT[i];
+	_x[(i + 3) & 7] += _x[i];
+	_x[(i + 1) & 7] += _x[(i + 2) & 7];
     }
 }
 
@@ -94,13 +94,13 @@ void isaac_init(isaac_ctx *_ctx, const void *_seed, int _nseed)
 	_nseed = ISAAC_SEED_SZ_MAX;
     seed = (const unsigned char *)_seed;
     for (i = 0; i < (_nseed >> 2); i++) {
-	r[i] = seed[i << 2 | 3] << 24 | seed[i << 2 | 2] << 16 |
-	       seed[i << 2 | 1] << 8 | seed[i << 2];
+	r[i] = (seed[(i << 2) | 3] << 24) | (seed[(i << 2) | 2] << 16) |
+	       (seed[(i << 2) | 1] << 8) | seed[i << 2];
     }
     if (_nseed & 3) {
 	r[i] = seed[i << 2];
 	for (j = 1; j < (_nseed & 3); j++)
-	    r[i] += seed[i << 2 | j] << (j << 3);
+	    r[i] += seed[(i << 2) | j] << (j << 3);
 	i++;
     }
     memset(r + i, 0, (ISAAC_SZ - i) * sizeof(*r));
@@ -140,6 +140,6 @@ unsigned isaac_next_uint(isaac_ctx *_ctx, unsigned _n)
 	r = isaac_next_uint32(_ctx);
 	v = r % _n;
 	d = r - v;
-    } while ((d + _n - 1 & ISAAC_MASK) < d);
+    } while (((d + _n - 1) & ISAAC_MASK) < d);
     return v;
 }

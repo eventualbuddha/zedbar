@@ -141,6 +141,7 @@ static inline unsigned calc_thresh(zbar_scanner_t *scn) {
 }
 
 static inline zbar_symbol_type_t process_edge(zbar_scanner_t *scn, int y1) {
+  (void)y1;
   if (!scn->y1_sign)
     scn->last_edge = scn->cur_edge = (1 << ZBAR_FIXED) + ROUND;
   else if (!scn->last_edge)
@@ -269,6 +270,7 @@ zbar_symbol_type_t zbar_scan_y(zbar_scanner_t *scn, int y) {
 void zbar_scanner_get_state(const zbar_scanner_t *scn, unsigned *x,
                             unsigned *cur_edge, unsigned *last_edge, int *y0,
                             int *y1, int *y2, int *y1_thresh) {
+  (void)cur_edge;
   register int y0_0 = scn->y0[(scn->x - 1) & 3];
   register int y0_1 = scn->y0[(scn->x - 2) & 3];
   register int y0_2 = scn->y0[(scn->x - 3) & 3];

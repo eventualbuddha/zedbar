@@ -562,7 +562,7 @@ found_start:;
 		2;
 
 	    if (is_black_color(mixed_color))
-		buf[idx / 8] |= 1 << 7 - idx % 8;
+		buf[idx / 8] |= 1 << (7 - (idx % 8));
 	    idx++;
 	}
     }

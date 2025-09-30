@@ -401,7 +401,7 @@ static inline int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
     }
 
     i = buf - dcode->buf;
-    zassert(i < dcode->buf_alloc, -1, "i=%02x %s\n", i,
+    zassert((int)i < (int)dcode->buf_alloc, -1, "i=%02x %s\n", i,
 	    _zbar_decoder_buf_dump(dcode->buf, i));
 
     *buf	  = 0;
@@ -509,7 +509,7 @@ static inline void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
 {
     unsigned csegs = db->csegs;
     int i;
-    for (i = 0; i < csegs; i++) {
+    for (i = 0; (int)i < (int)csegs; i++) {
 	databar_segment_t *s = db->segs + i;
 	if (s != seg && s->finder == seg->finder && s->exp == seg->exp &&
 	    s->color == seg->color && s->side == seg->side &&
@@ -547,7 +547,7 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
     if (seg->partial && seg->count < 4)
 	return (ZBAR_PARTIAL);
 
-    for (i0 = 0; i0 < csegs; i0++) {
+    for (i0 = 0; (int)i0 < (int)csegs; i0++) {
 	databar_segment_t *s0 = db->segs + i0;
 	if (s0 == seg || s0->finder != seg->finder || s0->exp ||
 	    s0->color != seg->color || s0->side == seg->side ||
@@ -555,7 +555,7 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 	    !check_width(seg->width, s0->width, 14))
 	    continue;
 
-	for (i1 = 0; i1 < csegs; i1++) {
+	for (i1 = 0; (int)i1 < (int)csegs; i1++) {
 	    databar_segment_t *s1 = db->segs + i1;
 	    int chkf, chks, chk;
 	    unsigned age1;
@@ -587,7 +587,7 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 	    age1 = (((db->epoch - s0->epoch) & 0xff) +
 		    ((db->epoch - s1->epoch) & 0xff));
 
-	    for (i2 = i1 + 1; i2 < csegs; i2++) {
+	    for (i2 = i1 + 1; (int)i2 < (int)csegs; i2++) {
 		databar_segment_t *s2 = db->segs + i2;
 		unsigned cnt, age2, age;
 		if (i2 == i0 || s2->finder != s1->finder || s2->exp ||
@@ -599,7 +599,7 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 		age  = age1 + age2;
 		cnt  = s0->count + s1->count + s2->count;
 		dbprintf(2, " [%d] MATCH cnt=%d age=%d", i2, cnt, age);
-		if (maxcnt < cnt || (maxcnt == cnt && maxage > age)) {
+		if (maxcnt < (int)cnt || (maxcnt == (int)cnt && (int)maxage > (int)age)) {
 		    maxcnt  = cnt;
 		    maxage  = age;
 		    smax[0] = s0;
@@ -714,14 +714,14 @@ match_segment_exp(zbar_decoder_t *dcode, databar_segment_t *seg, int dir)
 		} else
 		    continue;
 	    } else {
-		for (j = segs[i] + 1; j < csegs; j++) {
+		for (j = segs[i] + 1; (int)j < (int)csegs; j++) {
 		    if (iseg[j] == seq[i] &&
 			(!i || check_width(width, db->segs[j].width, 14))) {
 			seg = db->segs + j;
 			break;
 		    }
 		}
-		if (j == csegs)
+		if ((int)j == (int)csegs)
 		    continue;
 	    }
 
@@ -766,7 +766,7 @@ match_segment_exp(zbar_decoder_t *dcode, databar_segment_t *seg, int dir)
 	    continue;
 
 	dbprintf(2, " cnt=%d age=%d", cnt, age);
-	if (maxcnt > cnt || (maxcnt == cnt && maxage <= age))
+	if (maxcnt > (int)cnt || (maxcnt == (int)cnt && (int)maxage <= (int)age))
 	    continue;
 
 	dbprintf(2, " !");
@@ -980,7 +980,7 @@ decode_char(zbar_decoder_t *dcode, databar_segment_t *seg, int off, int dir)
 
     dbprintf(2, " sum=%d/%d", sum0, sum1);
 
-    if (sum0 + sum1 + 8 != n) {
+    if ((int)(sum0 + sum1 + 8) != (int)n) {
 	dbprintf(2, " [SUM]");
 	return (ZBAR_NONE);
     }
@@ -991,7 +991,7 @@ decode_char(zbar_decoder_t *dcode, databar_segment_t *seg, int off, int dir)
     }
 
     i = ((n & 0x3) ^ 1) * 5 + (sum1 >> 1);
-    zassert(i < sizeof(groups) / sizeof(*groups), -1,
+    zassert((size_t)i < sizeof(groups) / sizeof(*groups), -1,
 	    "n=%d sum=%d/%d sig=%04x/%04x g=%d", n, sum0, sum1, sig0, sig1, i);
     g = groups + i;
     dbprintf(2, "\n            g=%d(%d,%d,%d/%d)", i, g->sum, g->wmax, g->todd,
@@ -1054,7 +1054,7 @@ static inline int alloc_segment(databar_decoder_t *db)
 {
     unsigned maxage = 0, csegs = db->csegs;
     int i, old		       = -1;
-    for (i = 0; i < csegs; i++) {
+    for (i = 0; (int)i < (int)csegs; i++) {
 	databar_segment_t *seg = db->segs + i;
 	unsigned age;
 	if (seg->finder < 0) {
@@ -1093,7 +1093,7 @@ static inline int alloc_segment(databar_decoder_t *db)
 	    db->segs  = realloc(db->segs, csegs * sizeof(*db->segs));
 	    db->csegs = csegs;
 	    seg	      = db->segs + csegs;
-	    while (--seg, --csegs >= i) {
+	    while (--seg, (int)(--csegs) >= i) {
 		seg->finder  = -1;
 		seg->exp     = 0;
 		seg->color   = 0;
@@ -1160,7 +1160,7 @@ static inline zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode)
 	!TEST_CFG((finder < 9) ? db->config : db->config_exp, ZBAR_CFG_ENABLE))
 	return (ZBAR_NONE);
 
-    zassert(finder >= 0, ZBAR_NONE, "dir=%d sig=%04x f=%d\n", dir, sig & 0xfff,
+    zassert((signed)finder >= 0, ZBAR_NONE, "dir=%d sig=%04x f=%d\n", dir, sig & 0xfff,
 	    finder);
 
     iseg = alloc_segment(db);

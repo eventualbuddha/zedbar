@@ -677,7 +677,7 @@ static inline void postprocess(zbar_decoder_t *dcode, zbar_symbol_type_t sym)
 	     !TEST_CFG(ean_get_config(ean, sym), ZBAR_CFG_EMIT_CHECK)))
 	    base--;
 
-	for (; j < base && ean->buf[i] >= 0; i++, j++)
+	for (; j < (int)base && ean->buf[i] >= 0; i++, j++)
 	    dcode->buf[j] = ean->buf[i] + '0';
 
 	if (sym == ZBAR_ISBN10 && j == 9 &&

@@ -20,7 +20,7 @@ unsigned qr_isqrt(unsigned _val)
     b = 0x8000;
     for (bshift = 16; bshift-- > 0;) {
 	unsigned t;
-	t = (g << 1) + b << bshift;
+	t = ((g << 1) + b) << bshift;
 	if (t <= _val) {
 	    g += b;
 	    _val -= t;
@@ -61,23 +61,23 @@ unsigned qr_ihypot(int _x, int _y)
     _y	  = (int)((_y << shift) * 0x9B74EDA9LL >> 32);
     u	  = x;
     mask  = -(_y < 0);
-    x += _y + mask ^ mask;
-    _y -= u + mask ^ mask;
-    u	 = x + 1 >> 1;
-    v	 = _y + 1 >> 1;
+    x += (_y + mask) ^ mask;
+    _y -= (u + mask) ^ mask;
+    u	 = (x + 1) >> 1;
+    v	 = (_y + 1) >> 1;
     mask = -(_y < 0);
-    x += v + mask ^ mask;
-    _y -= u + mask ^ mask;
+    x += (v + mask) ^ mask;
+    _y -= (u + mask) ^ mask;
     for (i = 1; i < 16; i++) {
 	int r;
-	u    = x + 1 >> 2;
-	r    = (1 << 2 * i) >> 1;
-	v    = _y + r >> 2 * i;
+	u    = (x + 1) >> 2;
+	r    = (1 << (2 * i)) >> 1;
+	v    = (_y + r) >> (2 * i);
 	mask = -(_y < 0);
-	x += v + mask ^ mask;
-	_y = _y - (u + mask ^ mask) << 1;
+	x += (v + mask) ^ mask;
+	_y = (_y - ((u + mask) ^ mask)) << 1;
     }
-    return x + ((1U << shift) >> 1) >> shift;
+    return (x + ((1U << shift) >> 1)) >> shift;
 }
 
 #if defined(__GNUC__) && defined(HAVE_FEATURES_H)

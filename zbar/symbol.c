@@ -72,7 +72,10 @@ const char *zbar_get_symbol_name(zbar_symbol_type_t sym) {
   }
 }
 
-const char *zbar_get_addon_name(zbar_symbol_type_t sym) { return (""); }
+const char *zbar_get_addon_name(zbar_symbol_type_t sym) {
+  (void)sym;
+  return ("");
+}
 
 const char *zbar_get_config_name(zbar_config_t cfg) {
   switch (cfg) {
@@ -130,6 +133,8 @@ const char *zbar_get_orientation_name(zbar_orientation_t orient) {
 }
 
 #ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverride-init"
 static const signed char _zbar_symbol_hash[ZBAR_CODE128 + 1] = {
     [0 ... ZBAR_CODE128] = -1,
 
@@ -155,6 +160,7 @@ static const signed char _zbar_symbol_hash[ZBAR_CODE128 + 1] = {
 
     /* Please update NUM_SYMS accordingly */
 };
+#pragma GCC diagnostic pop
 
 static const signed char *_init_hash() { return _zbar_symbol_hash; };
 #else
@@ -327,7 +333,7 @@ enum {
     i = strlen(_st);                                                           \
     memcpy(*buf + n, _st, i + 1);                                              \
     n += i;                                                                    \
-    assert(n <= maxlen);                                                       \
+    assert((int)n <= (int)maxlen);                                                       \
   } while (0)
 
 #define TMPL_FMT(t, ...)                                                       \
@@ -336,7 +342,7 @@ enum {
     i = snprintf(*buf + n, maxlen - n, _st, __VA_ARGS__);                      \
     assert(i > 0);                                                             \
     n += i;                                                                    \
-    assert(n <= maxlen);                                                       \
+    assert((int)n <= (int)maxlen);                                                       \
   } while (0)
 
 char *zbar_symbol_xml(const zbar_symbol_t *sym, char **buf, unsigned *len) {
@@ -352,11 +358,11 @@ char *zbar_symbol_xml(const zbar_symbol_t *sym, char **buf, unsigned *len) {
   char binary =
       ((data[0] == 0xff && data[1] == 0xfe) ||
        (data[0] == 0xfe && data[1] == 0xff) || !strncmp(sym->data, "<?xml", 5));
-  for (i = 0; !binary && i < sym->datalen; i++) {
+  for (i = 0; !binary && (unsigned)i < sym->datalen; i++) {
     unsigned char c = sym->data[i];
     binary =
         ((c < 0x20 && ((~0x00002600 >> c) & 1)) || (c >= 0x7f && c < 0xa0) ||
-         (c == ']' && i + 2 < sym->datalen && sym->data[i + 1] == ']' &&
+         (c == ']' && (unsigned)(i + 2) < sym->datalen && sym->data[i + 1] == ']' &&
           sym->data[i + 2] == '>'));
   }
 
@@ -414,7 +420,7 @@ char *zbar_symbol_xml(const zbar_symbol_t *sym, char **buf, unsigned *len) {
   TMPL_COPY("><polygon points='");
   if (sym->npts > 0)
     TMPL_FMT("%+d,%+d", sym->pts[0].x, sym->pts[0].y);
-  for (p = 1; p < sym->npts; p++)
+  for (p = 1; (unsigned)p < sym->npts; p++)
     TMPL_FMT(" %+d,%+d", sym->pts[p].x, sym->pts[p].y);
 
   TMPL_COPY("'/><data");
@@ -429,7 +435,7 @@ char *zbar_symbol_xml(const zbar_symbol_t *sym, char **buf, unsigned *len) {
     TMPL_COPY("\n");
     n += base64_encode(*buf + n, sym->data, sym->datalen);
   }
-  assert(n <= maxlen);
+  assert((unsigned)n <= maxlen);
 
   TMPL_COPY("]]></data></symbol>");
 
