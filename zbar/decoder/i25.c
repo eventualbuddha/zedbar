@@ -188,7 +188,7 @@ static inline signed char i25_decode_end(zbar_decoder_t *dcode)
 	return (ZBAR_NONE);
     }
 
-    zassert(dcode25->character < dcode->buf_alloc, ZBAR_NONE, "i=%02x %s\n",
+    zassert(dcode25->character < (int)dcode->buf_alloc, ZBAR_NONE, "i=%02x %s\n",
 	    dcode25->character,
 	    _zbar_decoder_buf_dump(dcode->buf, dcode25->character));
     dcode->buflen		   = dcode25->character;

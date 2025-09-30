@@ -70,7 +70,7 @@ static unsigned rs_gsqrt(const rs_gf256 *_gf, unsigned _a)
     if (!_a)
 	return 0;
     loga = _gf->log[_a];
-    return _gf->exp[loga + (255 & -(loga & 1)) >> 1];
+    return _gf->exp[(loga + (255 & -(loga & 1))) >> 1];
 }
 
 /*Polynomial root finding in GF(2**8).
@@ -218,7 +218,7 @@ static int rs_cubic_solve(const rs_gf256 *_gf, unsigned _a, unsigned _b,
 	return 3;
     }
     logd2 = _gf->log[d2];
-    logd  = logd2 + (255 & -(logd2 & 1)) >> 1;
+    logd  = (logd2 + (255 & -(logd2 & 1))) >> 1;
     k	  = rs_gdiv(_gf, k, _gf->exp[logd + logd2]);
     /*Substitute y=w+1/w and z=w**3 to get z**2 + k*z + 1 == 0.*/
     nroots = rs_quadratic_solve(_gf, k, 1, _x);
@@ -323,7 +323,7 @@ static int rs_quartic_solve(const rs_gf256 *_gf, unsigned _a, unsigned _b,
         }*/
 	    nroots = rs_quadratic_solve(_gf, _a, _b ^ r, _x);
 	    /*s may be a triple root if s=_b/_a, but not quadruple, since _a!=0.*/
-	    if (nroots != 2 || _x[0] != s && _x[1] != s)
+	    if (nroots != 2 || (_x[0] != s && _x[1] != s))
 		_x[nroots++] = s;
 	}
 	return nroots;
@@ -591,7 +591,7 @@ int rs_correct(const rs_gf256 *_gf, int _m0, unsigned char *_data, int _ndata,
        zero, and must have a decoding error.
       Conversely, if we have too many errors, there's no reason to even attempt
        the root search.*/
-	    if (nerrors <= 0 || nerrors - _nerasures > _npar - _nerasures >> 1)
+	    if (nerrors <= 0 || nerrors - _nerasures > ((_npar - _nerasures) >> 1))
 		return -1;
 	    /*Compute the locations of the errors.
       If they are not all distinct, or some of them were outside the valid

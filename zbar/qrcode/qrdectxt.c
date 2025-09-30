@@ -180,8 +180,10 @@ int qr_code_data_list_extract_text(const qr_code_data_list *_qrlist,
             I believe this is true for all the encodings we actually use.*/
 			case QR_MODE_KANJI:
 			    has_kanji = 1;
+		    __attribute__((fallthrough));
 			case QR_MODE_BYTE:
 			    shift = 2;
+		    __attribute__((fallthrough));
 			default: {
 			    /*The remaining two modes are already valid UTF-8.*/
 			    if (QR_MODE_HAS_DATA(entry->mode)) {
@@ -520,7 +522,7 @@ int qr_code_data_list_extract_text(const qr_code_data_list *_qrlist,
 			if (syms->type == ZBAR_PARTIAL)
 			    sa_sym->type = ZBAR_PARTIAL;
 			else
-			    for (j = 0; j < syms->npts; j++) {
+			    for (j = 0; j < (int)syms->npts; j++) {
 				int u = syms->pts[j].x;
 				if (xmin >= u)
 				    xmin = u - 1;
@@ -534,7 +536,7 @@ int qr_code_data_list_extract_text(const qr_code_data_list *_qrlist,
 			    }
 			syms->data = sa_text + syms->datalen;
 			next = (syms->next) ? syms->next->datalen : sa_ntext;
-			if (next > syms->datalen)
+			if ((unsigned)next > syms->datalen)
 			    syms->datalen = next - syms->datalen - 1;
 			else {
 			    zprintf(

@@ -184,8 +184,8 @@ static inline zbar_symbol_type_t check_stop(zbar_decoder_t *dcode)
     code93_decoder_t *dcode93 = &dcode->code93;
     unsigned n = dcode93->character, s = dcode->s6;
     int max_len = CFG(*dcode93, ZBAR_CFG_MAX_LEN);
-    if (n < 2 || n < CFG(*dcode93, ZBAR_CFG_MIN_LEN) ||
-	(max_len && n > max_len))
+    if ((int)n < 2 || (int)n < CFG(*dcode93, ZBAR_CFG_MIN_LEN) ||
+	(max_len && (int)n > max_len))
 	return (decode_abort(dcode, "invalid len"));
 
     if (dcode93->direction) {

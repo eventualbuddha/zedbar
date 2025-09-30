@@ -88,6 +88,7 @@ zbar_error_t _zbar_get_error_code(const void *container) {
  */
 
 const char *_zbar_error_string(const void *container, int verbosity) {
+  (void)verbosity;
   static const char basefmt[] = "%s: zbar %s in %s():\n    %s: ";
   errinfo_t *err = (errinfo_t *)container;
   const char *sev, *mod, *func, *type;

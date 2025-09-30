@@ -53,13 +53,13 @@ static int bch15_5_calc_syndrome(unsigned _s[3], unsigned _y)
     p	  = 0;
     for (i = 0; i < 3; i++)
 	for (j = 0; j < 5; j++)
-	    if (_y & 1 << 5 * i + j)
+	    if (_y & (1 << (5 * i + j)))
 		p ^= gf16_exp[j * 3];
     _s[1] = p;
     p	  = 0;
     for (i = 0; i < 5; i++)
 	for (j = 0; j < 3; j++)
-	    if (_y & 1 << 3 * i + j)
+	    if (_y & (1 << (3 * i + j)))
 		p ^= gf16_exp[j * 5];
     _s[2] = p;
     return _s[0] != 0 || _s[1] != 0 || _s[2] != 0;

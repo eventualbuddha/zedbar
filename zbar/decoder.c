@@ -503,11 +503,11 @@ static char *decoder_dump = NULL;
 static unsigned decoder_dumplen = 0;
 
 const char *_zbar_decoder_buf_dump(unsigned char *buf, unsigned int buflen) {
-  int dumplen = (buflen * 3) + 12;
+  unsigned int dumplen = (buflen * 3) + 12;
   char *p;
-  int i;
+  unsigned int i;
 
-  if (!decoder_dump || dumplen > decoder_dumplen) {
+  if (!decoder_dump || dumplen > (unsigned int)decoder_dumplen) {
     if (decoder_dump)
       free(decoder_dump);
     decoder_dump = malloc(dumplen);
