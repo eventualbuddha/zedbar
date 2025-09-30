@@ -103,8 +103,8 @@ static inline signed char i25_decode_start(zbar_decoder_t *dcode)
     enc = i25_decode1(enc, get_width(dcode, i++), dcode25->s10);
 
     if ((get_color(dcode) == ZBAR_BAR) ?
-		  enc != 4 :
-		  (enc = i25_decode1(enc, get_width(dcode, i++), dcode25->s10))) {
+	    enc != 4 :
+	    (enc = i25_decode1(enc, get_width(dcode, i++), dcode25->s10))) {
 	dbprintf(4, "      i25: s=%d enc=%x [invalid]\n", dcode25->s10, enc);
 	return (ZBAR_NONE);
     }
@@ -159,8 +159,8 @@ static inline signed char i25_decode_end(zbar_decoder_t *dcode)
     /* check exit condition */
     E = decode_e(get_width(dcode, 3), dcode25->width, 45);
     if ((!dcode25->direction) ?
-		  E - 3 > 4 :
-		  (E > 2 || decode_e(get_width(dcode, 4), dcode25->width, 45) > 2))
+	    E - 3 > 4 :
+	    (E > 2 || decode_e(get_width(dcode, 4), dcode25->width, 45) > 2))
 	return (ZBAR_NONE);
 
     if (dcode25->character <= 4 && i25_acquire_lock(dcode))
@@ -188,8 +188,8 @@ static inline signed char i25_decode_end(zbar_decoder_t *dcode)
 	return (ZBAR_NONE);
     }
 
-    zassert(dcode25->character < (int)dcode->buf_alloc, ZBAR_NONE, "i=%02x %s\n",
-	    dcode25->character,
+    zassert(dcode25->character < (int)dcode->buf_alloc, ZBAR_NONE,
+	    "i=%02x %s\n", dcode25->character,
 	    _zbar_decoder_buf_dump(dcode->buf, dcode25->character));
     dcode->buflen		   = dcode25->character;
     dcode->buf[dcode25->character] = '\0';

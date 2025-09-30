@@ -591,7 +591,8 @@ int rs_correct(const rs_gf256 *_gf, int _m0, unsigned char *_data, int _ndata,
        zero, and must have a decoding error.
       Conversely, if we have too many errors, there's no reason to even attempt
        the root search.*/
-	    if (nerrors <= 0 || nerrors - _nerasures > ((_npar - _nerasures) >> 1))
+	    if (nerrors <= 0 ||
+		nerrors - _nerasures > ((_npar - _nerasures) >> 1))
 		return -1;
 	    /*Compute the locations of the errors.
       If they are not all distinct, or some of them were outside the valid

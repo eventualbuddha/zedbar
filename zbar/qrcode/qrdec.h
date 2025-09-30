@@ -12,8 +12,7 @@ typedef struct qr_code_data_entry qr_code_data_entry;
 typedef struct qr_code_data qr_code_data;
 typedef struct qr_code_data_list qr_code_data_list;
 
-typedef enum qr_mode
-{
+typedef enum qr_mode {
     /*Numeric digits ('0'...'9').*/
     QR_MODE_NUM = 1,
     /*Alphanumeric characters ('0'...'9', 'A'...'Z', plus the punctuation
@@ -40,11 +39,10 @@ typedef enum qr_mode
 
 /*Check if a mode has a data buffer associated with it.
   Currently this is only modes with exactly one bit set.*/
-#define QR_MODE_HAS_DATA(_mode) (!((_mode) & ((_mode)-1)))
+#define QR_MODE_HAS_DATA(_mode) (!((_mode) & ((_mode) - 1)))
 
 /*ECI may be used to signal a character encoding for the data.*/
-typedef enum qr_eci_encoding
-{
+typedef enum qr_eci_encoding {
     /*GLI0 is like CP437, but the encoding is reset at the beginning of each
      structured append symbol.*/
     QR_ECI_GLI0,

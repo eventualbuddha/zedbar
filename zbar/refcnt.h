@@ -33,22 +33,24 @@ typedef int refcnt_t;
 
 extern pthread_mutex_t _zbar_reflock;
 
-static inline int _zbar_refcnt(refcnt_t *cnt, int delta) {
-  pthread_mutex_lock(&_zbar_reflock);
-  int rc = (*cnt += delta);
-  pthread_mutex_unlock(&_zbar_reflock);
-  assert(rc >= 0);
-  return (rc);
+static inline int _zbar_refcnt(refcnt_t *cnt, int delta)
+{
+    pthread_mutex_lock(&_zbar_reflock);
+    int rc = (*cnt += delta);
+    pthread_mutex_unlock(&_zbar_reflock);
+    assert(rc >= 0);
+    return (rc);
 }
 
 #else
 
 typedef int refcnt_t;
 
-static inline int _zbar_refcnt(refcnt_t *cnt, int delta) {
-  int rc = (*cnt += delta);
-  assert(rc >= 0);
-  return (rc);
+static inline int _zbar_refcnt(refcnt_t *cnt, int delta)
+{
+    int rc = (*cnt += delta);
+    assert(rc >= 0);
+    return (rc);
 }
 
 #endif

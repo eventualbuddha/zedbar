@@ -25,10 +25,10 @@
 
 /* state of each parallel decode attempt */
 typedef struct ean_pass_s {
-    signed char state;	 /* module position of w[idx] in symbol */
-#define STATE_REV   0x80 /*   scan direction reversed */
-#define STATE_ADDON 0x40 /*   scanning add-on */
-#define STATE_IDX   0x3f /*   element offset into symbol */
+    signed char state;	  /* module position of w[idx] in symbol */
+#define STATE_REV   0x80  /*   scan direction reversed */
+#define STATE_ADDON 0x40  /*   scanning add-on */
+#define STATE_IDX   0x3f  /*   element offset into symbol */
     unsigned width;	  /* width of last character */
     unsigned char raw[7]; /* decode in process */
 } ean_pass_t;

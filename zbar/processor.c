@@ -22,126 +22,142 @@
  *------------------------------------------------------------------------*/
 
 #include "config.h"
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include "processor.h"
 
-zbar_processor_t *zbar_processor_create(int threaded) {
-  (void)threaded;
-  zbar_processor_t *proc = calloc(1, sizeof(zbar_processor_t));
-  if (!proc)
-    return (NULL);
+zbar_processor_t *zbar_processor_create(int threaded)
+{
+    (void)threaded;
+    zbar_processor_t *proc = calloc(1, sizeof(zbar_processor_t));
+    if (!proc)
+	return (NULL);
 
-  err_init(&proc->err, ZBAR_MOD_PROCESSOR);
+    err_init(&proc->err, ZBAR_MOD_PROCESSOR);
 
-  proc->scanner = zbar_image_scanner_create();
-  if (!proc->scanner) {
+    proc->scanner = zbar_image_scanner_create();
+    if (!proc->scanner) {
+	free(proc);
+	return (NULL);
+    }
+
+    return (proc);
+}
+
+void zbar_processor_destroy(zbar_processor_t *proc)
+{
+    if (!proc)
+	return;
+
+    if (proc->syms) {
+	zbar_symbol_set_ref(proc->syms, -1);
+	proc->syms = NULL;
+    }
+
+    if (proc->scanner) {
+	zbar_image_scanner_destroy(proc->scanner);
+	proc->scanner = NULL;
+    }
+
     free(proc);
-    return (NULL);
-  }
-
-  return (proc);
 }
 
-void zbar_processor_destroy(zbar_processor_t *proc) {
-  if (!proc)
-    return;
-
-  if (proc->syms) {
-    zbar_symbol_set_ref(proc->syms, -1);
-    proc->syms = NULL;
-  }
-  
-  if (proc->scanner) {
-    zbar_image_scanner_destroy(proc->scanner);
-    proc->scanner = NULL;
-  }
-
-  free(proc);
+int zbar_processor_init(zbar_processor_t *proc, const char *dev,
+			int enable_display)
+{
+    (void)proc;
+    (void)dev;
+    (void)enable_display;
+    // Simplified init - no device or display support needed for zbarimg
+    return 0;
 }
 
-int zbar_processor_init(zbar_processor_t *proc, const char *dev, int enable_display) {
-  (void)proc;
-  (void)dev;
-  (void)enable_display;
-  // Simplified init - no device or display support needed for zbarimg
-  return 0;
-}
+int zbar_process_image(zbar_processor_t *proc, zbar_image_t *img)
+{
+    if (!proc || !img)
+	return -1;
 
-int zbar_process_image(zbar_processor_t *proc, zbar_image_t *img) {
-  if (!proc || !img)
-    return -1;
+    // Clean up previous results
+    if (proc->syms) {
+	zbar_symbol_set_ref(proc->syms, -1);
+	proc->syms = NULL;
+    }
 
-  // Clean up previous results
-  if (proc->syms) {
-    zbar_symbol_set_ref(proc->syms, -1);
-    proc->syms = NULL;
-  }
+    // Process the image
+    zbar_image_scanner_recycle_image(proc->scanner, img);
+    int nsyms = zbar_scan_image(proc->scanner, img);
 
-  // Process the image
-  zbar_image_scanner_recycle_image(proc->scanner, img);
-  int nsyms = zbar_scan_image(proc->scanner, img);
+    if (nsyms < 0)
+	return nsyms;
 
-  if (nsyms < 0)
+    // Store results
+    proc->syms = zbar_image_scanner_get_results(proc->scanner);
+    if (proc->syms)
+	zbar_symbol_set_ref(proc->syms, 1);
+
     return nsyms;
-
-  // Store results
-  proc->syms = zbar_image_scanner_get_results(proc->scanner);
-  if (proc->syms)
-    zbar_symbol_set_ref(proc->syms, 1);
-
-  return nsyms;
 }
 
 // Stub implementations for unused functions
-int zbar_processor_set_control(zbar_processor_t *proc, const char *control_name, int value) {
-  (void)proc;
-  (void)control_name;
-  (void)value;
-  return 0;
+int zbar_processor_set_control(zbar_processor_t *proc, const char *control_name,
+			       int value)
+{
+    (void)proc;
+    (void)control_name;
+    (void)value;
+    return 0;
 }
 
-int zbar_processor_get_control(zbar_processor_t *proc, const char *control_name, int *value) {
-  (void)proc;
-  (void)control_name;
-  (void)value;
-  return 0;
+int zbar_processor_get_control(zbar_processor_t *proc, const char *control_name,
+			       int *value)
+{
+    (void)proc;
+    (void)control_name;
+    (void)value;
+    return 0;
 }
 
-int zbar_processor_request_size(zbar_processor_t *proc, unsigned width, unsigned height) {
-  (void)proc;
-  (void)width;
-  (void)height;
-  return 0;
+int zbar_processor_request_size(zbar_processor_t *proc, unsigned width,
+				unsigned height)
+{
+    (void)proc;
+    (void)width;
+    (void)height;
+    return 0;
 }
 
-int zbar_processor_is_visible(zbar_processor_t *proc) {
-  (void)proc;
-  return 0;
+int zbar_processor_is_visible(zbar_processor_t *proc)
+{
+    (void)proc;
+    return 0;
 }
 
-int zbar_processor_set_visible(zbar_processor_t *proc, int visible) {
-  (void)proc;
-  (void)visible;
-  return 0;
+int zbar_processor_set_visible(zbar_processor_t *proc, int visible)
+{
+    (void)proc;
+    (void)visible;
+    return 0;
 }
 
-int zbar_processor_user_wait(zbar_processor_t *proc, int timeout) {
-  (void)proc;
-  (void)timeout;
-  return 0;
+int zbar_processor_user_wait(zbar_processor_t *proc, int timeout)
+{
+    (void)proc;
+    (void)timeout;
+    return 0;
 }
 
-int zbar_processor_set_active(zbar_processor_t *proc, int active) {
-  (void)proc;
-  (void)active;
-  return 0;
+int zbar_processor_set_active(zbar_processor_t *proc, int active)
+{
+    (void)proc;
+    (void)active;
+    return 0;
 }
 
-int zbar_process_one(zbar_processor_t *proc, int timeout) {
-  (void)proc;
-  (void)timeout;
-  return 0;
+int zbar_process_one(zbar_processor_t *proc, int timeout)
+{
+    (void)proc;
+    (void)timeout;
+    return 0;
 }
