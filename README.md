@@ -1,103 +1,59 @@
-ZBAR BAR CODE READER
-====================
+# zbar - Simplified for Rust Migration
 
-ZBar Bar Code Reader is an open source software suite for reading bar
-codes from various sources, such as video streams, image files and raw
-intensity sensors. It supports EAN-13/UPC-A, UPC-E, EAN-8, Code 128,
-Code 93, Code 39, Codabar, Interleaved 2 of 5, QR Code and SQ Code.
+This is a simplified fork of the [ZBar bar code reader](https://github.com/mchehab/zbar) library, focused on QR code scanning and being migrated to Rust.
 
-Included with the library are basic applications for decoding captured bar
-code images and using a video device (e.g. webcam) as a bar code scanner.
-For application developers, language bindings are included for C and C++.
+## Project Goal
 
-Check the ZBar home page for the latest release, mailing lists, etc.:
+This project aims to:
 
-- <https://github.com/mchehab/zbar>
+1. Simplify the original ZBar C codebase by removing unnecessary complexity
+2. Gradually migrate functionality to Rust
+3. Maintain QR code scanning capabilities throughout the transition
+4. Eventually create a pure Rust implementation
 
-Tarballs with ZBar can be obtained from:
+## Current Status
 
-- <https://linuxtv.org/downloads/zbar/>
+The codebase has been significantly simplified from the original ZBar:
 
-Since ZBar version 0.23.90, binaries auto-generated from Github's
-Actions workflows are auto-generated for each release:
+- Removed autotools build system in favor of simple Makefile
+- Removed threading, video capture, and GUI components
+- Removed C++ bindings and language wrappers
+- Focused on core QR code decoding functionality
+- Simple command-line tool (`zbarimg`) for testing
 
-- <https://linuxtv.org/downloads/zbar/binaries/>
+## Building
 
-They contain binaries for:
+### C Implementation (current)
 
-- Ubuntu SID, generated via pbuilder;
-- Mac OS;
-- Windows, for 4 different configurations:
-  - 32 bits/64 bits;
-  - Video for Windows (VfW) or DirectShow (DShow).
-
-License information can be found in `COPYING`.
-
-You may find some outdated documentation at the original ZBar's
-site at Sourceforge, but please notice that the content there is not
-updated for ages:
- <http://zbar.sourceforge.net/>
-
-BUILDING
-========
-
-See `INSTALL.md` for generic configuration and build instructions.
-
-Please notice that at least autotools related packages and a
-C compiler are needed, in order to generate the configure script.
-
-So, on Debian, at least those packages are needed:
- autoconf autopoint pkg-config libtool gcc make
-
-If you have installed all needed dependencies, all you need to do is to run:
-
-```
-autoreconf -vfi
-./configure
-make
+```bash
+make clean && make
 ```
 
-- NOTES
+This builds:
 
-  1) Currently, we maintain a Continuous Integration build test at
-     TravisCI:
+- `libzbar.a` - Static library with barcode decoding
+- `zbarimg/zbarimg` - Command-line tool for decoding images
 
-        <https://travis-ci.org/github/mchehab/zbar/>
+### Testing
 
-     Due to that, there are scripts meant to test ZBar build on
-     Linux, Windows and MacOS, that could be helpful. Please see
-     the `.travis.yml` file, and the corresponding scripts under `travis/`.
+```bash
+./zbarimg/zbarimg examples/test-qr.png
+./zbarimg/zbarimg examples/test-qr.jpg
+```
 
-The scanner/decoder library itself only requires a few standard
-library functions which should be available almost anywhere.
+## Dependencies
 
-`pkg-config` is used to locate installed libraries.  You should have
-installed `pkg-config` if you need any of the remaining components.
-pkg-config may be obtained from:
+- libjpeg
+- libpng
+- Standard C library and math library
 
-- <http://pkg-config.freedesktop.org/>
+## Rust Migration
 
-The `zbarimg` program uses `libjpeg` and `libpng` to read image files in their respective
-formats.
+The `rust-wrapper` branch contains initial work on Rust FFI bindings and a gradual migration path. The goal is to eventually replace all C code with safe Rust implementations.
 
-RUNNING
-=======
+## License
 
-`make install` will install the library and application programs.
-Use `zbarimg <file>`
-to decode a saved image file.
+LGPL 2.1 - See LICENSE.md for details.
 
-Check the manual to find specific options for each program.
+This is a fork for educational/experimental purposes focused on Rust migration, not intended as a replacement for the upstream ZBar project.
 
-REPORTING BUGS
-==============
-
-Bugs can be reported on the project page:
-
-- <https://github.com/mchehab/zbar>
-
-Please include the ZBar version number and a detailed description of
-the problem.  You'll probably have better luck if you're also familiar
-with the concepts from:
-
-- <http://www.catb.org/~esr/faqs/smart-questions.html>
