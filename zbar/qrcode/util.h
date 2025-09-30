@@ -2,10 +2,18 @@
   You can redistribute this library and/or modify it under the terms of the
    GNU Lesser General Public License as published by the Free Software
    Foundation; either version 2.1 of the License, or (at your option) any later
-   version.*/
+   version.
+
+  NOTE: This is a stub header for the Rust implementation of QR code utilities.
+  The actual implementation is in src/qrcode/util.rs */
 #if !defined(_qrcode_util_H)
 #define _qrcode_util_H (1)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Utility macros */
 #define QR_MAXI(_a, _b) ((_a) - (((_a) - (_b)) & -((_b) > (_a))))
 #define QR_MINI(_a, _b) ((_a) + (((_b) - (_a)) & -((_b) < (_a))))
 #define QR_SIGNI(_x)	(((_x) > 0) - ((_x) < 0))
@@ -50,8 +58,23 @@
    gives all 64 bits of the result.*/
 #define QR_EXTMUL(_a, _b, _r) ((_a) * (long long)(_b) + (_r))
 
+/* Functions implemented in Rust (src/qrcode/util.rs) */
+
+/* Computes floor(sqrt(val)) exactly.
+   Implemented in Rust (src/qrcode/util.rs) */
 unsigned qr_isqrt(unsigned _val);
+
+/* Computes sqrt(x*x + y*y) using CORDIC algorithm.
+   Implemented in Rust (src/qrcode/util.rs) */
 unsigned qr_ihypot(int _x, int _y);
+
+/* Computes the integer logarithm base 2 of a value.
+   Returns the number of bits needed to represent the value.
+   Implemented in Rust (src/qrcode/util.rs) */
 int qr_ilog(unsigned _val);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

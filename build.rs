@@ -32,7 +32,7 @@ fn main() {
             "zbar/qrcode/qrdec.c",
             "zbar/qrcode/qrdectxt.c",
             "zbar/qrcode/rs.c",
-            "zbar/qrcode/util.c",
+            // "zbar/qrcode/util.c", // Converted to Rust
         ])
         .include("zbar")
         .compile("zbar_c");

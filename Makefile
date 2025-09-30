@@ -28,8 +28,7 @@ LIB_SOURCES = \
 	zbar/qrcode/binarize.c \
 	zbar/qrcode/qrdec.c \
 	zbar/qrcode/qrdectxt.c \
-	zbar/qrcode/rs.c \
-	zbar/qrcode/util.c
+	zbar/qrcode/rs.c
 
 # Application source files
 ZBARIMG_SOURCES = \
