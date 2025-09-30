@@ -1,7 +1,14 @@
 /*Written by Timothy B. Terriberry (tterribe@xiph.org) 1999-2009 public domain.
-  Based on the public domain implementation by Robert J. Jenkins Jr.*/
+  Based on the public domain implementation by Robert J. Jenkins Jr.
+
+  NOTE: This is a stub header for the Rust implementation of ISAAC.
+  The actual implementation is in src/qrcode/isaac.rs */
 #if !defined(_isaac_H)
 #define _isaac_H (1)
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct isaac_ctx isaac_ctx;
 
@@ -26,9 +33,20 @@ struct isaac_ctx {
     unsigned c;
 };
 
+/* Initialize ISAAC context with a seed.
+   Implemented in Rust (src/qrcode/isaac.rs) */
 void isaac_init(isaac_ctx *_ctx, const void *_seed, int _nseed);
 
+/* Get next random 32-bit unsigned integer.
+   Implemented in Rust (src/qrcode/isaac.rs) */
 unsigned isaac_next_uint32(isaac_ctx *_ctx);
+
+/* Get uniformly distributed random integer less than n.
+   Implemented in Rust (src/qrcode/isaac.rs) */
 unsigned isaac_next_uint(isaac_ctx *_ctx, unsigned _n);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
