@@ -13,8 +13,7 @@
 #include "image.h"
 #include "img_scanner.h"
 
-typedef enum
-{
+typedef enum {
     SHAPE_DOT,
     SHAPE_CORNER,
     SHAPE_OTHER,

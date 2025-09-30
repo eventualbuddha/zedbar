@@ -24,15 +24,15 @@
 #define _PROCESSOR_H_
 
 #include "config.h"
+#include <zbar.h>
 #include "error.h"
 #include "img_scanner.h"
-#include <zbar.h>
 
 /* Simplified processor structure - no threading or complex state */
 struct zbar_processor_s {
-    errinfo_t err;                        /* error reporting */
-    zbar_image_scanner_t *scanner;        /* barcode scanner */
-    const zbar_symbol_set_t *syms;        /* previous decode results */
+    errinfo_t err;		   /* error reporting */
+    zbar_image_scanner_t *scanner; /* barcode scanner */
+    const zbar_symbol_set_t *syms; /* previous decode results */
 };
 
 #endif

@@ -34,8 +34,7 @@
 
 #define NUM_CHARS 108 /* total number of character codes */
 
-typedef enum code128_char_e
-{
+typedef enum code128_char_e {
     FNC3     = 0x60,
     FNC2     = 0x61,
     SHIFT    = 0x62,
@@ -230,12 +229,12 @@ static inline signed char decode6(zbar_decoder_t *dcode)
     /* calculate similar edge measurements */
     sig =
 	(get_color(dcode) == ZBAR_BAR) ?
-		  ((decode_e(get_width(dcode, 0) + get_width(dcode, 1), s, 11)
+	    ((decode_e(get_width(dcode, 0) + get_width(dcode, 1), s, 11)
 	      << 12) |
 	     (decode_e(get_width(dcode, 1) + get_width(dcode, 2), s, 11) << 8) |
 	     (decode_e(get_width(dcode, 2) + get_width(dcode, 3), s, 11) << 4) |
 	     (decode_e(get_width(dcode, 3) + get_width(dcode, 4), s, 11))) :
-		  ((decode_e(get_width(dcode, 5) + get_width(dcode, 4), s, 11)
+	    ((decode_e(get_width(dcode, 5) + get_width(dcode, 4), s, 11)
 	      << 12) |
 	     (decode_e(get_width(dcode, 4) + get_width(dcode, 3), s, 11) << 8) |
 	     (decode_e(get_width(dcode, 3) + get_width(dcode, 2), s, 11) << 4) |
@@ -251,8 +250,8 @@ static inline signed char decode6(zbar_decoder_t *dcode)
     /* character validation */
     bars =
 	(get_color(dcode) == ZBAR_BAR) ?
-		  (get_width(dcode, 0) + get_width(dcode, 2) + get_width(dcode, 4)) :
-		  (get_width(dcode, 1) + get_width(dcode, 3) + get_width(dcode, 5));
+	    (get_width(dcode, 0) + get_width(dcode, 2) + get_width(dcode, 4)) :
+	    (get_width(dcode, 1) + get_width(dcode, 3) + get_width(dcode, 5));
     bars = bars * 11 * 4 / s;
     chk	 = calc_check(c);
     dbprintf(2, " bars=%d chk=%d", bars, chk);
@@ -482,8 +481,8 @@ zbar_symbol_type_t _zbar_decode_code128(zbar_decoder_t *dcode)
     dcode128->s6 += get_width(dcode, 0);
 
     if ((dcode128->character < 0) ?
-		  get_color(dcode) != ZBAR_SPACE :
-		  (/* process every 6th element of active symbol */
+	    get_color(dcode) != ZBAR_SPACE :
+	    (/* process every 6th element of active symbol */
 	     ++dcode128->element != 6 ||
 	     /* decode color based on direction */
 	     get_color(dcode) != dcode128->direction))
@@ -559,7 +558,7 @@ zbar_symbol_type_t _zbar_decode_code128(zbar_decoder_t *dcode)
 
     if (dcode128->character > 2 &&
 	((dcode128->direction) ? c >= START_A && c <= START_C :
-				       c == STOP_FWD)) {
+				 c == STOP_FWD)) {
 	/* FIXME STOP_FWD should check extra bar (and QZ!) */
 	zbar_symbol_type_t sym = ZBAR_CODE128;
 	if (validate_checksum(dcode) || postprocess(dcode))

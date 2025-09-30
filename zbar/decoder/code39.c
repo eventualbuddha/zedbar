@@ -224,8 +224,8 @@ static inline int code39_postprocess(zbar_decoder_t *dcode)
     }
     for (i = 0; i < dcode39->character; i++)
 	dcode->buf[i] = ((dcode->buf[i] < 0x2b) ?
-				   code39_characters[(unsigned)dcode->buf[i]] :
-				   '?');
+			     code39_characters[(unsigned)dcode->buf[i]] :
+			     '?');
     zassert((int)i < (int)dcode->buf_alloc, -1, "i=%02x %s\n", i,
 	    _zbar_decoder_buf_dump(dcode->buf, dcode39->character));
     dcode->buflen    = i;

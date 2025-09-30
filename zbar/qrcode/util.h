@@ -33,18 +33,19 @@
 	(_a) ^= t__;                    \
 	(_b) ^= t__;                    \
     } while (0)
-#define QR_ILOG0(_v) (!!((_v)&0x2))
-#define QR_ILOG1(_v) (((_v)&0xC) ? 2 + QR_ILOG0((_v) >> 2) : QR_ILOG0(_v))
-#define QR_ILOG2(_v) (((_v)&0xF0) ? 4 + QR_ILOG1((_v) >> 4) : QR_ILOG1(_v))
-#define QR_ILOG3(_v) (((_v)&0xFF00) ? 8 + QR_ILOG2((_v) >> 8) : QR_ILOG2(_v))
+#define QR_ILOG0(_v) (!!((_v) & 0x2))
+#define QR_ILOG1(_v) (((_v) & 0xC) ? 2 + QR_ILOG0((_v) >> 2) : QR_ILOG0(_v))
+#define QR_ILOG2(_v) (((_v) & 0xF0) ? 4 + QR_ILOG1((_v) >> 4) : QR_ILOG1(_v))
+#define QR_ILOG3(_v) (((_v) & 0xFF00) ? 8 + QR_ILOG2((_v) >> 8) : QR_ILOG2(_v))
 #define QR_ILOG4(_v) \
-    (((_v)&0xFFFF0000) ? 16 + QR_ILOG3((_v) >> 16) : QR_ILOG3(_v))
+    (((_v) & 0xFFFF0000) ? 16 + QR_ILOG3((_v) >> 16) : QR_ILOG3(_v))
 /*Computes the integer logarithm of a (positive, 32-bit) constant.*/
 #define QR_ILOG(_v) ((int)QR_ILOG4((unsigned)(_v)))
 
 /*Multiplies 32-bit numbers _a and _b, adds (possibly 64-bit) number _r, and
    takes bits [_s,_s+31] of the result.*/
-#define QR_FIXMUL(_a, _b, _r, _s) ((int)(((_a) * (long long)(_b) + (_r)) >> (_s)))
+#define QR_FIXMUL(_a, _b, _r, _s) \
+    ((int)(((_a) * (long long)(_b) + (_r)) >> (_s)))
 /*Multiplies 32-bit numbers _a and _b, adds (possibly 64-bit) number _r, and
    gives all 64 bits of the result.*/
 #define QR_EXTMUL(_a, _b, _r) ((_a) * (long long)(_b) + (_r))

@@ -22,9 +22,9 @@
  *------------------------------------------------------------------------*/
 
 #include "config.h"
-#include "zbar.h"
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include "zbar.h"
 
 #ifdef DEBUG_DATABAR
 #define DEBUG_LEVEL (DEBUG_DATABAR)
@@ -34,8 +34,7 @@
 
 #define GS ('\035')
 
-enum
-{
+enum {
     SCH_NUM,
     SCH_ALNUM,
     SCH_ISO646
@@ -113,7 +112,7 @@ static inline void decode10(unsigned char *buf, unsigned long n, int i)
     }
 }
 
-#define VAR_MAX(l, i) ((((l)*12 + (i)) * 2 + 6) / 7)
+#define VAR_MAX(l, i) ((((l) * 12 + (i)) * 2 + 6) / 7)
 
 #define FEED_BITS(b)                         \
     while (i < (b) && len) {                 \
@@ -599,7 +598,8 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 		age  = age1 + age2;
 		cnt  = s0->count + s1->count + s2->count;
 		dbprintf(2, " [%d] MATCH cnt=%d age=%d", i2, cnt, age);
-		if (maxcnt < (int)cnt || (maxcnt == (int)cnt && (int)maxage > (int)age)) {
+		if (maxcnt < (int)cnt ||
+		    (maxcnt == (int)cnt && (int)maxage > (int)age)) {
 		    maxcnt  = cnt;
 		    maxage  = age;
 		    smax[0] = s0;
@@ -634,7 +634,7 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 }
 
 static inline signed lookup_sequence(databar_segment_t *seg, int fixed,
-				       int seq[22], const size_t maxsize)
+				     int seq[22], const size_t maxsize)
 {
     unsigned n = seg->data / 211, i;
     const unsigned char *p;
@@ -644,11 +644,11 @@ static inline signed lookup_sequence(databar_segment_t *seg, int fixed,
     dbprintf(2, " {%d,%d:", i, n);
     p = exp_sequences + i;
 
-	if (n >= maxsize-1) {
+    if (n >= maxsize - 1) {
 	// The loop below checks i<n and increments i by one within the loop
 	// when accessing seq[22]. For this to be safe, n needs to be < 21.
 	// See CVE-2023-40890.
-	  return -1;
+	return -1;
     }
 
     fixed >>= 1;
@@ -726,17 +726,18 @@ match_segment_exp(zbar_decoder_t *dcode, databar_segment_t *seg, int dir)
 	    }
 
 	    if (!i) {
-			signed int lu = lookup_sequence(seg, fixed, seq, sizeof(seq)/sizeof(seq[0]));
-			if(!lu) {
-			   dbprintf(2, "[nf]");
-			   continue;
-			}
-			if(lu < 0) {
-				dbprintf(1, " [aborted]\n");
-				goto abort;
-			}
-			width = seg->width;
-			dbprintf(2, " A00@%d", j);
+		signed int lu = lookup_sequence(seg, fixed, seq,
+						sizeof(seq) / sizeof(seq[0]));
+		if (!lu) {
+		    dbprintf(2, "[nf]");
+		    continue;
+		}
+		if (lu < 0) {
+		    dbprintf(1, " [aborted]\n");
+		    goto abort;
+		}
+		width = seg->width;
+		dbprintf(2, " A00@%d", j);
 	    } else {
 		width = (width + seg->width) / 2;
 		dbprintf(2, " %c%x%x@%d", 'A' + seg->finder, seg->color,
@@ -766,7 +767,8 @@ match_segment_exp(zbar_decoder_t *dcode, databar_segment_t *seg, int dir)
 	    continue;
 
 	dbprintf(2, " cnt=%d age=%d", cnt, age);
-	if (maxcnt > (int)cnt || (maxcnt == (int)cnt && (int)maxage <= (int)age))
+	if (maxcnt > (int)cnt ||
+	    (maxcnt == (int)cnt && (int)maxage <= (int)age))
 	    continue;
 
 	dbprintf(2, " !");
@@ -1160,8 +1162,8 @@ static inline zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode)
 	!TEST_CFG((finder < 9) ? db->config : db->config_exp, ZBAR_CFG_ENABLE))
 	return (ZBAR_NONE);
 
-    zassert((signed)finder >= 0, ZBAR_NONE, "dir=%d sig=%04x f=%d\n", dir, sig & 0xfff,
-	    finder);
+    zassert((signed)finder >= 0, ZBAR_NONE, "dir=%d sig=%04x f=%d\n", dir,
+	    sig & 0xfff, finder);
 
     iseg = alloc_segment(db);
     if (iseg < 0)

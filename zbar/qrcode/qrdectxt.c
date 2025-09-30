@@ -180,10 +180,10 @@ int qr_code_data_list_extract_text(const qr_code_data_list *_qrlist,
             I believe this is true for all the encodings we actually use.*/
 			case QR_MODE_KANJI:
 			    has_kanji = 1;
-		    __attribute__((fallthrough));
+			    __attribute__((fallthrough));
 			case QR_MODE_BYTE:
 			    shift = 2;
-		    __attribute__((fallthrough));
+			    __attribute__((fallthrough));
 			default: {
 			    /*The remaining two modes are already valid UTF-8.*/
 			    if (QR_MODE_HAS_DATA(entry->mode)) {
@@ -268,7 +268,7 @@ int qr_code_data_list_extract_text(const qr_code_data_list *_qrlist,
 		    // Check if bytebuf_text is empty INSIDE for loop.
 		    if (bytebuf_ntext > 0) {
 			entry = (k == qrdataj->nentries) ? NULL :
-								 qrdataj->entries + k;
+							   qrdataj->entries + k;
 			// next entry is not byte mode, convert bytes to text.
 			if (entry == NULL || (entry->mode != QR_MODE_BYTE &&
 					      entry->mode != QR_MODE_KANJI)) {

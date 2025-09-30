@@ -31,8 +31,7 @@
 #include "decoder.h"
 
 /* partial decode symbol location */
-typedef enum symbol_partial_e
-{
+typedef enum symbol_partial_e {
     EAN_LEFT  = 0x0000,
     EAN_RIGHT = 0x1000,
 } symbol_partial_t;
@@ -202,8 +201,8 @@ static inline signed char decode4(zbar_decoder_t *dcode)
 
     /* calculate similar edge measurements */
     unsigned e1 = ((get_color(dcode) == ZBAR_BAR) ?
-			     get_width(dcode, 0) + get_width(dcode, 1) :
-			     get_width(dcode, 2) + get_width(dcode, 3));
+		       get_width(dcode, 0) + get_width(dcode, 1) :
+		       get_width(dcode, 2) + get_width(dcode, 3));
     unsigned e2 = get_width(dcode, 1) + get_width(dcode, 2);
     dbprintf(2, "\n        e1=%d e2=%d", e1, e2);
 
@@ -227,12 +226,12 @@ static inline signed char decode4(zbar_decoder_t *dcode)
 	unsigned char mid, alt;
 	/* use sum of bar widths */
 	unsigned d2 = ((get_color(dcode) == ZBAR_BAR) ?
-				 get_width(dcode, 0) + get_width(dcode, 2) :
-				 get_width(dcode, 1) + get_width(dcode, 3));
+			   get_width(dcode, 0) + get_width(dcode, 2) :
+			   get_width(dcode, 1) + get_width(dcode, 3));
 	d2 *= 7;
 	mid = (((1 << code) & 0x0420) ? 3 /* E1E2 in 33,44 */
 					:
-					      4); /* E1E2 in 34,43 */
+					4); /* E1E2 in 34,43 */
 	alt = d2 > (mid * dcode->ean.s4);
 	if (alt)
 	    code = ((code >> 1) & 3) | 0x10; /* compress code space */
@@ -335,7 +334,7 @@ ean_part_end7(ean_decoder_t *ean, ean_pass_t *pass, unsigned char fwd)
 	((fwd) ? ((pass->raw[1] & 0x10) << 1 | (pass->raw[2] & 0x10) |
 		  (pass->raw[3] & 0x10) >> 1 | (pass->raw[4] & 0x10) >> 2 |
 		  (pass->raw[5] & 0x10) >> 3 | (pass->raw[6] & 0x10) >> 4) :
-		       ((pass->raw[1] & 0x10) >> 4 | (pass->raw[2] & 0x10) >> 3 |
+		 ((pass->raw[1] & 0x10) >> 4 | (pass->raw[2] & 0x10) >> 3 |
 		  (pass->raw[3] & 0x10) >> 2 | (pass->raw[4] & 0x10) >> 1 |
 		  (pass->raw[5] & 0x10) | (pass->raw[6] & 0x10) << 1));
 
