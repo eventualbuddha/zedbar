@@ -24,7 +24,7 @@
 #include "config.h"
 #include <string.h> /* memmove */
 
-#include <zbar.h>
+#include "zbar.h"
 
 #ifdef DEBUG_CODABAR
 #define DEBUG_LEVEL (DEBUG_CODABAR)

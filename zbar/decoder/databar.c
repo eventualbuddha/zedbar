@@ -22,7 +22,7 @@
  *------------------------------------------------------------------------*/
 
 #include "config.h"
-#include <zbar.h>
+#include "zbar.h"
 #include <stdlib.h>
 #include <stdio.h>
 

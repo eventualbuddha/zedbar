@@ -22,7 +22,7 @@
  *------------------------------------------------------------------------*/
 
 #include "config.h"
-#include <zbar.h>
+#include "zbar.h"
 
 #ifdef DEBUG_CODE93
 #define DEBUG_LEVEL (DEBUG_CODE93)
