@@ -6,12 +6,10 @@ fn main() {
 
     build
         .files([
-            "zbar/config.c",
             "zbar/decoder.c",
             "zbar/error.c",
             "zbar/image.c",
             "zbar/img_scanner.c",
-            "zbar/misc.c",
             "zbar/processor.c",
             "zbar/refcnt.c",
             "zbar/scanner.c",
@@ -28,7 +26,7 @@ fn main() {
             "zbar/decoder/qr_finder.c",
             "zbar/decoder/sq_finder.c",
             // QR code modules
-            "zbar/qrcode/bch15_5.c",
+            // "zbar/qrcode/bch15_5.c", // Converted to Rust
             "zbar/qrcode/binarize.c",
             "zbar/qrcode/isaac.c",
             "zbar/qrcode/qrdec.c",
