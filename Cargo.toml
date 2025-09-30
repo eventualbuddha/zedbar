@@ -1,0 +1,34 @@
+[package]
+name = "zbar-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of ZBar barcode scanning library"
+license = "LGPL-2.1-or-later"
+repository = "https://github.com/eventualbuddha/zbar"
+
+[lib]
+name = "zbar"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+libc = "0.2"
+image = "0.25"
+
+# For incremental migration - keep C dependencies during transition
+[build-dependencies]
+cc = "1.0"
+
+[[bin]]
+name = "zbarimg"
+path = "src/bin/zbarimg.rs"
+
+[features]
+default = ["qrcode", "ean", "code128", "code39"]
+qrcode = []
+ean = []
+code128 = []
+code39 = []
+code93 = []
+codabar = []
+databar = []
+i25 = []

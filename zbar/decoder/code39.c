@@ -23,6 +23,7 @@
 
 #include "config.h"
 #include <string.h> /* memmove */
+#include <sys/cdefs.h>
 
 #include "zbar.h"
 
@@ -116,7 +117,7 @@ static const char39_t code39_encodings[NUM_CHARS] = {
     { 0xc0, 0x20, 0x1a }, /* 2b */
 };
 
-static const unsigned char code39_characters[NUM_CHARS] =
+static const unsigned char code39_characters[NUM_CHARS] __attribute_nonstring__ =
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%*";
 
 static inline unsigned char code39_decode1(unsigned char enc, unsigned e,

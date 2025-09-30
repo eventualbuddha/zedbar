@@ -23,6 +23,7 @@
 
 #include "config.h"
 #include <string.h> /* memmove */
+#include <sys/cdefs.h>
 
 #include "zbar.h"
 
@@ -40,7 +41,8 @@ static const signed char codabar_lo[12] = { 0x0, 0x1, 0x4, 0x5, 0x2, 0xa,
 static const unsigned char codabar_hi[8] = { 0x1, 0x4, 0x7, 0x6,
 					     0x2, 0x3, 0x0, 0x5 };
 
-static const unsigned char codabar_characters[20] = "0123456789-$:/.+ABCD";
+static const unsigned char codabar_characters[20] __attribute_nonstring__ =
+    "0123456789-$:/.+ABCD";
 
 static inline int check_width(unsigned ref, unsigned w)
 {

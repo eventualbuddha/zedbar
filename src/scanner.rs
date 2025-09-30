@@ -1,0 +1,76 @@
+//! Image scanner for finding barcodes in 2D images
+
+use crate::ffi;
+use crate::image::Image;
+use crate::{Error, Result};
+
+/// Configuration options for barcode scanning
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Config {
+    Enable = 0,
+    AddCheck = 1,
+    EmitCheck = 2,
+    Ascii = 3,
+    Binary = 4,
+    MinLen = 0x20,
+    MaxLen = 0x21,
+    Uncertainty = 0x40,
+    Position = 0x80,
+    TestInverted = 0x81,
+    XDensity = 0x100,
+    YDensity = 0x101,
+}
+
+/// Image scanner that can find barcodes in 2D images
+pub struct Scanner {
+    ptr: *mut std::ffi::c_void,
+}
+
+impl Scanner {
+    /// Create a new image scanner
+    pub fn new() -> Self {
+        let ptr = unsafe { ffi::zbar_image_scanner_create() };
+        Scanner { ptr }
+    }
+
+    /// Configure the scanner for a specific symbology
+    pub fn set_config(&mut self, symbology: i32, config: Config, value: i32) -> Result<()> {
+        let result = unsafe {
+            ffi::zbar_image_scanner_set_config(self.ptr, symbology, config as i32, value)
+        };
+
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(Error::Invalid)
+        }
+    }
+
+    /// Scan an image for barcodes
+    pub fn scan(&mut self, image: &mut Image) -> Result<i32> {
+        let result = unsafe { ffi::zbar_scan_image(self.ptr, image.as_ptr()) };
+
+        if result >= 0 {
+            Ok(result)
+        } else {
+            Err(Error::from(result))
+        }
+    }
+}
+
+impl Drop for Scanner {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                ffi::zbar_image_scanner_destroy(self.ptr);
+            }
+        }
+    }
+}
+
+impl Default for Scanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
