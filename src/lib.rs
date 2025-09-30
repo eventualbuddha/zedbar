@@ -51,7 +51,7 @@ mod tests {
         // Scan the image
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
 
-        println!("Found {} symbols", num_symbols);
+        println!("Found {num_symbols} symbols");
 
         // Get and verify symbols
         let symbols = zbar_img.symbols();
@@ -60,7 +60,7 @@ mod tests {
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data = symbol.data_string().unwrap_or("<invalid UTF-8>");
-            println!("Decoded {:?}: {}", symbol_type, data);
+            println!("Decoded {symbol_type:?}: {data}");
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
@@ -93,7 +93,7 @@ mod tests {
         // Scan the image
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
 
-        println!("Found {} symbols", num_symbols);
+        println!("Found {num_symbols} symbols");
 
         // Get and verify symbols
         let symbols = zbar_img.symbols();
@@ -102,11 +102,260 @@ mod tests {
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data = symbol.data_string().unwrap_or("<invalid UTF-8>");
-            println!("Decoded {:?}: {}", symbol_type, data);
+            println!("Decoded {symbol_type:?}: {data}");
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
         }
     }
-}
 
+    #[test]
+    fn test_ean13_decode() {
+        // EAN-13 test (13 digits, common retail barcode)
+        let img = ::image::ImageReader::open("examples/test-ean13.png")
+            .expect("Failed to open test-ean13.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Ean13 as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one EAN-13 barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::Ean13);
+            println!("Decoded EAN-13: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+
+    #[test]
+    fn test_ean8_decode() {
+        // EAN-8 test (8 digits, compact retail barcode)
+        // Note: ZBar may report EAN-8 as EAN-13 with zero padding
+        let img = ::image::ImageReader::open("examples/test-ean8.png")
+            .expect("Failed to open test-ean8.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Ean8 as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one EAN-8 barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            let decoded_data = symbol.data_string().unwrap_or("");
+            println!("Decoded as {:?}: {}", symbol.symbol_type(), decoded_data);
+
+            // EAN-8 can be reported as EAN-13 with zero-padding
+            assert!(
+                symbol.symbol_type() == SymbolType::Ean8 || symbol.symbol_type() == SymbolType::Ean13,
+                "Expected EAN-8 or EAN-13, got {:?}", symbol.symbol_type()
+            );
+
+            // Verify the data contains our EAN-8 digits
+            assert!(decoded_data.contains("96385074") || decoded_data == "96385074");
+        }
+    }
+
+    #[test]
+    fn test_upca_decode() {
+        // UPC-A test (12 digits, common in North America)
+        let img = ::image::ImageReader::open("examples/test-upca.png")
+            .expect("Failed to open test-upca.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Upca as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one UPC-A barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::Upca);
+            println!("Decoded UPC-A: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+
+    #[test]
+    fn test_code128_decode() {
+        // Code128 test (high-density alphanumeric barcode)
+        let img = ::image::ImageReader::open("examples/test-code128.png")
+            .expect("Failed to open test-code128.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Code128 as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one Code128 barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::Code128);
+            println!("Decoded Code128: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+
+    #[test]
+    fn test_code39_decode() {
+        // Code39 test with uppercase alphanumeric data
+        let img = ::image::ImageReader::open("examples/test-code39.png")
+            .expect("Failed to open test-code39.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Code39 as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one Code39 barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::Code39);
+            println!("Decoded Code39: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+
+    #[test]
+    fn test_code93_decode() {
+        // Code93 test
+        let img = ::image::ImageReader::open("examples/test-code93.png")
+            .expect("Failed to open test-code93.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Code93 as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one Code93 barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::Code93);
+            println!("Decoded Code93: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+
+    #[test]
+    fn test_codabar_decode() {
+        // Codabar test (uses start/stop characters like A/B/C/D)
+        let img = ::image::ImageReader::open("examples/test-codabar.png")
+            .expect("Failed to open test-codabar.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::Codabar as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one Codabar barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::Codabar);
+            println!("Decoded Codabar: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+
+    #[test]
+    fn test_interleaved2of5_decode() {
+        // Interleaved 2 of 5 test (numeric only, even number of digits)
+        let img = ::image::ImageReader::open("examples/test-i25.png")
+            .expect("Failed to open test-i25.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::I25 as i32, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one I25 barcode");
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::I25);
+            println!("Decoded I25: {}", symbol.data_string().unwrap_or(""));
+        }
+    }
+}

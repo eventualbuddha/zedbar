@@ -22,7 +22,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::OutOfMemory => write!(f, "out of memory"),
-            Error::Internal => write!(f, "internal library error"), 
+            Error::Internal => write!(f, "internal library error"),
             Error::Unsupported => write!(f, "unsupported request"),
             Error::Invalid => write!(f, "invalid request"),
             Error::System => write!(f, "system error"),
@@ -32,7 +32,7 @@ impl fmt::Display for Error {
             Error::XProto => write!(f, "X11 protocol error"),
             Error::Closed => write!(f, "output window is closed"),
             Error::WinApi => write!(f, "windows system error"),
-            Error::Unknown(code) => write!(f, "unknown error code: {}", code),
+            Error::Unknown(code) => write!(f, "unknown error code: {code}"),
         }
     }
 }
@@ -59,3 +59,4 @@ impl From<i32> for Error {
         }
     }
 }
+

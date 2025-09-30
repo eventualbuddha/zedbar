@@ -22,6 +22,8 @@ cc = "1.0"
 name = "zbarimg"
 path = "src/bin/zbarimg.rs"
 
+[dev-dependencies]
+
 [features]
 default = ["qrcode", "ean", "code128", "code39"]
 qrcode = []
