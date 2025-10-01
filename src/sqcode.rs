@@ -4,8 +4,8 @@
 //! Rust port based on the C implementation
 
 use crate::ffi::{
-    _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym,
-    _zbar_image_scanner_recycle_syms, zbar_image_scanner_t, zbar_image_t,
+    _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
+    zbar_image_scanner_t, zbar_image_t,
 };
 use libc::{c_char, c_int, c_uint, size_t};
 use std::io::Write;
@@ -89,11 +89,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract text from buffer and add to scanner results
-unsafe fn sq_extract_text(
-    iscn: *mut zbar_image_scanner_t,
-    buf: &[u8],
-    len: size_t,
-) -> bool {
+unsafe fn sq_extract_text(iscn: *mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
     let b64_len = len.div_ceil(3) * 4;
 
     let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_SQCODE, 0);
@@ -261,7 +257,6 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
     );
 }
 
-
 unsafe fn find_left_dot(
     img: *const zbar_image_t,
     dot: &Dot,
@@ -317,6 +312,13 @@ unsafe fn find_bottom_dot(
 }
 
 /// Main SQCode decoding function
+///
+/// # Safety
+///
+/// All pointers must be valid and properly initialized. The caller must ensure:
+/// - `reader` points to a valid `SqReader` instance
+/// - `iscn` points to a valid `zbar_image_scanner_t` instance
+/// - `img` points to a valid `zbar_image_t` with properly initialized image data
 pub unsafe fn sq_decode(
     reader: *mut SqReader,
     iscn: *mut zbar_image_scanner_t,
@@ -590,10 +592,10 @@ pub unsafe fn sq_decode(
             let top_left_source_x = top_border[x].x + left_border[y].x - left_border[0].x;
             let top_left_source_y = top_border[x].y + left_border[y].y - left_border[0].y;
 
-            let bottom_right_source_x = bottom_border[x].x + right_border[y].x
-                - right_border[border_len - 1].x;
-            let bottom_right_source_y = bottom_border[x].y + right_border[y].y
-                - right_border[border_len - 1].y;
+            let bottom_right_source_x =
+                bottom_border[x].x + right_border[y].x - right_border[border_len - 1].x;
+            let bottom_right_source_y =
+                bottom_border[x].y + right_border[y].y - right_border[border_len - 1].y;
 
             let data = (*img).data as *const u8;
             let sample_x = top_left_source_x as usize;
@@ -625,12 +627,22 @@ pub unsafe fn sq_decode(
 
 // C FFI exports
 
+/// Creates a new SQCode reader
+///
+/// # Safety
+///
+/// This function allocates memory that must be freed with `_zbar_sq_destroy`.
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_sq_create() -> *mut SqReader {
     let reader = Box::new(SqReader { enabled: true });
     Box::into_raw(reader)
 }
 
+/// Destroys an SQCode reader and frees its memory
+///
+/// # Safety
+///
+/// The `reader` pointer must have been created by `_zbar_sq_create` and not previously freed.
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_sq_destroy(reader: *mut SqReader) {
     if !reader.is_null() {
@@ -638,6 +650,11 @@ pub unsafe extern "C" fn _zbar_sq_destroy(reader: *mut SqReader) {
     }
 }
 
+/// Resets an SQCode reader to its initial state
+///
+/// # Safety
+///
+/// The `reader` pointer must be valid and point to an initialized `SqReader`.
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_sq_reset(reader: *mut SqReader) {
     if !reader.is_null() {
@@ -645,11 +662,13 @@ pub unsafe extern "C" fn _zbar_sq_reset(reader: *mut SqReader) {
     }
 }
 
+/// Configures an SQCode reader
+///
+/// # Safety
+///
+/// The `reader` pointer must be valid and point to an initialized `SqReader`.
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_sq_new_config(
-    reader: *mut SqReader,
-    config: c_uint,
-) -> c_int {
+pub unsafe extern "C" fn _zbar_sq_new_config(reader: *mut SqReader, config: c_uint) -> c_int {
     if reader.is_null() {
         return -1;
     }
@@ -657,6 +676,14 @@ pub unsafe extern "C" fn _zbar_sq_new_config(
     0
 }
 
+/// Decodes an SQCode from an image
+///
+/// # Safety
+///
+/// All pointers must be valid and properly initialized:
+/// - `reader` must point to a valid `SqReader`
+/// - `iscn` must point to a valid `zbar_image_scanner_t`
+/// - `img` must point to a valid `zbar_image_t` with initialized image data
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_sq_decode(
     reader: *mut SqReader,
