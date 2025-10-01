@@ -218,14 +218,6 @@ extern void zbar_increase_verbosity(void);
  */
 extern const char *zbar_get_symbol_name(zbar_symbol_type_t sym);
 
-/** retrieve string name for addon encoding.
- * @param sym symbol type encoding
- * @returns static string name for any addon, or the empty string
- * if no addons were decoded
- * @deprecated in 0.11
- */
-extern const char *zbar_get_addon_name(zbar_symbol_type_t sym);
-
 /** retrieve string name for configuration setting.
  * @param config setting to name
  * @returns static string name for config,

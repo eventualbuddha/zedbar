@@ -73,12 +73,6 @@ const char *zbar_get_symbol_name(zbar_symbol_type_t sym)
     }
 }
 
-const char *zbar_get_addon_name(zbar_symbol_type_t sym)
-{
-    (void)sym;
-    return ("");
-}
-
 const char *zbar_get_config_name(zbar_config_t cfg)
 {
     switch (cfg) {
@@ -137,7 +131,6 @@ const char *zbar_get_orientation_name(zbar_orientation_t orient)
     }
 }
 
-#ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Woverride-init"
 static const signed char _zbar_symbol_hash[ZBAR_CODE128 + 1] = {
@@ -171,34 +164,6 @@ static const signed char *_init_hash()
 {
     return _zbar_symbol_hash;
 };
-#else
-/*
- * Needed By Microsoft C. Even on Visual Studio 2019, C99 designated
- * identifiers aren't supported! So, we need this hack.
- */
-static const signed char *_init_hash()
-{
-    static signed char hash[ZBAR_CODE128 + 1] = { -1 };
-    static int was_initialized		      = 0;
-
-    if (was_initialized)
-	return (const signed char *)hash;
-
-    memset(hash, -1, sizeof(hash));
-
-    /* Keep in sync with the C99 implementation */
-    hash[ZBAR_SQCODE] = 1, hash[ZBAR_CODE128] = 2, hash[ZBAR_EAN13] = 3,
-    hash[ZBAR_UPCA] = 4, hash[ZBAR_EAN8] = 5, hash[ZBAR_UPCE] = 6,
-    hash[ZBAR_ISBN13] = 7, hash[ZBAR_ISBN10] = 8, hash[ZBAR_CODE39] = 9,
-    hash[ZBAR_DATABAR] = 13, hash[ZBAR_DATABAR_EXP] = 14,
-    hash[ZBAR_CODE93] = 15, hash[ZBAR_EAN2] = 16, hash[ZBAR_EAN5] = 17,
-    hash[ZBAR_COMPOSITE] = 18, hash[ZBAR_CODABAR] = 19;
-
-    was_initialized = 1;
-
-    return (const signed char *)hash;
-};
-#endif
 
 int _zbar_get_symbol_hash(zbar_symbol_type_t sym)
 {
