@@ -13,6 +13,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [dependencies]
 libc = "0.2"
 image = "0.25"
+encoding_rs = "0.8.33"
 
 # For incremental migration - keep C dependencies during transition
 [build-dependencies]

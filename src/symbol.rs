@@ -144,7 +144,7 @@ pub fn get_orientation_name(orient: i32) -> &'static str {
 
 /// Get symbol hash index
 pub fn get_symbol_hash(sym: i32) -> i32 {
-    debug_assert!(sym >= ZBAR_PARTIAL && sym <= ZBAR_CODE128);
+    debug_assert!((ZBAR_PARTIAL..=ZBAR_CODE128).contains(&sym));
     let h = SYMBOL_HASH[sym as usize];
     debug_assert!(h >= 0 && (h as usize) < NUM_SYMS);
     h as i32

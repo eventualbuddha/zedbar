@@ -29,7 +29,7 @@ fn main() {
             // "zbar/qrcode/binarize.c", // Converted to Rust
             // "zbar/qrcode/isaac.c", // Converted to Rust
             "zbar/qrcode/qrdec.c",
-            "zbar/qrcode/qrdectxt.c",
+            // "zbar/qrcode/qrdectxt.c", // Converted to Rust
             "zbar/qrcode/rs.c",
             // "zbar/qrcode/util.c", // Converted to Rust
         ])
@@ -39,4 +39,3 @@ fn main() {
     println!("cargo:rustc-link-lib=static=zbar_c");
     println!("cargo:rerun-if-changed=zbar/");
 }
-
