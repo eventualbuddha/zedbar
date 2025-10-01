@@ -6,6 +6,7 @@
 pub mod decoder;
 pub mod error;
 pub mod image;
+pub mod line_scanner;
 pub mod qrcode;
 pub mod scanner;
 pub mod sqcode;

@@ -83,10 +83,7 @@ zbar_scanner_t *zbar_scanner_create(zbar_decoder_t *dcode)
     return (scn);
 }
 
-void zbar_scanner_destroy(zbar_scanner_t *scn)
-{
-    free(scn);
-}
+// zbar_scanner_destroy() implemented in Rust (src/line_scanner.rs)
 
 zbar_symbol_type_t zbar_scanner_reset(zbar_scanner_t *scn)
 {
@@ -97,28 +94,9 @@ zbar_symbol_type_t zbar_scanner_reset(zbar_scanner_t *scn)
     return (ZBAR_NONE);
 }
 
-unsigned zbar_scanner_get_width(const zbar_scanner_t *scn)
-{
-    return (scn->width);
-}
-
-unsigned zbar_scanner_get_edge(const zbar_scanner_t *scn, unsigned offset,
-			       int prec)
-{
-    unsigned edge = scn->last_edge - offset - (1 << ZBAR_FIXED) - ROUND;
-    prec	  = ZBAR_FIXED - prec;
-    if (prec > 0)
-	return (edge >> prec);
-    else if (!prec)
-	return (edge);
-    else
-	return (edge << -prec);
-}
-
-zbar_color_t zbar_scanner_get_color(const zbar_scanner_t *scn)
-{
-    return ((scn->y1_sign <= 0) ? ZBAR_SPACE : ZBAR_BAR);
-}
+// zbar_scanner_get_width() implemented in Rust (src/line_scanner.rs)
+// zbar_scanner_get_edge() implemented in Rust (src/line_scanner.rs)
+// zbar_scanner_get_color() implemented in Rust (src/line_scanner.rs)
 
 static inline unsigned calc_thresh(zbar_scanner_t *scn)
 {
