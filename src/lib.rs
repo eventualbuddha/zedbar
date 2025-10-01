@@ -4,7 +4,9 @@
 //! The conversion to Rust is being done incrementally using c2rust as a starting point.
 
 pub mod decoder;
+pub mod decoder_types;
 pub mod error;
+pub mod finder;
 pub mod image;
 pub mod line_scanner;
 pub mod qrcode;
