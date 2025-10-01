@@ -378,14 +378,6 @@ static void rs_poly_mul_x(unsigned char *_p, const unsigned char *_q, int _dp1)
     _p[0] = 0;
 }
 
-/*Divide the polynomial by the free variable, x (shift the coefficients).
-  The number of coefficients, _dp1, must be non-zero.*/
-static void rs_poly_div_x(unsigned char *_p, const unsigned char *_q, int _dp1)
-{
-    memmove(_p, _q + 1, (_dp1 - 1) * sizeof(*_p));
-    _p[_dp1 - 1] = 0;
-}
-
 /*Compute the first (d+1) coefficients of the product of a degree e and a
    degree f polynomial.*/
 static void rs_poly_mult(const rs_gf256 *_gf, unsigned char *_p, int _dp1,
@@ -631,57 +623,4 @@ int rs_correct(const rs_gf256 *_gf, int _m0, unsigned char *_data, int _ndata,
 	    return nerrors;
 	}
     return 0;
-}
-
-/*Encoding.*/
-
-/*Create an _npar-coefficient generator polynomial for a Reed-Solomon code
-   with _npar<256 parity bytes.*/
-void rs_compute_genpoly(const rs_gf256 *_gf, int _m0, unsigned char *_genpoly,
-			int _npar)
-{
-    int i;
-    if (_npar <= 0)
-	return;
-    rs_poly_zero(_genpoly, _npar);
-    _genpoly[0] = 1;
-    /*Multiply by (x+alpha^i) for i = 1 ... _ndata.*/
-    for (i = 0; i < _npar; i++) {
-	unsigned alphai;
-	int n;
-	int j;
-	n      = i + 1 < _npar - 1 ? i + 1 : _npar - 1;
-	alphai = _gf->log[_gf->exp[_m0 + i]];
-	for (j = n; j > 0; j--)
-	    _genpoly[j] = _genpoly[j - 1] ^ rs_hgmul(_gf, _genpoly[j], alphai);
-	_genpoly[0] = rs_hgmul(_gf, _genpoly[0], alphai);
-    }
-}
-
-/*Adds _npar<=_ndata parity bytes to an _ndata-_npar byte message.
-  _data must contain room for _ndata<256 bytes.*/
-void rs_encode(const rs_gf256 *_gf, unsigned char *_data, int _ndata,
-	       const unsigned char *_genpoly, int _npar)
-{
-    unsigned char *lfsr;
-    unsigned d;
-    int i;
-    int j;
-    if (_npar <= 0)
-	return;
-    lfsr = _data + _ndata - _npar;
-    rs_poly_zero(lfsr, _npar);
-    for (i = 0; i < _ndata - _npar; i++) {
-	d = _data[i] ^ lfsr[0];
-	if (d) {
-	    unsigned logd;
-	    logd = _gf->log[d];
-	    for (j = 0; j < _npar - 1; j++) {
-		lfsr[j] = lfsr[j + 1] ^
-			  rs_hgmul(_gf, _genpoly[_npar - 1 - j], logd);
-	    }
-	    lfsr[_npar - 1] = rs_hgmul(_gf, _genpoly[0], logd);
-	} else
-	    rs_poly_div_x(lfsr, lfsr, _npar);
-    }
 }

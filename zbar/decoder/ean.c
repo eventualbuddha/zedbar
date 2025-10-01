@@ -24,9 +24,6 @@
 #include "config.h"
 #include "zbar.h"
 
-#ifdef DEBUG_EAN
-#define DEBUG_LEVEL (DEBUG_EAN)
-#endif
 #include "debug.h"
 #include "decoder.h"
 
@@ -74,28 +71,6 @@ static const unsigned char parity_decode[] = {
     0xf1,			  /* [34] AABABB = 1 */
     0xff, 0xff, 0xff, 0xff, 0x0f, /* [3f] AAAAAA = 0 */
 };
-
-#ifdef DEBUG_EAN
-static unsigned char debug_buf[0x18];
-
-static inline const unsigned char *dsprintbuf(ean_decoder_t *ean)
-{
-    int i;
-    for (i = 0; i < 7; i++)
-	debug_buf[i] =
-	    ((ean->buf[0] < 0 || ean->buf[i] < 0) ? '-' : ean->buf[i] + '0');
-    debug_buf[i] = ' ';
-    for (; i < 13; i++)
-	debug_buf[i + 1] =
-	    ((ean->buf[7] < 0 || ean->buf[i] < 0) ? '-' : ean->buf[i] + '0');
-    debug_buf[i + 1] = ' ';
-    for (; i < 18; i++)
-	debug_buf[i + 2] =
-	    ((ean->buf[13] < 0 || ean->buf[i] < 0) ? '-' : ean->buf[i] + '0');
-    debug_buf[i + 2] = '\0';
-    return (debug_buf);
-}
-#endif
 
 static inline int check_width(unsigned w0, unsigned w1)
 {

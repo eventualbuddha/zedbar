@@ -26,9 +26,6 @@
 
 #include "zbar.h"
 
-#ifdef DEBUG_CODE128
-#define DEBUG_LEVEL (DEBUG_CODE128)
-#endif
 #include "debug.h"
 #include "decoder.h"
 

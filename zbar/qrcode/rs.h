@@ -53,14 +53,4 @@ void rs_gf256_init(rs_gf256 *_gf, unsigned _ppoly);
 int rs_correct(const rs_gf256 *_gf, int _m0, unsigned char *_data, int _ndata,
 	       int _npar, const unsigned char *_erasures, int _nerasures);
 
-/*Create an _npar-coefficient generator polynomial for a Reed-Solomon code with
-   _npar<256 parity bytes.*/
-void rs_compute_genpoly(const rs_gf256 *_gf, int _m0, unsigned char *_genpoly,
-			int _npar);
-
-/*Adds _npar<=_ndata parity bytes to an _ndata-_npar byte message.
-  _data must contain room for _ndata<256 bytes.*/
-void rs_encode(const rs_gf256 *_gf, unsigned char *_data, int _ndata,
-	       const unsigned char *_genpoly, int _npar);
-
 #endif

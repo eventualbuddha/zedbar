@@ -90,10 +90,6 @@ zbar_error_t _zbar_get_error_code(const void *container)
     return (err->type);
 }
 
-/* ERROR: zbar video in v4l1_set_format():
- *     system error: blah[: blah]
- */
-
 const char *_zbar_error_string(const void *container, int verbosity)
 {
     (void)verbosity;

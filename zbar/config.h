@@ -34,10 +34,6 @@
 #define HAVE_STRTOL	1
 #define HAVE_STRTOUL	1
 
-/* Image format support */
-#define HAVE_LIBJPEG 1
-#define HAVE_LIBPNG  1
-
 /* Package information */
 #define PACKAGE		"zbar"
 #define PACKAGE_NAME	"zbar"

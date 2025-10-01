@@ -189,12 +189,8 @@ int zbar_image_write(const zbar_image_t *img, const char *filebase)
 
     f = fopen(filename, "w");
     if (!f) {
-#ifdef HAVE_ERRNO_H
 	rc = errno;
 	zprintf(1, "ERROR opening %s: %s\n", filename, strerror(rc));
-#else
-	rc = 1;
-#endif
 	goto error;
     }
 
@@ -206,12 +202,8 @@ int zbar_image_write(const zbar_image_t *img, const char *filebase)
 
     if (fwrite(&hdr, sizeof(hdr), 1, f) != 1 ||
 	fwrite(img->data, 1, img->datalen, f) != img->datalen) {
-#ifdef HAVE_ERRNO_H
 	rc = errno;
 	zprintf(1, "ERROR writing %s: %s\n", filename, strerror(rc));
-#else
-	rc = 1;
-#endif
 	fclose(f);
 	goto error;
     }

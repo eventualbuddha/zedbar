@@ -43,8 +43,6 @@ This builds:
 
 ## Dependencies
 
-- libjpeg
-- libpng
 - Standard C library and math library
 
 ## Rust Migration
@@ -56,4 +54,3 @@ The `rust-wrapper` branch contains initial work on Rust FFI bindings and a gradu
 LGPL 2.1 - See LICENSE.md for details.
 
 This is a fork for educational/experimental purposes focused on Rust migration, not intended as a replacement for the upstream ZBar project.
-

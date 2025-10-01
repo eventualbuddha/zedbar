@@ -28,9 +28,6 @@
 
 #include "zbar.h"
 
-#ifdef DEBUG_SCANNER
-#define DEBUG_LEVEL (DEBUG_SCANNER)
-#endif
 #include "debug.h"
 
 #ifndef ZBAR_FIXED
