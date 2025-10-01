@@ -25,7 +25,6 @@ LIB_SOURCES = \
 	zbar/decoder/i25.c \
 	zbar/decoder/qr_finder.c \
 	zbar/decoder/sq_finder.c \
-	zbar/qrcode/binarize.c \
 	zbar/qrcode/qrdec.c \
 	zbar/qrcode/qrdectxt.c \
 	zbar/qrcode/rs.c

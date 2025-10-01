@@ -27,7 +27,7 @@ fn main() {
             "zbar/decoder/sq_finder.c",
             // QR code modules
             // "zbar/qrcode/bch15_5.c", // Converted to Rust
-            "zbar/qrcode/binarize.c",
+            // "zbar/qrcode/binarize.c", // Converted to Rust
             // "zbar/qrcode/isaac.c", // Converted to Rust
             "zbar/qrcode/qrdec.c",
             "zbar/qrcode/qrdectxt.c",
