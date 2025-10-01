@@ -32,7 +32,6 @@
 zbar_image_t *zbar_image_create()
 {
     zbar_image_t *img = calloc(1, sizeof(zbar_image_t));
-    _zbar_refcnt_init();
     _zbar_image_refcnt(img, 1);
     img->srcidx = -1;
     return (img);

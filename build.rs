@@ -11,7 +11,6 @@ fn main() {
             "zbar/image.c",
             "zbar/img_scanner.c",
             "zbar/processor.c",
-            "zbar/refcnt.c",
             "zbar/scanner.c",
             "zbar/sqcode.c",
             "zbar/symbol.c",

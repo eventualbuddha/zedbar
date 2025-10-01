@@ -55,6 +55,4 @@ static inline int _zbar_refcnt(refcnt_t *cnt, int delta)
 
 #endif
 
-void _zbar_refcnt_init(void);
-
 #endif
