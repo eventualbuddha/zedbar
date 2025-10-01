@@ -24,7 +24,7 @@
 #include "error.h"
 #include <string.h>
 
-int _zbar_verbosity = 0;
+// _zbar_verbosity global variable now in Rust (src/error.rs)
 
 static const char *const sev_str[] = { "FATAL ERROR", "ERROR", "OK", "WARNING",
 				       "NOTE" };
@@ -51,29 +51,9 @@ static const char *const err_str[] = {
 };
 #define ERR_MAX (strlen(err_str[ZBAR_ERR_CLOSED]))
 
-int zbar_version(unsigned *major, unsigned *minor, unsigned *patch)
-{
-    if (major)
-	*major = ZBAR_VERSION_MAJOR;
-    if (minor)
-	*minor = ZBAR_VERSION_MINOR;
-    if (patch)
-	*patch = ZBAR_VERSION_PATCH;
-    return (0);
-}
-
-void zbar_set_verbosity(int level)
-{
-    _zbar_verbosity = level;
-}
-
-void zbar_increase_verbosity()
-{
-    if (!_zbar_verbosity)
-	_zbar_verbosity++;
-    else
-	_zbar_verbosity <<= 1;
-}
+// zbar_version() implemented in Rust (src/error.rs)
+// zbar_set_verbosity() implemented in Rust (src/error.rs)
+// zbar_increase_verbosity() implemented in Rust (src/error.rs)
 
 int _zbar_error_spew(const void *container, int verbosity)
 {
