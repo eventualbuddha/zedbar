@@ -37,12 +37,8 @@
 #include "image.h"
 
 #include "zbar.h"
-#if ENABLE_QRCODE == 1
 #include "qrcode.h"
-#endif
-#if ENABLE_SQCODE == 1
 #include "sqcode.h"
-#endif
 #include "img_scanner.h"
 
 #if 1
@@ -90,12 +86,8 @@ typedef struct recycle_bucket_s {
 struct zbar_image_scanner_s {
     zbar_scanner_t *scn;   /* associated linear intensity scanner */
     zbar_decoder_t *dcode; /* associated symbol decoder */
-#if ENABLE_QRCODE == 1
     qr_reader *qr; /* QR Code 2D reader */
-#endif
-#if ENABLE_SQCODE == 1
     sq_reader *sq; /* SQ Code 2D reader */
-#endif
 
     const void *userdata; /* application data */
     /* user result callback */
@@ -345,7 +337,6 @@ void _zbar_image_scanner_add_sym(zbar_image_scanner_t *iscn, zbar_symbol_t *sym)
     _zbar_symbol_refcnt(sym, 1);
 }
 
-#if ENABLE_QRCODE == 1
 extern qr_finder_line *_zbar_decoder_get_qr_finder_line(zbar_decoder_t *);
 
 #define QR_FIXED(v, rnd) ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
@@ -380,9 +371,7 @@ static inline void qr_handler(zbar_image_scanner_t *iscn)
 
     _zbar_qr_found_line(iscn->qr, vert, line);
 }
-#endif
 
-#if ENABLE_SQCODE == 1
 extern unsigned _zbar_decoder_get_sq_finder_config(zbar_decoder_t *);
 
 static void sq_handler(zbar_image_scanner_t *iscn)
@@ -390,7 +379,6 @@ static void sq_handler(zbar_image_scanner_t *iscn)
     unsigned config = _zbar_decoder_get_sq_finder_config(iscn->dcode);
     _zbar_sq_new_config(iscn->sq, config);
 }
-#endif
 
 static void symbol_handler(zbar_decoder_t *dcode)
 {
@@ -401,14 +389,10 @@ static void symbol_handler(zbar_decoder_t *dcode)
     unsigned datalen;
     zbar_symbol_t *sym;
 
-#if ENABLE_QRCODE == 1
     if (type == ZBAR_QRCODE) {
 	qr_handler(iscn);
 	return;
     }
-#else
-    assert(type != ZBAR_QRCODE);
-#endif
 
     if (TEST_CFG(iscn, ZBAR_CFG_POSITION)) {
 	/* tmp position fixup */
@@ -480,13 +464,9 @@ zbar_image_scanner_t *zbar_image_scanner_create()
     zbar_decoder_set_userdata(iscn->dcode, iscn);
     zbar_decoder_set_handler(iscn->dcode, symbol_handler);
 
-#if ENABLE_QRCODE == 1
     iscn->qr = _zbar_qr_create();
-#endif
 
-#if ENABLE_SQCODE == 1
     iscn->sq = _zbar_sq_create();
-#endif
 
     /* apply default configuration */
     CFG(iscn, ZBAR_CFG_X_DENSITY) = 1;
@@ -545,18 +525,14 @@ void zbar_image_scanner_destroy(zbar_image_scanner_t *iscn)
 	    _zbar_symbol_free(sym);
 	}
     }
-#if ENABLE_QRCODE == 1
     if (iscn->qr) {
 	_zbar_qr_destroy(iscn->qr);
 	iscn->qr = NULL;
     }
-#endif
-#if ENABLE_SQCODE == 1
     if (iscn->sq) {
 	_zbar_sq_destroy(iscn->sq);
 	iscn->sq = NULL;
     }
-#endif
     free(iscn);
 }
 
@@ -706,13 +682,9 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
     static unsigned int scan_counter = 0;
     iscn->time			     = scan_counter++;
 
-#if ENABLE_QRCODE == 1
     _zbar_qr_reset(iscn->qr);
-#endif
 
-#if ENABLE_SQCODE == 1
     _zbar_sq_reset(iscn->sq);
-#endif
 
     /* image must be in grayscale format */
     if (img->format != fourcc('Y', '8', '0', '0') &&
@@ -830,14 +802,10 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
     iscn->dy  = 0;
     iscn->img = NULL;
 
-#if ENABLE_QRCODE == 1
     _zbar_qr_decode(iscn->qr, iscn, img);
-#endif
 
-#if ENABLE_SQCODE == 1
     sq_handler(iscn);
     _zbar_sq_decode(iscn->sq, iscn, img);
-#endif
 
     /* FIXME tmp hack to filter bad EAN results */
     /* FIXME tmp hack to merge simple case EAN add-ons */

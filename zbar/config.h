@@ -2,17 +2,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-/* Enable barcode symbologies */
-#define ENABLE_QRCODE  1
-#define ENABLE_CODE128 1
-#define ENABLE_CODE39  1
-#define ENABLE_CODE93  1
-#define ENABLE_EAN     1
-#define ENABLE_CODABAR 1
-#define ENABLE_I25     1
-#define ENABLE_DATABAR 1
-#define ENABLE_SQCODE  1
-
 /* System capabilities */
 #define HAVE_STDLIB_H	1
 #define HAVE_STRING_H	1
