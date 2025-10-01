@@ -31,6 +31,7 @@
 
 /* Struct definitions moved to zbar.h - these are just forward declarations */
 
+// Implemented in Rust (src/symbol.rs)
 extern int _zbar_get_symbol_hash(zbar_symbol_type_t);
 
 extern void _zbar_symbol_free(zbar_symbol_t *);

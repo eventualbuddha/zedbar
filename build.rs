@@ -13,7 +13,7 @@ fn main() {
             "zbar/processor.c",
             "zbar/scanner.c",
             // "zbar/sqcode.c", // Converted to Rust
-            "zbar/symbol.c",
+            // "zbar/symbol.c", // Converted to Rust
             // Decoder modules
             "zbar/decoder/codabar.c",
             "zbar/decoder/code128.c",
