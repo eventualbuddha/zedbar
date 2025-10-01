@@ -64,16 +64,6 @@ void zbar_processor_destroy(zbar_processor_t *proc)
     free(proc);
 }
 
-int zbar_processor_init(zbar_processor_t *proc, const char *dev,
-			int enable_display)
-{
-    (void)proc;
-    (void)dev;
-    (void)enable_display;
-    // Simplified init - no device or display support needed for zbarimg
-    return 0;
-}
-
 int zbar_process_image(zbar_processor_t *proc, zbar_image_t *img)
 {
     if (!proc || !img)
@@ -98,66 +88,4 @@ int zbar_process_image(zbar_processor_t *proc, zbar_image_t *img)
 	zbar_symbol_set_ref(proc->syms, 1);
 
     return nsyms;
-}
-
-// Stub implementations for unused functions
-int zbar_processor_set_control(zbar_processor_t *proc, const char *control_name,
-			       int value)
-{
-    (void)proc;
-    (void)control_name;
-    (void)value;
-    return 0;
-}
-
-int zbar_processor_get_control(zbar_processor_t *proc, const char *control_name,
-			       int *value)
-{
-    (void)proc;
-    (void)control_name;
-    (void)value;
-    return 0;
-}
-
-int zbar_processor_request_size(zbar_processor_t *proc, unsigned width,
-				unsigned height)
-{
-    (void)proc;
-    (void)width;
-    (void)height;
-    return 0;
-}
-
-int zbar_processor_is_visible(zbar_processor_t *proc)
-{
-    (void)proc;
-    return 0;
-}
-
-int zbar_processor_set_visible(zbar_processor_t *proc, int visible)
-{
-    (void)proc;
-    (void)visible;
-    return 0;
-}
-
-int zbar_processor_user_wait(zbar_processor_t *proc, int timeout)
-{
-    (void)proc;
-    (void)timeout;
-    return 0;
-}
-
-int zbar_processor_set_active(zbar_processor_t *proc, int active)
-{
-    (void)proc;
-    (void)active;
-    return 0;
-}
-
-int zbar_process_one(zbar_processor_t *proc, int timeout)
-{
-    (void)proc;
-    (void)timeout;
-    return 0;
 }

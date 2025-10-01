@@ -270,11 +270,6 @@ int main(int argc, const char *argv[])
     processor = zbar_processor_create(0);
     assert(processor);
 
-    if (zbar_processor_init(processor, NULL, 0)) {
-	zbar_processor_error_spew(processor, 0);
-	return (1);
-    }
-
     for (i = 1; i < argc; i++) {
 	const char *arg = argv[i];
 	if (!arg)
