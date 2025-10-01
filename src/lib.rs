@@ -23,6 +23,9 @@ mod ffi;
 pub use ffi::*;
 
 #[cfg(test)]
+mod proptest_qr;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

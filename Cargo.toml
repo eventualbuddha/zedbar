@@ -23,6 +23,8 @@ name = "zbarimg"
 path = "src/bin/zbarimg.rs"
 
 [dev-dependencies]
+proptest = "1.4"
+qrcode = "0.14"
 
 [features]
 default = ["qrcode", "ean", "code128", "code39"]
