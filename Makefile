@@ -13,7 +13,6 @@ LIB_SOURCES = \
 	zbar/img_scanner.c \
 	zbar/processor.c \
 	zbar/scanner.c \
-	zbar/sqcode.c \
 	zbar/symbol.c \
 	zbar/decoder/codabar.c \
 	zbar/decoder/code128.c \

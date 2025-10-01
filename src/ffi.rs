@@ -1,9 +1,51 @@
 //! FFI bindings to the C ZBar library
-//! 
+//!
 //! This module provides direct bindings to the original C implementation.
 //! As modules are converted to Rust, these bindings will be gradually removed.
 
 use libc::{c_char, c_int, c_uint, c_void, c_ulong};
+
+// Opaque types - actual structures defined in C
+#[repr(C)]
+pub struct zbar_image_scanner_t {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct zbar_image_t {
+    pub format: u32,
+    pub width: c_uint,
+    pub height: c_uint,
+    pub data: *const c_void,
+    pub datalen: c_ulong,
+    pub userdata: *mut c_void,
+    pub cleanup: *mut c_void,
+    pub refcnt: c_int,
+    pub srcidx: c_int,
+    pub next: *mut zbar_image_t,
+    pub seq: c_uint,
+    pub syms: *mut c_void,
+}
+
+#[repr(C)]
+pub struct zbar_symbol_t {
+    pub symbol_type: c_int,
+    pub configs: c_uint,
+    pub modifiers: c_uint,
+    pub data_alloc: c_uint,
+    pub datalen: c_uint,
+    pub data: *mut c_char,
+    pub pts_alloc: c_uint,
+    pub npts: c_uint,
+    pub pts: *mut c_void,
+    pub orient: c_int,
+    pub refcnt: c_int,
+    pub next: *mut zbar_symbol_t,
+    pub syms: *mut c_void,
+    pub time: c_ulong,
+    pub cache_count: c_int,
+    pub quality: c_int,
+}
 
 #[link(name = "zbar_c", kind = "static")]
 extern "C" {
@@ -44,4 +86,26 @@ extern "C" {
     pub fn zbar_symbol_get_data(symbol: *const c_void) -> *const c_char;
     pub fn zbar_symbol_get_data_length(symbol: *const c_void) -> c_uint;
     pub fn zbar_symbol_next(symbol: *const c_void) -> *const c_void;
+
+    // Internal scanner functions (from img_scanner.h)
+    pub fn _zbar_image_scanner_alloc_sym(
+        scanner: *mut zbar_image_scanner_t,
+        symbol_type: c_int,
+        data_len: c_int,
+    ) -> *mut zbar_symbol_t;
+    pub fn _zbar_image_scanner_add_sym(
+        scanner: *mut zbar_image_scanner_t,
+        symbol: *mut zbar_symbol_t,
+    );
+    pub fn _zbar_image_scanner_recycle_syms(
+        scanner: *mut zbar_image_scanner_t,
+        symbol: *mut zbar_symbol_t,
+    );
+    pub fn zbar_image_scanner_get_results(
+        scanner: *const c_void,
+    ) -> *mut c_void;
+    pub fn zbar_image_scanner_recycle_image(
+        scanner: *mut c_void,
+        image: *mut c_void,
+    );
 }

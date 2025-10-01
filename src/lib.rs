@@ -8,6 +8,7 @@ pub mod error;
 pub mod image;
 pub mod qrcode;
 pub mod scanner;
+pub mod sqcode;
 pub mod symbol;
 
 // Re-export main types
