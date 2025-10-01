@@ -205,7 +205,6 @@ static inline unsigned decode_sortn(zbar_decoder_t *dcode, int n, int i0)
 static inline char acquire_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req)
 {
     if (dcode->lock) {
-	dbprintf(2, " [locked %d]\n", dcode->lock);
 	return (1);
     }
     dcode->lock = req;
