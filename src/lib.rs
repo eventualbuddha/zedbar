@@ -3,15 +3,11 @@
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
 //! The conversion to Rust is being done incrementally using c2rust as a starting point.
 
-pub mod codabar;
-pub mod code128;
-pub mod code39;
-pub mod code93;
 pub mod decoder;
 pub mod decoder_types;
+pub mod decoders;
 pub mod error;
 pub mod finder;
-pub mod i25;
 pub mod image;
 pub mod line_scanner;
 pub mod qrcode;
