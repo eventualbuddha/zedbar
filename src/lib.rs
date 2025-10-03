@@ -3,6 +3,7 @@
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
 //! The conversion to Rust is being done incrementally using c2rust as a starting point.
 
+pub mod code39;
 pub mod decoder;
 pub mod decoder_types;
 pub mod error;
@@ -139,7 +140,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one EAN-13 barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one EAN-13 barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
@@ -170,7 +174,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one EAN-8 barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one EAN-8 barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
@@ -179,8 +186,10 @@ mod tests {
 
             // EAN-8 can be reported as EAN-13 with zero-padding
             assert!(
-                symbol.symbol_type() == SymbolType::Ean8 || symbol.symbol_type() == SymbolType::Ean13,
-                "Expected EAN-8 or EAN-13, got {:?}", symbol.symbol_type()
+                symbol.symbol_type() == SymbolType::Ean8
+                    || symbol.symbol_type() == SymbolType::Ean13,
+                "Expected EAN-8 or EAN-13, got {:?}",
+                symbol.symbol_type()
             );
 
             // Verify the data contains our EAN-8 digits
@@ -209,7 +218,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one UPC-A barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one UPC-A barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
@@ -239,7 +251,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one Code128 barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one Code128 barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
@@ -269,7 +284,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one Code39 barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one Code39 barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
@@ -299,7 +317,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one Code93 barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one Code93 barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
@@ -329,7 +350,10 @@ mod tests {
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one Codabar barcode");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one Codabar barcode"
+        );
 
         let symbols = zbar_img.symbols();
         for symbol in symbols {
