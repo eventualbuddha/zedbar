@@ -4,6 +4,7 @@
 //! The conversion to Rust is being done incrementally using c2rust as a starting point.
 
 pub mod codabar;
+pub mod code128;
 pub mod code39;
 pub mod code93;
 pub mod decoder;

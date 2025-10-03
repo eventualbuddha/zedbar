@@ -243,6 +243,58 @@ pub struct code128_decoder_t {
     pub configs: [c_int; NUM_CFGS],
 }
 
+impl code128_decoder_t {
+    #[inline]
+    pub fn direction(&self) -> u8 {
+        (self.bitfields_and_start & 0x1) as u8
+    }
+
+    #[inline]
+    pub fn set_direction(&mut self, val: u8) {
+        self.bitfields_and_start = (self.bitfields_and_start & !0x1) | (val as c_uint & 0x1);
+    }
+
+    #[inline]
+    pub fn element(&self) -> u8 {
+        ((self.bitfields_and_start >> 1) & 0x7) as u8
+    }
+
+    #[inline]
+    pub fn set_element(&mut self, val: u8) {
+        self.bitfields_and_start =
+            (self.bitfields_and_start & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
+    }
+
+    #[inline]
+    pub fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields_and_start >> 4) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub fn set_character(&mut self, val: i16) {
+        self.bitfields_and_start =
+            (self.bitfields_and_start & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
+    }
+
+    #[inline]
+    pub fn start(&self) -> u8 {
+        ((self.bitfields_and_start >> 16) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub fn set_start(&mut self, val: u8) {
+        self.bitfields_and_start =
+            (self.bitfields_and_start & !(0xFF << 16)) | ((val as c_uint) << 16);
+    }
+}
+
 /// SQ Code finder state (already defined but include here for completeness)
 #[repr(C)]
 #[allow(non_camel_case_types)]
