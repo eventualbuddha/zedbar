@@ -34,18 +34,15 @@ const FNC3: u8 = 0x60;
 const FNC2: u8 = 0x61;
 const SHIFT: u8 = 0x62;
 const CODE_C: u8 = 0x63;
-#[allow(dead_code)]
-const CODE_B: u8 = 0x64;
+// CODE_B = 0x64 - unused in decoder (part of spec)
 const CODE_A: u8 = 0x65;
 const FNC1: u8 = 0x66;
 const START_A: u8 = 0x67;
-#[allow(dead_code)]
-const START_B: u8 = 0x68;
+// START_B = 0x68 - unused in decoder (part of spec)
 const START_C: u8 = 0x69;
 const STOP_FWD: u8 = 0x6a;
 const STOP_REV: u8 = 0x6b;
-#[allow(dead_code)]
-const FNC4: u8 = 0x6c;
+// FNC4 = 0x6c - unused in decoder (FIXME: extended ASCII not implemented)
 
 // Assertion macro
 macro_rules! zassert {
