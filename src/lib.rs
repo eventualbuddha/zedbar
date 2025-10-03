@@ -4,6 +4,7 @@
 //! The conversion to Rust is being done incrementally using c2rust as a starting point.
 
 pub mod code39;
+pub mod code93;
 pub mod decoder;
 pub mod decoder_types;
 pub mod error;

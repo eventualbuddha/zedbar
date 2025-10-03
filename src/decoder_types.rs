@@ -137,6 +137,45 @@ pub struct code93_decoder_t {
     pub configs: [c_int; NUM_CFGS],
 }
 
+impl code93_decoder_t {
+    #[inline]
+    pub fn direction(&self) -> bool {
+        (self.bitfields & 0x1) != 0
+    }
+
+    #[inline]
+    pub fn set_direction(&mut self, val: bool) {
+        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+    }
+
+    #[inline]
+    pub fn element(&self) -> u8 {
+        ((self.bitfields >> 1) & 0x7) as u8
+    }
+
+    #[inline]
+    pub fn set_element(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
+    }
+
+    #[inline]
+    pub fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields >> 4) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub fn set_character(&mut self, val: i16) {
+        self.bitfields = (self.bitfields & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
+    }
+}
+
 /// Codabar decoder state
 #[repr(C)]
 #[allow(non_camel_case_types)]
