@@ -98,7 +98,7 @@ struct zbar_decoder_s {
     sq_finder_t sqf;		 /* SQ Code finder state */
 };
 
-/* Helper functions for decoder - implementations in decoder.c */
+/* Helper functions for decoder - implementations in src/decoder.rs */
 extern char _zbar_decoder_get_color(const zbar_decoder_t *dcode);
 extern unsigned _zbar_decoder_get_width(const zbar_decoder_t *dcode, unsigned char offset);
 extern unsigned _zbar_decoder_pair_width(const zbar_decoder_t *dcode, unsigned char offset);

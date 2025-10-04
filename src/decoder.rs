@@ -1,12 +1,71 @@
 //! Low-level barcode decoder
 
-use libc::{c_char, c_int, c_uint};
-use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW};
+use libc::{c_char, c_int, c_uint, c_void};
+use crate::decoder_types::{
+    codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
+    databar_decoder_t, ean_decoder_t, i25_decoder_t, qr_finder_t, zbar_decoder_t,
+    zbar_symbol_type_t, DECODE_WINDOW,
+};
 
 // Buffer allocation constants
 const BUFFER_MIN: c_uint = 0x20;
 const BUFFER_MAX: c_uint = 0x100;
 const BUFFER_INCR: c_uint = 0x10;
+
+// Config constants from zbar.h
+const ZBAR_CFG_ENABLE: c_int = 0;
+const ZBAR_CFG_EMIT_CHECK: c_int = 2;
+const ZBAR_CFG_NUM: c_int = 5;
+const ZBAR_CFG_MIN_LEN: c_int = 0x20;
+const ZBAR_CFG_MAX_LEN: c_int = 0x21;
+
+// Symbol type constants from zbar.h
+#[allow(dead_code)]
+const ZBAR_NONE: zbar_symbol_type_t = 0;
+const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
+const ZBAR_EAN2: zbar_symbol_type_t = 2;
+const ZBAR_EAN5: zbar_symbol_type_t = 5;
+const ZBAR_EAN8: zbar_symbol_type_t = 8;
+const ZBAR_UPCE: zbar_symbol_type_t = 9;
+const ZBAR_ISBN10: zbar_symbol_type_t = 10;
+const ZBAR_UPCA: zbar_symbol_type_t = 12;
+const ZBAR_EAN13: zbar_symbol_type_t = 13;
+const ZBAR_ISBN13: zbar_symbol_type_t = 14;
+const ZBAR_COMPOSITE: zbar_symbol_type_t = 15;
+const ZBAR_I25: zbar_symbol_type_t = 25;
+const ZBAR_DATABAR: zbar_symbol_type_t = 34;
+const ZBAR_DATABAR_EXP: zbar_symbol_type_t = 35;
+const ZBAR_CODABAR: zbar_symbol_type_t = 38;
+const ZBAR_CODE39: zbar_symbol_type_t = 39;
+const ZBAR_QRCODE: zbar_symbol_type_t = 64;
+const ZBAR_SQCODE: zbar_symbol_type_t = 80;
+const ZBAR_CODE93: zbar_symbol_type_t = 93;
+const ZBAR_CODE128: zbar_symbol_type_t = 128;
+
+// External C functions for decoders and reset functions not yet converted
+extern "C" {
+    fn _zbar_databar_reset(databar: *mut databar_decoder_t);
+    fn _zbar_databar_new_scan(databar: *mut databar_decoder_t);
+    fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+    fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
+}
+
+// Macro equivalents
+#[inline]
+unsafe fn cfg_set(configs: &mut [c_int; 2], cfg: c_int, val: c_int) {
+    configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+}
+
+#[inline]
+fn test_cfg(config: c_uint, cfg: c_int) -> bool {
+    ((config >> cfg) & 1) != 0
+}
 
 /// Get the color (bar/space) of the current element
 #[no_mangle]
@@ -187,6 +246,581 @@ pub unsafe extern "C" fn _zbar_decoder_size_buf(
     (*dcode).buf = buf;
     (*dcode).buf_alloc = new_len;
     0
+}
+
+// ============================================================================
+// Decoder-specific reset functions
+// ============================================================================
+
+/// Reset codabar decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_codabar_reset(codabar: *mut codabar_decoder_t) {
+    (*codabar).set_direction(false);
+    (*codabar).set_element(0);
+    (*codabar).set_character(-1);
+    (*codabar).s7 = 0;
+}
+
+/// Reset code128 decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_code128_reset(dcode128: *mut code128_decoder_t) {
+    (*dcode128).set_direction(0);
+    (*dcode128).set_element(0);
+    (*dcode128).set_character(-1);
+    (*dcode128).s6 = 0;
+}
+
+/// Reset code39 decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_code39_reset(dcode39: *mut code39_decoder_t) {
+    (*dcode39).set_direction(false);
+    (*dcode39).set_element(0);
+    (*dcode39).set_character(-1);
+    (*dcode39).s9 = 0;
+}
+
+/// Reset code93 decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_code93_reset(dcode93: *mut code93_decoder_t) {
+    (*dcode93).set_direction(false);
+    (*dcode93).set_element(0);
+    (*dcode93).set_character(-1);
+}
+
+/// Reset i25 decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_i25_reset(i25: *mut i25_decoder_t) {
+    (*i25).set_direction(false);
+    (*i25).set_element(0);
+    (*i25).set_character(-1);
+    (*i25).s10 = 0;
+}
+
+/// Reset QR finder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_qr_finder_reset(qrf: *mut qr_finder_t) {
+    (*qrf).s5 = 0;
+}
+
+/// Prepare EAN decoder for new scan
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_ean_new_scan(ean: *mut ean_decoder_t) {
+    (*ean).pass[0].state = -1;
+    (*ean).pass[1].state = -1;
+    (*ean).pass[2].state = -1;
+    (*ean).pass[3].state = -1;
+    (*ean).s4 = 0;
+}
+
+/// Reset EAN decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_ean_reset(ean: *mut ean_decoder_t) {
+    _zbar_ean_new_scan(ean);
+    (*ean).left = 0; // ZBAR_NONE
+    (*ean).right = 0; // ZBAR_NONE
+}
+
+// ============================================================================
+// Decoder lifecycle functions
+// ============================================================================
+
+/// Create a new decoder instance
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_create() -> *mut zbar_decoder_t {
+    let dcode = libc::calloc(1, std::mem::size_of::<zbar_decoder_t>()) as *mut zbar_decoder_t;
+
+    (*dcode).buf_alloc = BUFFER_MIN;
+    (*dcode).buf = libc::malloc((*dcode).buf_alloc as usize) as *mut c_char;
+
+    // Initialize default configs
+    (*dcode).ean.enable = 1;
+    (*dcode).ean.ean13_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+    (*dcode).ean.ean8_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+    (*dcode).ean.upca_config = 1 << ZBAR_CFG_EMIT_CHECK;
+    (*dcode).ean.upce_config = 1 << ZBAR_CFG_EMIT_CHECK;
+    (*dcode).ean.isbn10_config = 1 << ZBAR_CFG_EMIT_CHECK;
+    (*dcode).ean.isbn13_config = 1 << ZBAR_CFG_EMIT_CHECK;
+    // FIXME_ADDON_SYNC not defined, skip ean2/ean5 config
+
+    (*dcode).i25.config = 1 << ZBAR_CFG_ENABLE;
+    cfg_set(&mut (*dcode).i25.configs, ZBAR_CFG_MIN_LEN, 6);
+
+    (*dcode).databar.config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+    (*dcode).databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+    (*dcode).databar.set_csegs(4);
+    (*dcode).databar.segs = libc::calloc(
+        4,
+        std::mem::size_of::<crate::decoder_types::databar_segment_t>(),
+    ) as *mut crate::decoder_types::databar_segment_t;
+
+    (*dcode).codabar.config = 1 << ZBAR_CFG_ENABLE;
+    cfg_set(&mut (*dcode).codabar.configs, ZBAR_CFG_MIN_LEN, 4);
+
+    (*dcode).code39.config = 1 << ZBAR_CFG_ENABLE;
+    cfg_set(&mut (*dcode).code39.configs, ZBAR_CFG_MIN_LEN, 1);
+
+    (*dcode).code93.config = 1 << ZBAR_CFG_ENABLE;
+    (*dcode).code128.config = 1 << ZBAR_CFG_ENABLE;
+    (*dcode).qrf.config = 1 << ZBAR_CFG_ENABLE;
+    (*dcode).sqf.config = 1 << ZBAR_CFG_ENABLE;
+
+    zbar_decoder_reset(dcode);
+    dcode
+}
+
+/// Destroy a decoder instance
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_destroy(dcode: *mut zbar_decoder_t) {
+    if !(*dcode).databar.segs.is_null() {
+        libc::free((*dcode).databar.segs as *mut c_void);
+    }
+    if !(*dcode).buf.is_null() {
+        libc::free((*dcode).buf as *mut c_void);
+    }
+    libc::free(dcode as *mut c_void);
+}
+
+/// Reset decoder to initial state
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_reset(dcode: *mut zbar_decoder_t) {
+    // Calculate the offset to buf_alloc field
+    let reset_size = &(*dcode).buf_alloc as *const _ as usize - dcode as usize;
+    std::ptr::write_bytes(dcode as *mut u8, 0, reset_size);
+
+    _zbar_ean_reset(&mut (*dcode).ean);
+    _zbar_i25_reset(&mut (*dcode).i25);
+    _zbar_databar_reset(&mut (*dcode).databar);
+    _zbar_codabar_reset(&mut (*dcode).codabar);
+    _zbar_code39_reset(&mut (*dcode).code39);
+    _zbar_code93_reset(&mut (*dcode).code93);
+    _zbar_code128_reset(&mut (*dcode).code128);
+    _zbar_qr_finder_reset(&mut (*dcode).qrf);
+}
+
+/// Prepare decoder for a new scan
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_new_scan(dcode: *mut zbar_decoder_t) {
+    // Soft reset decoder
+    std::ptr::write_bytes((*dcode).w.as_mut_ptr(), 0, (*dcode).w.len());
+    (*dcode).lock = 0;
+    (*dcode).idx = 0;
+    (*dcode).s6 = 0;
+
+    _zbar_ean_new_scan(&mut (*dcode).ean);
+    _zbar_i25_reset(&mut (*dcode).i25);
+    _zbar_databar_new_scan(&mut (*dcode).databar);
+    _zbar_codabar_reset(&mut (*dcode).codabar);
+    _zbar_code39_reset(&mut (*dcode).code39);
+    _zbar_code93_reset(&mut (*dcode).code93);
+    _zbar_code128_reset(&mut (*dcode).code128);
+    _zbar_qr_finder_reset(&mut (*dcode).qrf);
+}
+
+// ============================================================================
+// Decoder accessor functions
+// ============================================================================
+
+/// Get current decoder color (bar/space)
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_color(dcode: *const zbar_decoder_t) -> c_int {
+    _zbar_decoder_get_color(dcode) as c_int
+}
+
+/// Get decoded data buffer
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_data(dcode: *const zbar_decoder_t) -> *const c_char {
+    (*dcode).buf as *const c_char
+}
+
+/// Get length of decoded data
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_data_length(dcode: *const zbar_decoder_t) -> c_uint {
+    (*dcode).buflen
+}
+
+/// Get decode direction
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_direction(dcode: *const zbar_decoder_t) -> c_int {
+    (*dcode).direction
+}
+
+/// Set decoder callback handler
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_set_handler(
+    dcode: *mut zbar_decoder_t,
+    handler: Option<crate::decoder_types::zbar_decoder_handler_t>,
+) -> Option<crate::decoder_types::zbar_decoder_handler_t> {
+    let result = (*dcode).handler;
+    (*dcode).handler = handler;
+    result
+}
+
+/// Set user data pointer
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_set_userdata(dcode: *mut zbar_decoder_t, userdata: *mut c_void) {
+    (*dcode).userdata = userdata;
+}
+
+/// Get user data pointer
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_userdata(dcode: *const zbar_decoder_t) -> *mut c_void {
+    (*dcode).userdata
+}
+
+/// Get decoded symbol type
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_type(dcode: *const zbar_decoder_t) -> zbar_symbol_type_t {
+    (*dcode).type_
+}
+
+/// Get decoded symbol modifiers
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_modifiers(dcode: *const zbar_decoder_t) -> c_uint {
+    (*dcode).modifiers
+}
+
+// ============================================================================
+// Main decode function
+// ============================================================================
+
+/// Process a bar/space width through all decoders
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decode_width(
+    dcode: *mut zbar_decoder_t,
+    w: c_uint,
+) -> zbar_symbol_type_t {
+    let mut sym = 0; // ZBAR_NONE
+
+    // Store width in circular buffer
+    (*dcode).w[((*dcode).idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
+
+    // Update shared character width
+    (*dcode).s6 = (*dcode).s6.wrapping_sub(_zbar_decoder_get_width(dcode, 7));
+    (*dcode).s6 = (*dcode).s6.wrapping_add(_zbar_decoder_get_width(dcode, 1));
+
+    // Each decoder processes width stream in parallel
+    if test_cfg((*dcode).qrf.config, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_find_qr(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    if (*dcode).ean.enable != 0 {
+        let tmp = _zbar_decode_ean(dcode);
+        if tmp != 0 {
+            sym = tmp;
+        }
+    }
+
+    if test_cfg((*dcode).code39.config, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_decode_code39(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    if test_cfg((*dcode).code93.config, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_decode_code93(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    if test_cfg((*dcode).code128.config, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_decode_code128(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    if test_cfg((*dcode).databar.config | (*dcode).databar.config_exp, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_decode_databar(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    if test_cfg((*dcode).codabar.config, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_decode_codabar(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    if test_cfg((*dcode).i25.config, ZBAR_CFG_ENABLE) {
+        let tmp = _zbar_decode_i25(dcode);
+        if tmp > ZBAR_PARTIAL {
+            sym = tmp;
+        }
+    }
+
+    (*dcode).idx = (*dcode).idx.wrapping_add(1);
+    (*dcode).type_ = sym;
+
+    if sym != 0 {
+        if (*dcode).lock != 0 && sym > ZBAR_PARTIAL && sym != ZBAR_QRCODE {
+            _zbar_decoder_release_lock(dcode, sym);
+        }
+        if let Some(handler) = (*dcode).handler {
+            handler(dcode);
+        }
+    }
+
+    sym
+}
+
+// ============================================================================
+// Configuration functions
+// ============================================================================
+
+/// Get configuration pointer for a symbology (internal helper)
+unsafe fn decoder_get_configp(
+    dcode: *const zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+) -> *const c_uint {
+    match sym {
+        ZBAR_EAN13 => &(*dcode).ean.ean13_config as *const c_uint,
+        ZBAR_EAN2 => &(*dcode).ean.ean2_config as *const c_uint,
+        ZBAR_EAN5 => &(*dcode).ean.ean5_config as *const c_uint,
+        ZBAR_EAN8 => &(*dcode).ean.ean8_config as *const c_uint,
+        ZBAR_UPCA => &(*dcode).ean.upca_config as *const c_uint,
+        ZBAR_UPCE => &(*dcode).ean.upce_config as *const c_uint,
+        ZBAR_ISBN10 => &(*dcode).ean.isbn10_config as *const c_uint,
+        ZBAR_ISBN13 => &(*dcode).ean.isbn13_config as *const c_uint,
+        ZBAR_I25 => &(*dcode).i25.config as *const c_uint,
+        ZBAR_DATABAR => &(*dcode).databar.config as *const c_uint,
+        ZBAR_DATABAR_EXP => &(*dcode).databar.config_exp as *const c_uint,
+        ZBAR_CODABAR => &(*dcode).codabar.config as *const c_uint,
+        ZBAR_CODE39 => &(*dcode).code39.config as *const c_uint,
+        ZBAR_CODE93 => &(*dcode).code93.config as *const c_uint,
+        ZBAR_CODE128 => &(*dcode).code128.config as *const c_uint,
+        ZBAR_QRCODE => &(*dcode).qrf.config as *const c_uint,
+        ZBAR_SQCODE => &(*dcode).sqf.config as *const c_uint,
+        _ => std::ptr::null(),
+    }
+}
+
+/// Get all configurations for a symbology
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_configs(
+    dcode: *const zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+) -> c_uint {
+    let config = decoder_get_configp(dcode, sym);
+    if config.is_null() {
+        0
+    } else {
+        *config
+    }
+}
+
+/// Set boolean configuration (internal helper)
+unsafe fn decoder_set_config_bool(
+    dcode: *mut zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+    cfg: c_int,
+    val: c_int,
+) -> c_int {
+    let config = decoder_get_configp(dcode, sym) as *mut c_uint;
+    if config.is_null() || cfg >= ZBAR_CFG_NUM {
+        return 1;
+    }
+
+    if val == 0 {
+        *config &= !(1 << cfg);
+    } else if val == 1 {
+        *config |= 1 << cfg;
+    } else {
+        return 1;
+    }
+
+    // Update EAN enable flag
+    (*dcode).ean.enable = if test_cfg(
+        (*dcode).ean.ean13_config
+            | (*dcode).ean.ean2_config
+            | (*dcode).ean.ean5_config
+            | (*dcode).ean.ean8_config
+            | (*dcode).ean.upca_config
+            | (*dcode).ean.upce_config
+            | (*dcode).ean.isbn10_config
+            | (*dcode).ean.isbn13_config,
+        ZBAR_CFG_ENABLE,
+    ) {
+        1
+    } else {
+        0
+    };
+
+    0
+}
+
+/// Set integer configuration (internal helper)
+unsafe fn decoder_set_config_int(
+    dcode: *mut zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+    cfg: c_int,
+    val: c_int,
+) -> c_int {
+    match sym {
+        ZBAR_I25 => {
+            (*dcode).i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            0
+        }
+        ZBAR_CODABAR => {
+            (*dcode).codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            0
+        }
+        ZBAR_CODE39 => {
+            (*dcode).code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            0
+        }
+        ZBAR_CODE93 => {
+            (*dcode).code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            0
+        }
+        ZBAR_CODE128 => {
+            (*dcode).code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            0
+        }
+        _ => 1,
+    }
+}
+
+/// Get decoder configuration value
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_get_config(
+    dcode: *mut zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+    cfg: c_int,
+    val: *mut c_int,
+) -> c_int {
+    let config = decoder_get_configp(dcode, sym);
+
+    // Return error if symbol doesn't have config
+    if sym <= ZBAR_PARTIAL || sym > ZBAR_CODE128 || sym == ZBAR_COMPOSITE {
+        return 1;
+    }
+
+    // Return decoder boolean configs
+    if cfg < ZBAR_CFG_NUM {
+        *val = if (*config & (1 << cfg)) != 0 { 1 } else { 0 };
+        return 0;
+    }
+
+    // Return decoder integer configs
+    if cfg >= ZBAR_CFG_MIN_LEN && cfg <= ZBAR_CFG_MAX_LEN {
+        match sym {
+            ZBAR_I25 => {
+                *val = (*dcode).i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
+                0
+            }
+            ZBAR_CODABAR => {
+                *val = (*dcode).codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
+                0
+            }
+            ZBAR_CODE39 => {
+                *val = (*dcode).code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
+                0
+            }
+            ZBAR_CODE93 => {
+                *val = (*dcode).code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
+                0
+            }
+            ZBAR_CODE128 => {
+                *val = (*dcode).code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
+                0
+            }
+            _ => 1,
+        }
+    } else {
+        1
+    }
+}
+
+/// Set decoder configuration
+#[no_mangle]
+pub unsafe extern "C" fn zbar_decoder_set_config(
+    dcode: *mut zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+    cfg: c_int,
+    val: c_int,
+) -> c_int {
+    // If ZBAR_NONE, set config for all symbologies
+    if sym == ZBAR_NONE {
+        const ALL: [zbar_symbol_type_t; 17] = [
+            ZBAR_EAN13,
+            ZBAR_EAN2,
+            ZBAR_EAN5,
+            ZBAR_EAN8,
+            ZBAR_UPCA,
+            ZBAR_UPCE,
+            ZBAR_ISBN10,
+            ZBAR_ISBN13,
+            ZBAR_I25,
+            ZBAR_DATABAR,
+            ZBAR_DATABAR_EXP,
+            ZBAR_CODABAR,
+            ZBAR_CODE39,
+            ZBAR_CODE93,
+            ZBAR_CODE128,
+            ZBAR_QRCODE,
+            ZBAR_SQCODE,
+        ];
+        for &s in &ALL {
+            zbar_decoder_set_config(dcode, s, cfg, val);
+        }
+        return 0;
+    }
+
+    if cfg >= 0 && cfg < ZBAR_CFG_NUM {
+        decoder_set_config_bool(dcode, sym, cfg, val)
+    } else if cfg >= ZBAR_CFG_MIN_LEN && cfg <= ZBAR_CFG_MAX_LEN {
+        decoder_set_config_int(dcode, sym, cfg, val)
+    } else {
+        1
+    }
+}
+
+// ============================================================================
+// Debug helper
+// ============================================================================
+
+use std::sync::Mutex;
+
+static DECODER_DUMP: Mutex<Option<Vec<u8>>> = Mutex::new(None);
+
+/// Format decoder buffer as hex string (for debugging)
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_decoder_buf_dump(buf: *mut u8, buflen: c_uint) -> *const c_char {
+    let dumplen = (buflen * 3) + 12;
+    let mut dump = DECODER_DUMP.lock().unwrap();
+
+    // Allocate or reallocate buffer
+    if dump.is_none() || dump.as_ref().unwrap().len() < dumplen as usize {
+        *dump = Some(Vec::with_capacity(dumplen as usize));
+    }
+
+    let dump_vec = dump.as_mut().unwrap();
+    dump_vec.clear();
+
+    // Format header
+    let len_display = if buflen > 0xffff { 0xffff } else { buflen };
+    let header = format!("buf[{:04x}]=", len_display);
+    dump_vec.extend_from_slice(header.as_bytes());
+
+    // Format buffer contents as hex
+    let slice = std::slice::from_raw_parts(buf, buflen as usize);
+    for (i, &byte) in slice.iter().enumerate() {
+        if i > 0 {
+            dump_vec.push(b' ');
+        }
+        let hex = format!("{:02x}", byte);
+        dump_vec.extend_from_slice(hex.as_bytes());
+    }
+
+    dump_vec.push(0); // Null terminator
+    dump_vec.as_ptr() as *const c_char
 }
 
 /// Low-level decoder for processing bar/space width streams

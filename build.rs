@@ -6,7 +6,7 @@ fn main() {
 
     build
         .files([
-            "zbar/decoder.c",
+            // "zbar/decoder.c", // Converted to Rust
             // "zbar/error.c", // Converted to Rust
             // "zbar/image.c", // Converted to Rust
             "zbar/img_scanner.c",

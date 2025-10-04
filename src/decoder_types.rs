@@ -325,9 +325,31 @@ pub struct databar_decoder_t {
     pub config: c_uint,
     pub config_exp: c_uint,
     // Bitfields: csegs: 8, epoch: 8 (16 bits in a u32)
-    bitfields: c_uint,
+    pub bitfields: c_uint,
     pub segs: *mut databar_segment_t,
     pub chars: [c_char; 16],
+}
+
+impl databar_decoder_t {
+    #[inline]
+    pub fn csegs(&self) -> u8 {
+        (self.bitfields & 0xFF) as u8
+    }
+
+    #[inline]
+    pub fn set_csegs(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !0xFF) | (val as c_uint);
+    }
+
+    #[inline]
+    pub fn epoch(&self) -> u8 {
+        ((self.bitfields >> 8) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub fn set_epoch(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xFF << 8)) | ((val as c_uint) << 8);
+    }
 }
 
 /// EAN pass state
