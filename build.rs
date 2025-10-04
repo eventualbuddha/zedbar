@@ -11,7 +11,7 @@ fn main() {
             "zbar/image.c",
             "zbar/img_scanner.c",
             "zbar/processor.c",
-            "zbar/scanner.c",
+            // "zbar/scanner.c", // Converted to Rust
             // "zbar/sqcode.c", // Converted to Rust
             // "zbar/symbol.c", // Converted to Rust
             // Decoder modules
