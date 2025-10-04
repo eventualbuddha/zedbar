@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------
- *  Copyright 2010 (c) Jeff Brown <spadix@users.sourceforge.net>
+ *  Copyright 2007-2010 (c) Jeff Brown <spadix@users.sourceforge.net>
  *
  *  This file is part of the ZBar Bar Code Reader.
  *
@@ -20,26 +20,29 @@
  *
  *  http://sourceforge.net/projects/zbar
  *------------------------------------------------------------------------*/
-#ifndef _CODE93_H_
-#define _CODE93_H_
 
-/* Code 93 specific decode state */
-typedef struct code93_decoder_s {
-    unsigned direction : 1;  /* scan direction: 0=fwd/space, 1=rev/bar */
-    unsigned element   : 3;  /* element offset 0-5 */
-    int character      : 12; /* character position in symbol */
-    unsigned width;	     /* last character width */
-    unsigned char buf;	     /* first character */
+#include "symbol.h"
 
-    unsigned config;
-    int configs[NUM_CFGS]; /* int valued configurations */
-} code93_decoder_t;
+void _zbar_symbol_add_point(zbar_symbol_t *sym, int x, int y)
+{
+    int i = sym->npts;
+    if (++sym->npts >= sym->pts_alloc)
+        sym->pts = realloc(sym->pts, ++sym->pts_alloc * sizeof(point_t));
+    sym->pts[i].x = x;
+    sym->pts[i].y = y;
+}
 
-/* reset Code 93 specific state */
-extern void _zbar_code93_reset(code93_decoder_t *dcode93);
-#define code93_reset(dcode93) _zbar_code93_reset(dcode93)
+void _zbar_symbol_refcnt(zbar_symbol_t *sym, int delta)
+{
+    if (!_zbar_refcnt(&sym->refcnt, delta) && delta <= 0)
+        _zbar_symbol_free(sym);
+}
 
-/* decode Code 93 symbols */
-zbar_symbol_type_t _zbar_decode_code93(zbar_decoder_t *dcode);
+void _zbar_symbol_set_add(zbar_symbol_set_t *syms, zbar_symbol_t *sym)
+{
+    sym->next  = syms->head;
+    syms->head = sym;
+    syms->nsyms++;
 
-#endif
+    _zbar_symbol_refcnt(sym, 1);
+}

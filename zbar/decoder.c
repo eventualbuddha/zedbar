@@ -206,7 +206,7 @@ zbar_symbol_type_t zbar_decode_width(zbar_decoder_t *dcode, unsigned w)
     return (sym);
 }
 
-static inline const unsigned int *
+static const unsigned int *
 decoder_get_configp(const zbar_decoder_t *dcode, zbar_symbol_type_t sym)
 {
     const unsigned int *config;
@@ -293,9 +293,9 @@ unsigned int zbar_decoder_get_configs(const zbar_decoder_t *dcode,
     return (*config);
 }
 
-static inline int decoder_set_config_bool(zbar_decoder_t *dcode,
-					  zbar_symbol_type_t sym,
-					  zbar_config_t cfg, int val)
+static int decoder_set_config_bool(zbar_decoder_t *dcode,
+				   zbar_symbol_type_t sym,
+				   zbar_config_t cfg, int val)
 {
     unsigned *config = (void *)decoder_get_configp(dcode, sym);
     if (!config || cfg >= ZBAR_CFG_NUM)
@@ -318,9 +318,9 @@ static inline int decoder_set_config_bool(zbar_decoder_t *dcode,
     return (0);
 }
 
-static inline int decoder_set_config_int(zbar_decoder_t *dcode,
-					 zbar_symbol_type_t sym,
-					 zbar_config_t cfg, int val)
+static int decoder_set_config_int(zbar_decoder_t *dcode,
+				  zbar_symbol_type_t sym,
+				  zbar_config_t cfg, int val)
 {
     switch (sym) {
     case ZBAR_I25:
@@ -432,4 +432,177 @@ const char *_zbar_decoder_buf_dump(unsigned char *buf, unsigned int buflen)
     for (i = 0; i < buflen; i++)
 	p += snprintf(p, 4, "%s%02x", (i) ? " " : "", buf[i]);
     return (decoder_dump);
+}
+
+/* Decoder helper function implementations */
+
+char _zbar_decoder_get_color(const zbar_decoder_t *dcode)
+{
+    return (dcode->idx & 1);
+}
+
+unsigned _zbar_decoder_get_width(const zbar_decoder_t *dcode, unsigned char offset)
+{
+    return (dcode->w[(dcode->idx - offset) & (DECODE_WINDOW - 1)]);
+}
+
+unsigned _zbar_decoder_pair_width(const zbar_decoder_t *dcode, unsigned char offset)
+{
+    return (_zbar_decoder_get_width(dcode, offset) + _zbar_decoder_get_width(dcode, offset + 1));
+}
+
+unsigned _zbar_decoder_calc_s(const zbar_decoder_t *dcode, unsigned char offset, unsigned char n)
+{
+    unsigned s = 0;
+    while (n--)
+        s += _zbar_decoder_get_width(dcode, offset++);
+    return (s);
+}
+
+int _zbar_decoder_decode_e(unsigned e, unsigned s, unsigned n)
+{
+    unsigned char E = ((e * n * 2 + 1) / s - 3) / 2;
+    return ((E >= n - 3) ? -1 : E);
+}
+
+unsigned _zbar_decoder_decode_sort3(zbar_decoder_t *dcode, int i0)
+{
+    unsigned w0 = _zbar_decoder_get_width(dcode, i0);
+    unsigned w2 = _zbar_decoder_get_width(dcode, i0 + 2);
+    unsigned w4 = _zbar_decoder_get_width(dcode, i0 + 4);
+    if (w0 < w2) {
+        if (w2 < w4)
+            return ((i0 << 8) | ((i0 + 2) << 4) | (i0 + 4));
+        if (w0 < w4)
+            return ((i0 << 8) | ((i0 + 4) << 4) | (i0 + 2));
+        return (((i0 + 4) << 8) | (i0 << 4) | (i0 + 2));
+    }
+    if (w4 < w2)
+        return (((i0 + 4) << 8) | ((i0 + 2) << 4) | i0);
+    if (w0 < w4)
+        return (((i0 + 2) << 8) | (i0 << 4) | (i0 + 4));
+    return (((i0 + 2) << 8) | ((i0 + 4) << 4) | i0);
+}
+
+unsigned _zbar_decoder_decode_sortn(zbar_decoder_t *dcode, int n, int i0)
+{
+    unsigned mask = 0, sort = 0;
+    int i;
+    for (i = n - 1; i >= 0; i--) {
+        unsigned wmin = UINT_MAX;
+        int jmin      = -1, j;
+        for (j = n - 1; j >= 0; j--) {
+            unsigned w;
+            if ((mask >> j) & 1)
+                continue;
+            w = _zbar_decoder_get_width(dcode, i0 + j * 2);
+            if (wmin >= w) {
+                wmin = w;
+                jmin = j;
+            }
+        }
+        zassert(jmin >= 0, 0, "sortn(%d,%d) jmin=%d", n, i0, jmin);
+        sort <<= 4;
+        mask |= 1 << jmin;
+        sort |= i0 + jmin * 2;
+    }
+    return (sort);
+}
+
+char _zbar_decoder_acquire_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req)
+{
+    if (dcode->lock) {
+        return (1);
+    }
+    dcode->lock = req;
+    return (0);
+}
+
+char _zbar_decoder_release_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req)
+{
+    zassert(dcode->lock == req, 1, "lock=%d req=%d\n", dcode->lock, req);
+    dcode->lock = 0;
+    return (0);
+}
+
+char _zbar_decoder_size_buf(zbar_decoder_t *dcode, unsigned len)
+{
+    unsigned char *buf;
+    if (len <= BUFFER_MIN)
+        return (0);
+    if (len < dcode->buf_alloc)
+        /* FIXME size reduction heuristic? */
+        return (0);
+    if (len > BUFFER_MAX)
+        return (1);
+    if (len < dcode->buf_alloc + BUFFER_INCR) {
+        len = dcode->buf_alloc + BUFFER_INCR;
+        if (len > BUFFER_MAX)
+            len = BUFFER_MAX;
+    }
+    buf = realloc(dcode->buf, len);
+    if (!buf)
+        return (1);
+    dcode->buf       = buf;
+    dcode->buf_alloc = len;
+    return (0);
+}
+
+/* Decoder-specific reset function implementations */
+
+void _zbar_codabar_reset(codabar_decoder_t *codabar)
+{
+    codabar->direction = 0;
+    codabar->element   = 0;
+    codabar->character = -1;
+    codabar->s7        = 0;
+}
+
+void _zbar_code128_reset(code128_decoder_t *dcode128)
+{
+    dcode128->direction = 0;
+    dcode128->element   = 0;
+    dcode128->character = -1;
+    dcode128->s6        = 0;
+}
+
+void _zbar_code39_reset(code39_decoder_t *dcode39)
+{
+    dcode39->direction = 0;
+    dcode39->element   = 0;
+    dcode39->character = -1;
+    dcode39->s9        = 0;
+}
+
+void _zbar_code93_reset(code93_decoder_t *dcode93)
+{
+    dcode93->direction = 0;
+    dcode93->element   = 0;
+    dcode93->character = -1;
+}
+
+void _zbar_i25_reset(i25_decoder_t *i25)
+{
+    i25->direction = 0;
+    i25->element   = 0;
+    i25->character = -1;
+    i25->s10       = 0;
+}
+
+void _zbar_qr_finder_reset(qr_finder_t *qrf)
+{
+    qrf->s5 = 0;
+}
+
+void _zbar_ean_new_scan(ean_decoder_t *ean)
+{
+    ean->pass[0].state = ean->pass[1].state = -1;
+    ean->pass[2].state = ean->pass[3].state = -1;
+    ean->s4            = 0;
+}
+
+void _zbar_ean_reset(ean_decoder_t *ean)
+{
+    _zbar_ean_new_scan(ean);
+    ean->left = ean->right = ZBAR_NONE;
 }

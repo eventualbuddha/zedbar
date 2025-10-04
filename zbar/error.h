@@ -95,90 +95,20 @@ extern int _zbar_verbosity;
 	}                                      \
     } while (0)
 
-static inline int err_copy(void *dst_c, void *src_c)
-{
-    errinfo_t *dst = dst_c;
-    errinfo_t *src = src_c;
-    assert(dst->magic == ERRINFO_MAGIC);
-    assert(src->magic == ERRINFO_MAGIC);
+extern int _zbar_err_copy(void *dst_c, void *src_c);
+extern int _zbar_err_capture(const void *container, errsev_t sev, zbar_error_t type, const char *func, const char *detail);
+extern int _zbar_err_capture_str(const void *container, errsev_t sev, zbar_error_t type, const char *func, const char *detail, const char *arg);
+extern int _zbar_err_capture_int(const void *container, errsev_t sev, zbar_error_t type, const char *func, const char *detail, int arg);
+extern int _zbar_err_capture_num(const void *container, errsev_t sev, zbar_error_t type, const char *func, const char *detail, int num);
+extern void _zbar_err_init(errinfo_t *err, errmodule_t module);
+extern void _zbar_err_cleanup(errinfo_t *err);
 
-    dst->errnum	 = src->errnum;
-    dst->sev	 = src->sev;
-    dst->type	 = src->type;
-    dst->func	 = src->func;
-    dst->detail	 = src->detail;
-    dst->arg_str = src->arg_str;
-    src->arg_str = NULL; /* unused at src, avoid double free */
-    dst->arg_int = src->arg_int;
-    return (-1);
-}
-
-static inline int err_capture(const void *container, errsev_t sev,
-			      zbar_error_t type, const char *func,
-			      const char *detail)
-{
-    errinfo_t *err = (errinfo_t *)container;
-    assert(err->magic == ERRINFO_MAGIC);
-    if (type == ZBAR_ERR_SYSTEM)
-	err->errnum = errno;
-    err->sev	= sev;
-    err->type	= type;
-    err->func	= func;
-    err->detail = detail;
-    if (_zbar_verbosity >= 1)
-	_zbar_error_spew(err, 0);
-    return (-1);
-}
-
-static inline int err_capture_str(const void *container, errsev_t sev,
-				  zbar_error_t type, const char *func,
-				  const char *detail, const char *arg)
-{
-    errinfo_t *err = (errinfo_t *)container;
-    assert(err->magic == ERRINFO_MAGIC);
-    if (err->arg_str)
-	free(err->arg_str);
-    err->arg_str = strdup(arg);
-    return (err_capture(container, sev, type, func, detail));
-}
-
-static inline int err_capture_int(const void *container, errsev_t sev,
-				  zbar_error_t type, const char *func,
-				  const char *detail, int arg)
-{
-    errinfo_t *err = (errinfo_t *)container;
-    assert(err->magic == ERRINFO_MAGIC);
-    err->arg_int = arg;
-    return (err_capture(container, sev, type, func, detail));
-}
-
-static inline int err_capture_num(const void *container, errsev_t sev,
-				  zbar_error_t type, const char *func,
-				  const char *detail, int num)
-{
-    errinfo_t *err = (errinfo_t *)container;
-    assert(err->magic == ERRINFO_MAGIC);
-    err->errnum = num;
-    return (err_capture(container, sev, type, func, detail));
-}
-
-static inline void err_init(errinfo_t *err, errmodule_t module)
-{
-    err->magic	= ERRINFO_MAGIC;
-    err->module = module;
-}
-
-static inline void err_cleanup(errinfo_t *err)
-{
-    assert(err->magic == ERRINFO_MAGIC);
-    if (err->buf) {
-	free(err->buf);
-	err->buf = NULL;
-    }
-    if (err->arg_str) {
-	free(err->arg_str);
-	err->arg_str = NULL;
-    }
-}
+#define err_copy(dst_c, src_c) _zbar_err_copy(dst_c, src_c)
+#define err_capture(container, sev, type, func, detail) _zbar_err_capture(container, sev, type, func, detail)
+#define err_capture_str(container, sev, type, func, detail, arg) _zbar_err_capture_str(container, sev, type, func, detail, arg)
+#define err_capture_int(container, sev, type, func, detail, arg) _zbar_err_capture_int(container, sev, type, func, detail, arg)
+#define err_capture_num(container, sev, type, func, detail, num) _zbar_err_capture_num(container, sev, type, func, detail, num)
+#define err_init(err, module) _zbar_err_init(err, module)
+#define err_cleanup(err) _zbar_err_cleanup(err)
 
 #endif

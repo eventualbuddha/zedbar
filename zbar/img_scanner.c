@@ -153,7 +153,7 @@ static void symbol_handler(zbar_decoder_t *dcode)
 	    if (TEST_CFG(iscn, ZBAR_CFG_POSITION))
 		/* add new point to existing set */
 		/* FIXME should be polygon */
-		sym_add_point(sym, x, y);
+		_zbar_symbol_add_point(sym, x, y);
 	    return;
 	}
 
@@ -167,7 +167,7 @@ static void symbol_handler(zbar_decoder_t *dcode)
     if (TEST_CFG(iscn, ZBAR_CFG_POSITION)) {
 	zprintf(192, "new symbol @(%d,%d): %s: %.20s\n", x, y,
 		zbar_get_symbol_name(type), data);
-	sym_add_point(sym, x, y);
+	_zbar_symbol_add_point(sym, x, y);
     }
 
     dir = zbar_decoder_get_direction(dcode);

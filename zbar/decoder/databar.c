@@ -34,6 +34,28 @@
 
 #define GS ('\035')
 
+/* DataBar helper function implementations */
+
+void _zbar_databar_new_scan(databar_decoder_t *db)
+{
+    int i;
+    for (i = 0; i < 16; i++)
+        if (db->chars[i] >= 0) {
+            databar_segment_t *seg = db->segs + db->chars[i];
+            if (seg->partial)
+                seg->finder = -1;
+            db->chars[i] = -1;
+        }
+}
+
+void _zbar_databar_reset(databar_decoder_t *db)
+{
+    int i, n = db->csegs;
+    _zbar_databar_new_scan(db);
+    for (i = 0; i < n; i++)
+        db->segs[i].finder = -1;
+}
+
 enum {
     SCH_NUM,
     SCH_ALNUM,
@@ -86,7 +108,7 @@ static const unsigned char exp_sequences[] = {
 static const unsigned char exp_checksums[] = { 1,   189, 62, 113, 46,  43,
 					       109, 134, 6,  79,  161, 45 };
 
-static inline void append_check14(unsigned char *buf)
+static void append_check14(unsigned char *buf)
 {
     unsigned char chk = 0, d;
     int i;
@@ -102,7 +124,7 @@ static inline void append_check14(unsigned char *buf)
     *buf = chk + '0';
 }
 
-static inline void decode10(unsigned char *buf, unsigned long n, int i)
+static void decode10(unsigned char *buf, unsigned long n, int i)
 {
     buf += i;
     while (--i >= 0) {
@@ -131,7 +153,7 @@ static inline void decode10(unsigned char *buf, unsigned long n, int i)
 	PUSH_CHAR(c3);             \
     } while (0);
 
-static inline int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
+static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 {
     int i = 0, enc;
     unsigned n;
@@ -405,7 +427,7 @@ static inline int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 /* convert from heterogeneous base {1597,2841}
  * to base 10 character representation
  */
-static inline void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
+static void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
 {
     unsigned long r;
     databar_decoder_t *db = &dcode->databar;
@@ -475,7 +497,7 @@ static inline void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
 
 }
 
-static inline int check_width(unsigned wf, unsigned wd, unsigned n)
+static int check_width(unsigned wf, unsigned wd, unsigned n)
 {
     unsigned dwf = wf * 3;
     wd *= 14;
@@ -483,7 +505,7 @@ static inline int check_width(unsigned wf, unsigned wd, unsigned n)
     return (wf - dwf <= wd && wd <= wf + dwf);
 }
 
-static inline void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
+static void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
 {
     unsigned csegs = db->csegs;
     int i;
@@ -509,7 +531,7 @@ static inline void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
     }
 }
 
-static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
+static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 					       databar_segment_t *seg)
 {
     databar_decoder_t *db = &dcode->databar;
@@ -605,7 +627,7 @@ static inline zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
     return (ZBAR_DATABAR);
 }
 
-static inline signed lookup_sequence(databar_segment_t *seg, int fixed,
+static signed lookup_sequence(databar_segment_t *seg, int fixed,
 				     int seq[22], const size_t maxsize)
 {
     unsigned n = seg->data / 211, i;
@@ -645,7 +667,7 @@ static inline signed lookup_sequence(databar_segment_t *seg, int fixed,
 #define IDX(s) \
     (((s)->finder << 2) | ((s)->color << 1) | ((s)->color ^ (s)->side))
 
-static inline zbar_symbol_type_t
+static zbar_symbol_type_t
 match_segment_exp(zbar_decoder_t *dcode, databar_segment_t *seg, int dir)
 {
     databar_decoder_t *db = &dcode->databar;
@@ -762,7 +784,7 @@ abort:
 }
 #undef IDX
 
-static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
+static unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
 				  unsigned mod)
 {
     unsigned chk = 0;
@@ -780,7 +802,7 @@ static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
     return (chk);
 }
 
-static inline int calc_value4(unsigned sig, unsigned n, unsigned wmax,
+static int calc_value4(unsigned sig, unsigned n, unsigned wmax,
 			      unsigned nonarrow)
 {
     unsigned w0, w1, w2, w3;
@@ -863,7 +885,7 @@ static inline int calc_value4(unsigned sig, unsigned n, unsigned wmax,
     return (v);
 }
 
-static inline zbar_symbol_type_t
+static zbar_symbol_type_t
 decode_char(zbar_decoder_t *dcode, databar_segment_t *seg, int off, int dir)
 {
     databar_decoder_t *db = &dcode->databar;
@@ -984,7 +1006,7 @@ decode_char(zbar_decoder_t *dcode, databar_segment_t *seg, int off, int dir)
     return (ZBAR_PARTIAL);
 }
 
-static inline int alloc_segment(databar_decoder_t *db)
+static int alloc_segment(databar_decoder_t *db)
 {
     unsigned maxage = 0, csegs = db->csegs;
     int i, old		       = -1;
@@ -1041,7 +1063,7 @@ static inline int alloc_segment(databar_decoder_t *db)
     return (old);
 }
 
-static inline zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode)
+static zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode)
 {
     databar_decoder_t *db = &dcode->databar;
     databar_segment_t *seg;

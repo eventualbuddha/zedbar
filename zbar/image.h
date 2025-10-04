@@ -79,65 +79,9 @@ typedef struct zbar_format_def_s {
 
 extern void _zbar_image_free(zbar_image_t *);
 
-static inline void _zbar_image_refcnt(zbar_image_t *img, int delta)
-{
-    if (!_zbar_refcnt(&img->refcnt, delta) && delta <= 0) {
-	if (img->cleanup)
-	    img->cleanup(img);
-	_zbar_image_free(img);
-    }
-}
-
-static inline void _zbar_image_swap_symbols(zbar_image_t *a, zbar_image_t *b)
-{
-    zbar_symbol_set_t *tmp = a->syms;
-    a->syms		   = b->syms;
-    b->syms		   = tmp;
-}
-
-static inline void _zbar_image_copy_size(zbar_image_t *dst,
-					 const zbar_image_t *src)
-{
-    dst->width	= src->width;
-    dst->height = src->height;
-}
-
-static inline zbar_image_t *_zbar_image_copy(const zbar_image_t *src,
-					     int inverted)
-{
-    zbar_image_t *dst;
-
-    if (inverted && (src->format != fourcc('Y', '8', '0', '0')) &&
-	(src->format != fourcc('G', 'R', 'E', 'Y')))
-	return NULL;
-
-    dst		= zbar_image_create();
-    dst->format = src->format;
-    _zbar_image_copy_size(dst, src);
-    dst->datalen = src->datalen;
-    dst->data	 = malloc(src->datalen);
-    assert(dst->data);
-
-    if (!inverted) {
-	memcpy((void *)dst->data, src->data, src->datalen);
-    } else {
-	int i, len = src->datalen;
-	long *sp = (void *)src->data, *dp = (void *)dst->data;
-	char *spc, *dpc;
-
-	/* Do it word per word, in order to speedup */
-	for (i = 0; i < len; i += sizeof(long))
-	    *dp++ = ~(*sp++);
-
-	/* Deal with non-aligned remains, if any */
-	len -= i;
-	spc = (char *)sp;
-	dpc = (char *)dp;
-	for (i = 0; i < len; i++)
-	    *dpc++ = ~(*spc++);
-    }
-    dst->cleanup = zbar_image_free_data;
-    return (dst);
-}
+extern void _zbar_image_refcnt(zbar_image_t *img, int delta);
+extern void _zbar_image_swap_symbols(zbar_image_t *a, zbar_image_t *b);
+extern void _zbar_image_copy_size(zbar_image_t *dst, const zbar_image_t *src);
+extern zbar_image_t *_zbar_image_copy(const zbar_image_t *src, int inverted);
 
 #endif

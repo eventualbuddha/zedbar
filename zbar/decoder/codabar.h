@@ -37,13 +37,8 @@ typedef struct codabar_decoder_s {
 } codabar_decoder_t;
 
 /* reset Codabar specific state */
-static inline void codabar_reset(codabar_decoder_t *codabar)
-{
-    codabar->direction = 0;
-    codabar->element   = 0;
-    codabar->character = -1;
-    codabar->s7	       = 0;
-}
+extern void _zbar_codabar_reset(codabar_decoder_t *codabar);
+#define codabar_reset(codabar) _zbar_codabar_reset(codabar)
 
 /* decode Codabar symbols */
 zbar_symbol_type_t _zbar_decode_codabar(zbar_decoder_t *dcode);

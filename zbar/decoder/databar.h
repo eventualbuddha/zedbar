@@ -53,26 +53,14 @@ typedef struct databar_decoder_s {
 } databar_decoder_t;
 
 /* reset DataBar segment decode state */
-static inline void databar_new_scan(databar_decoder_t *db)
-{
-    int i;
-    for (i = 0; i < 16; i++)
-	if (db->chars[i] >= 0) {
-	    databar_segment_t *seg = db->segs + db->chars[i];
-	    if (seg->partial)
-		seg->finder = -1;
-	    db->chars[i] = -1;
-	}
-}
+extern void _zbar_databar_new_scan(databar_decoder_t *db);
 
 /* reset DataBar accumulated segments */
-static inline void databar_reset(databar_decoder_t *db)
-{
-    int i, n = db->csegs;
-    databar_new_scan(db);
-    for (i = 0; i < n; i++)
-	db->segs[i].finder = -1;
-}
+extern void _zbar_databar_reset(databar_decoder_t *db);
+
+/* Compatibility macros */
+#define databar_new_scan(db) _zbar_databar_new_scan(db)
+#define databar_reset(db) _zbar_databar_reset(db)
 
 /* decode DataBar symbols */
 zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode);

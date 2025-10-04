@@ -260,20 +260,6 @@ extern int zbar_parse_config(const char *config_string,
     ((unsigned long)(a) | ((unsigned long)(b) << 8) | \
      ((unsigned long)(c) << 16) | ((unsigned long)(d) << 24))
 
-/** parse a fourcc string into its encoded integer value.
- * @since 0.11
- */
-static inline unsigned long zbar_fourcc_parse(const char *format)
-{
-    unsigned long fourcc = 0;
-    if (format) {
-	int i;
-	for (i = 0; i < 4 && format[i]; i++)
-	    fourcc |= ((unsigned long)format[i]) << (i * 8);
-    }
-    return (fourcc);
-}
-
 /** @internal type unsafe error API (don't use) */
 extern int _zbar_error_spew(const void *object, int verbosity);
 extern const char *_zbar_error_string(const void *object, int verbosity);
@@ -779,23 +765,6 @@ extern int zbar_processor_set_control(zbar_processor_t *processor,
 extern int zbar_processor_get_control(zbar_processor_t *processor,
 				      const char *control_name, int *value);
 
-/** parse configuration string using zbar_parse_config()
- * and apply to processor using zbar_processor_set_config().
- * @returns 0 for success, non-0 for failure
- * @see zbar_parse_config()
- * @see zbar_processor_set_config()
- * @since 0.4
- */
-static inline int zbar_processor_parse_config(zbar_processor_t *processor,
-					      const char *config_string)
-{
-    zbar_symbol_type_t sym;
-    zbar_config_t cfg;
-    int val;
-    return (zbar_parse_config(config_string, &sym, &cfg, &val) ||
-	    zbar_processor_set_config(processor, sym, cfg, val));
-}
-
 /** retrieve the current state of the output window.
  * @returns 1 if the output window is currently displayed, 0 if not.
  * @returns -1 if an error occurs
@@ -853,28 +822,6 @@ extern int zbar_process_one(zbar_processor_t *processor, int timeout);
  */
 extern int zbar_process_image(zbar_processor_t *processor, zbar_image_t *image);
 
-/** display detail for last processor error to stderr.
- * @returns a non-zero value suitable for passing to exit()
- */
-static inline int zbar_processor_error_spew(const zbar_processor_t *processor,
-					    int verbosity)
-{
-    return (_zbar_error_spew(processor, verbosity));
-}
-
-/** retrieve the detail string for the last processor error. */
-static inline const char *
-zbar_processor_error_string(const zbar_processor_t *processor, int verbosity)
-{
-    return (_zbar_error_string(processor, verbosity));
-}
-
-/** retrieve the type code for the last processor error. */
-static inline zbar_error_t
-zbar_processor_get_error_code(const zbar_processor_t *processor)
-{
-    return (_zbar_get_error_code(processor));
-}
 
 /*@}*/
 
@@ -925,23 +872,6 @@ extern int zbar_image_scanner_set_config(zbar_image_scanner_t *scanner,
 extern int zbar_image_scanner_get_config(zbar_image_scanner_t *scanner,
 					 zbar_symbol_type_t symbology,
 					 zbar_config_t config, int *value);
-
-/** parse configuration string using zbar_parse_config()
- * and apply to image scanner using zbar_image_scanner_set_config().
- * @returns 0 for success, non-0 for failure
- * @see zbar_parse_config()
- * @see zbar_image_scanner_set_config()
- * @since 0.4
- */
-static inline int zbar_image_scanner_parse_config(zbar_image_scanner_t *scanner,
-						  const char *config_string)
-{
-    zbar_symbol_type_t sym;
-    zbar_config_t cfg;
-    int val;
-    return (zbar_parse_config(config_string, &sym, &cfg, &val) ||
-	    zbar_image_scanner_set_config(scanner, sym, cfg, val));
-}
 
 /** enable or disable the inter-image result cache (default disabled).
  * mostly useful for scanning video frames, the cache filters
@@ -1023,23 +953,6 @@ extern int zbar_decoder_set_config(zbar_decoder_t *decoder,
 extern int zbar_decoder_get_config(zbar_decoder_t *decoder,
 				   zbar_symbol_type_t symbology,
 				   zbar_config_t config, int *value);
-
-/** parse configuration string using zbar_parse_config()
- * and apply to decoder using zbar_decoder_set_config().
- * @returns 0 for success, non-0 for failure
- * @see zbar_parse_config()
- * @see zbar_decoder_set_config()
- * @since 0.4
- */
-static inline int zbar_decoder_parse_config(zbar_decoder_t *decoder,
-					    const char *config_string)
-{
-    zbar_symbol_type_t sym;
-    zbar_config_t cfg;
-    int val;
-    return (zbar_parse_config(config_string, &sym, &cfg, &val) ||
-	    zbar_decoder_set_config(decoder, sym, cfg, val));
-}
 
 /** retrieve symbology boolean config settings.
  * @returns a bitmask indicating which configs are currently set for the
@@ -1182,13 +1095,6 @@ extern zbar_symbol_type_t zbar_scanner_flush(zbar_scanner_t *scanner);
  * or 0 (::ZBAR_NONE) if no new edge is detected
  */
 extern zbar_symbol_type_t zbar_scan_y(zbar_scanner_t *scanner, int y);
-
-/** process next sample from RGB (or BGR) triple. */
-static inline zbar_symbol_type_t zbar_scan_rgb24(zbar_scanner_t *scanner,
-						 unsigned char *rgb)
-{
-    return (zbar_scan_y(scanner, rgb[0] + rgb[1] + rgb[2]));
-}
 
 /** retrieve last scanned width. */
 extern unsigned zbar_scanner_get_width(const zbar_scanner_t *scanner);

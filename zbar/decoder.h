@@ -98,150 +98,29 @@ struct zbar_decoder_s {
     sq_finder_t sqf;		 /* SQ Code finder state */
 };
 
-/* return current element color */
-static inline char get_color(const zbar_decoder_t *dcode)
-{
-    return (dcode->idx & 1);
-}
+/* Helper functions for decoder - implementations in decoder.c */
+extern char _zbar_decoder_get_color(const zbar_decoder_t *dcode);
+extern unsigned _zbar_decoder_get_width(const zbar_decoder_t *dcode, unsigned char offset);
+extern unsigned _zbar_decoder_pair_width(const zbar_decoder_t *dcode, unsigned char offset);
+extern unsigned _zbar_decoder_calc_s(const zbar_decoder_t *dcode, unsigned char offset, unsigned char n);
+extern int _zbar_decoder_decode_e(unsigned e, unsigned s, unsigned n);
+extern unsigned _zbar_decoder_decode_sort3(zbar_decoder_t *dcode, int i0);
+extern unsigned _zbar_decoder_decode_sortn(zbar_decoder_t *dcode, int n, int i0);
+extern char _zbar_decoder_acquire_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req);
+extern char _zbar_decoder_release_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req);
+extern char _zbar_decoder_size_buf(zbar_decoder_t *dcode, unsigned len);
 
-/* retrieve i-th previous element width */
-static inline unsigned get_width(const zbar_decoder_t *dcode,
-				 unsigned char offset)
-{
-    return (dcode->w[(dcode->idx - offset) & (DECODE_WINDOW - 1)]);
-}
-
-/* retrieve bar+space pair width starting at offset i */
-static inline unsigned pair_width(const zbar_decoder_t *dcode,
-				  unsigned char offset)
-{
-    return (get_width(dcode, offset) + get_width(dcode, offset + 1));
-}
-
-/* calculate total character width "s"
- *   - start of character identified by context sensitive offset
- *     (<= DECODE_WINDOW - n)
- *   - size of character is n elements
- */
-static inline unsigned calc_s(const zbar_decoder_t *dcode, unsigned char offset,
-			      unsigned char n)
-{
-    /* FIXME check that this gets unrolled for constant n */
-    unsigned s = 0;
-    while (n--)
-	s += get_width(dcode, offset++);
-    return (s);
-}
-
-/* fixed character width decode assist
- * bar+space width are compared as a fraction of the reference dimension "x"
- *   - +/- 1/2 x tolerance
- *   - measured total character width (s) compared to symbology baseline (n)
- *     (n = 7 for EAN/UPC, 11 for Code 128)
- *   - bar+space *pair width* "e" is used to factor out bad "exposures"
- *     ("blooming" or "swelling" of dark or light areas)
- *     => using like-edge measurements avoids these issues
- *   - n should be > 3
- */
-static inline int decode_e(unsigned e, unsigned s, unsigned n)
-{
-    /* result is encoded number of units - 2
-   * (for use as zero based index)
-   * or -1 if invalid
-   */
-    unsigned char E = ((e * n * 2 + 1) / s - 3) / 2;
-    return ((E >= n - 3) ? -1 : E);
-}
-
-/* sort three like-colored elements and return ordering
- */
-static inline unsigned decode_sort3(zbar_decoder_t *dcode, int i0)
-{
-    unsigned w0 = get_width(dcode, i0);
-    unsigned w2 = get_width(dcode, i0 + 2);
-    unsigned w4 = get_width(dcode, i0 + 4);
-    if (w0 < w2) {
-	if (w2 < w4)
-	    return ((i0 << 8) | ((i0 + 2) << 4) | (i0 + 4));
-	if (w0 < w4)
-	    return ((i0 << 8) | ((i0 + 4) << 4) | (i0 + 2));
-	return (((i0 + 4) << 8) | (i0 << 4) | (i0 + 2));
-    }
-    if (w4 < w2)
-	return (((i0 + 4) << 8) | ((i0 + 2) << 4) | i0);
-    if (w0 < w4)
-	return (((i0 + 2) << 8) | (i0 << 4) | (i0 + 4));
-    return (((i0 + 2) << 8) | ((i0 + 4) << 4) | i0);
-}
-
-/* sort N like-colored elements and return ordering
- */
-static inline unsigned decode_sortn(zbar_decoder_t *dcode, int n, int i0)
-{
-    unsigned mask = 0, sort = 0;
-    int i;
-    for (i = n - 1; i >= 0; i--) {
-	unsigned wmin = UINT_MAX;
-	int jmin      = -1, j;
-	for (j = n - 1; j >= 0; j--) {
-	    unsigned w;
-	    if ((mask >> j) & 1)
-		continue;
-	    w = get_width(dcode, i0 + j * 2);
-	    if (wmin >= w) {
-		wmin = w;
-		jmin = j;
-	    }
-	}
-	zassert(jmin >= 0, 0, "sortn(%d,%d) jmin=%d", n, i0, jmin);
-	sort <<= 4;
-	mask |= 1 << jmin;
-	sort |= i0 + jmin * 2;
-    }
-    return (sort);
-}
-
-/* acquire shared state lock */
-static inline char acquire_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req)
-{
-    if (dcode->lock) {
-	return (1);
-    }
-    dcode->lock = req;
-    return (0);
-}
-
-/* check and release shared state lock */
-static inline char release_lock(zbar_decoder_t *dcode, zbar_symbol_type_t req)
-{
-    zassert(dcode->lock == req, 1, "lock=%d req=%d\n", dcode->lock, req);
-    dcode->lock = 0;
-    return (0);
-}
-
-/* ensure output buffer has sufficient allocation for request */
-static inline char size_buf(zbar_decoder_t *dcode, unsigned len)
-{
-    unsigned char *buf;
-    if (len <= BUFFER_MIN)
-	return (0);
-    if (len < dcode->buf_alloc)
-	/* FIXME size reduction heuristic? */
-	return (0);
-    if (len > BUFFER_MAX)
-	return (1);
-    if (len < dcode->buf_alloc + BUFFER_INCR) {
-	len = dcode->buf_alloc + BUFFER_INCR;
-	if (len > BUFFER_MAX)
-	    len = BUFFER_MAX;
-    }
-    buf = realloc(dcode->buf, len);
-    if (!buf)
-	return (1);
-    dcode->buf	     = buf;
-    dcode->buf_alloc = len;
-    return (0);
-}
+/* Compatibility macros for C code that still uses the old names */
+#define get_color(dcode) _zbar_decoder_get_color(dcode)
+#define get_width(dcode, offset) _zbar_decoder_get_width(dcode, offset)
+#define pair_width(dcode, offset) _zbar_decoder_pair_width(dcode, offset)
+#define calc_s(dcode, offset, n) _zbar_decoder_calc_s(dcode, offset, n)
+#define decode_e(e, s, n) _zbar_decoder_decode_e(e, s, n)
+#define decode_sort3(dcode, i0) _zbar_decoder_decode_sort3(dcode, i0)
+#define decode_sortn(dcode, n, i0) _zbar_decoder_decode_sortn(dcode, n, i0)
+#define acquire_lock(dcode, req) _zbar_decoder_acquire_lock(dcode, req)
+#define release_lock(dcode, req) _zbar_decoder_release_lock(dcode, req)
+#define size_buf(dcode, len) _zbar_decoder_size_buf(dcode, len)
 
 extern const char *_zbar_decoder_buf_dump(unsigned char *buf,
 					  unsigned int buflen);

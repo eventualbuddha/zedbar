@@ -28,11 +28,6 @@
 
 typedef int refcnt_t;
 
-static inline int _zbar_refcnt(refcnt_t *cnt, int delta)
-{
-    int rc = (*cnt += delta);
-    assert(rc >= 0);
-    return (rc);
-}
+extern int _zbar_refcnt(refcnt_t *cnt, int delta);
 
 #endif

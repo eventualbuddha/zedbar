@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------
- *  Copyright 2010 (c) Jeff Brown <spadix@users.sourceforge.net>
+ *  Copyright 2007-2010 (c) Jeff Brown <spadix@users.sourceforge.net>
  *
  *  This file is part of the ZBar Bar Code Reader.
  *
@@ -20,26 +20,12 @@
  *
  *  http://sourceforge.net/projects/zbar
  *------------------------------------------------------------------------*/
-#ifndef _CODE93_H_
-#define _CODE93_H_
 
-/* Code 93 specific decode state */
-typedef struct code93_decoder_s {
-    unsigned direction : 1;  /* scan direction: 0=fwd/space, 1=rev/bar */
-    unsigned element   : 3;  /* element offset 0-5 */
-    int character      : 12; /* character position in symbol */
-    unsigned width;	     /* last character width */
-    unsigned char buf;	     /* first character */
+#include "refcnt.h"
 
-    unsigned config;
-    int configs[NUM_CFGS]; /* int valued configurations */
-} code93_decoder_t;
-
-/* reset Code 93 specific state */
-extern void _zbar_code93_reset(code93_decoder_t *dcode93);
-#define code93_reset(dcode93) _zbar_code93_reset(dcode93)
-
-/* decode Code 93 symbols */
-zbar_symbol_type_t _zbar_decode_code93(zbar_decoder_t *dcode);
-
-#endif
+int _zbar_refcnt(refcnt_t *cnt, int delta)
+{
+    int rc = (*cnt += delta);
+    assert(rc >= 0);
+    return (rc);
+}

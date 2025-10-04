@@ -139,14 +139,12 @@ fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encodi
     }
 }
 
+extern "C" {
+    fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int);
+}
+
 unsafe fn sym_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
-    if (*sym).npts < (*sym).pts_alloc {
-        let pts = (*sym).pts as *mut qr_point;
-        let pt = pts.add((*sym).npts as usize);
-        (*pt).x = x;
-        (*pt).y = y;
-        (*sym).npts += 1;
-    }
+    _zbar_symbol_add_point(sym, x, y);
 }
 
 #[no_mangle]

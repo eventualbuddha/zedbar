@@ -37,13 +37,8 @@ typedef struct code128_decoder_s {
 } code128_decoder_t;
 
 /* reset Code 128 specific state */
-static inline void code128_reset(code128_decoder_t *dcode128)
-{
-    dcode128->direction = 0;
-    dcode128->element	= 0;
-    dcode128->character = -1;
-    dcode128->s6	= 0;
-}
+extern void _zbar_code128_reset(code128_decoder_t *dcode128);
+#define code128_reset(dcode128) _zbar_code128_reset(dcode128)
 
 /* decode Code 128 symbols */
 zbar_symbol_type_t _zbar_decode_code128(zbar_decoder_t *dcode);

@@ -36,13 +36,8 @@ typedef struct code39_decoder_s {
 } code39_decoder_t;
 
 /* reset Code 39 specific state */
-static inline void code39_reset(code39_decoder_t *dcode39)
-{
-    dcode39->direction = 0;
-    dcode39->element   = 0;
-    dcode39->character = -1;
-    dcode39->s9	       = 0;
-}
+extern void _zbar_code39_reset(code39_decoder_t *dcode39);
+#define code39_reset(dcode39) _zbar_code39_reset(dcode39)
 
 /* decode Code 39 symbols */
 zbar_symbol_type_t _zbar_decode_code39(zbar_decoder_t *dcode);
