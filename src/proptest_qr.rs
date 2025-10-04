@@ -14,13 +14,8 @@ fn generate_qr_image(data: &[u8]) -> Option<GrayImage> {
     // Create QR code
     let code = QrCode::new(data).ok()?;
 
-    // Render to image with larger module size and padding for better detection
-    // ZBar works better with larger QR codes - use larger module size
-    let image = code
-        .render::<Luma<u8>>()
-        .quiet_zone(true)
-        .module_size(8)  // 8 pixels per module for better detection
-        .build();
+    // Render to image with some padding for better detection
+    let image = code.render::<Luma<u8>>().quiet_zone(true).build();
 
     Some(image)
 }
