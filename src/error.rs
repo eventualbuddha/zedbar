@@ -153,7 +153,7 @@ static ERR_STR: [&str; 13] = [
 
 // C structure representation (must match error.h)
 #[repr(C)]
-struct ErrInfo {
+pub struct ErrInfo {
     magic: u32,
     module: c_int,
     buf: *mut c_char,
@@ -301,4 +301,116 @@ pub unsafe extern "C" fn _zbar_error_string(
     }
 
     (*err).buf
+}
+
+// Error handling helper functions
+const ERRINFO_MAGIC: u32 = 0x5252457a; // "zERR" (LE)
+const ZBAR_ERR_SYSTEM: c_int = 2; // from zbar.h
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_copy(dst_c: *mut libc::c_void, src_c: *mut libc::c_void) -> c_int {
+    let dst = dst_c as *mut ErrInfo;
+    let src = src_c as *mut ErrInfo;
+    debug_assert!((*dst).magic == ERRINFO_MAGIC);
+    debug_assert!((*src).magic == ERRINFO_MAGIC);
+
+    (*dst).errnum = (*src).errnum;
+    (*dst).sev = (*src).sev;
+    (*dst).type_ = (*src).type_;
+    (*dst).func = (*src).func;
+    (*dst).detail = (*src).detail;
+    (*dst).arg_str = (*src).arg_str;
+    (*src).arg_str = std::ptr::null_mut(); // unused at src, avoid double free
+    (*dst).arg_int = (*src).arg_int;
+    -1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_capture(
+    container: *const libc::c_void,
+    sev: c_int,
+    type_: c_int,
+    func: *const c_char,
+    detail: *const c_char,
+) -> c_int {
+    let err = container as *mut ErrInfo;
+    debug_assert!((*err).magic == ERRINFO_MAGIC);
+    if type_ == ZBAR_ERR_SYSTEM {
+        (*err).errnum = *libc::__errno_location();
+    }
+    (*err).sev = sev;
+    (*err).type_ = type_;
+    (*err).func = func;
+    (*err).detail = detail;
+    if _zbar_verbosity >= 1 {
+        _zbar_error_spew(container, 0);
+    }
+    -1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_capture_str(
+    container: *const libc::c_void,
+    sev: c_int,
+    type_: c_int,
+    func: *const c_char,
+    detail: *const c_char,
+    arg: *const c_char,
+) -> c_int {
+    let err = container as *mut ErrInfo;
+    debug_assert!((*err).magic == ERRINFO_MAGIC);
+    if !(*err).arg_str.is_null() {
+        libc::free((*err).arg_str as *mut libc::c_void);
+    }
+    (*err).arg_str = libc::strdup(arg);
+    _zbar_err_capture(container, sev, type_, func, detail)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_capture_int(
+    container: *const libc::c_void,
+    sev: c_int,
+    type_: c_int,
+    func: *const c_char,
+    detail: *const c_char,
+    arg: c_int,
+) -> c_int {
+    let err = container as *mut ErrInfo;
+    debug_assert!((*err).magic == ERRINFO_MAGIC);
+    (*err).arg_int = arg;
+    _zbar_err_capture(container, sev, type_, func, detail)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_capture_num(
+    container: *const libc::c_void,
+    sev: c_int,
+    type_: c_int,
+    func: *const c_char,
+    detail: *const c_char,
+    num: c_int,
+) -> c_int {
+    let err = container as *mut ErrInfo;
+    debug_assert!((*err).magic == ERRINFO_MAGIC);
+    (*err).errnum = num;
+    _zbar_err_capture(container, sev, type_, func, detail)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_init(err: *mut ErrInfo, module: c_int) {
+    (*err).magic = ERRINFO_MAGIC;
+    (*err).module = module;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_err_cleanup(err: *mut ErrInfo) {
+    debug_assert!((*err).magic == ERRINFO_MAGIC);
+    if !(*err).buf.is_null() {
+        libc::free((*err).buf as *mut libc::c_void);
+        (*err).buf = std::ptr::null_mut();
+    }
+    if !(*err).arg_str.is_null() {
+        libc::free((*err).arg_str as *mut libc::c_void);
+        (*err).arg_str = std::ptr::null_mut();
+    }
 }

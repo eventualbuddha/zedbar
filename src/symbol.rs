@@ -397,6 +397,39 @@ struct Point {
     y: c_int,
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
+    let i = (*sym).npts as usize;
+    (*sym).npts += 1;
+
+    if (*sym).npts >= (*sym).pts_alloc {
+        (*sym).pts_alloc += 1;
+        let new_size = (*sym).pts_alloc as usize * std::mem::size_of::<Point>();
+        (*sym).pts = libc::realloc((*sym).pts, new_size);
+    }
+
+    let pts = (*sym).pts as *mut Point;
+    (*pts.add(i)).x = x;
+    (*pts.add(i)).y = y;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
+    if refcnt(&mut (*sym).refcnt, delta) == 0 && delta <= 0 {
+        _zbar_symbol_free(sym);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_symbol_set_add(syms: *mut c_void, sym: *mut zbar_symbol_t) {
+    let syms = syms as *mut CSymbolSet;
+    (*sym).next = (*syms).head;
+    (*syms).head = sym;
+    (*syms).nsyms += 1;
+
+    _zbar_symbol_refcnt(sym, 1);
+}
+
 // Note: XML serialization (zbar_symbol_xml) and base64_encode are complex and
 // rarely used in the core scanning functionality. They can be added later if needed.
 

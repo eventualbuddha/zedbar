@@ -7,14 +7,14 @@ fn main() {
     build
         .files([
             "zbar/decoder.c",
-            "zbar/error.c",
-            "zbar/image.c",
+            // "zbar/error.c", // Converted to Rust
+            // "zbar/image.c", // Converted to Rust
             "zbar/img_scanner.c",
             "zbar/processor.c",
-            "zbar/refcnt.c",
+            // "zbar/refcnt.c", // Converted to Rust
             "zbar/scanner.c",
             // "zbar/sqcode.c", // Converted to Rust
-            "zbar/symbol.c",
+            // "zbar/symbol.c", // Converted to Rust
             // Decoder modules
             // "zbar/decoder/codabar.c", // Converted to Rust
             // "zbar/decoder/code128.c", // Converted to Rust

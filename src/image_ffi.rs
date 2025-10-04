@@ -188,3 +188,61 @@ pub unsafe extern "C" fn zbar_image_first_symbol(img: *const zbar_image_t) -> *c
         (*((*img).syms as *const CSymbolSet)).head
     }
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {
+    let tmp = (*a).syms;
+    (*a).syms = (*b).syms;
+    (*b).syms = tmp;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_copy_size(dst: *mut zbar_image_t, src: *const zbar_image_t) {
+    (*dst).width = (*src).width;
+    (*dst).height = (*src).height;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_copy(src: *const zbar_image_t, inverted: c_int) -> *mut zbar_image_t {
+    const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
+    const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
+
+    if inverted != 0 && (*src).format != FOURCC_Y800 && (*src).format != FOURCC_GREY {
+        return null_mut();
+    }
+
+    let dst = zbar_image_create();
+    (*dst).format = (*src).format;
+    _zbar_image_copy_size(dst, src);
+    (*dst).datalen = (*src).datalen;
+    (*dst).data = libc::malloc((*src).datalen as usize);
+    assert!(!(*dst).data.is_null());
+
+    if inverted == 0 {
+        libc::memcpy((*dst).data, (*src).data, (*src).datalen as usize);
+    } else {
+        let len = (*src).datalen as usize;
+        let mut sp = (*src).data as *const usize;
+        let mut dp = (*dst).data as *mut usize;
+
+        // Do it word per word to speed up
+        let word_len = len / std::mem::size_of::<usize>();
+        for _ in 0..word_len {
+            *dp = !(*sp);
+            sp = sp.add(1);
+            dp = dp.add(1);
+        }
+
+        // Deal with non-aligned remains
+        let mut spc = sp as *const u8;
+        let mut dpc = dp as *mut u8;
+        let remain = len % std::mem::size_of::<usize>();
+        for _ in 0..remain {
+            *dpc = !(*spc);
+            spc = spc.add(1);
+            dpc = dpc.add(1);
+        }
+    }
+    (*dst).cleanup = zbar_image_free_data as *mut c_void;
+    dst
+}
