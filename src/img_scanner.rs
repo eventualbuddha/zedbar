@@ -16,11 +16,59 @@ const CACHE_TIMEOUT: c_ulong = CACHE_HYSTERESIS * 2;
 // Orientation constant
 const ZBAR_ORIENT_UNKNOWN: c_int = -1;
 
+// QR Code finder precision constant
+const QR_FINDER_SUBPREC: c_int = 2;
+
+// QR_FIXED macro: ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
+#[inline]
+fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
+    (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
+}
+
 // Import types and functions from ffi module
 use crate::ffi::{refcnt, zbar_image_t, zbar_symbol_t};
 
 // Import functions and constants from symbol module
 use crate::symbol::_zbar_get_symbol_hash;
+
+// qr_point is typedef int qr_point[2] in C
+type QrPoint = [c_int; 2];
+
+// qr_finder_line structure from qrcode.h
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct qr_finder_line {
+    pub pos: QrPoint,
+    pub len: c_int,
+    pub boffs: c_int,
+    pub eoffs: c_int,
+}
+
+// C assert function
+extern "C" {
+    fn __assert_fail(
+        assertion: *const u8,
+        file: *const u8,
+        line: c_uint,
+        function: *const u8,
+    ) -> !;
+}
+
+// Helper macro to call C assert for compatibility
+macro_rules! c_assert {
+    ($cond:expr) => {
+        if !$cond {
+            unsafe {
+                __assert_fail(
+                    concat!(stringify!($cond), "\0").as_ptr(),
+                    concat!(file!(), "\0").as_ptr(),
+                    line!(),
+                    concat!("", "\0").as_ptr(),
+                )
+            }
+        }
+    };
+}
 
 // External C functions
 extern "C" {
@@ -33,9 +81,12 @@ extern "C" {
     fn _zbar_symbol_set_free(syms: *mut zbar_symbol_set_t);
     fn zbar_scanner_flush(scn: *mut zbar_scanner_t);
     fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t);
+    fn _zbar_decoder_get_qr_finder_line(dcode: *mut zbar_decoder_t) -> *mut qr_finder_line;
+    fn _zbar_qr_found_line(qr: *mut qr_reader, direction: c_int, line: *const qr_finder_line) -> c_int;
 }
 
-// Import from symbol module
+// Import from line_scanner and symbol modules
+use crate::line_scanner::zbar_scanner_get_edge;
 use crate::symbol::_zbar_symbol_free;
 
 // Config constants (from zbar.h)
@@ -292,7 +343,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
         if (*sym).refcnt != 0 && refcnt(&mut (*sym).refcnt, -1) != 0 {
             // Unlink referenced symbol
             // FIXME handle outstanding component refs (currently unsupported)
-            debug_assert!((*sym).data_alloc != 0);
+            c_assert!((*sym).data_alloc != 0);
             (*sym).next = null_mut();
         } else {
             // Recycle unreferenced symbol
@@ -304,7 +355,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
             if !(*sym).syms.is_null() {
                 let syms = (*sym).syms as *mut zbar_symbol_set_t;
                 if refcnt(&mut (*syms).refcnt, -1) != 0 {
-                    debug_assert!(false);
+                    c_assert!(false);
                 }
                 _zbar_image_scanner_recycle_syms(iscn as *mut crate::ffi::zbar_image_scanner_t, (*syms).head);
                 (*syms).head = null_mut();
@@ -322,7 +373,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
             }
 
             if i == RECYCLE_BUCKETS {
-                debug_assert!(!(*sym).data.is_null());
+                c_assert!(!(*sym).data.is_null());
                 free((*sym).data as *mut c_void);
                 (*sym).data = null_mut();
                 (*sym).data_alloc = 0;
@@ -478,7 +529,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_alloc_sym(
         // Found a recycled symbol
         (*iscn).recycle[idx].head = (*sym).next;
         (*sym).next = null_mut();
-        debug_assert!((*iscn).recycle[idx].nsyms > 0);
+        c_assert!((*iscn).recycle[idx].nsyms > 0);
         (*iscn).recycle[idx].nsyms -= 1;
     } else {
         // Allocate a new symbol
@@ -492,7 +543,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_alloc_sym(
     (*sym).orient = ZBAR_ORIENT_UNKNOWN;
     (*sym).cache_count = 0;
     (*sym).time = (*iscn).time;
-    debug_assert!((*sym).syms.is_null());
+    c_assert!((*sym).syms.is_null());
 
     if datalen > 0 {
         (*sym).datalen = (datalen - 1) as c_uint;
@@ -513,6 +564,44 @@ pub unsafe extern "C" fn _zbar_image_scanner_alloc_sym(
     }
 
     sym
+}
+
+/// Handle QR code finder line detection
+///
+/// Processes a QR code finder line from the decoder and forwards it to the QR reader.
+/// Adjusts edge positions based on scanner state and transforms coordinates.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_qr_handler(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+) {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    let line = _zbar_decoder_get_qr_finder_line((*iscn).dcode);
+    c_assert!(!line.is_null());
+
+    let mut u = zbar_scanner_get_edge((*iscn).scn, (*line).pos[0] as c_uint, QR_FINDER_SUBPREC);
+    (*line).boffs = (u as c_int) - zbar_scanner_get_edge((*iscn).scn, (*line).boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
+    (*line).len = zbar_scanner_get_edge((*iscn).scn, (*line).len as c_uint, QR_FINDER_SUBPREC) as c_int;
+    (*line).eoffs = zbar_scanner_get_edge((*iscn).scn, (*line).eoffs as c_uint, QR_FINDER_SUBPREC) as c_int - (*line).len;
+    (*line).len -= u as c_int;
+
+    u = (qr_fixed((*iscn).umin, 0) as i64 + ((*iscn).du as i64) * (u as i64)) as c_uint;
+    if (*iscn).du < 0 {
+        let tmp = (*line).boffs;
+        (*line).boffs = (*line).eoffs;
+        (*line).eoffs = tmp;
+        u = u.wrapping_sub((*line).len as c_uint);
+    }
+
+    let vert: c_int = if (*iscn).dx != 0 { 0 } else { 1 };
+    (*line).pos[vert as usize] = u as c_int;
+    (*line).pos[(1 - vert) as usize] = qr_fixed((*iscn).v, 1) as c_int;
+
+    _zbar_qr_found_line((*iscn).qr, vert, line);
 }
 
 /// Look up a symbol in the cache

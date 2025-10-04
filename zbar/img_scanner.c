@@ -99,41 +99,6 @@ struct zbar_image_scanner_s {
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
 };
 
-extern qr_finder_line *_zbar_decoder_get_qr_finder_line(zbar_decoder_t *);
-
-#define QR_FIXED(v, rnd) ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
-#define PRINT_FIXED(val, prec) \
-    ((val) >> (prec)), (1000 * ((val) & ((1 << (prec)) - 1)) / (1 << (prec)))
-
-void _zbar_image_scanner_qr_handler(zbar_image_scanner_t *iscn)
-{
-    unsigned u;
-    int vert;
-    qr_finder_line *line = _zbar_decoder_get_qr_finder_line(iscn->dcode);
-    assert(line);
-    u = zbar_scanner_get_edge(iscn->scn, line->pos[0], QR_FINDER_SUBPREC);
-    line->boffs =
-	u - zbar_scanner_get_edge(iscn->scn, line->boffs, QR_FINDER_SUBPREC);
-    line->len = zbar_scanner_get_edge(iscn->scn, line->len, QR_FINDER_SUBPREC);
-    line->eoffs =
-	zbar_scanner_get_edge(iscn->scn, line->eoffs, QR_FINDER_SUBPREC) -
-	line->len;
-    line->len -= u;
-
-    u = QR_FIXED(iscn->umin, 0) + iscn->du * u;
-    if (iscn->du < 0) {
-	int tmp	    = line->boffs;
-	line->boffs = line->eoffs;
-	line->eoffs = tmp;
-	u -= line->len;
-    }
-    vert	     = !iscn->dx;
-    line->pos[vert]  = u;
-    line->pos[!vert] = QR_FIXED(iscn->v, 1);
-
-    _zbar_qr_found_line(iscn->qr, vert, line);
-}
-
 extern unsigned _zbar_decoder_get_sq_finder_config(zbar_decoder_t *);
 
 static void sq_handler(zbar_image_scanner_t *iscn)
