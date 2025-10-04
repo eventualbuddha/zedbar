@@ -333,7 +333,8 @@ pub unsafe extern "C" fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar
     let mut edge = ZBAR_NONE;
 
     // 2nd zero-crossing is 1st local min/max - could be edge
-    if (y2_1 == 0 || ((y2_1 > 0) != (y2_2 >= 0)))
+    // C code: (!y2_1 || ((y2_1 > 0) ? y2_2 < 0 : y2_2 > 0))
+    if (y2_1 == 0 || (y2_1 > 0 && y2_2 < 0) || (y2_1 < 0 && y2_2 > 0))
         && (calc_thresh(scn) <= y1_1.abs() as c_uint)
     {
         // Check for 1st sign change
