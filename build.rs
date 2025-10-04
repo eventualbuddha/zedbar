@@ -15,10 +15,10 @@ fn main() {
             // "zbar/sqcode.c", // Converted to Rust
             // "zbar/symbol.c", // Converted to Rust
             // Decoder modules
-            "zbar/decoder/codabar.c",
-            "zbar/decoder/code128.c",
-            "zbar/decoder/code39.c",
-            "zbar/decoder/code93.c",
+            // "zbar/decoder/codabar.c", // Converted to Rust
+            // "zbar/decoder/code128.c", // Converted to Rust
+            // "zbar/decoder/code39.c", // Converted to Rust
+            // "zbar/decoder/code93.c", // Converted to Rust
             "zbar/decoder/databar.c",
             // "zbar/decoder/ean.c", // Converted to Rust
             // "zbar/decoder/i25.c", // Converted to Rust
