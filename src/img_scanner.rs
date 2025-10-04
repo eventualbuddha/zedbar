@@ -1,6 +1,6 @@
-use std::{ffi::c_void, mem::transmute, ptr::null_mut};
+use std::{ffi::c_void, ptr::null_mut};
 
-use libc::{c_int, c_uint, c_ulong};
+use libc::{c_int, c_uint, c_ulong, free};
 
 use crate::{line_scanner::zbar_scanner_t, zbar_image_t};
 
@@ -8,8 +8,8 @@ const RECYCLE_BUCKETS: usize = 5;
 const NUM_SCN_CFGS: usize = 2; // ZBAR_CFG_Y_DENSITY - ZBAR_CFG_X_DENSITY + 1
 const NUM_SYMS: usize = 25; // Number of symbol types
 
-// Import external C function from ffi module
-use crate::_zbar_image_scanner_recycle_syms;
+// Import types and functions from ffi module
+use crate::ffi::{refcnt, zbar_symbol_t};
 
 // Import functions and constants from symbol module
 use crate::symbol::_zbar_get_symbol_hash;
@@ -22,6 +22,7 @@ extern "C" {
         cfg: c_int,
         val: *mut c_int,
     ) -> c_int;
+    fn _zbar_symbol_set_free(syms: *mut zbar_symbol_set_t);
 }
 
 // Config constants (from zbar.h)
@@ -36,12 +37,6 @@ const ZBAR_CODE128: c_int = 128;
 const ZBAR_COMPOSITE: c_int = 15;
 
 // Forward declarations for opaque C types
-#[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct zbar_symbol_t {
-    _private: [u8; 0],
-}
-
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_decoder_t {
@@ -63,7 +58,10 @@ pub struct sq_reader {
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_symbol_set_t {
-    _private: [u8; 0],
+    pub refcnt: c_int,
+    pub nsyms: c_int,
+    pub head: *mut zbar_symbol_t,
+    pub tail: *mut zbar_symbol_t,
 }
 
 #[repr(C)]
@@ -188,11 +186,7 @@ pub unsafe extern "C" fn zbar_image_scanner_enable_cache(
 
     if !(*iscn).cache.is_null() {
         // Recycle all cached symbols
-        // Cast to the FFI types expected by the C function
-        _zbar_image_scanner_recycle_syms(
-            transmute(iscn),
-            transmute((*iscn).cache),
-        );
+        _zbar_image_scanner_recycle_syms(iscn as *mut crate::ffi::zbar_image_scanner_t, (*iscn).cache);
         (*iscn).cache = null_mut();
     }
     (*iscn).enable_cache = if enable != 0 { 1 } else { 0 };
@@ -262,4 +256,73 @@ pub unsafe extern "C" fn zbar_image_scanner_get_config(
     }
 
     1
+}
+
+/// Recycle symbols from the image scanner
+///
+/// Recursively processes a linked list of symbols, either unlinking referenced
+/// symbols or recycling unreferenced ones into the appropriate size bucket.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `sym` - Head of the symbol list to recycle
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    mut sym: *mut zbar_symbol_t,
+) {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+    while !sym.is_null() {
+        let next = (*sym).next;
+
+        if (*sym).refcnt != 0 && refcnt(&mut (*sym).refcnt, -1) != 0 {
+            // Unlink referenced symbol
+            // FIXME handle outstanding component refs (currently unsupported)
+            debug_assert!((*sym).data_alloc != 0);
+            (*sym).next = null_mut();
+        } else {
+            // Recycle unreferenced symbol
+            if (*sym).data_alloc == 0 {
+                (*sym).data = null_mut();
+                (*sym).datalen = 0;
+            }
+
+            if !(*sym).syms.is_null() {
+                let syms = (*sym).syms as *mut zbar_symbol_set_t;
+                if refcnt(&mut (*syms).refcnt, -1) != 0 {
+                    debug_assert!(false);
+                }
+                _zbar_image_scanner_recycle_syms(iscn as *mut crate::ffi::zbar_image_scanner_t, (*syms).head);
+                (*syms).head = null_mut();
+                _zbar_symbol_set_free(syms);
+                (*sym).syms = null_mut();
+            }
+
+            // Find appropriate bucket based on data allocation size
+            let mut i = 0;
+            while i < RECYCLE_BUCKETS {
+                if ((*sym).data_alloc as c_int) < (1 << (i * 2)) {
+                    break;
+                }
+                i += 1;
+            }
+
+            if i == RECYCLE_BUCKETS {
+                debug_assert!(!(*sym).data.is_null());
+                free((*sym).data as *mut c_void);
+                (*sym).data = null_mut();
+                (*sym).data_alloc = 0;
+                i = 0;
+            }
+
+            let bucket = &mut (*iscn).recycle[i];
+            // FIXME cap bucket fill
+            bucket.nsyms += 1;
+            (*sym).next = bucket.head;
+            bucket.head = sym;
+        }
+
+        sym = next;
+    }
 }

@@ -99,53 +99,6 @@ struct zbar_image_scanner_s {
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
 };
 
-void _zbar_image_scanner_recycle_syms(zbar_image_scanner_t *iscn,
-				      zbar_symbol_t *sym)
-{
-    zbar_symbol_t *next = NULL;
-    for (; sym; sym = next) {
-	next = sym->next;
-	if (sym->refcnt && _zbar_refcnt(&sym->refcnt, -1)) {
-	    /* unlink referenced symbol */
-	    /* FIXME handle outstanding component refs (currently unsupported)
-       */
-	    assert(sym->data_alloc);
-	    sym->next = NULL;
-	} else {
-	    int i;
-	    recycle_bucket_t *bucket;
-	    /* recycle unreferenced symbol */
-	    if (!sym->data_alloc) {
-		sym->data    = NULL;
-		sym->datalen = 0;
-	    }
-	    if (sym->syms) {
-		if (_zbar_refcnt(&sym->syms->refcnt, -1))
-		    assert(0);
-		_zbar_image_scanner_recycle_syms(iscn, sym->syms->head);
-		sym->syms->head = NULL;
-		_zbar_symbol_set_free(sym->syms);
-		sym->syms = NULL;
-	    }
-	    for (i = 0; i < RECYCLE_BUCKETS; i++)
-		if ((int)sym->data_alloc < (1 << (i * 2)))
-		    break;
-	    if (i == RECYCLE_BUCKETS) {
-		assert(sym->data);
-		free(sym->data);
-		sym->data	= NULL;
-		sym->data_alloc = 0;
-		i		= 0;
-	    }
-	    bucket = &iscn->recycle[i];
-	    /* FIXME cap bucket fill */
-	    bucket->nsyms++;
-	    sym->next	 = bucket->head;
-	    bucket->head = sym;
-	}
-    }
-}
-
 static inline int recycle_syms(zbar_image_scanner_t *iscn,
 			       zbar_symbol_set_t *syms)
 {
@@ -308,7 +261,9 @@ void _zbar_image_scanner_add_sym(zbar_image_scanner_t *iscn, zbar_symbol_t *sym)
     else if (!syms->tail)
 	syms->tail = sym;
 
-    _zbar_symbol_refcnt(sym, 1);
+    if (!_zbar_refcnt(&sym->refcnt, 1) && 1 <= 0) {
+	_zbar_symbol_free(sym);
+    }
 }
 
 extern qr_finder_line *_zbar_decoder_get_qr_finder_line(zbar_decoder_t *);

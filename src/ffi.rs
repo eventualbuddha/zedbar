@@ -118,10 +118,6 @@ extern "C" {
         scanner: *mut zbar_image_scanner_t,
         symbol: *mut zbar_symbol_t,
     );
-    pub fn _zbar_image_scanner_recycle_syms(
-        scanner: *mut zbar_image_scanner_t,
-        symbol: *mut zbar_symbol_t,
-    );
     pub fn zbar_image_scanner_get_results(scanner: *const c_void) -> *mut c_void;
     pub fn zbar_image_scanner_recycle_image(scanner: *mut c_void, image: *mut c_void);
 
