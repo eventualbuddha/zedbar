@@ -18,7 +18,7 @@ pub struct zbar_image_t {
     pub format: u32,
     pub width: c_uint,
     pub height: c_uint,
-    pub data: *const c_void,
+    pub data: *mut c_void,
     pub datalen: c_ulong,
     pub userdata: *mut c_void,
     pub cleanup: *mut c_void,
@@ -48,6 +48,14 @@ pub struct zbar_symbol_t {
     pub time: c_ulong,
     pub cache_count: c_int,
     pub quality: c_int,
+}
+
+// Reference counting helper
+pub(crate) unsafe fn refcnt(cnt: *mut c_int, delta: c_int) -> c_int {
+    let rc = *cnt + delta;
+    *cnt = rc;
+    debug_assert!(rc >= 0);
+    rc
 }
 
 #[link(name = "zbar_c", kind = "static")]

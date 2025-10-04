@@ -8,7 +8,7 @@ fn main() {
         .files([
             "zbar/decoder.c",
             // "zbar/error.c", // Converted to Rust
-            "zbar/image.c",
+            // "zbar/image.c", // Converted to Rust
             "zbar/img_scanner.c",
             "zbar/processor.c",
             "zbar/scanner.c",

@@ -660,36 +660,6 @@ extern void zbar_image_set_data(zbar_image_t *image, const void *data,
  */
 extern void zbar_image_free_data(zbar_image_t *image);
 
-/** dump raw image data to a file for debug.
- * the data will be prefixed with a 16 byte header consisting of:
- *   - 4 bytes uint = 0x676d697a ("zimg")
- *   - 4 bytes format fourcc
- *   - 2 bytes width
- *   - 2 bytes height
- *   - 4 bytes size of following image data in bytes
- * this header can be dumped w/eg:
- * @verbatim
-       od -Ax -tx1z -N16 -w4 [file]
-@endverbatim
- * for some formats the image can be displayed/converted using
- * ImageMagick, eg:
- * @verbatim
-       display -size 640x480+16 [-depth ?] [-sampling-factor ?x?] \
-           {GRAY,RGB,UYVY,YUV}:[file]
-@endverbatim
- *
- * @param image the image object to dump
- * @param filebase base filename, appended with ".XXXX.zimg" where
- * XXXX is the format fourcc
- * @returns 0 on success or a system error code on failure
- */
-extern int zbar_image_write(const zbar_image_t *image, const char *filebase);
-
-/** read back an image in the format written by zbar_image_write()
- * @note TBD
- */
-extern zbar_image_t *zbar_image_read(char *filename);
-
 /*@}*/
 
 /*------------------------------------------------------------*/

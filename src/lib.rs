@@ -1,7 +1,7 @@
 //! ZBar Barcode Scanning Library (Rust Port)
 //!
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
-//! The conversion to Rust is being done incrementally using c2rust as a starting point.
+//! The conversion to Rust is being done incrementally.
 
 pub mod decoder;
 pub mod decoder_types;
@@ -9,6 +9,7 @@ pub mod decoders;
 pub mod error;
 pub mod finder;
 pub mod image;
+pub mod image_ffi;
 pub mod line_scanner;
 pub mod qrcode;
 pub mod scanner;

@@ -5,7 +5,7 @@
 //!
 //! Handles symbol lifecycle, reference counting, and data access.
 
-use crate::ffi::zbar_symbol_t;
+use crate::{ffi::zbar_symbol_t, refcnt};
 use libc::{c_char, c_int, c_uint, c_void};
 use std::ptr;
 
@@ -150,14 +150,6 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
     h as i32
 }
 
-// Reference counting helper
-unsafe fn refcnt(cnt: *mut c_int, delta: c_int) -> c_int {
-    let rc = *cnt + delta;
-    *cnt = rc;
-    debug_assert!(rc >= 0);
-    rc
-}
-
 /// Free a symbol
 ///
 /// # Safety
@@ -219,11 +211,11 @@ pub unsafe fn symbol_set_free(syms: *mut c_void) {
 
 // Internal symbol set structure (C FFI)
 #[repr(C)]
-struct CSymbolSet {
-    refcnt: c_int,
-    nsyms: c_int,
-    head: *mut zbar_symbol_t,
-    tail: *mut zbar_symbol_t,
+pub struct CSymbolSet {
+    pub refcnt: c_int,
+    pub nsyms: c_int,
+    pub head: *mut zbar_symbol_t,
+    pub tail: *mut zbar_symbol_t,
 }
 
 // C FFI exports
@@ -380,9 +372,7 @@ pub unsafe extern "C" fn zbar_symbol_set_get_size(syms: *const c_void) -> c_int 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_first_symbol(
-    syms: *const c_void,
-) -> *const zbar_symbol_t {
+pub unsafe extern "C" fn zbar_symbol_set_first_symbol(syms: *const c_void) -> *const zbar_symbol_t {
     let syms = syms as *const CSymbolSet;
     let sym = (*syms).tail;
     if !sym.is_null() {
