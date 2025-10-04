@@ -6,4 +6,5 @@ pub mod codabar;
 pub mod code128;
 pub mod code39;
 pub mod code93;
+pub mod ean;
 pub mod i25;

@@ -20,7 +20,7 @@ fn main() {
             "zbar/decoder/code39.c",
             "zbar/decoder/code93.c",
             "zbar/decoder/databar.c",
-            "zbar/decoder/ean.c",
+            // "zbar/decoder/ean.c", // Converted to Rust
             // "zbar/decoder/i25.c", // Converted to Rust
             // "zbar/decoder/qr_finder.c", // Converted to Rust
             // "zbar/decoder/sq_finder.c", // Converted to Rust
