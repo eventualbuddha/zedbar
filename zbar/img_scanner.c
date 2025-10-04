@@ -64,13 +64,6 @@
 #define TEST_CFG(iscn, cfg) \
     (((iscn)->config >> ((cfg) - ZBAR_CFG_POSITION)) & 1)
 
-#ifndef NO_STATS
-#define STAT(x) iscn->stat_##x++
-#else
-#define STAT(...)
-#define dump_stats(...)
-#endif
-
 #define RECYCLE_BUCKETS 5
 
 typedef struct recycle_bucket_s {
@@ -104,14 +97,6 @@ struct zbar_image_scanner_s {
     unsigned ean_config;
     int configs[NUM_SCN_CFGS];	  /* int valued configurations */
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
-
-#ifndef NO_STATS
-    int stat_syms_new;
-    int stat_iscn_syms_inuse, stat_iscn_syms_recycle;
-    int stat_img_syms_inuse, stat_img_syms_recycle;
-    int stat_sym_new;
-    int stat_sym_recycle[RECYCLE_BUCKETS];
-#endif
 };
 
 void _zbar_image_scanner_recycle_syms(zbar_image_scanner_t *iscn,
@@ -179,19 +164,14 @@ inline void zbar_image_scanner_recycle_image(zbar_image_scanner_t *iscn,
     zbar_symbol_set_t *syms = iscn->syms;
     if (syms && syms->refcnt) {
 	if (recycle_syms(iscn, syms)) {
-	    STAT(iscn_syms_inuse);
 	    iscn->syms = NULL;
-	} else
-	    STAT(iscn_syms_recycle);
+	}
     }
 
     syms      = img->syms;
     img->syms = NULL;
-    if (syms && recycle_syms(iscn, syms))
-	STAT(img_syms_inuse);
-    else if (syms) {
-	STAT(img_syms_recycle);
-
+    if (syms && recycle_syms(iscn, syms)) {
+    } else if (syms) {
 	/* select one set to resurrect, destroy the other */
 	if (iscn->syms)
 	    _zbar_symbol_set_free(syms);
@@ -213,7 +193,6 @@ inline zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
 
     for (; i >= 0; i--)
 	if ((sym = iscn->recycle[i].head)) {
-	    STAT(sym_recycle[i]);
 	    break;
 	}
 
@@ -224,7 +203,6 @@ inline zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
 	iscn->recycle[i].nsyms--;
     } else {
 	sym = calloc(1, sizeof(zbar_symbol_t));
-	STAT(sym_new);
     }
 
     /* init new symbol */
@@ -481,26 +459,9 @@ zbar_image_scanner_t *zbar_image_scanner_create()
     return (iscn);
 }
 
-#ifndef NO_STATS
-static inline void dump_stats(const zbar_image_scanner_t *iscn)
-{
-    int i;
-    zprintf(1, "symbol sets allocated   = %-4d\n", iscn->stat_syms_new);
-    zprintf(1, "    scanner syms in use = %-4d\trecycled  = %-4d\n",
-	    iscn->stat_iscn_syms_inuse, iscn->stat_iscn_syms_recycle);
-    zprintf(1, "    image syms in use   = %-4d\trecycled  = %-4d\n",
-	    iscn->stat_img_syms_inuse, iscn->stat_img_syms_recycle);
-    zprintf(1, "symbols allocated       = %-4d\n", iscn->stat_sym_new);
-    for (i = 0; i < RECYCLE_BUCKETS; i++)
-	zprintf(1, "     recycled[%d]        = %-4d\n", i,
-		iscn->stat_sym_recycle[i]);
-}
-#endif
-
 void zbar_image_scanner_destroy(zbar_image_scanner_t *iscn)
 {
     int i;
-    dump_stats(iscn);
     if (iscn->syms) {
 	if (iscn->syms->refcnt)
 	    zbar_symbol_set_ref(iscn->syms, -1);
@@ -640,12 +601,6 @@ void zbar_image_scanner_enable_cache(zbar_image_scanner_t *iscn, int enable)
     iscn->enable_cache = (enable) ? 1 : 0;
 }
 
-const zbar_symbol_set_t *
-zbar_image_scanner_get_results(const zbar_image_scanner_t *iscn)
-{
-    return (iscn->syms);
-}
-
 static inline void quiet_border(zbar_image_scanner_t *iscn)
 {
     /* flush scanner pipeline */
@@ -693,7 +648,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
     syms = iscn->syms;
     if (!syms) {
 	syms = iscn->syms = _zbar_symbol_set_create();
-	STAT(syms_new);
 	zbar_symbol_set_ref(syms, 1);
     } else
 	zbar_symbol_set_ref(syms, 2);

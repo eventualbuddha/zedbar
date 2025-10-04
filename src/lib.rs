@@ -10,6 +10,7 @@ pub mod error;
 pub mod finder;
 pub mod image;
 pub mod image_ffi;
+pub mod img_scanner;
 pub mod line_scanner;
 pub mod qrcode;
 pub mod scanner;
