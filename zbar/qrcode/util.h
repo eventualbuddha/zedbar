@@ -9,10 +9,6 @@
 #if !defined(_qrcode_util_H)
 #define _qrcode_util_H (1)
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* Utility macros */
 #define QR_MAXI(_a, _b) ((_a) - (((_a) - (_b)) & -((_b) > (_a))))
 #define QR_MINI(_a, _b) ((_a) + (((_b) - (_a)) & -((_b) < (_a))))
@@ -72,9 +68,5 @@ unsigned qr_ihypot(int _x, int _y);
    Returns the number of bits needed to represent the value.
    Implemented in Rust (src/qrcode/util.rs) */
 int qr_ilog(unsigned _val);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

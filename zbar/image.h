@@ -24,10 +24,8 @@
 #define _IMAGE_H_
 
 #include "config.h"
-#ifdef HAVE_INTTYPES_H
-#include <inttypes.h>
-#endif
 #include <assert.h>
+#include <inttypes.h>
 #include <stdlib.h>
 
 #include <zbar.h>

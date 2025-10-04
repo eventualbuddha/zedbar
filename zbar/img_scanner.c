@@ -22,12 +22,8 @@
  *------------------------------------------------------------------------*/
 
 #include "config.h"
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#endif
-#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
-#endif
+#include <unistd.h>
 
 #include <assert.h>
 #include <stdlib.h> /* malloc, free */
@@ -37,9 +33,9 @@
 #include "image.h"
 
 #include "zbar.h"
+#include "img_scanner.h"
 #include "qrcode.h"
 #include "sqcode.h"
-#include "img_scanner.h"
 
 #if 1
 #define ASSERT_POS assert(p == data + x + y * (intptr_t)w)
@@ -86,8 +82,8 @@ typedef struct recycle_bucket_s {
 struct zbar_image_scanner_s {
     zbar_scanner_t *scn;   /* associated linear intensity scanner */
     zbar_decoder_t *dcode; /* associated symbol decoder */
-    qr_reader *qr; /* QR Code 2D reader */
-    sq_reader *sq; /* SQ Code 2D reader */
+    qr_reader *qr;	   /* QR Code 2D reader */
+    sq_reader *sq;	   /* SQ Code 2D reader */
 
     const void *userdata; /* application data */
     /* user result callback */

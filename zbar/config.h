@@ -3,25 +3,23 @@
 #define CONFIG_H
 
 /* System capabilities */
-#define HAVE_STDLIB_H	1
-#define HAVE_STRING_H	1
-#define HAVE_UNISTD_H	1
-#define HAVE_STDINT_H	1
-#define HAVE_INTTYPES_H 1
-#define HAVE_ERRNO_H	1
-#define HAVE_FCNTL_H	1
-#define HAVE_LIMITS_H	1
-#define HAVE_POLL_H	1
-#define HAVE_MALLOC	1
-#define HAVE_MEMCHR	1
-#define HAVE_MEMMOVE	1
-#define HAVE_MEMSET	1
-#define HAVE_STRCHR	1
-#define HAVE_STRDUP	1
-#define HAVE_STRRCHR	1
-#define HAVE_STRSTR	1
-#define HAVE_STRTOL	1
-#define HAVE_STRTOUL	1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_FCNTL_H  1
+#define HAVE_LIMITS_H 1
+#define HAVE_POLL_H   1
+#define HAVE_MALLOC   1
+#define HAVE_MEMCHR   1
+#define HAVE_MEMMOVE  1
+#define HAVE_MEMSET   1
+#define HAVE_STRCHR   1
+#define HAVE_STRDUP   1
+#define HAVE_STRRCHR  1
+#define HAVE_STRSTR   1
+#define HAVE_STRTOL   1
+#define HAVE_STRTOUL  1
 
 /* Package information */
 #define PACKAGE		"zbar"

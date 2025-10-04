@@ -6,10 +6,6 @@
 #if !defined(_isaac_H)
 #define _isaac_H (1)
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef struct isaac_ctx isaac_ctx;
 
 #define ISAAC_SZ_LOG	  (8)
@@ -44,9 +40,5 @@ unsigned isaac_next_uint32(isaac_ctx *_ctx);
 /* Get uniformly distributed random integer less than n.
    Implemented in Rust (src/qrcode/isaac.rs) */
 unsigned isaac_next_uint(isaac_ctx *_ctx, unsigned _n);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

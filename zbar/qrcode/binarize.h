@@ -9,10 +9,6 @@
 #if !defined(_qrcode_binarize_H)
 #define _qrcode_binarize_H (1)
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* These functions are not currently implemented */
 void qr_image_cross_masking_median_filter(unsigned char *_img, int _width,
 					  int _height);
@@ -26,9 +22,5 @@ void qr_wiener_filter(unsigned char *_img, int _width, int _height);
    Returns NULL if width or height is <= 0.
    Implemented in Rust (src/qrcode/binarize.rs) */
 unsigned char *qr_binarize(const unsigned char *_img, int _width, int _height);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif
