@@ -99,8 +99,8 @@ struct zbar_image_scanner_s {
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
 };
 
-static inline int recycle_syms(zbar_image_scanner_t *iscn,
-			       zbar_symbol_set_t *syms)
+int _zbar_image_scanner_recycle_symbol_set(zbar_image_scanner_t *iscn,
+					    zbar_symbol_set_t *syms)
 {
     if (_zbar_refcnt(&syms->refcnt, -1))
 	return (1);
@@ -111,19 +111,19 @@ static inline int recycle_syms(zbar_image_scanner_t *iscn,
     return (0);
 }
 
-inline void zbar_image_scanner_recycle_image(zbar_image_scanner_t *iscn,
-					     zbar_image_t *img)
+void zbar_image_scanner_recycle_image(zbar_image_scanner_t *iscn,
+				      zbar_image_t *img)
 {
     zbar_symbol_set_t *syms = iscn->syms;
     if (syms && syms->refcnt) {
-	if (recycle_syms(iscn, syms)) {
+	if (_zbar_image_scanner_recycle_symbol_set(iscn, syms)) {
 	    iscn->syms = NULL;
 	}
     }
 
     syms      = img->syms;
     img->syms = NULL;
-    if (syms && recycle_syms(iscn, syms)) {
+    if (syms && _zbar_image_scanner_recycle_symbol_set(iscn, syms)) {
     } else if (syms) {
 	/* select one set to resurrect, destroy the other */
 	if (iscn->syms)
@@ -133,9 +133,9 @@ inline void zbar_image_scanner_recycle_image(zbar_image_scanner_t *iscn,
     }
 }
 
-inline zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
-						    zbar_symbol_type_t type,
-						    int datalen)
+zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
+					     zbar_symbol_type_t type,
+					     int datalen)
 {
     /* recycle old or alloc new symbol */
     zbar_symbol_t *sym = NULL;
@@ -184,8 +184,8 @@ inline zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
     return (sym);
 }
 
-static inline zbar_symbol_t *cache_lookup(zbar_image_scanner_t *iscn,
-					  zbar_symbol_t *sym)
+zbar_symbol_t *_zbar_image_scanner_cache_lookup(zbar_image_scanner_t *iscn,
+						zbar_symbol_t *sym)
 {
     /* search for matching entry in cache */
     zbar_symbol_t **entry = &iscn->cache;
@@ -205,11 +205,12 @@ static inline zbar_symbol_t *cache_lookup(zbar_image_scanner_t *iscn,
     return (*entry);
 }
 
-static inline void cache_sym(zbar_image_scanner_t *iscn, zbar_symbol_t *sym)
+void _zbar_image_scanner_cache_sym(zbar_image_scanner_t *iscn,
+				   zbar_symbol_t *sym)
 {
     if (iscn->enable_cache) {
 	uint32_t age, near_thresh, far_thresh, dup;
-	zbar_symbol_t *entry = cache_lookup(iscn, sym);
+	zbar_symbol_t *entry = _zbar_image_scanner_cache_lookup(iscn, sym);
 	if (!entry) {
 	    /* FIXME reuse sym */
 	    entry	     = _zbar_image_scanner_alloc_sym(iscn, sym->type,
@@ -245,7 +246,7 @@ static inline void cache_sym(zbar_image_scanner_t *iscn, zbar_symbol_t *sym)
 void _zbar_image_scanner_add_sym(zbar_image_scanner_t *iscn, zbar_symbol_t *sym)
 {
     zbar_symbol_set_t *syms;
-    cache_sym(iscn, sym);
+    _zbar_image_scanner_cache_sym(iscn, sym);
 
     syms = iscn->syms;
     if (sym->cache_count || !syms->tail) {
@@ -272,7 +273,7 @@ extern qr_finder_line *_zbar_decoder_get_qr_finder_line(zbar_decoder_t *);
 #define PRINT_FIXED(val, prec) \
     ((val) >> (prec)), (1000 * ((val) & ((1 << (prec)) - 1)) / (1 << (prec)))
 
-static inline void qr_handler(zbar_image_scanner_t *iscn)
+void _zbar_image_scanner_qr_handler(zbar_image_scanner_t *iscn)
 {
     unsigned u;
     int vert;
@@ -319,7 +320,7 @@ static void symbol_handler(zbar_decoder_t *dcode)
     zbar_symbol_t *sym;
 
     if (type == ZBAR_QRCODE) {
-	qr_handler(iscn);
+	_zbar_image_scanner_qr_handler(iscn);
 	return;
     }
 
@@ -496,7 +497,7 @@ int zbar_image_scanner_set_config(zbar_image_scanner_t *iscn,
     return (0);
 }
 
-static inline void quiet_border(zbar_image_scanner_t *iscn)
+void _zbar_image_scanner_quiet_border(zbar_image_scanner_t *iscn)
 {
     /* flush scanner pipeline */
     zbar_scanner_t *scn = iscn->scn;
@@ -577,7 +578,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		zbar_scan_y(scn, d);
 	    }
 	    ASSERT_POS;
-	    quiet_border(iscn);
+	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(-1, density);
 	    iscn->v = y;
@@ -592,7 +593,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		zbar_scan_y(scn, d);
 	    }
 	    ASSERT_POS;
-	    quiet_border(iscn);
+	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(1, density);
 	    iscn->v = y;
@@ -622,7 +623,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		zbar_scan_y(scn, d);
 	    }
 	    ASSERT_POS;
-	    quiet_border(iscn);
+	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(density, -1);
 	    iscn->v = x;
@@ -638,7 +639,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		zbar_scan_y(scn, d);
 	    }
 	    ASSERT_POS;
-	    quiet_border(iscn);
+	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(density, 1);
 	    iscn->v = x;
@@ -669,7 +670,7 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		if ((sym->type == ZBAR_CODABAR || filter) && sym->quality < 4) {
 		    if (iscn->enable_cache) {
 			/* revert cache update */
-			zbar_symbol_t *entry = cache_lookup(iscn, sym);
+			zbar_symbol_t *entry = _zbar_image_scanner_cache_lookup(iscn, sym);
 			if (entry)
 			    entry->cache_count--;
 			else
