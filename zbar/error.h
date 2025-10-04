@@ -24,16 +24,12 @@
 #define _ERROR_H_
 
 #include "config.h"
-#ifdef HAVE_INTTYPES_H
+#include <assert.h>
+#include <errno.h>
 #include <inttypes.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef HAVE_ERRNO_H
-#include <errno.h>
-#endif
-#include <assert.h>
 
 #include <zbar.h>
 
@@ -83,19 +79,6 @@ extern int _zbar_verbosity;
 
 #define ZFLUSH
 
-#ifdef ZNO_MESSAGES
-
-#ifdef __GNUC__
-/* older versions of gcc (< 2.95) require a named varargs parameter */
-#define zprintf(args...)
-#else
-/* unfortunately named vararg parameter is a gcc-specific extension */
-#define zprintf(...)
-#endif
-
-#else
-
-#ifdef __GNUC__
 #define zprintf(level, format, args...)                       \
     do {                                                      \
 	if (_zbar_verbosity >= level) {                       \
@@ -111,25 +94,6 @@ extern int _zbar_verbosity;
 	    ZFLUSH                             \
 	}                                      \
     } while (0)
-#else
-#define zprintf(level, format, ...)                                  \
-    do {                                                             \
-	if (_zbar_verbosity >= level) {                              \
-	    fprintf(stderr, "%s: " format, __func__, ##__VA_ARGS__); \
-	    ZFLUSH                                                   \
-	}                                                            \
-    } while (0)
-#define zwprintf(level, format, ...)                 \
-    do {                                             \
-	if (_zbar_verbosity >= level) {              \
-	    fprintf(stderr, "%s: ", __func__);       \
-	    fwprintf(stderr, format, ##__VA_ARGS__); \
-	    ZFLUSH                                   \
-	}                                            \
-    } while (0)
-#endif
-
-#endif
 
 static inline int err_copy(void *dst_c, void *src_c)
 {
@@ -155,10 +119,8 @@ static inline int err_capture(const void *container, errsev_t sev,
 {
     errinfo_t *err = (errinfo_t *)container;
     assert(err->magic == ERRINFO_MAGIC);
-#ifdef HAVE_ERRNO_H
     if (type == ZBAR_ERR_SYSTEM)
 	err->errnum = errno;
-#endif
     err->sev	= sev;
     err->type	= type;
     err->func	= func;

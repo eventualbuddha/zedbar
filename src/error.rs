@@ -1,6 +1,7 @@
 //! Error types and handling
 
-use libc::{c_int, c_uint};
+use libc::{c_char, c_int, c_uint};
+use std::ffi::CStr;
 use std::fmt;
 
 // Version constants - must match zbar/config.h
@@ -34,18 +35,18 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::OutOfMemory => write!(f, "out of memory"),
-            Error::Internal => write!(f, "internal library error"),
-            Error::Unsupported => write!(f, "unsupported request"),
-            Error::Invalid => write!(f, "invalid request"),
-            Error::System => write!(f, "system error"),
-            Error::Locking => write!(f, "locking error"),
-            Error::Busy => write!(f, "all resources busy"),
-            Error::XDisplay => write!(f, "X11 display error"),
-            Error::XProto => write!(f, "X11 protocol error"),
-            Error::Closed => write!(f, "output window is closed"),
-            Error::WinApi => write!(f, "windows system error"),
-            Error::Unknown(code) => write!(f, "unknown error code: {code}"),
+            Self::OutOfMemory => write!(f, "out of memory"),
+            Self::Internal => write!(f, "internal library error"),
+            Self::Unsupported => write!(f, "unsupported request"),
+            Self::Invalid => write!(f, "invalid request"),
+            Self::System => write!(f, "system error"),
+            Self::Locking => write!(f, "locking error"),
+            Self::Busy => write!(f, "all resources busy"),
+            Self::XDisplay => write!(f, "X11 display error"),
+            Self::XProto => write!(f, "X11 protocol error"),
+            Self::Closed => write!(f, "output window is closed"),
+            Self::WinApi => write!(f, "windows system error"),
+            Self::Unknown(code) => write!(f, "unknown error code: {code}"),
         }
     }
 }
@@ -57,18 +58,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl From<i32> for Error {
     fn from(code: i32) -> Self {
         match code {
-            1 => Error::OutOfMemory,
-            2 => Error::Internal,
-            3 => Error::Unsupported,
-            4 => Error::Invalid,
-            5 => Error::System,
-            6 => Error::Locking,
-            7 => Error::Busy,
-            8 => Error::XDisplay,
-            9 => Error::XProto,
-            10 => Error::Closed,
-            11 => Error::WinApi,
-            _ => Error::Unknown(code),
+            1 => Self::OutOfMemory,
+            2 => Self::Internal,
+            3 => Self::Unsupported,
+            4 => Self::Invalid,
+            5 => Self::System,
+            6 => Self::Locking,
+            7 => Self::Busy,
+            8 => Self::XDisplay,
+            9 => Self::XProto,
+            10 => Self::Closed,
+            11 => Self::WinApi,
+            _ => Self::Unknown(code),
         }
     }
 }
@@ -118,4 +119,186 @@ pub extern "C" fn zbar_increase_verbosity() {
             _zbar_verbosity <<= 1;
         }
     }
+}
+
+// Error severity levels (must match error.h)
+const SEV_FATAL: c_int = -2;
+const SEV_NOTE: c_int = 2;
+
+// Error module types (must match error.h)
+const ZBAR_MOD_PROCESSOR: c_int = 0;
+const ZBAR_MOD_UNKNOWN: c_int = 4;
+
+// Error type codes (must match zbar.h)
+const ZBAR_ERR_NUM: c_int = 12;
+
+// Static error strings
+static SEV_STR: [&str; 5] = ["FATAL ERROR", "ERROR", "OK", "WARNING", "NOTE"];
+static MOD_STR: [&str; 5] = ["processor", "video", "window", "image scanner", "<unknown>"];
+static ERR_STR: [&str; 13] = [
+    "no error",
+    "out of memory",
+    "internal library error",
+    "unsupported request",
+    "invalid request",
+    "system error",
+    "locking error",
+    "all resources busy",
+    "X11 display error",
+    "X11 protocol error",
+    "output window is closed",
+    "windows system error",
+    "unknown error",
+];
+
+// C structure representation (must match error.h)
+#[repr(C)]
+struct ErrInfo {
+    magic: u32,
+    module: c_int,
+    buf: *mut c_char,
+    errnum: c_int,
+    sev: c_int,
+    type_: c_int,
+    func: *const c_char,
+    detail: *const c_char,
+    arg_str: *mut c_char,
+    arg_int: c_int,
+}
+
+/// Print error to stderr
+///
+/// Formats and prints the error information to stderr.
+/// Returns the negative severity value.
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_error_spew(
+    container: *const libc::c_void,
+    verbosity: c_int,
+) -> c_int {
+    let err = container as *const ErrInfo;
+    let err_str = _zbar_error_string(container, verbosity);
+
+    // Write to stderr - use std::io for portability
+    use std::io::Write;
+    if !err_str.is_null() {
+        let msg = CStr::from_ptr(err_str).to_bytes();
+        let _ = std::io::stderr().write_all(msg);
+    }
+
+    -(*err).sev
+}
+
+/// Get error code from error container
+///
+/// Returns the error type code from the error info structure.
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_get_error_code(container: *const libc::c_void) -> c_int {
+    let err = container as *const ErrInfo;
+    (*err).type_
+}
+
+/// Format error message as string
+///
+/// Allocates and formats a detailed error message string.
+/// The string is stored in err->buf and returned.
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_error_string(
+    container: *const libc::c_void,
+    _verbosity: c_int,
+) -> *const c_char {
+    let err = container as *mut ErrInfo;
+
+    // Get severity string
+    let sev = if (*err).sev >= SEV_FATAL && (*err).sev <= SEV_NOTE {
+        SEV_STR[((*err).sev + 2) as usize]
+    } else {
+        SEV_STR[1]
+    };
+
+    // Get module string
+    let module = if (*err).module >= ZBAR_MOD_PROCESSOR && (*err).module < ZBAR_MOD_UNKNOWN {
+        MOD_STR[(*err).module as usize]
+    } else {
+        MOD_STR[ZBAR_MOD_UNKNOWN as usize]
+    };
+
+    // Get function name
+    let func = if !(*err).func.is_null() {
+        CStr::from_ptr((*err).func).to_str().unwrap_or("<unknown>")
+    } else {
+        "<unknown>"
+    };
+
+    // Get error type string
+    let err_type = if (*err).type_ >= 0 && (*err).type_ < ZBAR_ERR_NUM {
+        ERR_STR[(*err).type_ as usize]
+    } else {
+        ERR_STR[ZBAR_ERR_NUM as usize]
+    };
+
+    // Build base error message
+    let base = format!(
+        "{}: zbar {} in {}():\n    {}: ",
+        sev, module, func, err_type
+    );
+
+    // Add detail if present
+    let mut msg = base;
+    if !(*err).detail.is_null() {
+        let detail = CStr::from_ptr((*err).detail).to_str().unwrap_or("");
+
+        if detail.contains("%s") {
+            let arg = if !(*err).arg_str.is_null() {
+                CStr::from_ptr((*err).arg_str).to_str().unwrap_or("<?>")
+            } else {
+                "<?>"
+            };
+            // Simple replacement - C uses sprintf which is more complex
+            msg.push_str(&detail.replace("%s", arg));
+        } else if detail.contains("%d") || detail.contains("%x") {
+            // Format integer argument
+            let formatted = if detail.contains("%x") {
+                detail.replace("%x", &format!("{:x}", (*err).arg_int))
+            } else {
+                detail.replace("%d", &format!("{}", (*err).arg_int))
+            };
+            msg.push_str(&formatted);
+        } else {
+            msg.push_str(detail);
+        }
+    }
+
+    // Add system error if applicable
+    if (*err).type_ == 5 {
+        // ZBAR_ERR_SYSTEM
+        let syserr = libc::strerror((*err).errnum);
+        if !syserr.is_null() {
+            let syserr_str = CStr::from_ptr(syserr).to_str().unwrap_or("unknown");
+            msg.push_str(&format!(": {} ({})\n", syserr_str, (*err).errnum));
+        } else {
+            msg.push_str(&format!(": ({})\n", (*err).errnum));
+        }
+    } else {
+        msg.push('\n');
+    }
+
+    // Free old buffer if exists
+    if !(*err).buf.is_null() {
+        libc::free((*err).buf as *mut libc::c_void);
+    }
+
+    // Allocate new buffer and copy string
+    let c_str = std::ffi::CString::new(msg).unwrap();
+    let len = c_str.as_bytes_with_nul().len();
+    let buf = libc::malloc(len) as *mut c_char;
+    if !buf.is_null() {
+        libc::memcpy(
+            buf as *mut libc::c_void,
+            c_str.as_ptr() as *const libc::c_void,
+            len,
+        );
+        (*err).buf = buf;
+    }
+
+    (*err).buf
 }
