@@ -99,40 +99,6 @@ struct zbar_image_scanner_s {
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
 };
 
-int _zbar_image_scanner_recycle_symbol_set(zbar_image_scanner_t *iscn,
-					    zbar_symbol_set_t *syms)
-{
-    if (_zbar_refcnt(&syms->refcnt, -1))
-	return (1);
-
-    _zbar_image_scanner_recycle_syms(iscn, syms->head);
-    syms->head = syms->tail = NULL;
-    syms->nsyms		    = 0;
-    return (0);
-}
-
-void zbar_image_scanner_recycle_image(zbar_image_scanner_t *iscn,
-				      zbar_image_t *img)
-{
-    zbar_symbol_set_t *syms = iscn->syms;
-    if (syms && syms->refcnt) {
-	if (_zbar_image_scanner_recycle_symbol_set(iscn, syms)) {
-	    iscn->syms = NULL;
-	}
-    }
-
-    syms      = img->syms;
-    img->syms = NULL;
-    if (syms && _zbar_image_scanner_recycle_symbol_set(iscn, syms)) {
-    } else if (syms) {
-	/* select one set to resurrect, destroy the other */
-	if (iscn->syms)
-	    _zbar_symbol_set_free(syms);
-	else
-	    iscn->syms = syms;
-    }
-}
-
 zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
 					     zbar_symbol_type_t type,
 					     int datalen)
@@ -184,88 +150,8 @@ zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
     return (sym);
 }
 
-zbar_symbol_t *_zbar_image_scanner_cache_lookup(zbar_image_scanner_t *iscn,
-						zbar_symbol_t *sym)
-{
-    /* search for matching entry in cache */
-    zbar_symbol_t **entry = &iscn->cache;
-    while (*entry) {
-	if ((*entry)->type == sym->type && (*entry)->datalen == sym->datalen &&
-	    !memcmp((*entry)->data, sym->data, sym->datalen))
-	    break;
-	if ((sym->time - (*entry)->time) > CACHE_TIMEOUT) {
-	    /* recycle stale cache entry */
-	    zbar_symbol_t *next = (*entry)->next;
-	    (*entry)->next	= NULL;
-	    _zbar_image_scanner_recycle_syms(iscn, *entry);
-	    *entry = next;
-	} else
-	    entry = &(*entry)->next;
-    }
-    return (*entry);
-}
-
-void _zbar_image_scanner_cache_sym(zbar_image_scanner_t *iscn,
-				   zbar_symbol_t *sym)
-{
-    if (iscn->enable_cache) {
-	uint32_t age, near_thresh, far_thresh, dup;
-	zbar_symbol_t *entry = _zbar_image_scanner_cache_lookup(iscn, sym);
-	if (!entry) {
-	    /* FIXME reuse sym */
-	    entry	     = _zbar_image_scanner_alloc_sym(iscn, sym->type,
-							     sym->datalen + 1);
-	    entry->configs   = sym->configs;
-	    entry->modifiers = sym->modifiers;
-	    memcpy(entry->data, sym->data, sym->datalen);
-	    entry->time	       = sym->time - CACHE_HYSTERESIS;
-	    entry->cache_count = 0;
-	    /* add to cache */
-	    entry->next = iscn->cache;
-	    iscn->cache = entry;
-	}
-
-	/* consistency check and hysteresis */
-	age	    = sym->time - entry->time;
-	entry->time = sym->time;
-	near_thresh = (age < CACHE_PROXIMITY);
-	far_thresh  = (age >= CACHE_HYSTERESIS);
-	dup	    = (entry->cache_count >= 0);
-	if ((!dup && !near_thresh) || far_thresh) {
-	    int type	       = sym->type;
-	    int h	       = _zbar_get_symbol_hash(type);
-	    entry->cache_count = -iscn->sym_configs[0][h];
-	} else if (dup || near_thresh)
-	    entry->cache_count++;
-
-	sym->cache_count = entry->cache_count;
-    } else
-	sym->cache_count = 0;
-}
-
-void _zbar_image_scanner_add_sym(zbar_image_scanner_t *iscn, zbar_symbol_t *sym)
-{
-    zbar_symbol_set_t *syms;
-    _zbar_image_scanner_cache_sym(iscn, sym);
-
-    syms = iscn->syms;
-    if (sym->cache_count || !syms->tail) {
-	sym->next  = syms->head;
-	syms->head = sym;
-    } else {
-	sym->next	 = syms->tail->next;
-	syms->tail->next = sym;
-    }
-
-    if (!sym->cache_count)
-	syms->nsyms++;
-    else if (!syms->tail)
-	syms->tail = sym;
-
-    if (!_zbar_refcnt(&sym->refcnt, 1) && 1 <= 0) {
-	_zbar_symbol_free(sym);
-    }
-}
+// Converted to Rust in src/img_scanner.rs
+// Declaration provided in img_scanner.h
 
 extern qr_finder_line *_zbar_decoder_get_qr_finder_line(zbar_decoder_t *);
 
@@ -497,15 +383,6 @@ int zbar_image_scanner_set_config(zbar_image_scanner_t *iscn,
     return (0);
 }
 
-void _zbar_image_scanner_quiet_border(zbar_image_scanner_t *iscn)
-{
-    /* flush scanner pipeline */
-    zbar_scanner_t *scn = iscn->scn;
-    zbar_scanner_flush(scn);
-    zbar_scanner_flush(scn);
-    zbar_scanner_new_scan(scn);
-}
-
 #define movedelta(dx, dy)                  \
     do {                                   \
 	x += (dx);                         \
@@ -670,7 +547,8 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		if ((sym->type == ZBAR_CODABAR || filter) && sym->quality < 4) {
 		    if (iscn->enable_cache) {
 			/* revert cache update */
-			zbar_symbol_t *entry = _zbar_image_scanner_cache_lookup(iscn, sym);
+			zbar_symbol_t *entry =
+			    _zbar_image_scanner_cache_lookup(iscn, sym);
 			if (entry)
 			    entry->cache_count--;
 			else

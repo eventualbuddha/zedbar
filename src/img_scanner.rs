@@ -1,15 +1,20 @@
-use std::{ffi::c_void, ptr::null_mut};
+use std::{ffi::c_void, ptr::{copy_nonoverlapping, null_mut}};
 
 use libc::{c_int, c_uint, c_ulong, free};
 
-use crate::{line_scanner::zbar_scanner_t, zbar_image_t};
+use crate::line_scanner::zbar_scanner_t;
 
 const RECYCLE_BUCKETS: usize = 5;
 const NUM_SCN_CFGS: usize = 2; // ZBAR_CFG_Y_DENSITY - ZBAR_CFG_X_DENSITY + 1
 const NUM_SYMS: usize = 25; // Number of symbol types
 
+// Cache timing constants (in milliseconds)
+const CACHE_PROXIMITY: c_ulong = 1000;
+const CACHE_HYSTERESIS: c_ulong = 2000;
+const CACHE_TIMEOUT: c_ulong = CACHE_HYSTERESIS * 2;
+
 // Import types and functions from ffi module
-use crate::ffi::{refcnt, zbar_symbol_t};
+use crate::ffi::{refcnt, zbar_image_t, zbar_symbol_t};
 
 // Import functions and constants from symbol module
 use crate::symbol::_zbar_get_symbol_hash;
@@ -23,7 +28,13 @@ extern "C" {
         val: *mut c_int,
     ) -> c_int;
     fn _zbar_symbol_set_free(syms: *mut zbar_symbol_set_t);
+    fn zbar_scanner_flush(scn: *mut zbar_scanner_t);
+    fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t);
 }
+
+// Import from ffi and symbol modules
+use crate::ffi::_zbar_image_scanner_alloc_sym;
+use crate::symbol::_zbar_symbol_free;
 
 // Config constants (from zbar.h)
 const ZBAR_CFG_UNCERTAINTY: c_int = 64;
@@ -324,5 +335,250 @@ pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
         }
 
         sym = next;
+    }
+}
+
+/// Flush scanner pipeline and start new scan
+///
+/// This function flushes the scanner pipeline twice and then starts a new scan.
+/// It's typically called at quiet borders to reset the scanner state.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_quiet_border(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+) {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+    let scn = (*iscn).scn;
+
+    // Flush scanner pipeline twice
+    zbar_scanner_flush(scn);
+    zbar_scanner_flush(scn);
+
+    // Start new scan
+    zbar_scanner_new_scan(scn);
+}
+
+/// Recycle a symbol set
+///
+/// Decrements the reference count and recycles the symbols if the count reaches zero.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `syms` - The symbol set to recycle
+///
+/// # Returns
+/// 1 if the symbol set is still referenced, 0 if it was recycled
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_recycle_symbol_set(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    syms: *mut zbar_symbol_set_t,
+) -> c_int {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    if refcnt(&mut (*syms).refcnt, -1) != 0 {
+        return 1;
+    }
+
+    _zbar_image_scanner_recycle_syms(iscn as *mut crate::ffi::zbar_image_scanner_t, (*syms).head);
+    (*syms).head = null_mut();
+    (*syms).tail = null_mut();
+    (*syms).nsyms = 0;
+    0
+}
+
+/// Recycle image symbols
+///
+/// This function recycles symbols from both the scanner's current symbol set
+/// and the image's symbol set, managing their lifecycle appropriately.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `img` - The image whose symbols should be recycled
+#[no_mangle]
+pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    img: *mut crate::ffi::zbar_image_t,
+) {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    let mut syms = (*iscn).syms;
+    if !syms.is_null() && (*syms).refcnt != 0 {
+        if _zbar_image_scanner_recycle_symbol_set(iscn as *mut crate::ffi::zbar_image_scanner_t, syms) != 0 {
+            (*iscn).syms = null_mut();
+        }
+    }
+
+    syms = (*img).syms as *mut zbar_symbol_set_t;
+    (*img).syms = null_mut();
+
+    if !syms.is_null() && _zbar_image_scanner_recycle_symbol_set(iscn as *mut crate::ffi::zbar_image_scanner_t, syms) != 0 {
+        // Symbol set is still referenced
+    } else if !syms.is_null() {
+        // Select one set to resurrect, destroy the other
+        if !(*iscn).syms.is_null() {
+            _zbar_symbol_set_free(syms);
+        } else {
+            (*iscn).syms = syms;
+        }
+    }
+}
+
+/// Look up a symbol in the cache
+///
+/// Searches for a matching symbol in the cache and recycles stale entries.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `sym` - The symbol to look up
+///
+/// # Returns
+/// Pointer to the matching cache entry, or NULL if not found
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_cache_lookup(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    sym: *mut zbar_symbol_t,
+) -> *mut zbar_symbol_t {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    let mut entry = &mut (*iscn).cache as *mut *mut zbar_symbol_t;
+
+    while !(*entry).is_null() {
+        // Check if this entry matches
+        if (*(*entry)).symbol_type == (*sym).symbol_type
+            && (*(*entry)).datalen == (*sym).datalen
+        {
+            // Compare data
+            let entry_data = std::slice::from_raw_parts(
+                (*(*entry)).data as *const u8,
+                (*sym).datalen as usize,
+            );
+            let sym_data =
+                std::slice::from_raw_parts((*sym).data as *const u8, (*sym).datalen as usize);
+
+            if entry_data == sym_data {
+                break;
+            }
+        }
+
+        // Check if entry is stale
+        if (*sym).time - (*(*entry)).time > CACHE_TIMEOUT {
+            // Recycle stale cache entry
+            let next = (*(*entry)).next;
+            (*(*entry)).next = null_mut();
+            _zbar_image_scanner_recycle_syms(iscn as *mut crate::ffi::zbar_image_scanner_t, *entry);
+            *entry = next;
+        } else {
+            entry = &mut (*(*entry)).next as *mut *mut zbar_symbol_t;
+        }
+    }
+
+    *entry
+}
+
+/// Cache a symbol
+///
+/// Updates or creates a cache entry for the symbol and sets its cache count.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `sym` - The symbol to cache
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_cache_sym(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    sym: *mut zbar_symbol_t,
+) {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    if (*iscn).enable_cache != 0 {
+        let mut entry = _zbar_image_scanner_cache_lookup(iscn as *mut crate::ffi::zbar_image_scanner_t, sym);
+
+        if entry.is_null() {
+            // FIXME reuse sym
+            entry = _zbar_image_scanner_alloc_sym(
+                iscn as *mut crate::ffi::zbar_image_scanner_t,
+                (*sym).symbol_type,
+                ((*sym).datalen + 1) as c_int,
+            );
+            (*entry).configs = (*sym).configs;
+            (*entry).modifiers = (*sym).modifiers;
+            copy_nonoverlapping(
+                (*sym).data as *const u8,
+                (*entry).data as *mut u8,
+                (*sym).datalen as usize,
+            );
+            (*entry).time = (*sym).time - CACHE_HYSTERESIS;
+            (*entry).cache_count = 0;
+
+            // Add to cache
+            (*entry).next = (*iscn).cache;
+            (*iscn).cache = entry;
+        }
+
+        // Consistency check and hysteresis
+        let age = (*sym).time - (*entry).time;
+        (*entry).time = (*sym).time;
+        let near_thresh = age < CACHE_PROXIMITY;
+        let far_thresh = age >= CACHE_HYSTERESIS;
+        let dup = (*entry).cache_count >= 0;
+
+        if (!dup && !near_thresh) || far_thresh {
+            let sym_type = (*sym).symbol_type;
+            let h = _zbar_get_symbol_hash(sym_type);
+            (*entry).cache_count = -(*iscn).sym_configs[0][h as usize];
+        } else if dup || near_thresh {
+            (*entry).cache_count += 1;
+        }
+
+        (*sym).cache_count = (*entry).cache_count;
+    } else {
+        (*sym).cache_count = 0;
+    }
+}
+
+/// Add a symbol to the scanner's symbol set
+///
+/// Caches the symbol and adds it to the current symbol set.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `sym` - The symbol to add
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_add_sym(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    sym: *mut zbar_symbol_t,
+) {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    _zbar_image_scanner_cache_sym(iscn as *mut crate::ffi::zbar_image_scanner_t, sym);
+
+    let syms = (*iscn).syms;
+
+    if (*sym).cache_count != 0 || (*syms).tail.is_null() {
+        (*sym).next = (*syms).head;
+        (*syms).head = sym;
+    } else {
+        (*sym).next = (*(*syms).tail).next;
+        (*(*syms).tail).next = sym;
+    }
+
+    if (*sym).cache_count == 0 {
+        (*syms).nsyms += 1;
+    } else if (*syms).tail.is_null() {
+        (*syms).tail = sym;
+    }
+
+    // Increment reference count
+    // Note: The condition `&& 1 <= 0` in the original C code is always false,
+    // so _zbar_symbol_free is never called
+    if refcnt(&mut (*sym).refcnt, 1) == 0 && 1 <= 0 {
+        _zbar_symbol_free(sym);
     }
 }

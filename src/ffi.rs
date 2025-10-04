@@ -114,12 +114,7 @@ extern "C" {
         symbol_type: c_int,
         data_len: c_int,
     ) -> *mut zbar_symbol_t;
-    pub fn _zbar_image_scanner_add_sym(
-        scanner: *mut zbar_image_scanner_t,
-        symbol: *mut zbar_symbol_t,
-    );
     pub fn zbar_image_scanner_get_results(scanner: *const c_void) -> *mut c_void;
-    pub fn zbar_image_scanner_recycle_image(scanner: *mut c_void, image: *mut c_void);
 
     // From zbar.h
     pub fn zbar_image_scanner_get_config(
