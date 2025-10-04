@@ -30,7 +30,7 @@ fn main() {
             // "zbar/qrcode/isaac.c", // Converted to Rust
             "zbar/qrcode/qrdec.c",
             // "zbar/qrcode/qrdectxt.c", // Converted to Rust
-            "zbar/qrcode/rs.c",
+            // "zbar/qrcode/rs.c", // Converted to Rust
             // "zbar/qrcode/util.c", // Converted to Rust
         ])
         .include("zbar")

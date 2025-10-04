@@ -6,6 +6,7 @@ pub mod bch15_5;
 pub mod binarize;
 pub mod isaac;
 pub mod qrdectxt;
+pub mod rs;
 pub mod util;
 
 pub use bch15_5::{bch15_5_correct, bch15_5_encode};
