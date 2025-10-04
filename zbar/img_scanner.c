@@ -99,60 +99,6 @@ struct zbar_image_scanner_s {
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
 };
 
-zbar_symbol_t *_zbar_image_scanner_alloc_sym(zbar_image_scanner_t *iscn,
-					     zbar_symbol_type_t type,
-					     int datalen)
-{
-    /* recycle old or alloc new symbol */
-    zbar_symbol_t *sym = NULL;
-    int i;
-    for (i = 0; i < RECYCLE_BUCKETS - 1; i++)
-	if (datalen <= 1 << (i * 2))
-	    break;
-
-    for (; i >= 0; i--)
-	if ((sym = iscn->recycle[i].head)) {
-	    break;
-	}
-
-    if (sym) {
-	iscn->recycle[i].head = sym->next;
-	sym->next	      = NULL;
-	assert(iscn->recycle[i].nsyms);
-	iscn->recycle[i].nsyms--;
-    } else {
-	sym = calloc(1, sizeof(zbar_symbol_t));
-    }
-
-    /* init new symbol */
-    sym->type	     = type;
-    sym->quality     = 1;
-    sym->npts	     = 0;
-    sym->orient	     = ZBAR_ORIENT_UNKNOWN;
-    sym->cache_count = 0;
-    sym->time	     = iscn->time;
-    assert(!sym->syms);
-
-    if (datalen > 0) {
-	sym->datalen = datalen - 1;
-	if (sym->data_alloc < (unsigned)datalen) {
-	    if (sym->data)
-		free(sym->data);
-	    sym->data_alloc = datalen;
-	    sym->data	    = malloc(datalen);
-	}
-    } else {
-	if (sym->data)
-	    free(sym->data);
-	sym->data    = NULL;
-	sym->datalen = sym->data_alloc = 0;
-    }
-    return (sym);
-}
-
-// Converted to Rust in src/img_scanner.rs
-// Declaration provided in img_scanner.h
-
 extern qr_finder_line *_zbar_decoder_get_qr_finder_line(zbar_decoder_t *);
 
 #define QR_FIXED(v, rnd) ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))

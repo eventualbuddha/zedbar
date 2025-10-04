@@ -109,11 +109,6 @@ extern "C" {
     pub fn zbar_symbol_next(symbol: *const c_void) -> *const c_void;
 
     // Internal scanner functions (from img_scanner.h)
-    pub fn _zbar_image_scanner_alloc_sym(
-        scanner: *mut zbar_image_scanner_t,
-        symbol_type: c_int,
-        data_len: c_int,
-    ) -> *mut zbar_symbol_t;
     pub fn zbar_image_scanner_get_results(scanner: *const c_void) -> *mut c_void;
 
     // From zbar.h

@@ -1,6 +1,6 @@
-use std::{ffi::c_void, ptr::{copy_nonoverlapping, null_mut}};
+use std::{ffi::c_void, mem::size_of, ptr::{copy_nonoverlapping, null_mut}};
 
-use libc::{c_int, c_uint, c_ulong, free};
+use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, size_t};
 
 use crate::line_scanner::zbar_scanner_t;
 
@@ -12,6 +12,9 @@ const NUM_SYMS: usize = 25; // Number of symbol types
 const CACHE_PROXIMITY: c_ulong = 1000;
 const CACHE_HYSTERESIS: c_ulong = 2000;
 const CACHE_TIMEOUT: c_ulong = CACHE_HYSTERESIS * 2;
+
+// Orientation constant
+const ZBAR_ORIENT_UNKNOWN: c_int = -1;
 
 // Import types and functions from ffi module
 use crate::ffi::{refcnt, zbar_image_t, zbar_symbol_t};
@@ -32,8 +35,7 @@ extern "C" {
     fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t);
 }
 
-// Import from ffi and symbol modules
-use crate::ffi::_zbar_image_scanner_alloc_sym;
+// Import from symbol module
 use crate::symbol::_zbar_symbol_free;
 
 // Config constants (from zbar.h)
@@ -426,6 +428,91 @@ pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
             (*iscn).syms = syms;
         }
     }
+}
+
+/// Allocate a symbol from the recycling pool or allocate a new one
+///
+/// Attempts to recycle a symbol from the appropriate size bucket,
+/// or allocates a new one if no suitable recycled symbol is available.
+///
+/// # Arguments
+/// * `iscn` - The image scanner instance
+/// * `sym_type` - The type of symbol to allocate
+/// * `datalen` - The length of data to allocate (including null terminator)
+///
+/// # Returns
+/// Pointer to the allocated symbol
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_alloc_sym(
+    iscn: *mut crate::ffi::zbar_image_scanner_t,
+    sym_type: c_int,
+    datalen: c_int,
+) -> *mut zbar_symbol_t {
+    // Cast to the local type for field access
+    let iscn = iscn as *mut zbar_image_scanner_t;
+
+    // Recycle old or alloc new symbol
+    let mut sym: *mut zbar_symbol_t = null_mut();
+
+    // Find appropriate bucket based on datalen
+    let mut i: i32 = 0;
+    while i < (RECYCLE_BUCKETS - 1) as i32 {
+        if datalen <= (1 << (i * 2)) {
+            break;
+        }
+        i += 1;
+    }
+
+    // Try to get a symbol from this bucket or larger buckets
+    let mut bucket_idx: Option<usize> = None;
+    while i >= 0 {
+        sym = (*iscn).recycle[i as usize].head;
+        if !sym.is_null() {
+            bucket_idx = Some(i as usize);
+            break;
+        }
+        i -= 1;
+    }
+
+    if let Some(idx) = bucket_idx {
+        // Found a recycled symbol
+        (*iscn).recycle[idx].head = (*sym).next;
+        (*sym).next = null_mut();
+        debug_assert!((*iscn).recycle[idx].nsyms > 0);
+        (*iscn).recycle[idx].nsyms -= 1;
+    } else {
+        // Allocate a new symbol
+        sym = calloc(1, size_of::<zbar_symbol_t>()) as *mut zbar_symbol_t;
+    }
+
+    // Initialize the symbol
+    (*sym).symbol_type = sym_type;
+    (*sym).quality = 1;
+    (*sym).npts = 0;
+    (*sym).orient = ZBAR_ORIENT_UNKNOWN;
+    (*sym).cache_count = 0;
+    (*sym).time = (*iscn).time;
+    debug_assert!((*sym).syms.is_null());
+
+    if datalen > 0 {
+        (*sym).datalen = (datalen - 1) as c_uint;
+        if (*sym).data_alloc < datalen as c_uint {
+            if !(*sym).data.is_null() {
+                free((*sym).data as *mut c_void);
+            }
+            (*sym).data_alloc = datalen as c_uint;
+            (*sym).data = malloc(datalen as size_t) as *mut i8;
+        }
+    } else {
+        if !(*sym).data.is_null() {
+            free((*sym).data as *mut c_void);
+        }
+        (*sym).data = null_mut();
+        (*sym).datalen = 0;
+        (*sym).data_alloc = 0;
+    }
+
+    sym
 }
 
 /// Look up a symbol in the cache
