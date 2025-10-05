@@ -771,22 +771,12 @@ abort:
 }
 #undef IDX
 
-static unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
-				  unsigned mod)
-{
-    unsigned chk = 0;
-    int i;
-    for (i = 4; --i >= 0;) {
-	chk = (chk * 3 + (sig1 & 0xf) + 1) * 3 + (sig0 & 0xf) + 1;
-	sig1 >>= 4;
-	sig0 >>= 4;
-	if (!(i & 1))
-	    chk %= mod;
-    }
+// Rust implementation - converted to src/databar_utils.rs
+extern unsigned _zbar_databar_calc_check(unsigned sig0, unsigned sig1, unsigned side, unsigned mod);
 
-    if (side)
-	chk = (chk * (6561 % mod)) % mod;
-    return (chk);
+// Compatibility wrapper
+static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side, unsigned mod) {
+    return _zbar_databar_calc_check(sig0, sig1, side, mod);
 }
 
 static int calc_value4(unsigned sig, unsigned n, unsigned wmax,

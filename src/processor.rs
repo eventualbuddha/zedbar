@@ -12,13 +12,9 @@ use crate::error::{ErrInfo, _zbar_err_init, ZBAR_MOD_PROCESSOR};
 extern "C" {
     fn zbar_image_scanner_create() -> *mut c_void;
     fn zbar_image_scanner_destroy(scanner: *mut c_void);
-}
-
-// Forward declaration for symbol set (opaque pointer from C)
-#[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct zbar_symbol_set_t {
-    _private: [u8; 0],
+    fn zbar_image_scanner_recycle_image(scanner: *mut c_void, img: *mut c_void);
+    fn zbar_scan_image(scanner: *mut c_void, img: *mut c_void) -> c_int;
+    fn zbar_image_scanner_get_results(scanner: *const c_void) -> *mut c_void;
 }
 
 /// Processor structure - must match processor.h layout exactly
@@ -27,7 +23,7 @@ pub struct zbar_symbol_set_t {
 pub struct zbar_processor_t {
     err: ErrInfo,
     scanner: *mut c_void,
-    syms: *const zbar_symbol_set_t,
+    syms: *const c_void,
 }
 
 /// Create a new processor instance
@@ -81,4 +77,48 @@ pub unsafe extern "C" fn zbar_processor_destroy(proc: *mut zbar_processor_t) {
     }
 
     free(proc as *mut c_void);
+}
+
+/// Process an image
+///
+/// Scans an image for barcodes and stores the results in the processor.
+///
+/// # Parameters
+/// - `proc`: Processor instance
+/// - `img`: Image to process
+///
+/// # Returns
+/// Number of symbols found, or -1 on error
+#[no_mangle]
+pub unsafe extern "C" fn zbar_process_image(
+    proc: *mut zbar_processor_t,
+    img: *mut c_void,
+) -> c_int {
+    if proc.is_null() || img.is_null() {
+        return -1;
+    }
+
+    // Clean up previous results
+    if !(*proc).syms.is_null() {
+        use crate::symbol::zbar_symbol_set_ref;
+        zbar_symbol_set_ref((*proc).syms, -1);
+        (*proc).syms = null_mut();
+    }
+
+    // Process the image
+    zbar_image_scanner_recycle_image((*proc).scanner, img);
+    let nsyms = zbar_scan_image((*proc).scanner, img);
+
+    if nsyms < 0 {
+        return nsyms;
+    }
+
+    // Store results
+    (*proc).syms = zbar_image_scanner_get_results((*proc).scanner);
+    if !(*proc).syms.is_null() {
+        use crate::symbol::zbar_symbol_set_ref;
+        zbar_symbol_set_ref((*proc).syms, 1);
+    }
+
+    nsyms
 }

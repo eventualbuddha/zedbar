@@ -98,6 +98,43 @@ pub unsafe extern "C" fn _zbar_databar_append_check14(buf: *mut u8) {
     *ptr = chk + b'0';
 }
 
+/// Calculate DataBar checksum
+///
+/// Computes a checksum value for DataBar symbols based on signature values.
+///
+/// # Parameters
+/// - `sig0`: First signature value (4 nibbles)
+/// - `sig1`: Second signature value (4 nibbles)
+/// - `side`: Side indicator (0 or 1)
+/// - `mod_val`: Modulus value for checksum calculation
+///
+/// # Returns
+/// Calculated checksum value
+#[no_mangle]
+pub extern "C" fn _zbar_databar_calc_check(
+    mut sig0: u32,
+    mut sig1: u32,
+    side: u32,
+    mod_val: u32,
+) -> u32 {
+    let mut chk: u32 = 0;
+
+    for i in (0..4).rev() {
+        chk = (chk * 3 + (sig1 & 0xf) + 1) * 3 + (sig0 & 0xf) + 1;
+        sig1 >>= 4;
+        sig0 >>= 4;
+        if (i & 1) == 0 {
+            chk %= mod_val;
+        }
+    }
+
+    if side != 0 {
+        chk = (chk * (6561 % mod_val)) % mod_val;
+    }
+
+    chk
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +201,27 @@ mod tests {
             // Check: (1+2+3+4+5+6+7+8+9+0+1+2) + (1+3+5+7+9+1)*2 = 48 + 52 = 100, 100%10=0, check=0
             assert_eq!(buf2[13], b'0');
         }
+    }
+
+    #[test]
+    fn test_calc_check() {
+        // Test basic checksum calculation
+        // These values are based on understanding the algorithm
+        let chk1 = _zbar_databar_calc_check(0x1234, 0x5678, 0, 211);
+        assert!(chk1 < 211);
+
+        let chk2 = _zbar_databar_calc_check(0x1234, 0x5678, 1, 211);
+        assert!(chk2 < 211);
+
+        // Side should affect the result
+        assert_ne!(chk1, chk2);
+
+        // Test with different modulus
+        let chk3 = _zbar_databar_calc_check(0x1234, 0x5678, 0, 79);
+        assert!(chk3 < 79);
+
+        // Same inputs should give same output
+        let chk4 = _zbar_databar_calc_check(0x1234, 0x5678, 0, 211);
+        assert_eq!(chk1, chk4);
     }
 }
