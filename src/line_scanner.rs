@@ -5,6 +5,8 @@
 
 use libc::{c_int, c_uint, c_void, free};
 
+use crate::decoder_types::zbar_decoder_t;
+
 // Constants from scanner.c
 const ZBAR_FIXED: i32 = 5;
 const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
@@ -16,13 +18,6 @@ const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
 pub enum zbar_color_t {
     ZBAR_SPACE = 0, // light area or space between bars
     ZBAR_BAR = 1,   // dark area or colored bar segment
-}
-
-// Forward declaration for decoder type (opaque pointer from C)
-#[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct zbar_decoder_t {
-    _private: [u8; 0],
 }
 
 /// Scanner state structure - must match the C layout exactly

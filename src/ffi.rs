@@ -5,12 +5,7 @@
 
 use libc::{c_char, c_int, c_uint, c_ulong, c_void};
 
-// Opaque types - actual structures defined in C
-#[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct zbar_image_scanner_t {
-    _private: [u8; 0],
-}
+use crate::img_scanner::zbar_image_scanner_t;
 
 #[repr(C)]
 #[allow(non_camel_case_types)]

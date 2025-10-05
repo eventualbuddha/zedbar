@@ -11,10 +11,12 @@ use std::slice;
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
 use crate::ffi::{
-    _zbar_symbol_set_create, zbar_image_scanner_get_config, zbar_image_scanner_t, zbar_image_t,
-    zbar_symbol_t,
+    _zbar_symbol_set_create, zbar_image_scanner_get_config, zbar_image_t, zbar_symbol_t,
 };
-use crate::img_scanner::{_zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms};
+use crate::img_scanner::{
+    _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
+    zbar_image_scanner_t,
+};
 
 // From zbar.h
 pub const ZBAR_QRCODE: c_int = 64;

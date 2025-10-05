@@ -3,10 +3,11 @@
 //! Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Rust port based on the C implementation
 
-use crate::ffi::{
-    zbar_image_scanner_t, zbar_image_t,
+use crate::ffi::zbar_image_t;
+use crate::img_scanner::{
+    _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
+    zbar_image_scanner_t,
 };
-use crate::img_scanner::{_zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms};
 use libc::{c_char, c_int, c_uint, size_t};
 use std::io::Write;
 

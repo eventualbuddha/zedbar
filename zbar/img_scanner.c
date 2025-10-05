@@ -37,12 +37,6 @@
 #include "qrcode.h"
 #include "sqcode.h"
 
-#if 1
-#define ASSERT_POS assert(p == data + x + y * (intptr_t)w)
-#else
-#define ASSERT_POS
-#endif
-
 /* FIXME cache setting configurability */
 
 /* time interval for which two images are considered "nearby"
@@ -365,7 +359,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		movedelta(1, 0);
 		zbar_scan_y(scn, d);
 	    }
-	    ASSERT_POS;
 	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(-1, density);
@@ -380,7 +373,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		movedelta(-1, 0);
 		zbar_scan_y(scn, d);
 	    }
-	    ASSERT_POS;
 	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(1, density);
@@ -410,7 +402,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		movedelta(0, 1);
 		zbar_scan_y(scn, d);
 	    }
-	    ASSERT_POS;
 	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(density, -1);
@@ -426,7 +417,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 		movedelta(0, -1);
 		zbar_scan_y(scn, d);
 	    }
-	    ASSERT_POS;
 	    _zbar_image_scanner_quiet_border(iscn);
 
 	    movedelta(density, 1);
