@@ -80,7 +80,7 @@ pub unsafe extern "C" fn zbar_image_get_size(
 
 #[no_mangle]
 pub unsafe extern "C" fn zbar_image_get_data(img: *const zbar_image_t) -> *mut c_void {
-    (*img).data as *mut c_void
+    (*img).data
 }
 
 #[no_mangle]
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn zbar_image_free_data(img: *mut zbar_image_t) {
             (*img).cleanup = zbar_image_free_data as *mut c_void;
             cleanup(img);
         } else {
-            libc::free((*img).data as *mut c_void);
+            libc::free((*img).data);
         }
     }
     (*img).data = null_mut();
@@ -191,9 +191,7 @@ pub unsafe extern "C" fn zbar_image_first_symbol(img: *const zbar_image_t) -> *c
 
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {
-    let tmp = (*a).syms;
-    (*a).syms = (*b).syms;
-    (*b).syms = tmp;
+    std::mem::swap(&mut (*a).syms, &mut (*b).syms);
 }
 
 #[no_mangle]
@@ -203,7 +201,10 @@ pub unsafe extern "C" fn _zbar_image_copy_size(dst: *mut zbar_image_t, src: *con
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_image_copy(src: *const zbar_image_t, inverted: c_int) -> *mut zbar_image_t {
+pub unsafe extern "C" fn _zbar_image_copy(
+    src: *const zbar_image_t,
+    inverted: c_int,
+) -> *mut zbar_image_t {
     const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
     const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
 

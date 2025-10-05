@@ -3,6 +3,9 @@
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
 //! The conversion to Rust is being done incrementally.
 
+#![allow(clippy::missing_safety_doc)]
+#![allow(non_camel_case_types)]
+
 pub mod decoder;
 pub mod decoder_types;
 pub mod decoders;

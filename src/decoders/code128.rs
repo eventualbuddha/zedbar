@@ -240,10 +240,10 @@ fn decode_lo(sig: i32) -> i8 {
 fn decode_hi(mut sig: i32) -> i8 {
     let mut rev = (sig & 0x4400) != 0;
     if rev {
-        sig = (((sig >> 12) & 0x000f)
+        sig = ((sig >> 12) & 0x000f)
             | ((sig >> 4) & 0x00f0)
             | ((sig << 4) & 0x0f00)
-            | ((sig << 12) & 0xf000)) as i32;
+            | ((sig << 12) & 0xf000);
     }
 
     let mut idx = match sig {
@@ -357,7 +357,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     } else {
         0
     };
-    let mut sum = *dcode.buf.offset(idx as isize) as c_uint;
+    let mut sum = *dcode.buf.add(idx) as c_uint;
     if sum >= 103 {
         sum -= 103;
     }
@@ -379,7 +379,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
         } else {
             i
         };
-        acc += *dcode.buf.offset(idx as isize) as c_uint;
+        acc += *dcode.buf.add(idx) as c_uint;
         if acc >= 103 {
             acc -= 103;
         }
@@ -404,7 +404,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     } else {
         (dcode.code128.character() - 2) as usize
     };
-    let check = *dcode.buf.offset(idx as isize) as c_uint;
+    let check = *dcode.buf.add(idx) as c_uint;
     sum != check
 }
 
@@ -506,7 +506,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 
     let code = *dcode.buf.offset(0) as u8;
     zassert!(
-        code >= START_A && code <= START_C,
+        (START_A..=START_C).contains(&code),
         true,
         "code={:x}\n",
         code
@@ -518,7 +518,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     let mut i = 1usize;
     let mut j = 0usize;
     while i < (dcode.code128.character() - 2) as usize {
-        let code = *dcode.buf.offset(i as isize) as u8;
+        let code = *dcode.buf.add(i) as u8;
         zassert!(
             (code & 0x80) == 0,
             true,
@@ -541,7 +541,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 // Convert character set A to ASCII
                 code -= 0x60;
             }
-            *dcode.buf.offset(j as isize) = code as c_char;
+            *dcode.buf.add(j) = code as c_char;
             j += 1;
             if (charset & 0x80) != 0 {
                 charset &= 0x7f;
@@ -579,7 +579,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 } else if i == 2 {
                     dcode.modifiers |= 1 << ZBAR_MOD_AIM;
                 } else if i < (dcode.code128.character() - 3) as usize {
-                    *dcode.buf.offset(j as isize) = 0x1d;
+                    *dcode.buf.add(j) = 0x1d;
                     j += 1;
                 }
                 // else drop trailing FNC1
@@ -588,7 +588,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
             } else {
                 let newset = CODE_A - code;
                 zassert!(
-                    code >= CODE_C && code <= CODE_A,
+                    (CODE_C..=CODE_A).contains(&code),
                     true,
                     "i={:x} j={:x} code={:02x} charset={:x} cexp={:x}\n",
                     i,
@@ -626,7 +626,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 
     zassert!((j as c_uint) < dcode.buf_alloc, true, "j={:02x}\n", j);
     dcode.buflen = j as c_uint;
-    *dcode.buf.offset(j as isize) = 0;
+    *dcode.buf.add(j) = 0;
     dcode.code128.set_character(j as i16);
     false
 }
@@ -726,6 +726,7 @@ pub unsafe extern "C" fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zba
     {
         // FIXME STOP_FWD should check extra bar (and QZ!)
         let mut sym = ZBAR_CODE128;
+        #[allow(clippy::if_same_then_else)]
         if validate_checksum(dcode) || postprocess(dcode) {
             sym = ZBAR_NONE;
         } else if dcode.code128.character() < cfg(&dcode.code128, ZBAR_CFG_MIN_LEN) as i16

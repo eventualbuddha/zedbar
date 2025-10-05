@@ -288,8 +288,16 @@ fn decode4(dcode: &zbar_decoder_t) -> i8 {
         }
     }
 
-    zassert!(code < 0x14, -1, "code={:02x} e1={:x} e2={:x} s4={:x} color={:x}",
-        code, e1, e2, dcode.ean.s4, get_color(dcode));
+    zassert!(
+        code < 0x14,
+        -1,
+        "code={:02x} e1={:x} e2={:x} s4={:x} color={:x}",
+        code,
+        e1,
+        e2,
+        dcode.ean.s4,
+        get_color(dcode)
+    );
 
     code
 }
@@ -575,8 +583,8 @@ fn integrate_partial(
 
     if (part & EAN_RIGHT) != 0 {
         part &= ZBAR_SYMBOL;
-        let mut j = (part - 1) as i32;
-        let mut i = (part >> 1) as i32;
+        let mut j = part - 1;
+        let mut i = part >> 1;
         while i > 0 {
             let digit = (pass.raw[i as usize] & 0xf) as c_char;
             if ean.right != 0 && ean.buf[j as usize] != digit {
@@ -592,8 +600,8 @@ fn integrate_partial(
         part &= ean.left; // FIXME!?
     } else if part == ZBAR_EAN13 || part == ZBAR_EAN8 {
         // EAN_LEFT
-        let mut j = ((part - 1) >> 1) as i32;
-        let mut i = (part >> 1) as i32;
+        let mut j = (part - 1) >> 1;
+        let mut i = part >> 1;
         while j >= 0 {
             let digit = (pass.raw[i as usize] & 0xf) as c_char;
             if ean.left != 0 && ean.buf[j as usize] != digit {
@@ -640,8 +648,7 @@ fn integrate_partial(
         if ean.buf[0] == 0 && test_cfg(ean.upca_config, ZBAR_CFG_ENABLE) {
             part = ZBAR_UPCA;
         } else if ean.buf[0] == 9 && ean.buf[1] == 7 {
-            if (ean.buf[2] == 8 || ean.buf[2] == 9)
-                && test_cfg(ean.isbn13_config, ZBAR_CFG_ENABLE)
+            if (ean.buf[2] == 8 || ean.buf[2] == 9) && test_cfg(ean.isbn13_config, ZBAR_CFG_ENABLE)
             {
                 part = ZBAR_ISBN13;
             } else if ean.buf[2] == 8 && test_cfg(ean.isbn10_config, ZBAR_CFG_ENABLE) {
@@ -830,8 +837,8 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
 
 /// Main EAN/UPC decoder entry point
 #[no_mangle]
-pub extern "C" fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let dcode = unsafe { &mut *dcode };
+pub unsafe extern "C" fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+    let dcode = &mut *dcode;
 
     // process up to 4 separate passes
     let mut sym = ZBAR_NONE;

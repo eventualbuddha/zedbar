@@ -267,8 +267,8 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
         if codabar.direction() {
             ic = 11 - ic;
         }
-        let c = CODABAR_LO[ic as usize];
-        return c;
+        
+        CODABAR_LO[ic as usize]
     } else if s1s1 > s0s2 + s0s2 / 8 {
         // Two wide spaces, check start/stop
         if 4 * wsmin > 3 * wsmid || 8 * wsmid < 5 * wsmax {
@@ -368,7 +368,7 @@ unsafe fn codabar_checksum(dcode: &zbar_decoder_t, n: usize) -> bool {
     let mut chk: c_uint = 0;
     let buf = dcode.buf;
     for i in 0..n {
-        chk += *buf.offset(i as isize) as c_uint;
+        chk += *buf.add(i) as c_uint;
     }
     (chk & 0xf) != 0
 }
@@ -382,16 +382,16 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
 
     // Copy from holding buffer to main buffer
     for i in 0..NIBUF {
-        *dcode.buf.offset(i as isize) = dcode.codabar.buf[i] as c_char;
+        *dcode.buf.add(i) = dcode.codabar.buf[i] as c_char;
     }
 
     if dir {
         // Reverse buffer
         for i in 0..(n / 2) {
             let j = n - 1 - i;
-            let code = *dcode.buf.offset(i as isize);
-            *dcode.buf.offset(i as isize) = *dcode.buf.offset(j as isize);
-            *dcode.buf.offset(j as isize) = code;
+            let code = *dcode.buf.add(i);
+            *dcode.buf.add(i) = *dcode.buf.add(j);
+            *dcode.buf.add(j) = code;
         }
     }
 
@@ -401,21 +401,21 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
             return ZBAR_NONE;
         }
         if !test_cfg(dcode.codabar.config, ZBAR_CFG_EMIT_CHECK) {
-            *dcode.buf.offset((n - 2) as isize) = *dcode.buf.offset((n - 1) as isize);
+            *dcode.buf.add(n - 2) = *dcode.buf.add(n - 1);
             n -= 1;
         }
     }
 
     for i in 0..n {
-        let c = *dcode.buf.offset(i as isize) as u8;
-        *dcode.buf.offset(i as isize) = if (c as usize) < 0x14 {
+        let c = *dcode.buf.add(i) as u8;
+        *dcode.buf.add(i) = if (c as usize) < 0x14 {
             CODABAR_CHARACTERS[c as usize] as c_char
         } else {
             b'?' as c_char
         };
     }
     dcode.buflen = n as c_uint;
-    *dcode.buf.offset(n as isize) = 0;
+    *dcode.buf.add(n) = 0;
     dcode.modifiers = 0;
 
     dcode.codabar.set_character(-1);

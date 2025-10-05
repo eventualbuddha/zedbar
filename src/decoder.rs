@@ -137,14 +137,12 @@ pub unsafe extern "C" fn _zbar_decoder_decode_sort3(
         } else {
             (((i0 + 4) << 8) | (i0 << 4) | (i0 + 2)) as c_uint
         }
+    } else if w4 < w2 {
+        (((i0 + 4) << 8) | ((i0 + 2) << 4) | i0) as c_uint
+    } else if w0 < w4 {
+        (((i0 + 2) << 8) | (i0 << 4) | (i0 + 4)) as c_uint
     } else {
-        if w4 < w2 {
-            (((i0 + 4) << 8) | ((i0 + 2) << 4) | i0) as c_uint
-        } else if w0 < w4 {
-            (((i0 + 2) << 8) | (i0 << 4) | (i0 + 4)) as c_uint
-        } else {
-            (((i0 + 2) << 8) | ((i0 + 4) << 4) | i0) as c_uint
-        }
+        (((i0 + 2) << 8) | ((i0 + 4) << 4) | i0) as c_uint
     }
 }
 
@@ -709,7 +707,7 @@ pub unsafe extern "C" fn zbar_decoder_get_config(
     }
 
     // Return decoder integer configs
-    if cfg >= ZBAR_CFG_MIN_LEN && cfg <= ZBAR_CFG_MAX_LEN {
+    if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
         match sym {
             ZBAR_I25 => {
                 *val = (*dcode).i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
@@ -773,9 +771,9 @@ pub unsafe extern "C" fn zbar_decoder_set_config(
         return 0;
     }
 
-    if cfg >= 0 && cfg < ZBAR_CFG_NUM {
+    if (0..ZBAR_CFG_NUM).contains(&cfg) {
         decoder_set_config_bool(dcode, sym, cfg, val)
-    } else if cfg >= ZBAR_CFG_MIN_LEN && cfg <= ZBAR_CFG_MAX_LEN {
+    } else if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
         decoder_set_config_int(dcode, sym, cfg, val)
     } else {
         1

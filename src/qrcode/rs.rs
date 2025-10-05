@@ -146,9 +146,11 @@ fn rs_quadratic_solve(gf: &rs_gf256, b: u8, c: u8, x: &mut [u8]) -> c_int {
     let logc4 = gf.log[gf.exp[logc2 << 1] as usize] as usize;
     let c8 = gf.exp[logc4 << 1];
 
-    let g3 = rs_hgmul(gf,
+    let g3 = rs_hgmul(
+        gf,
         gf.exp[logb14 + logc] ^ gf.exp[logb12 + logc2] ^ gf.exp[logb8 + logc4] ^ c8,
-        logb);
+        logb,
+    );
 
     // If g3 doesn't lie in GF(2**4), then our roots lie in an extension field
     if gf.log[g3 as usize] as usize % (255 / 15) != 0 {
@@ -156,23 +158,36 @@ fn rs_quadratic_solve(gf: &rs_gf256, b: u8, c: u8, x: &mut [u8]) -> c_int {
     }
 
     let z3 = rs_gdiv(gf, g3, gf.exp[logb8 << 1] ^ b);
-    let l3 = rs_hgmul(gf,
+    let l3 = rs_hgmul(
+        gf,
         rs_gmul(gf, z3, z3) ^ rs_hgmul(gf, z3, logb) ^ c,
-        255 - logb2);
+        255 - logb2,
+    );
     let c0 = rs_hgmul(gf, l3, 255 - 2 * (255 / 15));
 
-    let g2 = rs_hgmul(gf,
+    let g2 = rs_hgmul(
+        gf,
         rs_hgmul(gf, c0, 255 - 2 * (255 / 15)) ^ rs_gmul(gf, c0, c0),
-        255 - 255 / 15);
-    let z2 = rs_gdiv(gf, g2, gf.exp[255 - (255 / 15) * 4] ^ gf.exp[255 - (255 / 15)]);
-    let l2 = rs_hgmul(gf,
+        255 - 255 / 15,
+    );
+    let z2 = rs_gdiv(
+        gf,
+        g2,
+        gf.exp[255 - (255 / 15) * 4] ^ gf.exp[255 - (255 / 15)],
+    );
+    let l2 = rs_hgmul(
+        gf,
         rs_gmul(gf, z2, z2) ^ rs_hgmul(gf, z2, 255 - (255 / 15)) ^ c0,
-        2 * (255 / 15));
+        2 * (255 / 15),
+    );
 
-    x[0] = gf.exp[gf.log[
-        (z3 ^ rs_hgmul(gf,
+    x[0] = gf.exp[gf.log[(z3
+        ^ rs_hgmul(
+            gf,
             rs_hgmul(gf, l2, 255 / 3) ^ rs_hgmul(gf, z2, 255 / 15),
-            logb))as usize] as usize + inc];
+            logb,
+        )) as usize] as usize
+        + inc];
     x[1] = x[0] ^ b;
     2
 }
@@ -229,10 +244,10 @@ fn rs_cubic_solve(gf: &rs_gf256, a: u8, b: u8, c: u8, x: &mut [u8]) -> c_int {
         let logw = logw + 255 / 3;
         x[1] = gf.exp[gf.log[(gf.exp[logw] ^ gf.exp[255 - logw]) as usize] as usize + logd] ^ a;
         x[2] = x[0] ^ x[1] ^ a;
-        return 3;
+        3
     } else {
         x[0] = a;
-        return 1;
+        1
     }
 }
 
@@ -257,13 +272,16 @@ fn rs_quartic_solve(gf: &rs_gf256, a: u8, b: u8, c: u8, d: u8, x: &mut [u8]) -> 
 
         if t != 0 {
             let logti = 255 - gf.log[t as usize] as usize;
-            let nroots = rs_quartic_solve(gf, 0,
+            let nroots = rs_quartic_solve(
+                gf,
+                0,
                 rs_hgmul(gf, b ^ rs_hgmul(gf, s, loga), logti),
                 gf.exp[loga + logti],
                 gf.exp[logti],
-                x);
-            for i in 0..nroots as usize {
-                x[i] = gf.exp[255 - gf.log[x[i] as usize] as usize] ^ s;
+                x,
+            );
+            for item in x.iter_mut().take(nroots as usize) {
+                *item = gf.exp[255 - gf.log[*item as usize] as usize] ^ s;
             }
             return nroots;
         } else {
@@ -317,15 +335,21 @@ fn rs_poly_copy(p: &mut [u8], q: &[u8]) {
 
 /// Multiply the polynomial by the free variable, x (shift the coefficients)
 fn rs_poly_mul_x(p: &mut [u8], q: &[u8], dp1: usize) {
-    p[1..dp1].copy_from_slice(&q[0..dp1-1]);
+    p[1..dp1].copy_from_slice(&q[0..dp1 - 1]);
     p[0] = 0;
 }
 
 /// Compute the first (d+1) coefficients of the product of a degree e and a
 /// degree f polynomial
-fn rs_poly_mult(gf: &rs_gf256, p: &mut [u8], dp1: usize,
-                q: &[u8], ep1: usize,
-                r: &[u8], fp1: usize) {
+fn rs_poly_mult(
+    gf: &rs_gf256,
+    p: &mut [u8],
+    dp1: usize,
+    q: &[u8],
+    ep1: usize,
+    r: &[u8],
+    fp1: usize,
+) {
     rs_poly_zero(&mut p[..dp1]);
     let m = if ep1 < dp1 { ep1 } else { dp1 };
 
@@ -345,49 +369,59 @@ fn rs_poly_mult(gf: &rs_gf256, p: &mut [u8], dp1: usize,
 // ============================================================================
 
 /// Computes the syndrome of a codeword
-fn rs_calc_syndrome(gf: &rs_gf256, m0: c_int, s: &mut [u8], npar: c_int,
-                    data: &[u8], ndata: c_int) {
-    for j in 0..npar as usize {
+fn rs_calc_syndrome(
+    gf: &rs_gf256,
+    m0: c_int,
+    s: &mut [u8],
+    npar: c_int,
+    data: &[u8],
+    ndata: c_int,
+) {
+    for (j, s_item) in s.iter_mut().enumerate().take(npar as usize) {
         let mut sj: u8 = 0;
         let alphaj = gf.log[gf.exp[j + m0 as usize] as usize] as usize;
-        for i in 0..ndata as usize {
-            sj = data[i] ^ rs_hgmul(gf, sj, alphaj);
+        for datum in data.iter().take(ndata as usize) {
+            sj = datum ^ rs_hgmul(gf, sj, alphaj);
         }
-        s[j] = sj;
+        *s_item = sj;
     }
 }
 
 /// Initialize lambda to the product of (1-x*alpha**e[i]) for erasure locations e[i]
-fn rs_init_lambda(gf: &rs_gf256, lambda: &mut [u8], npar: c_int,
-                  erasures: &[u8], nerasures: c_int, ndata: c_int) {
+fn rs_init_lambda(gf: &rs_gf256, lambda: &mut [u8], npar: c_int, erasures: &[u8], ndata: c_int) {
     let size = if npar < 4 { 4 } else { npar } as usize + 1;
     rs_poly_zero(&mut lambda[..size]);
     lambda[0] = 1;
 
-    for i in 0..nerasures as usize {
-        for j in (1..=i+1).rev() {
-            lambda[j] ^= rs_hgmul(gf, lambda[j - 1],
-                (ndata - 1 - erasures[i] as c_int) as usize);
+    for (i, erasure) in erasures.iter().enumerate() {
+        for j in (1..=i + 1).rev() {
+            lambda[j] ^= rs_hgmul(gf, lambda[j - 1], (ndata - 1 - *erasure as c_int) as usize);
         }
     }
 }
 
 /// Modified Berlekamp-Massey algorithm
 /// Returns the number of errors detected (degree of lambda)
-fn rs_modified_berlekamp_massey(gf: &rs_gf256, lambda: &mut [u8],
-                                s: &[u8], omega: &mut [u8], npar: c_int,
-                                erasures: &[u8], nerasures: c_int,
-                                ndata: c_int) -> c_int {
+fn rs_modified_berlekamp_massey(
+    gf: &rs_gf256,
+    lambda: &mut [u8],
+    s: &[u8],
+    omega: &mut [u8],
+    npar: c_int,
+    erasures: &[u8],
+    ndata: c_int,
+) -> c_int {
     let mut tt = [0u8; 256];
 
-    rs_init_lambda(gf, lambda, npar, erasures, nerasures, ndata);
+    rs_init_lambda(gf, lambda, npar, erasures, ndata);
     rs_poly_copy(&mut tt[..npar as usize + 1], &lambda[..npar as usize + 1]);
 
+    let nerasures = erasures.len() as c_int;
     let mut l = nerasures;
     let mut k = 0;
 
     for n in (nerasures + 1)..=npar {
-        let tt_copy = tt.clone();
+        let tt_copy = tt;
         rs_poly_mul_x(&mut tt, &tt_copy, (n - k + 1) as usize);
         let mut d: u8 = 0;
         for i in 0..=l as usize {
@@ -400,32 +434,44 @@ fn rs_modified_berlekamp_massey(gf: &rs_gf256, lambda: &mut [u8],
                 for i in 0..=(n - k) as usize {
                     let tti = tt[i];
                     tt[i] = rs_hgmul(gf, lambda[i], 255 - logd);
-                    lambda[i] = lambda[i] ^ rs_hgmul(gf, tti, logd);
+                    lambda[i] ^= rs_hgmul(gf, tti, logd);
                 }
                 let t = n - k;
                 k = n - l;
                 l = t;
             } else {
                 for i in 0..=l as usize {
-                    lambda[i] = lambda[i] ^ rs_hgmul(gf, tt[i], logd);
+                    lambda[i] ^= rs_hgmul(gf, tt[i], logd);
                 }
             }
         }
     }
 
-    rs_poly_mult(gf, omega, npar as usize, lambda, (l + 1) as usize, s, npar as usize);
+    rs_poly_mult(
+        gf,
+        omega,
+        npar as usize,
+        lambda,
+        (l + 1) as usize,
+        s,
+        npar as usize,
+    );
     l
 }
 
 /// Finds all the roots of an error-locator polynomial lambda
 /// Returns the number of valid roots identified
-fn rs_find_roots(gf: &rs_gf256, epos: &mut [u8], lambda: &[u8],
-                 nerrors: c_int, ndata: c_int) -> c_int {
+fn rs_find_roots(
+    gf: &rs_gf256,
+    epos: &mut [u8],
+    lambda: &[u8],
+    nerrors: c_int,
+    ndata: c_int,
+) -> c_int {
     let mut nroots = 0;
 
     if nerrors <= 4 {
-        let nerrors_found = rs_quartic_solve(gf, lambda[1], lambda[2],
-            lambda[3], lambda[4], epos);
+        let nerrors_found = rs_quartic_solve(gf, lambda[1], lambda[2], lambda[3], lambda[4], epos);
         for i in 0..nerrors_found as usize {
             if epos[i] != 0 {
                 let alpha = gf.log[epos[i] as usize] as c_int;
@@ -470,7 +516,7 @@ pub unsafe extern "C" fn rs_correct(
     ndata: c_int,
     npar: c_int,
     erasures: *const u8,
-    nerasures: c_int
+    nerasures: c_int,
 ) -> c_int {
     let gf = &*gf;
     let data_slice = std::slice::from_raw_parts_mut(data, ndata as usize);
@@ -497,8 +543,15 @@ pub unsafe extern "C" fn rs_correct(
     for i in 0..npar as usize {
         if s[i] != 0 {
             // Construct the error locator polynomial
-            let nerrors = rs_modified_berlekamp_massey(gf, &mut lambda, &s, &mut omega,
-                npar, erasures_slice, nerasures, ndata);
+            let nerrors = rs_modified_berlekamp_massey(
+                gf,
+                &mut lambda,
+                &s,
+                &mut omega,
+                npar,
+                erasures_slice,
+                ndata,
+            );
 
             // If we can't locate any errors, or have too many errors, fail
             if nerrors <= 0 || nerrors - nerasures > ((npar - nerasures) >> 1) {
@@ -511,22 +564,22 @@ pub unsafe extern "C" fn rs_correct(
             }
 
             // Now compute the error magnitudes
-            for i in 0..nerrors as usize {
-                let alpha = epos[i] as usize;
+            for alpha in epos.iter().take(nerrors as usize) {
+                let alpha = *alpha as usize;
                 let alphan1 = 255 - alpha;
 
                 // Evaluate omega at alpha**-1
                 let mut a: u8 = 0;
                 let mut alphanj = 0;
-                for j in 0..npar as usize {
-                    a ^= rs_hgmul(gf, omega[j], alphanj);
+                for item in omega.iter().take(npar as usize) {
+                    a ^= rs_hgmul(gf, *item, alphanj);
                     alphanj = gf.log[gf.exp[alphanj + alphan1] as usize] as usize;
                 }
 
                 // Evaluate the derivative of lambda at alpha**-1
                 let mut b: u8 = 0;
                 let alphan2 = gf.log[gf.exp[alphan1 << 1] as usize] as usize;
-                let mut alphanj = (alphan1 + m0 as usize * alpha % 255) as usize;
+                let mut alphanj = alphan1 + m0 as usize * alpha % 255;
                 for j in (1..=npar as usize).step_by(2) {
                     b ^= rs_hgmul(gf, lambda[j], alphanj);
                     alphanj = gf.log[gf.exp[alphanj + alphan2] as usize] as usize;

@@ -281,7 +281,7 @@ pub unsafe extern "C" fn zbar_image_scanner_get_config(
     }
 
     // Return error if symbol doesn't have config
-    if sym < ZBAR_PARTIAL || sym > ZBAR_CODE128 || sym == ZBAR_COMPOSITE {
+    if !(ZBAR_PARTIAL..=ZBAR_CODE128).contains(&sym) || sym == ZBAR_COMPOSITE {
         return 1;
     }
 
@@ -460,10 +460,8 @@ pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
     let iscn = iscn as *mut zbar_image_scanner_t;
 
     let mut syms = (*iscn).syms;
-    if !syms.is_null() && (*syms).refcnt != 0 {
-        if _zbar_image_scanner_recycle_symbol_set(iscn as *mut crate::ffi::zbar_image_scanner_t, syms) != 0 {
-            (*iscn).syms = null_mut();
-        }
+    if !syms.is_null() && (*syms).refcnt != 0 && _zbar_image_scanner_recycle_symbol_set(iscn as *mut crate::ffi::zbar_image_scanner_t, syms) != 0 {
+        (*iscn).syms = null_mut();
     }
 
     syms = (*img).syms as *mut zbar_symbol_set_t;
@@ -591,9 +589,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_qr_handler(
 
     u = (qr_fixed((*iscn).umin, 0) as i64 + ((*iscn).du as i64) * (u as i64)) as c_uint;
     if (*iscn).du < 0 {
-        let tmp = (*line).boffs;
-        (*line).boffs = (*line).eoffs;
-        (*line).eoffs = tmp;
+        std::mem::swap(&mut (*line).boffs, &mut (*line).eoffs);
         u = u.wrapping_sub((*line).len as c_uint);
     }
 

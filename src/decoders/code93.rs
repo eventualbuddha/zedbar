@@ -68,8 +68,8 @@ fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
 /// Fixed character width decode assist
 #[inline]
 fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_uint {
-    let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    e_val
+    
+    ((e * n * 2 + 1) / s).wrapping_sub(3) / 2
 }
 
 /// Acquire shared state lock
@@ -318,9 +318,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
 
     for i in 0..(n - 2) {
         let d = if dcode.code93.direction() {
-            *dcode.buf.offset((n - 1 - i) as isize) as i32
+            *dcode.buf.add(n - 1 - i) as i32
         } else {
-            *dcode.buf.offset(i as isize) as i32
+            *dcode.buf.add(i) as i32
         };
 
         i_c -= 1;
@@ -343,7 +343,7 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     let d = if dcode.code93.direction() {
         *dcode.buf.offset(1) as i32
     } else {
-        *dcode.buf.offset((n - 2) as isize) as i32
+        *dcode.buf.add(n - 2) as i32
     };
     if d != sum_c {
         return false;
@@ -354,7 +354,7 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     let d = if dcode.code93.direction() {
         *dcode.buf.offset(0) as i32
     } else {
-        *dcode.buf.offset((n - 1) as isize) as i32
+        *dcode.buf.add(n - 1) as i32
     };
     if d != sum_k {
         return false;
@@ -373,9 +373,9 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
         // Reverse buffer
         for i in 0..(n / 2) {
             let j = n - 1 - i;
-            let d = *dcode.buf.offset(i as isize);
-            *dcode.buf.offset(i as isize) = *dcode.buf.offset(j as isize);
-            *dcode.buf.offset(j as isize) = d;
+            let d = *dcode.buf.add(i);
+            *dcode.buf.add(i) = *dcode.buf.add(j);
+            *dcode.buf.add(j) = d;
         }
     }
 
@@ -383,11 +383,11 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     let mut i = 0;
     let mut j = 0;
     while i < n {
-        let mut d = *dcode.buf.offset(i as isize) as u8;
+        let mut d = *dcode.buf.add(i) as u8;
         i += 1;
 
         if d < 0xa {
-            d = b'0' + d;
+            d += b'0';
         } else if d < 0x24 {
             d = b'A' + d - 0xa;
         } else if d < 0x2b {
@@ -395,9 +395,9 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
         } else {
             let shift = d;
             zassert!(shift < 0x2f, true, "shift={:02x}\n", shift);
-            d = *dcode.buf.offset(i as isize) as u8;
+            d = *dcode.buf.add(i) as u8;
             i += 1;
-            if d < 0xa || d >= 0x24 {
+            if !(0xa..0x24).contains(&d) {
                 return true;
             }
             d -= 0xa;
