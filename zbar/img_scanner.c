@@ -101,7 +101,7 @@ static inline void sq_handler(zbar_image_scanner_t *iscn)
     _zbar_image_scanner_sq_handler(iscn);
 }
 
-static void symbol_handler(zbar_decoder_t *dcode)
+void symbol_handler(zbar_decoder_t *dcode)
 {
     zbar_image_scanner_t *iscn = zbar_decoder_get_userdata(dcode);
     zbar_symbol_type_t type    = zbar_decoder_get_type(dcode);
@@ -171,73 +171,18 @@ static void symbol_handler(zbar_decoder_t *dcode)
     _zbar_image_scanner_add_sym(iscn, sym);
 }
 
-zbar_image_scanner_t *zbar_image_scanner_create()
+// Rust implementation
+extern zbar_image_scanner_t *_zbar_image_scanner_create_rust(void);
+extern void _zbar_image_scanner_destroy_rust(zbar_image_scanner_t *iscn);
+
+inline zbar_image_scanner_t *zbar_image_scanner_create()
 {
-    zbar_image_scanner_t *iscn = calloc(1, sizeof(zbar_image_scanner_t));
-    if (!iscn)
-	return (NULL);
-    iscn->dcode = zbar_decoder_create();
-    iscn->scn	= zbar_scanner_create(iscn->dcode);
-    if (!iscn->dcode || !iscn->scn) {
-	zbar_image_scanner_destroy(iscn);
-	return (NULL);
-    }
-    zbar_decoder_set_userdata(iscn->dcode, iscn);
-    zbar_decoder_set_handler(iscn->dcode, symbol_handler);
-
-    iscn->qr = _zbar_qr_create();
-
-    iscn->sq = _zbar_sq_create();
-
-    /* apply default configuration */
-    CFG(iscn, ZBAR_CFG_X_DENSITY) = 1;
-    CFG(iscn, ZBAR_CFG_Y_DENSITY) = 1;
-    zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_POSITION, 1);
-    zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_UNCERTAINTY, 2);
-    zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_TEST_INVERTED, 0);
-    zbar_image_scanner_set_config(iscn, ZBAR_QRCODE, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY, 0);
-    zbar_image_scanner_set_config(iscn, ZBAR_CODE128, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(iscn, ZBAR_CODE93, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(iscn, ZBAR_CODE39, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(iscn, ZBAR_CODABAR, ZBAR_CFG_UNCERTAINTY, 1);
-    zbar_image_scanner_set_config(iscn, ZBAR_COMPOSITE, ZBAR_CFG_UNCERTAINTY,
-				  0);
-    return (iscn);
+    return _zbar_image_scanner_create_rust();
 }
 
-void zbar_image_scanner_destroy(zbar_image_scanner_t *iscn)
+inline void zbar_image_scanner_destroy(zbar_image_scanner_t *iscn)
 {
-    int i;
-    if (iscn->syms) {
-	if (iscn->syms->refcnt)
-	    zbar_symbol_set_ref(iscn->syms, -1);
-	else
-	    _zbar_symbol_set_free(iscn->syms);
-	iscn->syms = NULL;
-    }
-    if (iscn->scn)
-	zbar_scanner_destroy(iscn->scn);
-    iscn->scn = NULL;
-    if (iscn->dcode)
-	zbar_decoder_destroy(iscn->dcode);
-    iscn->dcode = NULL;
-    for (i = 0; i < RECYCLE_BUCKETS; i++) {
-	zbar_symbol_t *sym, *next;
-	for (sym = iscn->recycle[i].head; sym; sym = next) {
-	    next = sym->next;
-	    _zbar_symbol_free(sym);
-	}
-    }
-    if (iscn->qr) {
-	_zbar_qr_destroy(iscn->qr);
-	iscn->qr = NULL;
-    }
-    if (iscn->sq) {
-	_zbar_sq_destroy(iscn->sq);
-	iscn->sq = NULL;
-    }
-    free(iscn);
+    _zbar_image_scanner_destroy_rust(iscn);
 }
 
 int zbar_image_scanner_set_config(zbar_image_scanner_t *iscn,

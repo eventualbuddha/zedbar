@@ -5,7 +5,7 @@
 //!
 //! Handles symbol lifecycle, reference counting, and data access.
 
-use crate::{ffi::zbar_symbol_t, refcnt};
+use crate::{ffi::zbar_symbol_t, img_scanner::zbar_symbol_set_t, refcnt};
 use libc::{c_char, c_int, c_uint, c_void};
 use std::ptr;
 
@@ -157,7 +157,7 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
 /// The symbol pointer must be valid and not previously freed.
 pub unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
     if !(*sym).syms.is_null() {
-        zbar_symbol_set_ref((*sym).syms as *const _, -1);
+        zbar_symbol_set_ref((*sym).syms, -1);
         (*sym).syms = ptr::null_mut();
     }
     if !(*sym).pts.is_null() {
@@ -186,7 +186,7 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
 ///
 /// Allocates memory that must be freed with `symbol_set_free`.
 pub unsafe fn symbol_set_create() -> *mut c_void {
-    let syms = libc::calloc(1, std::mem::size_of::<CSymbolSet>()) as *mut CSymbolSet;
+    let syms = libc::calloc(1, std::mem::size_of::<zbar_symbol_set_t>()) as *mut zbar_symbol_set_t;
     refcnt(&mut (*syms).refcnt, 1);
     syms as *mut c_void
 }
@@ -197,7 +197,7 @@ pub unsafe fn symbol_set_create() -> *mut c_void {
 ///
 /// The symbol set pointer must be valid and not previously freed.
 pub unsafe fn symbol_set_free(syms: *mut c_void) {
-    let syms = syms as *mut CSymbolSet;
+    let syms = syms as *mut zbar_symbol_set_t;
     let mut sym = (*syms).head;
     while !sym.is_null() {
         let next = (*sym).next;
@@ -207,15 +207,6 @@ pub unsafe fn symbol_set_free(syms: *mut c_void) {
     }
     (*syms).head = ptr::null_mut();
     libc::free(syms as *mut c_void);
-}
-
-// Internal symbol set structure (C FFI)
-#[repr(C)]
-pub struct CSymbolSet {
-    pub refcnt: c_int,
-    pub nsyms: c_int,
-    pub head: *mut zbar_symbol_t,
-    pub tail: *mut zbar_symbol_t,
 }
 
 // C FFI exports
@@ -331,7 +322,9 @@ pub unsafe extern "C" fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const z
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_components(sym: *const zbar_symbol_t) -> *const c_void {
+pub unsafe extern "C" fn zbar_symbol_get_components(
+    sym: *const zbar_symbol_t,
+) -> *const zbar_symbol_set_t {
     (*sym).syms
 }
 
@@ -340,7 +333,7 @@ pub unsafe extern "C" fn zbar_symbol_first_component(
     sym: *const zbar_symbol_t,
 ) -> *const zbar_symbol_t {
     if !sym.is_null() && !(*sym).syms.is_null() {
-        let syms = (*sym).syms as *const CSymbolSet;
+        let syms = (*sym).syms;
         (*syms).head
     } else {
         ptr::null()
@@ -358,22 +351,21 @@ pub unsafe extern "C" fn _zbar_symbol_set_free(syms: *mut c_void) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_ref(syms: *const c_void, delta: c_int) {
-    let syms = syms as *mut CSymbolSet;
+pub unsafe extern "C" fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     if refcnt(&mut (*syms).refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms as *mut c_void);
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_get_size(syms: *const c_void) -> c_int {
-    let syms = syms as *const CSymbolSet;
+pub unsafe extern "C" fn zbar_symbol_set_get_size(syms: *const zbar_symbol_set_t) -> c_int {
     (*syms).nsyms
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_first_symbol(syms: *const c_void) -> *const zbar_symbol_t {
-    let syms = syms as *const CSymbolSet;
+pub unsafe extern "C" fn zbar_symbol_set_first_symbol(
+    syms: *const zbar_symbol_set_t,
+) -> *const zbar_symbol_t {
     let sym = (*syms).tail;
     if !sym.is_null() {
         (*sym).next
@@ -384,9 +376,8 @@ pub unsafe extern "C" fn zbar_symbol_set_first_symbol(syms: *const c_void) -> *c
 
 #[no_mangle]
 pub unsafe extern "C" fn zbar_symbol_set_first_unfiltered(
-    syms: *const c_void,
+    syms: *const zbar_symbol_set_t,
 ) -> *const zbar_symbol_t {
-    let syms = syms as *const CSymbolSet;
     (*syms).head
 }
 
@@ -421,8 +412,10 @@ pub unsafe extern "C" fn _zbar_symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_i
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_set_add(syms: *mut c_void, sym: *mut zbar_symbol_t) {
-    let syms = syms as *mut CSymbolSet;
+pub unsafe extern "C" fn _zbar_symbol_set_add(
+    syms: *mut zbar_symbol_set_t,
+    sym: *mut zbar_symbol_t,
+) {
     (*sym).next = (*syms).head;
     (*syms).head = sym;
     (*syms).nsyms += 1;

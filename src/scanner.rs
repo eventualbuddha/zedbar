@@ -2,6 +2,7 @@
 
 use crate::ffi;
 use crate::image::Image;
+use crate::img_scanner::zbar_image_scanner_t;
 use crate::{Error, Result};
 
 /// Configuration options for barcode scanning
@@ -23,7 +24,7 @@ pub enum Config {
 
 /// Image scanner that can find barcodes in 2D images
 pub struct Scanner {
-    ptr: *mut std::ffi::c_void,
+    ptr: *mut zbar_image_scanner_t,
 }
 
 impl Scanner {
@@ -73,4 +74,3 @@ impl Default for Scanner {
         Self::new()
     }
 }
-

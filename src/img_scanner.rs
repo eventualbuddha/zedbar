@@ -11,6 +11,7 @@ use crate::{
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
     sqcode::{SqReader, _zbar_sq_new_config},
+    zbar_image_scanner_set_config, zbar_scanner_create,
 };
 
 const RECYCLE_BUCKETS: usize = 5;
@@ -92,22 +93,34 @@ extern "C" {
         direction: c_int,
         line: *const qr_finder_line,
     ) -> c_int;
+    fn _zbar_qr_create() -> *mut qr_reader;
+    fn _zbar_qr_destroy(qr: *mut qr_reader);
+    fn _zbar_sq_create() -> *mut SqReader;
+    fn _zbar_sq_destroy(sq: *mut SqReader);
 }
 
-// Import from line_scanner and symbol modules
-use crate::line_scanner::zbar_scanner_get_edge;
-use crate::symbol::_zbar_symbol_free;
+// Import from line_scanner, decoder, and symbol modules
+use crate::decoder::{
+    zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_set_handler, zbar_decoder_set_userdata,
+};
+use crate::line_scanner::{zbar_scanner_destroy, zbar_scanner_get_edge};
+use crate::symbol::{_zbar_symbol_free, zbar_symbol_set_ref};
 
 // Config constants (from zbar.h)
 const ZBAR_CFG_UNCERTAINTY: c_int = 64;
+const ZBAR_CFG_BINARY: c_int = 66;
 const ZBAR_CFG_POSITION: c_int = 128;
 const ZBAR_CFG_X_DENSITY: c_int = 256;
 const ZBAR_CFG_Y_DENSITY: c_int = 257;
 
 // Symbol type constants (from zbar.h)
 const ZBAR_PARTIAL: c_int = 1;
-const ZBAR_CODE128: c_int = 128;
 const ZBAR_COMPOSITE: c_int = 15;
+const ZBAR_CODABAR: c_int = 38;
+const ZBAR_CODE39: c_int = 39;
+const ZBAR_QRCODE: c_int = 64;
+const ZBAR_CODE93: c_int = 93;
+const ZBAR_CODE128: c_int = 128;
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -194,7 +207,7 @@ pub struct zbar_image_scanner_t {
 #[no_mangle]
 pub unsafe extern "C" fn zbar_image_scanner_get_results(
     iscn: *const zbar_image_scanner_t,
-) -> *const zbar_symbol_set_t {
+) -> *mut zbar_symbol_set_t {
     if iscn.is_null() {
         return null_mut();
     }
@@ -451,7 +464,7 @@ pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
         (*iscn).syms = null_mut();
     }
 
-    syms = (*img).syms as *mut zbar_symbol_set_t;
+    syms = (*img).syms;
     (*img).syms = null_mut();
 
     if !syms.is_null() && _zbar_image_scanner_recycle_symbol_set(iscn, syms) != 0 {
@@ -740,4 +753,108 @@ pub unsafe extern "C" fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_sc
 
     let config = _zbar_decoder_get_sq_finder_config(dcode);
     _zbar_sq_new_config(sq, config);
+}
+
+/// Create a new image scanner
+///
+/// Allocates and initializes a new image scanner instance with default configuration.
+///
+/// # Returns
+/// Pointer to new scanner or null on allocation failure
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_create_rust() -> *mut zbar_image_scanner_t {
+    let iscn = calloc(1, size_of::<zbar_image_scanner_t>()) as *mut zbar_image_scanner_t;
+    if iscn.is_null() {
+        return null_mut();
+    }
+
+    (*iscn).dcode = zbar_decoder_create();
+    (*iscn).scn = zbar_scanner_create((*iscn).dcode as *mut _);
+
+    if (*iscn).dcode.is_null() || (*iscn).scn.is_null() {
+        _zbar_image_scanner_destroy_rust(iscn);
+        return null_mut();
+    }
+
+    zbar_decoder_set_userdata((*iscn).dcode as *mut _, iscn as *mut c_void);
+    zbar_decoder_set_handler((*iscn).dcode, Some(symbol_handler));
+
+    (*iscn).qr = _zbar_qr_create();
+    (*iscn).sq = _zbar_sq_create();
+
+    // Apply default configuration
+    (*iscn).configs[0] = 1; // ZBAR_CFG_X_DENSITY
+    (*iscn).configs[1] = 1; // ZBAR_CFG_Y_DENSITY
+
+    zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_POSITION, 1);
+    zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_UNCERTAINTY, 2);
+    zbar_image_scanner_set_config(iscn, 0, 65, 0); // ZBAR_CFG_TEST_INVERTED
+    zbar_image_scanner_set_config(iscn, ZBAR_QRCODE, ZBAR_CFG_UNCERTAINTY, 0);
+    zbar_image_scanner_set_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY, 0);
+    zbar_image_scanner_set_config(iscn, ZBAR_CODE128, ZBAR_CFG_UNCERTAINTY, 0);
+    zbar_image_scanner_set_config(iscn, ZBAR_CODE93, ZBAR_CFG_UNCERTAINTY, 0);
+    zbar_image_scanner_set_config(iscn, ZBAR_CODE39, ZBAR_CFG_UNCERTAINTY, 0);
+    zbar_image_scanner_set_config(iscn, ZBAR_CODABAR, ZBAR_CFG_UNCERTAINTY, 1);
+    zbar_image_scanner_set_config(iscn, ZBAR_COMPOSITE, ZBAR_CFG_UNCERTAINTY, 0);
+
+    iscn
+}
+
+/// Destroy an image scanner
+///
+/// Frees all resources associated with the scanner.
+///
+/// # Parameters
+/// - `iscn`: Scanner to destroy (null-safe)
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_destroy_rust(iscn: *mut zbar_image_scanner_t) {
+    if iscn.is_null() {
+        return;
+    }
+
+    if !(*iscn).syms.is_null() {
+        if (*(*iscn).syms).refcnt != 0 {
+            zbar_symbol_set_ref((*iscn).syms, -1);
+        } else {
+            _zbar_symbol_set_free((*iscn).syms);
+        }
+        (*iscn).syms = null_mut();
+    }
+
+    if !(*iscn).scn.is_null() {
+        zbar_scanner_destroy((*iscn).scn);
+        (*iscn).scn = null_mut();
+    }
+
+    if !(*iscn).dcode.is_null() {
+        zbar_decoder_destroy((*iscn).dcode as *mut _);
+        (*iscn).dcode = null_mut();
+    }
+
+    // Free recycled symbols
+    for i in 0..RECYCLE_BUCKETS {
+        let mut sym = (*iscn).recycle[i].head;
+        while !sym.is_null() {
+            let next = (*sym).next;
+            _zbar_symbol_free(sym);
+            sym = next;
+        }
+    }
+
+    if !(*iscn).qr.is_null() {
+        _zbar_qr_destroy((*iscn).qr);
+        (*iscn).qr = null_mut();
+    }
+
+    if !(*iscn).sq.is_null() {
+        _zbar_sq_destroy((*iscn).sq);
+        (*iscn).sq = null_mut();
+    }
+
+    free(iscn as *mut c_void);
+}
+
+// Forward declaration of symbol_handler for zbar_image_scanner_create
+extern "C" {
+    fn symbol_handler(dcode: *mut zbar_decoder_t);
 }

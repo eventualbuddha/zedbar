@@ -580,16 +580,6 @@ extern unsigned zbar_image_get_height(const zbar_image_t *image);
 extern void zbar_image_get_size(const zbar_image_t *image, unsigned *width,
 				unsigned *height);
 
-/** return the image sample data.  the returned data buffer is only
- * valid until zbar_image_destroy() is called
- */
-extern const void *zbar_image_get_data(const zbar_image_t *image);
-
-/** return the size of image data.
- * @since 0.6
- */
-extern unsigned long zbar_image_get_data_length(const zbar_image_t *img);
-
 /** retrieve the decoded results.
  * @returns the (possibly empty) set of decoded symbols
  * @returns NULL if the image has not been scanned
@@ -821,7 +811,6 @@ extern int zbar_process_one(zbar_processor_t *processor, int timeout);
  * 0 if no symbols were found or -1 if an error occurs
  */
 extern int zbar_process_image(zbar_processor_t *processor, zbar_image_t *image);
-
 
 /*@}*/
 

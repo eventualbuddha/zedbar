@@ -12,9 +12,8 @@ use std::{
 use libc::{c_int, c_uint, c_ulong, malloc, memcpy};
 
 use crate::{
-    refcnt,
-    symbol::{zbar_symbol_set_ref, CSymbolSet},
-    zbar_image_t, zbar_symbol_t,
+    img_scanner::zbar_symbol_set_t, refcnt, symbol::zbar_symbol_set_ref, zbar_image_t,
+    zbar_symbol_t,
 };
 
 #[no_mangle]
@@ -165,19 +164,24 @@ pub unsafe extern "C" fn zbar_image_copy(src: *const zbar_image_t) -> *mut zbar_
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_image_get_symbols(src: *const zbar_image_t) -> *const CSymbolSet {
-    (*src).syms as *const CSymbolSet
+pub unsafe extern "C" fn zbar_image_get_symbols(
+    src: *const zbar_image_t,
+) -> *const zbar_symbol_set_t {
+    (*src).syms
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_image_set_symbols(img: *mut zbar_image_t, syms: *const CSymbolSet) {
+pub unsafe extern "C" fn zbar_image_set_symbols(
+    img: *mut zbar_image_t,
+    syms: *mut zbar_symbol_set_t,
+) {
     if !syms.is_null() {
-        zbar_symbol_set_ref(syms as *const c_void, 1);
+        zbar_symbol_set_ref(syms, 1);
     }
     if !(*img).syms.is_null() {
         zbar_symbol_set_ref((*img).syms, -1);
     }
-    (*img).syms = syms as *mut c_void;
+    (*img).syms = syms;
 }
 
 #[no_mangle]
@@ -185,7 +189,7 @@ pub unsafe extern "C" fn zbar_image_first_symbol(img: *const zbar_image_t) -> *c
     if (*img).syms.is_null() {
         null()
     } else {
-        (*((*img).syms as *const CSymbolSet)).head
+        (*(*img).syms).head
     }
 }
 

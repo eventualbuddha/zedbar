@@ -5,7 +5,11 @@
 
 use libc::{c_char, c_int, c_uint, c_ulong, c_void};
 
-use crate::img_scanner::zbar_image_scanner_t;
+use crate::{
+    decoder_types::zbar_decoder_t,
+    img_scanner::{zbar_image_scanner_t, zbar_symbol_set_t},
+    line_scanner::zbar_scanner_t,
+};
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -21,7 +25,7 @@ pub struct zbar_image_t {
     pub srcidx: c_int,
     pub next: *mut zbar_image_t,
     pub seq: c_uint,
-    pub syms: *mut c_void,
+    pub syms: *mut zbar_symbol_set_t,
 }
 
 #[repr(C)]
@@ -39,7 +43,7 @@ pub struct zbar_symbol_t {
     pub orient: c_int,
     pub refcnt: c_int,
     pub next: *mut zbar_symbol_t,
-    pub syms: *mut c_void,
+    pub syms: *mut zbar_symbol_set_t,
     pub time: c_ulong,
     pub cache_count: c_int,
     pub quality: c_int,
@@ -72,35 +76,36 @@ extern "C" {
     pub fn zbar_get_config_name(config: c_int) -> *const c_char;
 
     // Image functions
-    pub fn zbar_image_create() -> *mut c_void;
-    pub fn zbar_image_destroy(image: *mut c_void);
-    pub fn zbar_image_ref(image: *mut c_void, refs: c_int);
+    pub fn zbar_image_create() -> *mut zbar_image_t;
+    pub fn zbar_image_destroy(image: *mut zbar_image_t);
+    pub fn zbar_image_ref(image: *mut zbar_image_t, refs: c_int);
 
-    pub fn zbar_image_get_format(image: *const c_void) -> c_ulong;
-    pub fn zbar_image_get_width(image: *const c_void) -> c_uint;
-    pub fn zbar_image_get_height(image: *const c_void) -> c_uint;
-    pub fn zbar_image_get_data(image: *const c_void) -> *const c_void;
+    pub fn zbar_image_get_format(image: *const zbar_image_t) -> c_ulong;
+    pub fn zbar_image_get_width(image: *const zbar_image_t) -> c_uint;
+    pub fn zbar_image_get_height(image: *const zbar_image_t) -> c_uint;
+    pub fn zbar_image_get_data(image: *const zbar_image_t) -> *const c_void;
 
-    pub fn zbar_image_set_format(image: *mut c_void, format: c_ulong);
-    pub fn zbar_image_set_size(image: *mut c_void, width: c_uint, height: c_uint);
+    pub fn zbar_image_set_format(image: *mut zbar_image_t, format: c_ulong);
+    pub fn zbar_image_set_size(image: *mut zbar_image_t, width: c_uint, height: c_uint);
     pub fn zbar_image_set_data(
-        image: *mut c_void,
+        image: *mut zbar_image_t,
         data: *const c_void,
         data_len: c_ulong,
         cleanup: *const c_void,
     );
 
     // Scanner functions
-    pub fn zbar_image_scanner_create() -> *mut c_void;
-    pub fn zbar_image_scanner_destroy(scanner: *mut c_void);
+    pub fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t;
+    pub fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t;
+    pub fn zbar_image_scanner_destroy(scanner: *mut zbar_image_scanner_t);
     pub fn zbar_image_scanner_set_config(
-        scanner: *mut c_void,
+        scanner: *mut zbar_image_scanner_t,
         symbology: c_int,
         config: c_int,
         value: c_int,
     ) -> c_int;
-    pub fn zbar_scan_image(scanner: *mut c_void, image: *mut c_void) -> c_int;
-    pub fn zbar_image_first_symbol(image: *const c_void) -> *const c_void;
+    pub fn zbar_scan_image(scanner: *mut zbar_image_scanner_t, image: *mut zbar_image_t) -> c_int;
+    pub fn zbar_image_first_symbol(image: *const zbar_image_t) -> *const c_void;
 
     // Symbol functions
     pub fn zbar_symbol_get_type(symbol: *const c_void) -> c_int;
@@ -109,7 +114,7 @@ extern "C" {
     pub fn zbar_symbol_next(symbol: *const c_void) -> *const c_void;
 
     // Internal scanner functions (from img_scanner.h)
-    pub fn zbar_image_scanner_get_results(scanner: *const c_void) -> *mut c_void;
+    pub fn zbar_image_scanner_get_results(scanner: *const zbar_image_scanner_t) -> *mut c_void;
 
     // From zbar.h
     pub fn zbar_image_scanner_get_config(
@@ -120,5 +125,5 @@ extern "C" {
     ) -> c_int;
 
     // From symbol.h
-    pub fn _zbar_symbol_set_create() -> *mut c_void;
+    pub fn _zbar_symbol_set_create() -> *mut zbar_symbol_set_t;
 }

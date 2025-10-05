@@ -6,24 +6,22 @@ use libc::{c_int, c_void, calloc, free};
 use std::mem::size_of;
 use std::ptr::null_mut;
 
-use crate::error::{ErrInfo, _zbar_err_init, ZBAR_MOD_PROCESSOR};
-
-// External C functions
-extern "C" {
-    fn zbar_image_scanner_create() -> *mut c_void;
-    fn zbar_image_scanner_destroy(scanner: *mut c_void);
-    fn zbar_image_scanner_recycle_image(scanner: *mut c_void, img: *mut c_void);
-    fn zbar_scan_image(scanner: *mut c_void, img: *mut c_void) -> c_int;
-    fn zbar_image_scanner_get_results(scanner: *const c_void) -> *mut c_void;
-}
+use crate::{
+    error::{ErrInfo, _zbar_err_init, ZBAR_MOD_PROCESSOR},
+    img_scanner::{
+        zbar_image_scanner_get_results, zbar_image_scanner_recycle_image, zbar_image_scanner_t,
+        zbar_symbol_set_t,
+    },
+    zbar_image_scanner_create, zbar_image_scanner_destroy, zbar_image_t, zbar_scan_image,
+};
 
 /// Processor structure - must match processor.h layout exactly
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_processor_t {
     err: ErrInfo,
-    scanner: *mut c_void,
-    syms: *const c_void,
+    scanner: *mut zbar_image_scanner_t,
+    syms: *mut zbar_symbol_set_t,
 }
 
 /// Create a new processor instance
@@ -67,7 +65,7 @@ pub unsafe extern "C" fn zbar_processor_destroy(proc: *mut zbar_processor_t) {
 
     if !(*proc).syms.is_null() {
         use crate::symbol::zbar_symbol_set_ref;
-        zbar_symbol_set_ref((*proc).syms as *const c_void, -1);
+        zbar_symbol_set_ref((*proc).syms, -1);
         (*proc).syms = null_mut();
     }
 
@@ -92,7 +90,7 @@ pub unsafe extern "C" fn zbar_processor_destroy(proc: *mut zbar_processor_t) {
 #[no_mangle]
 pub unsafe extern "C" fn zbar_process_image(
     proc: *mut zbar_processor_t,
-    img: *mut c_void,
+    img: *mut zbar_image_t,
 ) -> c_int {
     if proc.is_null() || img.is_null() {
         return -1;
