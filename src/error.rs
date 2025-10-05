@@ -4,10 +4,9 @@ use libc::{c_char, c_int, c_uint};
 use std::ffi::CStr;
 use std::fmt;
 
-// Version constants - must match zbar/config.h
-const ZBAR_VERSION_MAJOR: c_uint = 0;
-const ZBAR_VERSION_MINOR: c_uint = 23;
-const ZBAR_VERSION_PATCH: c_uint = 93;
+pub const ZBAR_VERSION_MAJOR: c_uint = 0;
+pub const ZBAR_VERSION_MINOR: c_uint = 23;
+pub const ZBAR_VERSION_PATCH: c_uint = 93;
 
 /// Global verbosity level
 ///
@@ -74,50 +73,12 @@ impl From<i32> for Error {
     }
 }
 
-/// Get the version information
-///
-/// Fills in the major, minor, and patch version numbers if the pointers are non-null.
-/// Returns 0 on success.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_version(
-    major: *mut c_uint,
-    minor: *mut c_uint,
-    patch: *mut c_uint,
-) -> libc::c_int {
-    if !major.is_null() {
-        *major = ZBAR_VERSION_MAJOR;
-    }
-    if !minor.is_null() {
-        *minor = ZBAR_VERSION_MINOR;
-    }
-    if !patch.is_null() {
-        *patch = ZBAR_VERSION_PATCH;
-    }
-    0
-}
-
 /// Set the verbosity level for debug output
 ///
 /// Sets the global verbosity level used by debug macros in error.h.
-#[no_mangle]
-pub extern "C" fn zbar_set_verbosity(level: c_int) {
+pub fn zbar_set_verbosity(level: c_int) {
     unsafe {
         _zbar_verbosity = level;
-    }
-}
-
-/// Increase the verbosity level
-///
-/// Increments verbosity from 0 to 1, then doubles it on each subsequent call
-/// (creating the pattern: 0 -> 1 -> 2 -> 4 -> 8 -> 16...).
-#[no_mangle]
-pub extern "C" fn zbar_increase_verbosity() {
-    unsafe {
-        if _zbar_verbosity == 0 {
-            _zbar_verbosity = 1;
-        } else {
-            _zbar_verbosity <<= 1;
-        }
     }
 }
 
@@ -308,7 +269,10 @@ const ERRINFO_MAGIC: u32 = 0x5252457a; // "zERR" (LE)
 const ZBAR_ERR_SYSTEM: c_int = 2; // from zbar.h
 
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_err_copy(dst_c: *mut libc::c_void, src_c: *mut libc::c_void) -> c_int {
+pub unsafe extern "C" fn _zbar_err_copy(
+    dst_c: *mut libc::c_void,
+    src_c: *mut libc::c_void,
+) -> c_int {
     let dst = dst_c as *mut ErrInfo;
     let src = src_c as *mut ErrInfo;
     debug_assert!((*dst).magic == ERRINFO_MAGIC);

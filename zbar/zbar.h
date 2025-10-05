@@ -194,18 +194,6 @@ typedef enum zbar_modifier_e {
     ZBAR_MOD_NUM,
 } zbar_modifier_t;
 
-/** retrieve runtime library version information.
- * @param major set to the running major version (unless NULL)
- * @param minor set to the running minor version (unless NULL)
- * @returns 0
- */
-extern int zbar_version(unsigned *major, unsigned *minor, unsigned *patch);
-
-/** set global library debug level.
- * @param verbosity desired debug level.  higher values create more spew
- */
-extern void zbar_set_verbosity(int verbosity);
-
 /** increase global library debug level.
  * eg, for -vvvv
  */
@@ -527,13 +515,6 @@ struct zbar_image_s {
     zbar_symbol_set_t *syms; /* decoded result set */
 };
 
-/** new image constructor.
- * @returns a new image object with uninitialized data and format.
- * this image should be destroyed (using zbar_image_destroy()) as
- * soon as the application is finished with it
- */
-extern zbar_image_t *zbar_image_create(void);
-
 /** image destructor.  all images created by or returned to the
  * application should be destroyed using this function.  when an image
  * is destroyed, the associated data cleanup handler will be invoked
@@ -545,96 +526,16 @@ extern zbar_image_t *zbar_image_create(void);
  */
 extern void zbar_image_destroy(zbar_image_t *image);
 
-/** image reference count manipulation.
- * increment the reference count when you store a new reference to the
- * image.  decrement when the reference is no longer used.  do not
- * refer to the image any longer once the count is decremented.
- * zbar_image_ref(image, -1) is the same as zbar_image_destroy(image)
- * @since 0.5
- */
-extern void zbar_image_ref(zbar_image_t *image, int refs);
-
-/** retrieve the image format.
- * @returns the fourcc describing the format of the image sample data
- */
-extern unsigned long zbar_image_get_format(const zbar_image_t *image);
-
-/** retrieve a "sequence" (page/frame) number associated with this image.
- * @since 0.6
- */
-extern unsigned zbar_image_get_sequence(const zbar_image_t *image);
-
-/** retrieve the width of the image.
- * @returns the width in sample columns
- */
-extern unsigned zbar_image_get_width(const zbar_image_t *image);
-
-/** retrieve the height of the image.
- * @returns the height in sample rows
- */
-extern unsigned zbar_image_get_height(const zbar_image_t *image);
-
-/** retrieve both dimensions of the image.
- * fills in the width and height in samples
- */
-extern void zbar_image_get_size(const zbar_image_t *image, unsigned *width,
-				unsigned *height);
-
-/** retrieve the decoded results.
- * @returns the (possibly empty) set of decoded symbols
- * @returns NULL if the image has not been scanned
- * @since 0.10
- */
-extern const zbar_symbol_set_t *
-zbar_image_get_symbols(const zbar_image_t *image);
-
-/** associate the specified symbol set with the image, replacing any
- * existing results.  use NULL to release the current results from the
- * image.
- * @see zbar_image_scanner_recycle_image()
- * @since 0.10
- */
-extern void zbar_image_set_symbols(zbar_image_t *image,
-				   const zbar_symbol_set_t *symbols);
-
 /** image_scanner decode result iterator.
  * @returns the first decoded symbol result for an image
  * or NULL if no results are available
  */
 extern const zbar_symbol_t *zbar_image_first_symbol(const zbar_image_t *image);
 
-/** specify the fourcc image format code for image sample data.
- * refer to the documentation for supported formats.
- * @note this does not convert the data!
- */
-extern void zbar_image_set_format(zbar_image_t *image, unsigned long format);
-
 /** associate a "sequence" (page/frame) number with this image.
  * @since 0.6
  */
 extern void zbar_image_set_sequence(zbar_image_t *image, unsigned sequence_num);
-
-/** specify the pixel size of the image.
- * @note this also resets the crop rectangle to the full image
- * (0, 0, width, height)
- * @note this does not affect the data!
- */
-extern void zbar_image_set_size(zbar_image_t *image, unsigned width,
-				unsigned height);
-
-/** specify image sample data.  when image data is no longer needed by
- * the library the specific data cleanup handler will be called
- * (unless NULL)
- * @note application image data will not be modified by the library
- */
-extern void zbar_image_set_data(zbar_image_t *image, const void *data,
-				unsigned long data_byte_length,
-				zbar_image_cleanup_handler_t *cleanup_hndlr);
-
-/** built-in cleanup handler.
- * passes the image data buffer to free()
- */
-extern void zbar_image_free_data(zbar_image_t *image);
 
 /*@}*/
 

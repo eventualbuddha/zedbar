@@ -1,5 +1,6 @@
 //! Image handling and format support
 
+use crate::image_ffi::{zbar_image_create, zbar_image_destroy, zbar_image_free_data};
 use crate::symbol::{Symbol, SymbolSet};
 use crate::{ffi, zbar_image_t};
 use crate::{Error, Result};
@@ -35,7 +36,7 @@ pub struct Image {
 impl Image {
     /// Create a new empty image
     pub fn new() -> Self {
-        let ptr = unsafe { ffi::zbar_image_create() };
+        let ptr = unsafe { zbar_image_create() };
         Image { ptr }
     }
 
@@ -47,37 +48,36 @@ impl Image {
 
         let image = Self::new();
         unsafe {
-            ffi::zbar_image_set_format(image.ptr, ImageFormat::Gray.to_fourcc() as u64);
-            ffi::zbar_image_set_size(image.ptr, width, height);
-            ffi::zbar_image_set_data(
-                image.ptr,
-                data.as_ptr() as *const std::ffi::c_void,
-                data.len() as u64,
-                ptr::null(),
-            );
+            (*image.ptr).format = ImageFormat::Gray.to_fourcc();
+            (*image.ptr).width = width;
+            (*image.ptr).height = height;
+            zbar_image_free_data(image.ptr);
+            (*image.ptr).data = data.as_ptr() as *mut std::ffi::c_void;
+            (*image.ptr).datalen = data.len() as u64;
+            (*image.ptr).cleanup = ptr::null_mut();
         }
         Ok(image)
     }
 
     /// Get the image width
     pub fn width(&self) -> u32 {
-        unsafe { ffi::zbar_image_get_width(self.ptr) }
+        unsafe { (*self.ptr).width }
     }
 
     /// Get the image height  
     pub fn height(&self) -> u32 {
-        unsafe { ffi::zbar_image_get_height(self.ptr) }
+        unsafe { (*self.ptr).height }
     }
 
     /// Get the image format
     pub fn format(&self) -> u32 {
-        unsafe { ffi::zbar_image_get_format(self.ptr) as u32 }
+        unsafe { (*self.ptr).format }
     }
 
     /// Get access to the raw image data
     pub fn data(&self) -> &[u8] {
         unsafe {
-            let data_ptr = ffi::zbar_image_get_data(self.ptr);
+            let data_ptr = (*self.ptr).data;
             if data_ptr.is_null() {
                 &[]
             } else {
@@ -104,7 +104,7 @@ impl Drop for Image {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             unsafe {
-                ffi::zbar_image_destroy(self.ptr);
+                zbar_image_destroy(self.ptr);
             }
         }
     }

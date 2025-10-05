@@ -64,36 +64,6 @@ pub unsafe extern "C" fn _zbar_refcnt(cnt: *mut c_int, delta: c_int) -> c_int {
 
 #[link(name = "zbar_c", kind = "static")]
 extern "C" {
-    // Version info
-    pub fn zbar_version(major: *mut c_uint, minor: *mut c_uint, patch: *mut c_uint) -> c_int;
-
-    // Error handling
-    pub fn zbar_set_verbosity(verbosity: c_int);
-    pub fn zbar_increase_verbosity();
-
-    // Symbol name functions
-    pub fn zbar_get_symbol_name(sym: c_int) -> *const c_char;
-    pub fn zbar_get_config_name(config: c_int) -> *const c_char;
-
-    // Image functions
-    pub fn zbar_image_create() -> *mut zbar_image_t;
-    pub fn zbar_image_destroy(image: *mut zbar_image_t);
-    pub fn zbar_image_ref(image: *mut zbar_image_t, refs: c_int);
-
-    pub fn zbar_image_get_format(image: *const zbar_image_t) -> c_ulong;
-    pub fn zbar_image_get_width(image: *const zbar_image_t) -> c_uint;
-    pub fn zbar_image_get_height(image: *const zbar_image_t) -> c_uint;
-    pub fn zbar_image_get_data(image: *const zbar_image_t) -> *const c_void;
-
-    pub fn zbar_image_set_format(image: *mut zbar_image_t, format: c_ulong);
-    pub fn zbar_image_set_size(image: *mut zbar_image_t, width: c_uint, height: c_uint);
-    pub fn zbar_image_set_data(
-        image: *mut zbar_image_t,
-        data: *const c_void,
-        data_len: c_ulong,
-        cleanup: *const c_void,
-    );
-
     // Scanner functions
     pub fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t;
     pub fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t;
