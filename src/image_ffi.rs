@@ -50,7 +50,6 @@ pub unsafe extern "C" fn zbar_image_get_data_length(img: *const zbar_image_t) ->
     (*img).datalen
 }
 
-#[no_mangle]
 pub unsafe fn zbar_image_set_format(img: *mut zbar_image_t, fmt: u32) {
     (*img).format = fmt;
 }
