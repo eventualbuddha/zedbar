@@ -6,7 +6,12 @@ use std::{
 
 use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, size_t};
 
-use crate::{decoder_types::zbar_decoder_t, line_scanner::zbar_scanner_t};
+use crate::{
+    decoder_types::zbar_decoder_t,
+    finder::_zbar_decoder_get_sq_finder_config,
+    line_scanner::zbar_scanner_t,
+    sqcode::{SqReader, _zbar_sq_new_config},
+};
 
 const RECYCLE_BUCKETS: usize = 5;
 const NUM_SCN_CFGS: usize = 2; // ZBAR_CFG_Y_DENSITY - ZBAR_CFG_X_DENSITY + 1
@@ -112,12 +117,6 @@ pub struct qr_reader {
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
-pub struct sq_reader {
-    _private: [u8; 0],
-}
-
-#[repr(C)]
-#[allow(non_camel_case_types)]
 pub struct zbar_symbol_set_t {
     pub refcnt: c_int,
     pub nsyms: c_int,
@@ -150,7 +149,7 @@ pub struct zbar_image_scanner_t {
     /// QR Code 2D reader
     qr: *mut qr_reader,
     /// SQ Code 2D reader
-    sq: *mut sq_reader,
+    sq: *mut SqReader,
 
     /// application data
     userdata: *const c_void,
@@ -724,4 +723,21 @@ pub unsafe extern "C" fn _zbar_image_scanner_add_sym(
     if refcnt(&mut (*sym).refcnt, 1) == 0 && 1 <= 0 {
         _zbar_symbol_free(sym);
     }
+}
+
+/// SQ code handler - updates SQ reader configuration
+///
+/// Gets the current SQ finder configuration from the decoder and passes it
+/// to the SQ reader for processing.
+///
+/// # Safety
+/// `iscn` must be a valid pointer to a zbar_image_scanner_t
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
+    // Cast pointers to the correct types expected by the functions
+    let dcode = (*iscn).dcode;
+    let sq = (*iscn).sq;
+
+    let config = _zbar_decoder_get_sq_finder_config(dcode);
+    _zbar_sq_new_config(sq, config);
 }

@@ -93,12 +93,12 @@ struct zbar_image_scanner_s {
     int sym_configs[1][NUM_SYMS]; /* per-symbology configurations */
 };
 
-extern unsigned _zbar_decoder_get_sq_finder_config(zbar_decoder_t *);
+// Rust implementation - converted to src/img_scanner.rs
+extern void _zbar_image_scanner_sq_handler(zbar_image_scanner_t *iscn);
 
-static void sq_handler(zbar_image_scanner_t *iscn)
+static inline void sq_handler(zbar_image_scanner_t *iscn)
 {
-    unsigned config = _zbar_decoder_get_sq_finder_config(iscn->dcode);
-    _zbar_sq_new_config(iscn->sq, config);
+    _zbar_image_scanner_sq_handler(iscn);
 }
 
 static void symbol_handler(zbar_decoder_t *dcode)

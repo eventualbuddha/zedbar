@@ -28,41 +28,8 @@
 
 #include "processor.h"
 
-zbar_processor_t *zbar_processor_create(int threaded)
-{
-    (void)threaded;
-    zbar_processor_t *proc = calloc(1, sizeof(zbar_processor_t));
-    if (!proc)
-	return (NULL);
-
-    err_init(&proc->err, ZBAR_MOD_PROCESSOR);
-
-    proc->scanner = zbar_image_scanner_create();
-    if (!proc->scanner) {
-	free(proc);
-	return (NULL);
-    }
-
-    return (proc);
-}
-
-void zbar_processor_destroy(zbar_processor_t *proc)
-{
-    if (!proc)
-	return;
-
-    if (proc->syms) {
-	zbar_symbol_set_ref(proc->syms, -1);
-	proc->syms = NULL;
-    }
-
-    if (proc->scanner) {
-	zbar_image_scanner_destroy(proc->scanner);
-	proc->scanner = NULL;
-    }
-
-    free(proc);
-}
+// Rust implementations - converted to src/processor.rs
+// These are now just exported from Rust, no C implementation needed
 
 int zbar_process_image(zbar_processor_t *proc, zbar_image_t *img)
 {

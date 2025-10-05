@@ -126,7 +126,7 @@ const SEV_FATAL: c_int = -2;
 const SEV_NOTE: c_int = 2;
 
 // Error module types (must match error.h)
-const ZBAR_MOD_PROCESSOR: c_int = 0;
+pub const ZBAR_MOD_PROCESSOR: c_int = 0;
 const ZBAR_MOD_UNKNOWN: c_int = 4;
 
 // Error type codes (must match zbar.h)

@@ -108,30 +108,17 @@ static const unsigned char exp_sequences[] = {
 static const unsigned char exp_checksums[] = { 1,   189, 62, 113, 46,  43,
 					       109, 134, 6,  79,  161, 45 };
 
-static void append_check14(unsigned char *buf)
-{
-    unsigned char chk = 0, d;
-    int i;
-    for (i = 13; --i >= 0;) {
-	d = *(buf++) - '0';
-	chk += d;
-	if (!(i & 1))
-	    chk += d << 1;
-    }
-    chk %= 10;
-    if (chk)
-	chk = 10 - chk;
-    *buf = chk + '0';
+// Rust implementations - converted to src/databar_utils.rs
+extern void _zbar_databar_append_check14(unsigned char *buf);
+extern void _zbar_databar_decode10(unsigned char *buf, unsigned long n, int i);
+
+// Compatibility wrappers
+static inline void append_check14(unsigned char *buf) {
+    _zbar_databar_append_check14(buf);
 }
 
-static void decode10(unsigned char *buf, unsigned long n, int i)
-{
-    buf += i;
-    while (--i >= 0) {
-	unsigned char d = n % 10;
-	n /= 10;
-	*--buf = '0' + d;
-    }
+static inline void decode10(unsigned char *buf, unsigned long n, int i) {
+    _zbar_databar_decode10(buf, n, i);
 }
 
 #define VAR_MAX(l, i) ((((l) * 12 + (i)) * 2 + 6) / 7)
@@ -497,12 +484,12 @@ static void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
 
 }
 
-static int check_width(unsigned wf, unsigned wd, unsigned n)
-{
-    unsigned dwf = wf * 3;
-    wd *= 14;
-    wf *= n;
-    return (wf - dwf <= wd && wd <= wf + dwf);
+// Rust implementation - converted to src/databar_utils.rs
+extern int _zbar_databar_check_width(unsigned wf, unsigned wd, unsigned n);
+
+// Compatibility wrapper
+static inline int check_width(unsigned wf, unsigned wd, unsigned n) {
+    return _zbar_databar_check_width(wf, wd, n);
 }
 
 static void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
