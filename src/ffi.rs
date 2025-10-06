@@ -75,13 +75,7 @@ extern "C" {
         value: c_int,
     ) -> c_int;
     pub fn zbar_scan_image(scanner: *mut zbar_image_scanner_t, image: *mut zbar_image_t) -> c_int;
-    pub fn zbar_image_first_symbol(image: *const zbar_image_t) -> *const c_void;
-
-    // Symbol functions
-    pub fn zbar_symbol_get_type(symbol: *const c_void) -> c_int;
-    pub fn zbar_symbol_get_data(symbol: *const c_void) -> *const c_char;
-    pub fn zbar_symbol_get_data_length(symbol: *const c_void) -> c_uint;
-    pub fn zbar_symbol_next(symbol: *const c_void) -> *const c_void;
+    pub fn zbar_image_first_symbol(image: *const zbar_image_t) -> *const zbar_symbol_t;
 
     // Internal scanner functions (from img_scanner.h)
     pub fn zbar_image_scanner_get_results(scanner: *const zbar_image_scanner_t) -> *mut c_void;

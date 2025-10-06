@@ -77,8 +77,6 @@ typedef struct zbar_format_def_s {
     } p;
 } zbar_format_def_t;
 
-extern void _zbar_image_free(zbar_image_t *);
-
 extern void _zbar_image_swap_symbols(zbar_image_t *a, zbar_image_t *b);
 extern void _zbar_image_copy_size(zbar_image_t *dst, const zbar_image_t *src);
 extern zbar_image_t *_zbar_image_copy(const zbar_image_t *src, int inverted);

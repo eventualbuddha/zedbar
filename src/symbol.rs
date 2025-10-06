@@ -6,7 +6,7 @@
 //! Handles symbol lifecycle, reference counting, and data access.
 
 use crate::{ffi::zbar_symbol_t, img_scanner::zbar_symbol_set_t, refcnt};
-use libc::{c_char, c_int, c_uint, c_void};
+use libc::{c_char, c_int, c_void};
 use std::ptr;
 
 // Symbol type constants (from zbar.h)
@@ -196,8 +196,7 @@ pub unsafe fn symbol_set_create() -> *mut c_void {
 /// # Safety
 ///
 /// The symbol set pointer must be valid and not previously freed.
-pub unsafe fn symbol_set_free(syms: *mut c_void) {
-    let syms = syms as *mut zbar_symbol_set_t;
+pub unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
     let mut sym = (*syms).head;
     while !sym.is_null() {
         let next = (*sym).next;
@@ -217,126 +216,15 @@ pub unsafe extern "C" fn zbar_get_symbol_name(sym: c_int) -> *const c_char {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn zbar_get_config_name(cfg: c_int) -> *const c_char {
-    get_config_name(cfg).as_ptr() as *const c_char
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_get_modifier_name(mod_type: c_int) -> *const c_char {
-    get_modifier_name(mod_type).as_ptr() as *const c_char
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_get_orientation_name(orient: c_int) -> *const c_char {
-    get_orientation_name(orient).as_ptr() as *const c_char
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn _zbar_get_symbol_hash(sym: c_int) -> c_int {
     get_symbol_hash(sym)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_free(sym: *mut zbar_symbol_t) {
-    symbol_free(sym);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_ref(sym: *const zbar_symbol_t, refs: c_int) {
-    let sym = sym as *mut zbar_symbol_t;
-    symbol_refcnt(sym, refs);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_type(sym: *const zbar_symbol_t) -> c_int {
-    (*sym).symbol_type
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_configs(sym: *const zbar_symbol_t) -> c_uint {
-    (*sym).configs
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_modifiers(sym: *const zbar_symbol_t) -> c_uint {
-    (*sym).modifiers
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_data(sym: *const zbar_symbol_t) -> *const c_char {
-    (*sym).data
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_data_length(sym: *const zbar_symbol_t) -> c_uint {
-    (*sym).datalen
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_count(sym: *const zbar_symbol_t) -> c_int {
-    (*sym).cache_count
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_quality(sym: *const zbar_symbol_t) -> c_int {
-    (*sym).quality
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_loc_size(sym: *const zbar_symbol_t) -> c_uint {
-    (*sym).npts
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_loc_x(sym: *const zbar_symbol_t, idx: c_uint) -> c_int {
-    if idx < (*sym).npts {
-        let pts = (*sym).pts as *const Point;
-        (*pts.add(idx as usize)).x
-    } else {
-        -1
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_loc_y(sym: *const zbar_symbol_t, idx: c_uint) -> c_int {
-    if idx < (*sym).npts {
-        let pts = (*sym).pts as *const Point;
-        (*pts.add(idx as usize)).y
-    } else {
-        -1
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_orientation(sym: *const zbar_symbol_t) -> c_int {
-    (*sym).orient
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_t {
+pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_t {
     if sym.is_null() {
         ptr::null()
     } else {
         (*sym).next
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_get_components(
-    sym: *const zbar_symbol_t,
-) -> *const zbar_symbol_set_t {
-    (*sym).syms
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_first_component(
-    sym: *const zbar_symbol_t,
-) -> *const zbar_symbol_t {
-    if !sym.is_null() && !(*sym).syms.is_null() {
-        let syms = (*sym).syms;
-        (*syms).head
-    } else {
-        ptr::null()
     }
 }
 
@@ -346,39 +234,10 @@ pub unsafe extern "C" fn _zbar_symbol_set_create() -> *mut c_void {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_set_free(syms: *mut c_void) {
-    symbol_set_free(syms);
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     if refcnt(&mut (*syms).refcnt, delta) == 0 && delta <= 0 {
-        symbol_set_free(syms as *mut c_void);
+        symbol_set_free(syms);
     }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_get_size(syms: *const zbar_symbol_set_t) -> c_int {
-    (*syms).nsyms
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_first_symbol(
-    syms: *const zbar_symbol_set_t,
-) -> *const zbar_symbol_t {
-    let sym = (*syms).tail;
-    if !sym.is_null() {
-        (*sym).next
-    } else {
-        (*syms).head
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_first_unfiltered(
-    syms: *const zbar_symbol_set_t,
-) -> *const zbar_symbol_t {
-    (*syms).head
 }
 
 // Point structure for location data
@@ -404,30 +263,7 @@ pub unsafe extern "C" fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_in
     (*pts.add(i)).y = y;
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
-    if refcnt(&mut (*sym).refcnt, delta) == 0 && delta <= 0 {
-        _zbar_symbol_free(sym);
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_set_add(
-    syms: *mut zbar_symbol_set_t,
-    sym: *mut zbar_symbol_t,
-) {
-    (*sym).next = (*syms).head;
-    (*syms).head = sym;
-    (*syms).nsyms += 1;
-
-    _zbar_symbol_refcnt(sym, 1);
-}
-
-// Note: XML serialization (zbar_symbol_xml) and base64_encode are complex and
-// rarely used in the core scanning functionality. They can be added later if needed.
-
 // High-level Rust API types
-use crate::ffi;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolType {
@@ -483,11 +319,11 @@ impl From<i32> for SymbolType {
 
 /// A decoded barcode symbol
 pub struct Symbol {
-    ptr: *const std::ffi::c_void,
+    ptr: *const zbar_symbol_t,
 }
 
 impl Symbol {
-    pub(crate) unsafe fn from_ptr(ptr: *const std::ffi::c_void) -> Option<Self> {
+    pub(crate) unsafe fn from_ptr(ptr: *const zbar_symbol_t) -> Option<Self> {
         if ptr.is_null() {
             None
         } else {
@@ -497,15 +333,15 @@ impl Symbol {
 
     /// Get the symbol type
     pub fn symbol_type(&self) -> SymbolType {
-        let type_code = unsafe { ffi::zbar_symbol_get_type(self.ptr) };
+        let type_code = unsafe { (*self.ptr).symbol_type };
         SymbolType::from(type_code)
     }
 
     /// Get the decoded data as bytes
     pub fn data(&self) -> &[u8] {
         unsafe {
-            let data_ptr = ffi::zbar_symbol_get_data(self.ptr);
-            let data_len = ffi::zbar_symbol_get_data_length(self.ptr) as usize;
+            let data_ptr = (*self.ptr).data;
+            let data_len = (*self.ptr).datalen as usize;
             if data_ptr.is_null() || data_len == 0 {
                 &[]
             } else {
@@ -521,7 +357,7 @@ impl Symbol {
 
     /// Get the next symbol in the result set
     pub fn next(&self) -> Option<Symbol> {
-        let next_ptr = unsafe { ffi::zbar_symbol_next(self.ptr) };
+        let next_ptr = unsafe { zbar_symbol_next(self.ptr) };
         unsafe { Symbol::from_ptr(next_ptr) }
     }
 }

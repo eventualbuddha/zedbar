@@ -9,7 +9,7 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use libc::{c_int, c_uint, c_ulong, malloc, memcpy};
+use libc::c_int;
 
 use crate::{refcnt, symbol::zbar_symbol_set_ref, zbar_image_t, zbar_symbol_t};
 
@@ -20,8 +20,7 @@ pub unsafe fn zbar_image_create() -> *mut zbar_image_t {
     img
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_free(img: *mut zbar_image_t) {
+pub unsafe fn _zbar_image_free(img: *mut zbar_image_t) {
     if !(*img).syms.is_null() {
         zbar_symbol_set_ref((*img).syms, -1);
         (*img).syms = null_mut();
@@ -40,27 +39,7 @@ pub unsafe extern "C" fn zbar_image_destroy(img: *mut zbar_image_t) {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_get_data(img: *const zbar_image_t) -> *mut c_void {
-    (*img).data
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_get_data_length(img: *const zbar_image_t) -> c_ulong {
-    (*img).datalen
-}
-
-pub unsafe fn zbar_image_set_format(img: *mut zbar_image_t, fmt: u32) {
-    (*img).format = fmt;
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_set_sequence(img: *mut zbar_image_t, seq: c_uint) {
-    (*img).seq = seq;
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_free_data(img: *mut zbar_image_t) {
+pub unsafe fn zbar_image_free_data(img: *mut zbar_image_t) {
     if img.is_null() {
         return;
     }
@@ -78,21 +57,6 @@ pub unsafe extern "C" fn zbar_image_free_data(img: *mut zbar_image_t) {
         }
     }
     (*img).data = null_mut();
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_copy(src: *const zbar_image_t) -> *mut zbar_image_t {
-    let dst = zbar_image_create();
-    (*dst).format = (*src).format;
-    (*dst).width = (*src).width;
-    (*dst).height = (*src).height;
-    (*dst).datalen = (*src).datalen;
-    (*dst).data = malloc((*src).datalen as usize);
-    debug_assert!(!(*dst).data.is_null());
-
-    memcpy((*dst).data, (*src).data, (*src).datalen as usize);
-    (*dst).cleanup = zbar_image_free_data as *mut c_void;
-    dst
 }
 
 #[no_mangle]

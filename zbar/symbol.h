@@ -34,13 +34,8 @@
 // Implemented in Rust (src/symbol.rs)
 extern int _zbar_get_symbol_hash(zbar_symbol_type_t);
 
-extern void _zbar_symbol_free(zbar_symbol_t *);
-
 extern zbar_symbol_set_t *_zbar_symbol_set_create(void);
-extern void _zbar_symbol_set_free(zbar_symbol_set_t *);
 
 extern void _zbar_symbol_add_point(zbar_symbol_t *sym, int x, int y);
-extern void _zbar_symbol_refcnt(zbar_symbol_t *sym, int delta);
-extern void _zbar_symbol_set_add(zbar_symbol_set_t *syms, zbar_symbol_t *sym);
 
 #endif

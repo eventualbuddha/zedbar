@@ -11,6 +11,7 @@ use crate::{
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
     sqcode::{SqReader, _zbar_sq_new_config},
+    symbol::{symbol_free, symbol_set_free},
     zbar_image_scanner_set_config, zbar_scanner_create,
 };
 
@@ -84,7 +85,6 @@ extern "C" {
         cfg: c_int,
         val: *mut c_int,
     ) -> c_int;
-    fn _zbar_symbol_set_free(syms: *mut zbar_symbol_set_t);
     fn zbar_scanner_flush(scn: *mut zbar_scanner_t);
     fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t);
     fn _zbar_decoder_get_qr_finder_line(dcode: *mut zbar_decoder_t) -> *mut qr_finder_line;
@@ -104,7 +104,7 @@ use crate::decoder::{
     zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_set_handler, zbar_decoder_set_userdata,
 };
 use crate::line_scanner::{zbar_scanner_destroy, zbar_scanner_get_edge};
-use crate::symbol::{_zbar_symbol_free, zbar_symbol_set_ref};
+use crate::symbol::zbar_symbol_set_ref;
 
 // Config constants (from zbar.h)
 const ZBAR_CFG_UNCERTAINTY: c_int = 64;
@@ -360,13 +360,15 @@ pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
             }
 
             if !(*sym).syms.is_null() {
-                let syms = (*sym).syms as *mut zbar_symbol_set_t;
+                let syms = (*sym).syms;
                 if refcnt(&mut (*syms).refcnt, -1) != 0 {
                     c_assert!(false);
                 }
                 _zbar_image_scanner_recycle_syms(iscn, (*syms).head);
                 (*syms).head = null_mut();
-                _zbar_symbol_set_free(syms);
+                {
+                    symbol_set_free(syms);
+                };
                 (*sym).syms = null_mut();
             }
 
@@ -472,7 +474,9 @@ pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
     } else if !syms.is_null() {
         // Select one set to resurrect, destroy the other
         if !(*iscn).syms.is_null() {
-            _zbar_symbol_set_free(syms);
+            {
+                symbol_set_free(syms);
+            };
         } else {
             (*iscn).syms = syms;
         }
@@ -732,9 +736,9 @@ pub unsafe extern "C" fn _zbar_image_scanner_add_sym(
 
     // Increment reference count
     // Note: The condition `&& 1 <= 0` in the original C code is always false,
-    // so _zbar_symbol_free is never called
+    // so symbol_free is never called
     if refcnt(&mut (*sym).refcnt, 1) == 0 && 1 <= 0 {
-        _zbar_symbol_free(sym);
+        symbol_free(sym);
     }
 }
 
@@ -816,7 +820,10 @@ pub unsafe extern "C" fn _zbar_image_scanner_destroy_rust(iscn: *mut zbar_image_
         if (*(*iscn).syms).refcnt != 0 {
             zbar_symbol_set_ref((*iscn).syms, -1);
         } else {
-            _zbar_symbol_set_free((*iscn).syms);
+            {
+                let syms = (*iscn).syms;
+                symbol_set_free(syms);
+            };
         }
         (*iscn).syms = null_mut();
     }
@@ -836,7 +843,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_destroy_rust(iscn: *mut zbar_image_
         let mut sym = (*iscn).recycle[i].head;
         while !sym.is_null() {
             let next = (*sym).next;
-            _zbar_symbol_free(sym);
+            symbol_free(sym);
             sym = next;
         }
     }

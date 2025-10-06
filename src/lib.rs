@@ -16,7 +16,6 @@ pub mod image;
 pub mod image_ffi;
 pub mod img_scanner;
 pub mod line_scanner;
-pub mod processor;
 pub mod qrcode;
 pub mod scanner;
 pub mod sqcode;
