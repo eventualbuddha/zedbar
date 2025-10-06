@@ -57,11 +57,6 @@ pub(crate) unsafe fn refcnt(cnt: *mut c_int, delta: c_int) -> c_int {
     rc
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_refcnt(cnt: *mut c_int, delta: c_int) -> c_int {
-    refcnt(cnt, delta)
-}
-
 #[link(name = "zbar_c", kind = "static")]
 extern "C" {
     // Scanner functions

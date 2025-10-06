@@ -25,7 +25,6 @@
 
 #include <stdlib.h>
 #include <zbar.h>
-#include "refcnt.h"
 
 #define NUM_SYMS 20
 

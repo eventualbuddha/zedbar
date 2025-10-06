@@ -33,14 +33,10 @@ extern void _zbar_image_scanner_add_sym(zbar_image_scanner_t *,
 					zbar_symbol_t *);
 extern void _zbar_image_scanner_recycle_syms(zbar_image_scanner_t *,
 					     zbar_symbol_t *);
-extern int _zbar_image_scanner_recycle_symbol_set(zbar_image_scanner_t *,
-						   zbar_symbol_set_t *);
 extern void zbar_image_scanner_recycle_image(zbar_image_scanner_t *,
 					     zbar_image_t *);
 extern zbar_symbol_t *_zbar_image_scanner_cache_lookup(zbar_image_scanner_t *,
 						       zbar_symbol_t *);
-extern void _zbar_image_scanner_cache_sym(zbar_image_scanner_t *,
-					  zbar_symbol_t *);
 extern void _zbar_image_scanner_qr_handler(zbar_image_scanner_t *);
 extern void _zbar_image_scanner_quiet_border(zbar_image_scanner_t *);
 

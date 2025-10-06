@@ -1,11 +1,14 @@
 //! Low-level barcode decoder
 
-use libc::{c_char, c_int, c_uint, c_void};
-use crate::decoder_types::{
-    codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-    databar_decoder_t, ean_decoder_t, i25_decoder_t, qr_finder_t, zbar_decoder_t,
-    zbar_symbol_type_t, DECODE_WINDOW,
+use crate::{
+    decoder_types::{
+        codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
+        databar_decoder_t, ean_decoder_t, i25_decoder_t, qr_finder_t, zbar_decoder_t,
+        zbar_symbol_type_t, DECODE_WINDOW,
+    },
+    decoders::ean::_zbar_decode_ean,
 };
+use libc::{c_char, c_int, c_uint, c_void};
 
 // Buffer allocation constants
 const BUFFER_MIN: c_uint = 0x20;
@@ -47,7 +50,6 @@ extern "C" {
     fn _zbar_databar_reset(databar: *mut databar_decoder_t);
     fn _zbar_databar_new_scan(databar: *mut databar_decoder_t);
     fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
     fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
     fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
     fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
@@ -201,11 +203,7 @@ pub unsafe extern "C" fn _zbar_decoder_release_lock(
     dcode: *mut zbar_decoder_t,
     req: zbar_symbol_type_t,
 ) -> c_char {
-    debug_assert_eq!(
-        (*dcode).lock, req,
-        "lock={} req={}",
-        (*dcode).lock, req
-    );
+    debug_assert_eq!((*dcode).lock, req, "lock={} req={}", (*dcode).lock, req);
     (*dcode).lock = 0;
     0
 }
@@ -213,10 +211,7 @@ pub unsafe extern "C" fn _zbar_decoder_release_lock(
 /// Resize the decoder's data buffer if needed
 /// Returns 1 on allocation failure or if max size exceeded, 0 on success
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_decoder_size_buf(
-    dcode: *mut zbar_decoder_t,
-    len: c_uint,
-) -> c_char {
+pub unsafe extern "C" fn _zbar_decoder_size_buf(dcode: *mut zbar_decoder_t, len: c_uint) -> c_char {
     if len <= BUFFER_MIN {
         return 0;
     }
@@ -301,8 +296,7 @@ pub unsafe extern "C" fn _zbar_qr_finder_reset(qrf: *mut qr_finder_t) {
 }
 
 /// Prepare EAN decoder for new scan
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_ean_new_scan(ean: *mut ean_decoder_t) {
+pub unsafe fn _zbar_ean_new_scan(ean: *mut ean_decoder_t) {
     (*ean).pass[0].state = -1;
     (*ean).pass[1].state = -1;
     (*ean).pass[2].state = -1;
@@ -311,8 +305,7 @@ pub unsafe extern "C" fn _zbar_ean_new_scan(ean: *mut ean_decoder_t) {
 }
 
 /// Reset EAN decoder state
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_ean_reset(ean: *mut ean_decoder_t) {
+pub unsafe fn _zbar_ean_reset(ean: *mut ean_decoder_t) {
     _zbar_ean_new_scan(ean);
     (*ean).left = 0; // ZBAR_NONE
     (*ean).right = 0; // ZBAR_NONE
@@ -455,7 +448,10 @@ pub unsafe extern "C" fn zbar_decoder_set_handler(
 
 /// Set user data pointer
 #[no_mangle]
-pub unsafe extern "C" fn zbar_decoder_set_userdata(dcode: *mut zbar_decoder_t, userdata: *mut c_void) {
+pub unsafe extern "C" fn zbar_decoder_set_userdata(
+    dcode: *mut zbar_decoder_t,
+    userdata: *mut c_void,
+) {
     (*dcode).userdata = userdata;
 }
 
@@ -532,7 +528,10 @@ pub unsafe extern "C" fn zbar_decode_width(
         }
     }
 
-    if test_cfg((*dcode).databar.config | (*dcode).databar.config_exp, ZBAR_CFG_ENABLE) {
+    if test_cfg(
+        (*dcode).databar.config | (*dcode).databar.config_exp,
+        ZBAR_CFG_ENABLE,
+    ) {
         let tmp = _zbar_decode_databar(dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
@@ -840,3 +839,4 @@ impl Default for Decoder {
         Self::new()
     }
 }
+

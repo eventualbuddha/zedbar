@@ -10,7 +10,7 @@ use crate::{
     decoder_types::zbar_decoder_t,
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
-    sqcode::{SqReader, _zbar_sq_new_config},
+    sqcode::{SqReader, _zbar_sq_create, _zbar_sq_destroy, _zbar_sq_new_config},
     symbol::{symbol_free, symbol_set_free},
     zbar_image_scanner_set_config, zbar_scanner_create,
 };
@@ -95,8 +95,6 @@ extern "C" {
     ) -> c_int;
     fn _zbar_qr_create() -> *mut qr_reader;
     fn _zbar_qr_destroy(qr: *mut qr_reader);
-    fn _zbar_sq_create() -> *mut SqReader;
-    fn _zbar_sq_destroy(sq: *mut SqReader);
 }
 
 // Import from line_scanner, decoder, and symbol modules
@@ -414,8 +412,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_
 ///
 /// # Returns
 /// 1 if the symbol set is still referenced, 0 if it was recycled
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_recycle_symbol_set(
+pub unsafe fn _zbar_image_scanner_recycle_symbol_set(
     iscn: *mut zbar_image_scanner_t,
     syms: *mut zbar_symbol_set_t,
 ) -> c_int {
@@ -638,8 +635,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_cache_lookup(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - The symbol to cache
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_cache_sym(
+pub unsafe fn _zbar_image_scanner_cache_sym(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) {

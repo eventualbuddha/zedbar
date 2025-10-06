@@ -680,7 +680,7 @@ fn integrate_partial(
 
 /// Copy result to output buffer
 fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
-    let ean = unsafe { &mut *(&mut dcode.ean as *mut ean_decoder_t) };
+    let ean = &mut dcode.ean;
     let mut base = sym;
     let mut i: usize = 0;
     let mut j: usize = 0;
@@ -750,7 +750,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
                 };
 
                 if part != 0 || idx == 0x21 {
-                    let ean = unsafe { &mut *(&mut dcode.ean as *mut ean_decoder_t) };
+                    let ean = &mut dcode.ean;
                     ean.direction = 0;
                     pass.state = -1;
                     return part;
@@ -765,7 +765,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
         {
             let part = ean_part_end4(pass, fwd);
             if part != 0 {
-                let ean = unsafe { &mut *(&mut dcode.ean as *mut ean_decoder_t) };
+                let ean = &mut dcode.ean;
                 ean.direction = if (pass.state & STATE_REV) != 0 { 1 } else { 0 };
             }
             pass.state = -1;
@@ -776,7 +776,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
                 part = ean_part_end7(&dcode.ean, pass, fwd);
             }
             if part != 0 {
-                let ean = unsafe { &mut *(&mut dcode.ean as *mut ean_decoder_t) };
+                let ean = &mut dcode.ean;
                 ean.direction = if (pass.state & STATE_REV) != 0 { 1 } else { 0 };
             }
             pass.state = -1;
@@ -836,8 +836,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
 // ============================================================================
 
 /// Main EAN/UPC decoder entry point
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dcode = &mut *dcode;
 
     // process up to 4 separate passes

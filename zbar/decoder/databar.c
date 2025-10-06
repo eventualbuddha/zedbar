@@ -21,15 +21,10 @@
  *  http://sourceforge.net/projects/zbar
  *------------------------------------------------------------------------*/
 
-#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include "zbar.h"
 
-#ifdef DEBUG_DATABAR
-#define DEBUG_LEVEL (DEBUG_DATABAR)
-#endif
-#include "debug.h"
 #include "decoder.h"
 
 #define GS ('\035')
@@ -40,12 +35,12 @@ void _zbar_databar_new_scan(databar_decoder_t *db)
 {
     int i;
     for (i = 0; i < 16; i++)
-        if (db->chars[i] >= 0) {
-            databar_segment_t *seg = db->segs + db->chars[i];
-            if (seg->partial)
-                seg->finder = -1;
-            db->chars[i] = -1;
-        }
+	if (db->chars[i] >= 0) {
+	    databar_segment_t *seg = db->segs + db->chars[i];
+	    if (seg->partial)
+		seg->finder = -1;
+	    db->chars[i] = -1;
+	}
 }
 
 void _zbar_databar_reset(databar_decoder_t *db)
@@ -53,7 +48,7 @@ void _zbar_databar_reset(databar_decoder_t *db)
     int i, n = db->csegs;
     _zbar_databar_new_scan(db);
     for (i = 0; i < n; i++)
-        db->segs[i].finder = -1;
+	db->segs[i].finder = -1;
 }
 
 enum {
@@ -113,11 +108,13 @@ extern void _zbar_databar_append_check14(unsigned char *buf);
 extern void _zbar_databar_decode10(unsigned char *buf, unsigned long n, int i);
 
 // Compatibility wrappers
-static inline void append_check14(unsigned char *buf) {
+static inline void append_check14(unsigned char *buf)
+{
     _zbar_databar_append_check14(buf);
 }
 
-static inline void decode10(unsigned char *buf, unsigned long n, int i) {
+static inline void decode10(unsigned char *buf, unsigned long n, int i)
+{
     _zbar_databar_decode10(buf, n, i);
 }
 
@@ -320,9 +317,9 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 		}
 		i -= 3;
 		zassert(i >= 0, -1, "\n");
-		n  = ((d >> i) & 0x7f) - 8;
-		n1 = n % 11;
-		n  = n / 11;
+		n	 = ((d >> i) & 0x7f) - 8;
+		n1	 = n % 11;
+		n	 = n / 11;
 		*(buf++) = (n < 10) ? '0' + n : GS;
 		*(buf++) = (n1 < 10) ? '0' + n1 : GS;
 	    } else {
@@ -426,8 +423,8 @@ static void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
     buf += 15;
     *--buf = '\0';
     *--buf = '\0';
-    r	 = d[0] * 1597 + d[1];
-    d[1] = r / 10000;
+    r	   = d[0] * 1597 + d[1];
+    d[1]   = r / 10000;
     r %= 10000;
     r	 = r * 2841 + d[2];
     d[2] = r / 10000;
@@ -481,14 +478,14 @@ static void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
 	dcode->buflen = buf - dcode->buf + 14;
     } else
 	dcode->buflen = buf - dcode->buf + 13;
-
 }
 
 // Rust implementation - converted to src/databar_utils.rs
 extern int _zbar_databar_check_width(unsigned wf, unsigned wd, unsigned n);
 
 // Compatibility wrapper
-static inline int check_width(unsigned wf, unsigned wd, unsigned n) {
+static inline int check_width(unsigned wf, unsigned wd, unsigned n)
+{
     return _zbar_databar_check_width(wf, wd, n);
 }
 
@@ -519,7 +516,7 @@ static void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
 }
 
 static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
-					       databar_segment_t *seg)
+					databar_segment_t *seg)
 {
     databar_decoder_t *db = &dcode->databar;
     unsigned csegs = db->csegs, maxage = 0xfff;
@@ -614,8 +611,8 @@ static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
     return (ZBAR_DATABAR);
 }
 
-static signed lookup_sequence(databar_segment_t *seg, int fixed,
-				     int seq[22], const size_t maxsize)
+static signed lookup_sequence(databar_segment_t *seg, int fixed, int seq[22],
+			      const size_t maxsize)
 {
     unsigned n = seg->data / 211, i;
     const unsigned char *p;
@@ -654,8 +651,8 @@ static signed lookup_sequence(databar_segment_t *seg, int fixed,
 #define IDX(s) \
     (((s)->finder << 2) | ((s)->color << 1) | ((s)->color ^ (s)->side))
 
-static zbar_symbol_type_t
-match_segment_exp(zbar_decoder_t *dcode, databar_segment_t *seg, int dir)
+static zbar_symbol_type_t match_segment_exp(zbar_decoder_t *dcode,
+					    databar_segment_t *seg, int dir)
 {
     databar_decoder_t *db = &dcode->databar;
     int bestsegs[22], i = 0, segs[22], seq[22];
@@ -772,15 +769,18 @@ abort:
 #undef IDX
 
 // Rust implementation - converted to src/databar_utils.rs
-extern unsigned _zbar_databar_calc_check(unsigned sig0, unsigned sig1, unsigned side, unsigned mod);
+extern unsigned _zbar_databar_calc_check(unsigned sig0, unsigned sig1,
+					 unsigned side, unsigned mod);
 
 // Compatibility wrapper
-static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side, unsigned mod) {
+static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
+				  unsigned mod)
+{
     return _zbar_databar_calc_check(sig0, sig1, side, mod);
 }
 
 static int calc_value4(unsigned sig, unsigned n, unsigned wmax,
-			      unsigned nonarrow)
+		       unsigned nonarrow)
 {
     unsigned w0, w1, w2, w3;
     unsigned v = 0;
@@ -862,8 +862,8 @@ static int calc_value4(unsigned sig, unsigned n, unsigned wmax,
     return (v);
 }
 
-static zbar_symbol_type_t
-decode_char(zbar_decoder_t *dcode, databar_segment_t *seg, int off, int dir)
+static zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
+				      databar_segment_t *seg, int off, int dir)
 {
     databar_decoder_t *db = &dcode->databar;
     unsigned s		  = calc_s(dcode, (dir > 0) ? off : off - 6, 8);

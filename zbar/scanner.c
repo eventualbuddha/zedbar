@@ -21,14 +21,11 @@
  *  http://sourceforge.net/projects/zbar
  *------------------------------------------------------------------------*/
 
-#include "config.h"
 #include <stddef.h>
 #include <stdlib.h> /* malloc, free, abs */
 #include <string.h> /* memset */
 
 #include "zbar.h"
-
-#include "debug.h"
 
 #ifndef ZBAR_FIXED
 #define ZBAR_FIXED 5
@@ -128,7 +125,7 @@ static zbar_symbol_type_t process_edge(zbar_scanner_t *scn, int y1)
     else if (!scn->last_edge)
 	scn->last_edge = scn->cur_edge;
 
-    scn->width = scn->cur_edge - scn->last_edge;
+    scn->width	   = scn->cur_edge - scn->last_edge;
     scn->last_edge = scn->cur_edge;
 
     /* pass to decoder */
@@ -147,8 +144,8 @@ zbar_symbol_type_t zbar_scanner_flush(zbar_scanner_t *scn)
 
     if (scn->cur_edge != x || scn->y1_sign > 0) {
 	zbar_symbol_type_t edge = process_edge(scn, -scn->y1_sign);
-	scn->cur_edge = x;
-	scn->y1_sign  = -scn->y1_sign;
+	scn->cur_edge		= x;
+	scn->y1_sign		= -scn->y1_sign;
 	return (edge);
     }
 

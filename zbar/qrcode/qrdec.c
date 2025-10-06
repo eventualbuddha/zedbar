@@ -4,8 +4,6 @@
    Foundation; either version 2.1 of the License, or (at your option) any later
    version.*/
 
-#include "config.h"
-
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>

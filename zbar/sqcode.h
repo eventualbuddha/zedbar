@@ -11,8 +11,6 @@
 typedef struct sq_reader sq_reader;
 
 // Implemented in Rust (src/sqcode.rs)
-sq_reader *_zbar_sq_create(void);
-void _zbar_sq_destroy(sq_reader *reader);
 void _zbar_sq_reset(sq_reader *reader);
 
 int _zbar_sq_new_config(sq_reader *reader, unsigned config);

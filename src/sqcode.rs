@@ -633,8 +633,7 @@ pub unsafe fn sq_decode(
 /// # Safety
 ///
 /// This function allocates memory that must be freed with `_zbar_sq_destroy`.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_sq_create() -> *mut SqReader {
+pub unsafe fn _zbar_sq_create() -> *mut SqReader {
     let reader = Box::new(SqReader { enabled: true });
     Box::into_raw(reader)
 }
@@ -644,8 +643,7 @@ pub unsafe extern "C" fn _zbar_sq_create() -> *mut SqReader {
 /// # Safety
 ///
 /// The `reader` pointer must have been created by `_zbar_sq_create` and not previously freed.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_sq_destroy(reader: *mut SqReader) {
+pub unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
     if !reader.is_null() {
         let _ = Box::from_raw(reader);
     }

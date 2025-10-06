@@ -23,13 +23,11 @@
 #ifndef _IMAGE_H_
 #define _IMAGE_H_
 
-#include "config.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <stdlib.h>
 
 #include <zbar.h>
-#include "refcnt.h"
 #include "symbol.h"
 
 #define fourcc zbar_fourcc

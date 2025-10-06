@@ -53,18 +53,4 @@ typedef struct ean_decoder_s {
     unsigned ean2_config;
 } ean_decoder_t;
 
-/* reset EAN/UPC pass specific state */
-extern void _zbar_ean_new_scan(ean_decoder_t *ean);
-#define ean_new_scan(ean) _zbar_ean_new_scan(ean)
-
-/* reset all EAN/UPC state */
-extern void _zbar_ean_reset(ean_decoder_t *ean);
-#define ean_reset(ean) _zbar_ean_reset(ean)
-
-extern unsigned _zbar_ean_get_config(ean_decoder_t *ean, zbar_symbol_type_t sym);
-#define ean_get_config(ean, sym) _zbar_ean_get_config(ean, sym)
-
-/* decode EAN/UPC symbols */
-zbar_symbol_type_t _zbar_decode_ean(zbar_decoder_t *dcode);
-
 #endif

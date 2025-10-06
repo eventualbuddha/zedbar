@@ -21,7 +21,6 @@
  *  http://sourceforge.net/projects/zbar
  *------------------------------------------------------------------------*/
 
-#include "config.h"
 #include <inttypes.h>
 #include <unistd.h>
 
