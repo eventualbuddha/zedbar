@@ -59,8 +59,7 @@ pub unsafe fn zbar_image_free_data(img: *mut zbar_image_t) {
     (*img).data = null_mut();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_first_symbol(img: *const zbar_image_t) -> *const zbar_symbol_t {
+pub unsafe fn zbar_image_first_symbol(img: *const zbar_image_t) -> *const zbar_symbol_t {
     if (*img).syms.is_null() {
         null()
     } else {
@@ -71,12 +70,6 @@ pub unsafe extern "C" fn zbar_image_first_symbol(img: *const zbar_image_t) -> *c
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {
     std::mem::swap(&mut (*a).syms, &mut (*b).syms);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_copy_size(dst: *mut zbar_image_t, src: *const zbar_image_t) {
-    (*dst).width = (*src).width;
-    (*dst).height = (*src).height;
 }
 
 #[no_mangle]
@@ -93,7 +86,8 @@ pub unsafe extern "C" fn _zbar_image_copy(
 
     let dst = zbar_image_create();
     (*dst).format = (*src).format;
-    _zbar_image_copy_size(dst, src);
+    (*dst).width = (*src).width;
+    (*dst).height = (*src).height;
     (*dst).datalen = (*src).datalen;
     (*dst).data = libc::malloc((*src).datalen as usize);
     assert!(!(*dst).data.is_null());

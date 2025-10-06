@@ -209,9 +209,6 @@ extern const char *zbar_get_symbol_name(zbar_symbol_type_t sym);
     ((unsigned long)(a) | ((unsigned long)(b) << 8) | \
      ((unsigned long)(c) << 16) | ((unsigned long)(d) << 24))
 
-/** @internal type unsafe error API (don't use) */
-extern zbar_error_t _zbar_get_error_code(const void *object);
-
 /*@}*/
 
 /** Point structure for symbol location */
@@ -337,12 +334,6 @@ struct zbar_image_s {
  */
 extern void zbar_image_destroy(zbar_image_t *image);
 
-/** image_scanner decode result iterator.
- * @returns the first decoded symbol result for an image
- * or NULL if no results are available
- */
-extern const zbar_symbol_t *zbar_image_first_symbol(const zbar_image_t *image);
-
 /*@}*/
 
 /*------------------------------------------------------------*/
@@ -384,15 +375,6 @@ extern int zbar_image_scanner_set_config(zbar_image_scanner_t *scanner,
 					 zbar_symbol_type_t symbology,
 					 zbar_config_t config, int value);
 
-/** get config for indicated symbology
- * @returns 0 for success, non-0 for failure (config does not apply to
- * specified symbology, or value out of range). On success, *value is filled.
- * @since 0.22
- */
-extern int zbar_image_scanner_get_config(zbar_image_scanner_t *scanner,
-					 zbar_symbol_type_t symbology,
-					 zbar_config_t config, int *value);
-
 /** enable or disable the inter-image result cache (default disabled).
  * mostly useful for scanning video frames, the cache filters
  * duplicate results from consecutive images, while adding some
@@ -410,17 +392,6 @@ extern void zbar_image_scanner_enable_cache(zbar_image_scanner_t *scanner,
  */
 extern void zbar_image_scanner_recycle_image(zbar_image_scanner_t *scanner,
 					     zbar_image_t *image);
-
-/** retrieve decode results for last scanned image.
- * @returns the symbol set result container or NULL if no results are
- * available
- * @note the symbol set does not have its reference count adjusted;
- * ensure that the count is incremented if the results may be kept
- * after the next image is scanned
- * @since 0.10
- */
-extern const zbar_symbol_set_t *
-zbar_image_scanner_get_results(const zbar_image_scanner_t *scanner);
 
 /** scan for symbols in provided image.  The image format must be
  * "Y800" or "GRAY".

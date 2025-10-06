@@ -29,7 +29,6 @@
 #include <stdlib.h> /* malloc, free */
 #include <string.h> /* memcmp, memset, memcpy */
 
-#include "error.h"
 #include "image.h"
 
 #include "zbar.h"
@@ -128,9 +127,7 @@ void symbol_handler(zbar_decoder_t *dcode)
 	}
     }
 
-    /* FIXME debug flag to save/display all PARTIALs */
     if (type <= ZBAR_PARTIAL) {
-	zprintf(256, "partial symbol @(%d,%d)\n", x, y);
 	return;
     }
 
@@ -142,8 +139,6 @@ void symbol_handler(zbar_decoder_t *dcode)
 	if (sym->type == type && sym->datalen == datalen &&
 	    !memcmp(sym->data, data, datalen)) {
 	    sym->quality++;
-	    zprintf(224, "dup symbol @(%d,%d): dup %s: %.20s\n", x, y,
-		    zbar_get_symbol_name(type), data);
 	    if (TEST_CFG(iscn, ZBAR_CFG_POSITION))
 		/* add new point to existing set */
 		/* FIXME should be polygon */
@@ -159,8 +154,6 @@ void symbol_handler(zbar_decoder_t *dcode)
 
     /* initialize first point */
     if (TEST_CFG(iscn, ZBAR_CFG_POSITION)) {
-	zprintf(192, "new symbol @(%d,%d): %s: %.20s\n", x, y,
-		zbar_get_symbol_name(type), data);
 	_zbar_symbol_add_point(sym, x, y);
     }
 
@@ -339,7 +332,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 	iscn->v = x;
 
 	while ((unsigned)x < w) {
-	    zprintf(128, "img_y+: %04d,%04d @%p\n", x, y, p);
 	    iscn->dy = iscn->du = 1;
 	    iscn->umin		= 0;
 	    while ((unsigned)y < h) {
@@ -354,7 +346,6 @@ static void *_zbar_scan_image(zbar_image_scanner_t *iscn, zbar_image_t *img)
 	    if ((unsigned)x >= w)
 		break;
 
-	    zprintf(128, "img_y-: %04d,%04d @%p\n", x, y, p);
 	    iscn->dy = iscn->du = -1;
 	    iscn->umin		= h;
 	    while (y >= 0) {

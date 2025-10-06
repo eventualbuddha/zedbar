@@ -200,20 +200,6 @@ pub struct zbar_image_scanner_t {
     sym_configs: [[c_int; 1]; NUM_SYMS],
 }
 
-/// Get the current set of decoded symbols from the image scanner
-///
-/// Returns the symbol set containing all symbols detected during the last scan.
-/// The returned symbol set is still owned by the scanner and should not be freed.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_get_results(
-    iscn: *const zbar_image_scanner_t,
-) -> *mut zbar_symbol_set_t {
-    if iscn.is_null() {
-        return null_mut();
-    }
-    (*iscn).syms
-}
-
 /// Set the data handler callback for the image scanner
 ///
 /// This function sets a callback that will be invoked when symbols are decoded.
@@ -278,8 +264,7 @@ pub unsafe extern "C" fn zbar_image_scanner_enable_cache(
 ///
 /// # Returns
 /// 0 on success, 1 on error
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_get_config(
+pub unsafe fn zbar_image_scanner_get_config(
     iscn: *mut zbar_image_scanner_t,
     sym: c_int,
     cfg: c_int,

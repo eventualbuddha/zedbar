@@ -13,7 +13,6 @@
 
 #include "bch15_5.h"
 #include "binarize.h"
-#include "error.h"
 #include "image.h"
 #include "isaac.h"
 #include "qrcode.h"
@@ -92,8 +91,6 @@ qr_reader *_zbar_qr_create(void)
 /*Frees a client reader handle.*/
 void _zbar_qr_destroy(qr_reader *reader)
 {
-    zprintf(1, "max finder lines = %dx%d\n", reader->finder_lines[0].clines,
-	    reader->finder_lines[1].clines);
     if (reader->finder_lines[0].lines)
 	free(reader->finder_lines[0].lines);
     if (reader->finder_lines[1].lines)
@@ -3648,8 +3645,6 @@ static int qr_code_decode(qr_code_data *_qrdata, const rs_gf256 *_gf,
 	block_szi = block_sz + (i >= nshort_blocks);
 	ret = rs_correct(_gf, QR_M0, block_data + ncodewords, block_szi, npar,
 			 NULL, 0);
-	zprintf(1, "Number of errors corrected: %i%s\n", ret,
-		ret < 0 ? " (data irrecoverable)" : "");
 	/*For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
    to use all the parity bytes for correction.
   They are instead used to improve detection.
@@ -4070,9 +4065,6 @@ int _zbar_qr_decode(qr_reader *reader, zbar_image_scanner_t *iscn,
 	return (0);
 
     ncenters = qr_finder_centers_locate(&centers, &edge_pts, reader, 0, 0);
-
-    zprintf(14, "%dx%d finders, %d centers:\n", reader->finder_lines[0].nlines,
-	    reader->finder_lines[1].nlines, ncenters);
 
     if (ncenters >= 3) {
 	void *bin = qr_binarize(img->data, img->width, img->height);

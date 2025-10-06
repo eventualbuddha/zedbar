@@ -1,8 +1,10 @@
 //! Image handling and format support
 
-use crate::image_ffi::{zbar_image_create, zbar_image_destroy, zbar_image_free_data};
+use crate::image_ffi::{
+    zbar_image_create, zbar_image_destroy, zbar_image_first_symbol, zbar_image_free_data,
+};
 use crate::symbol::{Symbol, SymbolSet};
-use crate::{ffi, zbar_image_t};
+use crate::zbar_image_t;
 use crate::{Error, Result};
 use std::ptr;
 
@@ -89,7 +91,7 @@ impl Image {
 
     /// Get the symbols found in this image (if it has been scanned)
     pub fn symbols(&self) -> SymbolSet {
-        let first_symbol_ptr = unsafe { ffi::zbar_image_first_symbol(self.ptr) };
+        let first_symbol_ptr = unsafe { zbar_image_first_symbol(self.ptr) };
         let first_symbol = unsafe { Symbol::from_ptr(first_symbol_ptr) };
         SymbolSet::new(first_symbol)
     }

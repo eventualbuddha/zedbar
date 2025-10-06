@@ -135,15 +135,6 @@ pub unsafe fn _zbar_error_spew(err: *mut ErrInfo, verbosity: c_int) -> c_int {
     -(*err).sev
 }
 
-/// Get error code from error container
-///
-/// Returns the error type code from the error info structure.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_get_error_code(container: *const libc::c_void) -> c_int {
-    let err = container as *const ErrInfo;
-    (*err).type_
-}
-
 /// Format error message as string
 ///
 /// Allocates and formats a detailed error message string.
