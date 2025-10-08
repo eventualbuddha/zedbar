@@ -488,37 +488,24 @@ static int qr_finder_centers_locate(qr_finder_center **_centers,
     return ncenters;
 }
 
-static void qr_point_translate(qr_point _point, int _dx, int _dy)
-{
-    _point[0] += _dx;
-    _point[1] += _dy;
-}
-
-static unsigned qr_point_distance2(const qr_point _p1, const qr_point _p2)
-{
-    return (_p1[0] - _p2[0]) * (_p1[0] - _p2[0]) +
-	   (_p1[1] - _p2[1]) * (_p1[1] - _p2[1]);
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_point_translate(qr_point _point, int _dx, int _dy);
+extern unsigned qr_point_distance2(const qr_point _p1, const qr_point _p2);
 
 /*Returns the cross product of the three points, which is positive if they are
    in CCW order (in a right-handed coordinate system), and 0 if they're
-   colinear.*/
-static int qr_point_ccw(const qr_point _p0, const qr_point _p1,
-			const qr_point _p2)
-{
-    return (_p1[0] - _p0[0]) * (_p2[1] - _p0[1]) -
-	   (_p1[1] - _p0[1]) * (_p2[0] - _p0[0]);
-}
+   colinear.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_point_ccw(const qr_point _p0, const qr_point _p1,
+			const qr_point _p2);
 
 /*Evaluates a line equation at a point.
   _line: The line to evaluate.
   _x:    The X coordinate of the point.
   _y:    The y coordinate of the point.
-  Return: The value of the line equation _line[0]*_x+_line[1]*_y+_line[2].*/
-static int qr_line_eval(qr_line _line, int _x, int _y)
-{
-    return _line[0] * _x + _line[1] * _y + _line[2];
-}
+  Return: The value of the line equation _line[0]*_x+_line[1]*_y+_line[2].
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_line_eval(qr_line _line, int _x, int _y);
 
 /*Computes a line passing through the given point using the specified second
    order statistics.
@@ -1393,15 +1380,8 @@ static int qr_aff_line_step(const qr_aff *_aff, qr_line _l, int _v, int _du,
 /*Computes the Hamming distance between two bit patterns (the number of bits
    that differ).
   May stop counting after _maxdiff differences.*/
-static int qr_hamming_dist(unsigned _y1, unsigned _y2, int _maxdiff)
-{
-    unsigned y;
-    int ret;
-    y = _y1 ^ _y2;
-    for (ret = 0; ret < _maxdiff && y; ret++)
-	y &= y - 1;
-    return ret;
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_hamming_dist(unsigned _y1, unsigned _y2, int _maxdiff);
 
 /*Retrieve a bit (guaranteed to be 0 or 1) from the image, given coordinates in
    subpel resolution which have not been bounds checked.*/
@@ -2284,48 +2264,17 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
     return 0;
 }
 
-/*The BCH(18,6,3) codes are only used for version information, which must lie
-   between 7 and 40 (inclusive).*/
-static const unsigned BCH18_6_CODES[34] = {
-    0x07C94, 0x085BC, 0x09A99, 0x0A4D3, 0x0BBF6, 0x0C762, 0x0D847,
-    0x0E60D, 0x0F928, 0x10B78, 0x1145D, 0x12A17, 0x13532, 0x149A6,
-    0x15683, 0x168C9, 0x177EC, 0x18EC4, 0x191E1, 0x1AFAB, 0x1B08E,
-    0x1CC1A, 0x1D33F, 0x1ED75, 0x1F250, 0x209D5, 0x216F0, 0x228BA,
-    0x2379F, 0x24B0B, 0x2542E, 0x26A64, 0x27541, 0x28C69
-};
+/*The BCH(18,6,3) codes and correction function are implemented in Rust.
+  See src/qrcode/qrdec.rs */
 
 /*Corrects a BCH(18,6,3) code word.
   _y: Contains the code word to be checked on input, and the corrected value on
        output.
   Return: The number of errors.
           If more than 3 errors are detected, returns a negative value and
-           performs no correction.*/
-static int bch18_6_correct(unsigned *_y)
-{
-    unsigned x;
-    unsigned y;
-    int nerrs;
-    y = *_y;
-    /*Check the easy case first: see if the data bits were uncorrupted.*/
-    x = y >> 12;
-    if (x >= 7 && x <= 40) {
-	nerrs = qr_hamming_dist(y, BCH18_6_CODES[x - 7], 4);
-	if (nerrs < 4) {
-	    *_y = BCH18_6_CODES[x - 7];
-	    return nerrs;
-	}
-    }
-    /*Exhaustive search is faster than field operations in GF(19).*/
-    for (x = 0; x < 34; x++)
-	if (x + 7 != y >> 12) {
-	    nerrs = qr_hamming_dist(y, BCH18_6_CODES[x], 4);
-	    if (nerrs < 4) {
-		*_y = BCH18_6_CODES[x];
-		return nerrs;
-	    }
-	}
-    return -1;
-}
+           performs no correction.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int bch18_6_correct(unsigned *_y);
 
 #if 0
 static unsigned bch18_6_encode(unsigned _x){
