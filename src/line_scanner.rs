@@ -10,6 +10,37 @@ use crate::decoder_types::zbar_decoder_t;
 // Constants from scanner.c
 const ZBAR_FIXED: i32 = 5;
 const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
+const ZBAR_SCANNER_THRESH_FADE: u32 = 8;
+
+/// Calculate the current threshold for edge detection
+///
+/// Implements adaptive threshold calculation that slowly fades back to minimum.
+/// This helps with noise rejection while maintaining sensitivity.
+#[no_mangle]
+pub unsafe extern "C" fn calc_thresh(scn: *mut zbar_scanner_t) -> c_uint {
+    // threshold 1st to improve noise rejection
+    let thresh = (*scn).y1_thresh;
+
+    if thresh <= (*scn).y1_min_thresh || (*scn).width == 0 {
+        return (*scn).y1_min_thresh;
+    }
+
+    // slowly return threshold to min
+    let dx = ((*scn).x << ZBAR_FIXED) - (*scn).last_edge;
+    let mut t = thresh as u64 * dx as u64;
+    t /= (*scn).width as u64;
+    t /= ZBAR_SCANNER_THRESH_FADE as u64;
+
+    if thresh > t as c_uint {
+        let new_thresh = thresh - t as c_uint;
+        if new_thresh > (*scn).y1_min_thresh {
+            return new_thresh;
+        }
+    }
+
+    (*scn).y1_thresh = (*scn).y1_min_thresh;
+    (*scn).y1_min_thresh
+}
 
 /// Color of element: bar or space
 #[repr(C)]

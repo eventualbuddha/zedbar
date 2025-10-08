@@ -95,27 +95,8 @@ zbar_symbol_type_t zbar_scanner_reset(zbar_scanner_t *scn)
 // zbar_scanner_get_edge() implemented in Rust (src/line_scanner.rs)
 // zbar_scanner_get_color() implemented in Rust (src/line_scanner.rs)
 
-static unsigned calc_thresh(zbar_scanner_t *scn)
-{
-    /* threshold 1st to improve noise rejection */
-    unsigned dx, thresh = scn->y1_thresh;
-    unsigned long t;
-    if ((thresh <= scn->y1_min_thresh) || !scn->width) {
-	return (scn->y1_min_thresh);
-    }
-    /* slowly return threshold to min */
-    dx = (scn->x << ZBAR_FIXED) - scn->last_edge;
-    t  = thresh * dx;
-    t /= scn->width;
-    t /= ZBAR_SCANNER_THRESH_FADE;
-    if (thresh > t) {
-	thresh -= t;
-	if (thresh > scn->y1_min_thresh)
-	    return (thresh);
-    }
-    scn->y1_thresh = scn->y1_min_thresh;
-    return (scn->y1_min_thresh);
-}
+// calc_thresh() implemented in Rust (src/line_scanner.rs)
+extern unsigned calc_thresh(zbar_scanner_t *scn);
 
 static zbar_symbol_type_t process_edge(zbar_scanner_t *scn, int y1)
 {
