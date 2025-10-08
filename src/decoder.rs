@@ -4,46 +4,18 @@ use crate::{
     decoder_types::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
         databar_decoder_t, ean_decoder_t, i25_decoder_t, qr_finder_t, zbar_decoder_t,
-        zbar_symbol_type_t, DECODE_WINDOW,
+        zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN, DECODE_WINDOW, ZBAR_CODABAR,
+        ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_CFG_EMIT_CHECK,
+        ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_DATABAR, ZBAR_DATABAR_EXP,
+        ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13,
+        ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
     decoders::ean::_zbar_decode_ean,
 };
 use libc::{c_char, c_int, c_uint, c_void};
 
-// Buffer allocation constants
-const BUFFER_MIN: c_uint = 0x20;
-const BUFFER_MAX: c_uint = 0x100;
-const BUFFER_INCR: c_uint = 0x10;
-
-// Config constants from zbar.h
-const ZBAR_CFG_ENABLE: c_int = 0;
-const ZBAR_CFG_EMIT_CHECK: c_int = 2;
+// Config constant not in decoder_types
 const ZBAR_CFG_NUM: c_int = 5;
-const ZBAR_CFG_MIN_LEN: c_int = 0x20;
-const ZBAR_CFG_MAX_LEN: c_int = 0x21;
-
-// Symbol type constants from zbar.h
-#[allow(dead_code)]
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
-const ZBAR_EAN2: zbar_symbol_type_t = 2;
-const ZBAR_EAN5: zbar_symbol_type_t = 5;
-const ZBAR_EAN8: zbar_symbol_type_t = 8;
-const ZBAR_UPCE: zbar_symbol_type_t = 9;
-const ZBAR_ISBN10: zbar_symbol_type_t = 10;
-const ZBAR_UPCA: zbar_symbol_type_t = 12;
-const ZBAR_EAN13: zbar_symbol_type_t = 13;
-const ZBAR_ISBN13: zbar_symbol_type_t = 14;
-const ZBAR_COMPOSITE: zbar_symbol_type_t = 15;
-const ZBAR_I25: zbar_symbol_type_t = 25;
-const ZBAR_DATABAR: zbar_symbol_type_t = 34;
-const ZBAR_DATABAR_EXP: zbar_symbol_type_t = 35;
-const ZBAR_CODABAR: zbar_symbol_type_t = 38;
-const ZBAR_CODE39: zbar_symbol_type_t = 39;
-const ZBAR_QRCODE: zbar_symbol_type_t = 64;
-const ZBAR_SQCODE: zbar_symbol_type_t = 80;
-const ZBAR_CODE93: zbar_symbol_type_t = 93;
-const ZBAR_CODE128: zbar_symbol_type_t = 128;
 
 // External C functions for decoders and reset functions not yet converted
 extern "C" {

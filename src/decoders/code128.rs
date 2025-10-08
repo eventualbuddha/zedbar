@@ -2,29 +2,12 @@
 //!
 //! This module implements decoding for Code 128 barcodes.
 
-use crate::decoder_types::{code128_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW};
+use crate::decoder_types::{
+    code128_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN,
+    DECODE_WINDOW, ZBAR_BAR, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE128, ZBAR_MOD_AIM,
+    ZBAR_MOD_GS1, ZBAR_NONE, ZBAR_SPACE,
+};
 use libc::{c_char, c_int, c_uint};
-
-// Symbol type constants
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_CODE128: zbar_symbol_type_t = 128;
-
-// Color constants
-const ZBAR_BAR: u8 = 1;
-const ZBAR_SPACE: u8 = 0;
-
-// Config constants
-const ZBAR_CFG_MIN_LEN: c_int = 0x20;
-const ZBAR_CFG_MAX_LEN: c_int = 0x21;
-
-// Modifier constants
-const ZBAR_MOD_GS1: i32 = 0;
-const ZBAR_MOD_AIM: i32 = 1;
-
-// Buffer constants
-const BUFFER_MIN: c_uint = 0x20;
-const BUFFER_MAX: c_uint = 0x100;
-const BUFFER_INCR: c_uint = 0x10;
 
 // Character count
 const NUM_CHARS: usize = 108;

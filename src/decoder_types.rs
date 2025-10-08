@@ -16,6 +16,72 @@ pub const DECODE_WINDOW: usize = 16;
 pub type zbar_symbol_type_t = c_int;
 
 // ============================================================================
+// Symbol type constants
+// ============================================================================
+
+pub const ZBAR_NONE: zbar_symbol_type_t = 0;
+pub const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
+pub const ZBAR_EAN2: zbar_symbol_type_t = 2;
+pub const ZBAR_EAN5: zbar_symbol_type_t = 5;
+pub const ZBAR_EAN8: zbar_symbol_type_t = 8;
+pub const ZBAR_UPCE: zbar_symbol_type_t = 9;
+pub const ZBAR_ISBN10: zbar_symbol_type_t = 10;
+pub const ZBAR_UPCA: zbar_symbol_type_t = 12;
+pub const ZBAR_EAN13: zbar_symbol_type_t = 13;
+pub const ZBAR_ISBN13: zbar_symbol_type_t = 14;
+pub const ZBAR_COMPOSITE: zbar_symbol_type_t = 15;
+pub const ZBAR_I25: zbar_symbol_type_t = 25;
+pub const ZBAR_DATABAR: zbar_symbol_type_t = 34;
+pub const ZBAR_DATABAR_EXP: zbar_symbol_type_t = 35;
+pub const ZBAR_CODABAR: zbar_symbol_type_t = 38;
+pub const ZBAR_CODE39: zbar_symbol_type_t = 39;
+pub const ZBAR_QRCODE: zbar_symbol_type_t = 64;
+pub const ZBAR_SQCODE: zbar_symbol_type_t = 80;
+pub const ZBAR_CODE93: zbar_symbol_type_t = 93;
+pub const ZBAR_CODE128: zbar_symbol_type_t = 128;
+
+pub const ZBAR_SYMBOL: zbar_symbol_type_t = 0x00ff;
+
+// ============================================================================
+// Configuration constants
+// ============================================================================
+
+pub const ZBAR_CFG_ENABLE: c_int = 0;
+pub const ZBAR_CFG_ADD_CHECK: c_int = 1;
+pub const ZBAR_CFG_EMIT_CHECK: c_int = 2;
+pub const ZBAR_CFG_ASCII: c_int = 3;
+pub const ZBAR_CFG_BINARY: c_int = 4;
+pub const ZBAR_CFG_NUM: c_int = 5;
+pub const ZBAR_CFG_MIN_LEN: c_int = 0x20;
+pub const ZBAR_CFG_MAX_LEN: c_int = 0x21;
+pub const ZBAR_CFG_UNCERTAINTY: c_int = 64;
+pub const ZBAR_CFG_POSITION: c_int = 128;
+pub const ZBAR_CFG_X_DENSITY: c_int = 256;
+pub const ZBAR_CFG_Y_DENSITY: c_int = 257;
+
+// ============================================================================
+// Color constants
+// ============================================================================
+
+pub const ZBAR_SPACE: u8 = 0;
+pub const ZBAR_BAR: u8 = 1;
+
+// ============================================================================
+// Modifier constants
+// ============================================================================
+
+pub const ZBAR_MOD_GS1: c_int = 0;
+pub const ZBAR_MOD_AIM: c_int = 1;
+
+// ============================================================================
+// Buffer size constants
+// ============================================================================
+
+pub const BUFFER_MIN: c_uint = 0x20;
+pub const BUFFER_MAX: c_uint = 0x100;
+pub const BUFFER_INCR: c_uint = 0x10;
+
+// ============================================================================
 // Simple decoder types
 // ============================================================================
 

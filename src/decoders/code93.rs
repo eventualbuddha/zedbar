@@ -2,20 +2,11 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::decoder_types::{code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW};
+use crate::decoder_types::{
+    code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
+    ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
+};
 use libc::{c_char, c_int, c_uint};
-
-// Symbol type constants
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
-const ZBAR_CODE93: zbar_symbol_type_t = 93;
-
-// Color constants
-const ZBAR_BAR: u8 = 1;
-
-// Config constants
-const ZBAR_CFG_MIN_LEN: c_int = 0x20;
-const ZBAR_CFG_MAX_LEN: c_int = 0x21;
 
 // Checksum constant
 const CHKMOD: i32 = 47;

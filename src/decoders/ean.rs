@@ -4,29 +4,12 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::decoder_types::{
-    ean_decoder_t, ean_pass_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW,
+    ean_decoder_t, ean_pass_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
+    ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8,
+    ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_SPACE, ZBAR_SYMBOL, ZBAR_UPCA,
+    ZBAR_UPCE,
 };
 use libc::{c_char, c_int, c_uint};
-
-// Symbol type constants
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
-const ZBAR_EAN2: zbar_symbol_type_t = 2;
-const ZBAR_EAN5: zbar_symbol_type_t = 5;
-const ZBAR_EAN8: zbar_symbol_type_t = 8;
-const ZBAR_UPCE: zbar_symbol_type_t = 9;
-const ZBAR_ISBN10: zbar_symbol_type_t = 10;
-const ZBAR_UPCA: zbar_symbol_type_t = 12;
-const ZBAR_EAN13: zbar_symbol_type_t = 13;
-const ZBAR_ISBN13: zbar_symbol_type_t = 14;
-
-// Color constants
-const ZBAR_BAR: u8 = 1;
-const ZBAR_SPACE: u8 = 0;
-
-// Config constants
-const ZBAR_CFG_ENABLE: c_int = 0;
-const ZBAR_CFG_EMIT_CHECK: c_int = 1;
 
 // State constants for ean_pass_t
 const STATE_REV: i8 = -0x80; // 0x80 as signed
@@ -36,9 +19,6 @@ const STATE_IDX: i8 = 0x3f;
 // Partial decode symbol location
 const EAN_LEFT: zbar_symbol_type_t = 0x0000;
 const EAN_RIGHT: zbar_symbol_type_t = 0x1000;
-
-// Symbol type mask
-const ZBAR_SYMBOL: zbar_symbol_type_t = 0x00ff;
 
 // Assertion macro
 macro_rules! zassert {

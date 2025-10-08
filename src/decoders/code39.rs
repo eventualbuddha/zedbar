@@ -2,25 +2,12 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::decoder_types::{code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW};
+use crate::decoder_types::{
+    code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN,
+    DECODE_WINDOW, ZBAR_BAR, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE,
+    ZBAR_PARTIAL,
+};
 use libc::{c_char, c_int, c_uint};
-
-// Symbol type constants
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
-const ZBAR_CODE39: zbar_symbol_type_t = 39;
-
-// Color constants
-const ZBAR_BAR: u8 = 1;
-
-// Config constants
-const ZBAR_CFG_MIN_LEN: c_int = 0x20;
-const ZBAR_CFG_MAX_LEN: c_int = 0x21;
-
-// Buffer constants
-const BUFFER_MIN: c_uint = 0x20;
-const BUFFER_MAX: c_uint = 0x100;
-const BUFFER_INCR: c_uint = 0x10;
 
 // Number of characters in Code 39
 const NUM_CHARS: usize = 0x2c;

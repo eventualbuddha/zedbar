@@ -8,16 +8,12 @@ use std::ptr;
 use libc::{c_int, c_uint, c_void, free};
 
 use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan};
-use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t};
+use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, ZBAR_NONE, ZBAR_PARTIAL};
 
 // Constants from scanner.c
 const ZBAR_FIXED: i32 = 5;
 const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
 const ZBAR_SCANNER_THRESH_FADE: u32 = 8;
-
-// Symbol type constants
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
 
 // EWMA_WEIGHT = (unsigned)((0.78 * (1 << 6) + 1) / 2) = 25
 const EWMA_WEIGHT: c_uint = 25;

@@ -2,26 +2,15 @@
 //!
 //! This module implements decoding for Codabar barcodes.
 
-use crate::decoder_types::{codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW};
+use crate::decoder_types::{
+    codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN,
+    DECODE_WINDOW, ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
+    ZBAR_CODABAR, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_SPACE,
+};
 use libc::{c_char, c_int, c_uint};
-
-// Symbol type constants
-const ZBAR_NONE: zbar_symbol_type_t = 0;
-const ZBAR_PARTIAL: zbar_symbol_type_t = 1;
-const ZBAR_CODABAR: zbar_symbol_type_t = 38;
-const ZBAR_SPACE: u8 = 0;
-
-// Config constants
-const ZBAR_CFG_MIN_LEN: c_int = 0x20;
-const ZBAR_CFG_MAX_LEN: c_int = 0x21;
-const ZBAR_CFG_ADD_CHECK: c_int = 1;
-const ZBAR_CFG_EMIT_CHECK: c_int = 2;
 
 // Buffer constants
 const NIBUF: usize = 6;
-const BUFFER_MIN: c_uint = 0x20;
-const BUFFER_MAX: c_uint = 0x100;
-const BUFFER_INCR: c_uint = 0x10;
 
 // Assertion macro
 macro_rules! zassert {
