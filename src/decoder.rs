@@ -388,9 +388,11 @@ pub unsafe extern "C" fn zbar_decoder_reset(dcode: *mut zbar_decoder_t) {
     _zbar_qr_finder_reset(&mut (*dcode).qrf);
 }
 
-/// Prepare decoder for a new scan
-#[no_mangle]
-pub unsafe extern "C" fn zbar_decoder_new_scan(dcode: *mut zbar_decoder_t) {
+/// Mark start of a new scan pass
+///
+/// Clears any intra-symbol state and resets color to ZBAR_SPACE.
+/// Any partially decoded symbol state is retained.
+pub unsafe fn zbar_decoder_new_scan(dcode: *mut zbar_decoder_t) {
     // Soft reset decoder
     std::ptr::write_bytes((*dcode).w.as_mut_ptr(), 0, (*dcode).w.len());
     (*dcode).lock = 0;
@@ -477,9 +479,16 @@ pub unsafe extern "C" fn zbar_decoder_get_modifiers(dcode: *const zbar_decoder_t
 // Main decode function
 // ============================================================================
 
-/// Process a bar/space width through all decoders
-#[no_mangle]
-pub unsafe extern "C" fn zbar_decode_width(
+/// Process next bar/space width from input stream
+///
+/// The width is in arbitrary relative units. First value of a scan
+/// is ZBAR_SPACE width, alternating from there.
+///
+/// # Returns
+/// - Appropriate symbol type if width completes decode of a symbol (data is available for retrieval)
+/// - ZBAR_PARTIAL as a hint if part of a symbol was decoded
+/// - ZBAR_NONE (0) if no new symbol data is available
+pub unsafe fn zbar_decode_width(
     dcode: *mut zbar_decoder_t,
     w: c_uint,
 ) -> zbar_symbol_type_t {

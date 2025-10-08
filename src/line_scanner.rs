@@ -7,6 +7,7 @@ use std::ptr;
 
 use libc::{c_int, c_uint, c_void, free};
 
+use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan};
 use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t};
 
 // Constants from scanner.c
@@ -23,12 +24,6 @@ const EWMA_WEIGHT: c_uint = 25;
 
 // THRESH_INIT = (unsigned)((0.44 * (1 << 6) + 1) / 2) = 14
 const THRESH_INIT: c_uint = 14;
-
-// External C functions we need to call
-extern "C" {
-    fn zbar_decode_width(decoder: *mut zbar_decoder_t, width: c_uint) -> zbar_symbol_type_t;
-    fn zbar_decoder_new_scan(decoder: *mut zbar_decoder_t);
-}
 
 /// Calculate the current threshold for edge detection
 ///

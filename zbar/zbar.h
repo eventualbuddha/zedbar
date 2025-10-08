@@ -458,23 +458,6 @@ extern unsigned int zbar_decoder_get_configs(const zbar_decoder_t *decoder,
  */
 extern void zbar_decoder_reset(zbar_decoder_t *decoder);
 
-/** mark start of a new scan pass.
- * clears any intra-symbol state and resets color to ::ZBAR_SPACE.
- * any partially decoded symbol state is retained
- */
-extern void zbar_decoder_new_scan(zbar_decoder_t *decoder);
-
-/** process next bar/space width from input stream.
- * the width is in arbitrary relative units.  first value of a scan
- * is ::ZBAR_SPACE width, alternating from there.
- * @returns appropriate symbol type if width completes
- * decode of a symbol (data is available for retrieval)
- * @returns ::ZBAR_PARTIAL as a hint if part of a symbol was decoded
- * @returns ::ZBAR_NONE (0) if no new symbol data is available
- */
-extern zbar_symbol_type_t zbar_decode_width(zbar_decoder_t *decoder,
-					    unsigned width);
-
 /** retrieve color of @em next element passed to
  * zbar_decode_width(). */
 extern zbar_color_t zbar_decoder_get_color(const zbar_decoder_t *decoder);
