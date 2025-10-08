@@ -2249,13 +2249,6 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
   Implemented in Rust (src/qrcode/qrdec.rs) */
 extern int bch18_6_correct(unsigned *_y);
 
-#if 0
-static unsigned bch18_6_encode(unsigned _x){
-  return (-(_x&1)&0x01F25)^(-(_x>>1&1)&0x0216F)^(-(_x>>2&1)&0x042DE)^
-   (-(_x>>3&1)&0x085BC)^(-(_x>>4&1)&0x10B78)^(-(_x>>5&1)&0x209D5);
-}
-#endif
-
 /*Reads the version bits near a finder module and decodes the version number.*/
 static int qr_finder_version_decode(qr_finder *_f, const qr_hom *_hom,
 				    const unsigned char *_img, int _width,
@@ -2313,24 +2306,6 @@ static int qr_finder_version_decode(qr_finder *_f, const qr_hom *_hom,
   Even if I change the order here so I can parse the version on this image,
    I can't decode the rest of the code.
   If this is really needed, we should just re-order the bits.*/
-#if 0
-  if(ret<0){
-    /*17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
-       0  3  6  9 12 15  1  4  7 10 13 16  2  5  8 11 14 17
-      17 13  9  5  1 -3 10  6  2 -2 -6-10  3 -1 -5 -9-13-17*/
-    v=0;
-    for(k=i=0;i<3;i++){
-      p[_dir]=_f->o[_dir]+_f->size[_dir]*(-5-i);
-      for(j=0;j<6;j++,k++){
-        qr_point q;
-        p[1-_dir]=_f->o[1-_dir]+_f->size[1-_dir]*(2-j);
-        qr_hom_project(q,_hom,p[0],p[1]);
-        v|=qr_img_get_bit(_img,_width,_height,q[0],q[1])<<k;
-      }
-    }
-    ret=bch18_6_correct(&v);
-  }
-#endif
     return ret >= 0 ? (int)(v >> 12) : ret;
 }
 
@@ -3415,15 +3390,6 @@ static void qr_code_data_list_add(qr_code_data_list *_qrlist,
     memcpy(_qrlist->qrdata + _qrlist->nqrdata++, _qrdata, sizeof(*_qrdata));
 }
 
-#if 0
-static const unsigned short QR_NCODEWORDS[40]={
-    26,  44,  70, 100, 134, 172, 196, 242, 292, 346,
-   404, 466, 532, 581, 655, 733, 815, 901, 991,1085,
-  1156,1258,1364,1474,1588,1706,1828,1921,2051,2185,
-  2323,2465,2611,2761,2876,3034,3196,3362,3532,3706
-};
-#endif
-
 /*The total number of codewords in a QR code.*/
 static int qr_code_ncodewords(unsigned _version)
 {
@@ -3438,23 +3404,6 @@ static int qr_code_ncodewords(unsigned _version)
 	     (5 * nalign) * (5 * nalign - 2) + 36 * (_version < 7) + 83) >>
 	    3);
 }
-
-#if 0
-/*The number of parity bytes per Reed-Solomon block for each version and error
-   correction level.*/
-static const unsigned char QR_RS_NPAR[40][4]={
-  { 7,10,13,17},{10,16,22,28},{15,26,18,22},{20,18,26,16},
-  {26,24,18,22},{18,16,24,28},{20,18,18,26},{24,22,22,26},
-  {30,22,20,24},{18,26,24,28},{20,30,28,24},{24,22,26,28},
-  {26,22,24,22},{30,24,20,24},{22,24,30,24},{24,28,24,30},
-  {28,28,28,28},{30,26,28,28},{28,26,26,26},{28,26,30,28},
-  {28,26,28,30},{28,28,30,24},{30,28,30,30},{30,28,30,30},
-  {26,28,30,30},{28,28,28,30},{30,28,30,30},{30,28,30,30},
-  {30,28,30,30},{30,28,30,30},{30,28,30,30},{30,28,30,30},
-  {30,28,30,30},{30,28,30,30},{30,28,30,30},{30,28,30,30},
-  {30,28,30,30},{30,28,30,30},{30,28,30,30},{30,28,30,30}
-};
-#endif
 
 /*Bulk data for the number of parity bytes per Reed-Solomon block.*/
 static const unsigned char QR_RS_NPAR_VALS[71] = {
@@ -3713,69 +3662,6 @@ static int qr_reader_try_configuration(qr_reader *_reader,
   If the estimated version on the two corners matches and is sufficiently
    small, we assume this is the case.*/
 	if (ur.eversion[1] == dl.eversion[0] && ur.eversion[1] < 7) {
-	    /*We used to do a whole bunch of extra geometric checks for small
-   versions, because with just an affine correction, it was fairly easy
-   to estimate two consistent module sizes given a random configuration.
-  However, now that we're estimating a full homography, these appear to
-   be unnecessary.*/
-#if 0
-      static const signed char LINE_TESTS[12][6]={
-        /*DL left, UL > 0, UR > 0*/
-        {2,0,0, 1,1, 1},
-        /*DL right, UL > 0, UR < 0*/
-        {2,1,0, 1,1,-1},
-        /*UR top, UL > 0, DL > 0*/
-        {1,2,0, 1,2, 1},
-        /*UR bottom, UL > 0, DL < 0*/
-        {1,3,0, 1,2,-1},
-        /*UR left, DL < 0, UL < 0*/
-        {1,0,2,-1,0,-1},
-        /*UR right, DL > 0, UL > 0*/
-        {1,1,2, 1,0, 1},
-        /*DL top, UR < 0, UL < 0*/
-        {2,2,1,-1,0,-1},
-        /*DL bottom, UR > 0, UL > 0*/
-        {2,3,1, 1,0, 1},
-        /*UL left, DL > 0, UR > 0*/
-        {0,0,2, 1,1, 1},
-        /*UL right, DL > 0, UR < 0*/
-        {0,1,2, 1,1,-1},
-        /*UL top, UR > 0, DL > 0*/
-        {0,2,1, 1,2, 1},
-        /*UL bottom, UR > 0, DL < 0*/
-        {0,3,1, 1,2,-1}
-      };
-      qr_finder *f[3];
-      int        j;
-      /*Start by decoding the format information.
-        This is cheap, but unlikely to reject invalid configurations.
-        56.25% of all bitstrings are valid, and we mix and match several pieces
-         until we find a valid combination, so our real chances of finding a
-         valid codeword in random bits are even higher.*/
-      fmt_info=qr_finder_fmt_info_decode(&ul,&ur,&dl,&aff,_img,_width,_height);
-      if(fmt_info<0)continue;
-      /*Now we fit lines to the edges of each finder pattern and check to make
-         sure the centers of the other finder patterns lie on the proper side.*/
-      f[0]=&ul;
-      f[1]=&ur;
-      f[2]=&dl;
-      for(j=0;j<12;j++){
-        const signed char *t;
-        qr_line            l0;
-        int               *p;
-        t=LINE_TESTS[j];
-        qr_finder_ransac(f[t[0]],&aff,&_reader->isaac,t[1]);
-        /*We may not have enough points to fit a line accurately here.
-          If not, we just skip the test.*/
-        if(qr_line_fit_finder_edge(l0,f[t[0]],t[1],res)<0)continue;
-        p=f[t[2]]->c->pos;
-        if(qr_line_eval(l0,p[0],p[1])*t[3]<0)break;
-        p=f[t[4]]->c->pos;
-        if(qr_line_eval(l0,p[0],p[1])*t[5]<0)break;
-      }
-      if(j<12)continue;
-      /*All tests passed.*/
-#endif
 	    ur_version = ur.eversion[1];
 	} else {
 	    /*If the estimated versions are significantly different, reject the
