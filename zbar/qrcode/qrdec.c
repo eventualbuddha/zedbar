@@ -69,39 +69,16 @@ struct qr_reader {
 };
 
 /*Initializes a client reader handle.*/
-static void qr_reader_init(qr_reader *reader)
-{
-    /*time_t now;
-    now=time(NULL);
-    isaac_init(&_reader->isaac,&now,sizeof(now));*/
-    isaac_init(&reader->isaac, NULL, 0);
-    rs_gf256_init(&reader->gf, QR_PPOLY);
-}
+extern void qr_reader_init(qr_reader *reader);
 
 /*Allocates a client reader handle.*/
-qr_reader *_zbar_qr_create(void)
-{
-    qr_reader *reader = (qr_reader *)calloc(1, sizeof(*reader));
-    qr_reader_init(reader);
-    return (reader);
-}
+extern qr_reader *_zbar_qr_create(void);
 
 /*Frees a client reader handle.*/
-void _zbar_qr_destroy(qr_reader *reader)
-{
-    if (reader->finder_lines[0].lines)
-	free(reader->finder_lines[0].lines);
-    if (reader->finder_lines[1].lines)
-	free(reader->finder_lines[1].lines);
-    free(reader);
-}
+extern void _zbar_qr_destroy(qr_reader *reader);
 
 /* reset finder state between scans */
-void _zbar_qr_reset(qr_reader *reader)
-{
-    reader->finder_lines[0].nlines = 0;
-    reader->finder_lines[1].nlines = 0;
-}
+extern void _zbar_qr_reset(qr_reader *reader);
 
 /*A cluster of lines crossing a finder pattern (all in the same direction).*/
 struct qr_finder_cluster {
@@ -292,14 +269,8 @@ static int qr_finder_center_cmp(const void *_a, const void *_b)
   _hline: The horizontal line.
   _vline: The vertical line.
   Return: A non-zero value if the lines cross, or zero if they do not.*/
-static int qr_finder_lines_are_crossing(const qr_finder_line *_hline,
-					const qr_finder_line *_vline)
-{
-    return _hline->pos[0] <= _vline->pos[0] &&
-	   _vline->pos[0] < _hline->pos[0] + _hline->len &&
-	   _vline->pos[1] <= _hline->pos[1] &&
-	   _hline->pos[1] < _vline->pos[1] + _vline->len;
-}
+extern int qr_finder_lines_are_crossing(const qr_finder_line *_hline,
+					const qr_finder_line *_vline);
 
 /*Finds horizontal clusters that cross corresponding vertical clusters,
    presumably corresponding to a finder center.

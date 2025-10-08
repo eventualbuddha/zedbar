@@ -10,6 +10,7 @@ use crate::{
     decoder_types::zbar_decoder_t,
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
+    qrcode::{qrdec::qr_finder_lines, rs::rs_gf256, IsaacCtx},
     sqcode::{SqReader, _zbar_sq_create, _zbar_sq_destroy, _zbar_sq_new_config},
     symbol::{symbol_free, symbol_set_free},
     zbar_image_scanner_set_config, zbar_scanner_create,
@@ -123,7 +124,12 @@ const ZBAR_CODE128: c_int = 128;
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct qr_reader {
-    _private: [u8; 0],
+    /// The GF(256) representation used in Reed-Solomon decoding.
+    pub gf: rs_gf256,
+    /// The random number generator used by RANSAC.
+    pub isaac: IsaacCtx,
+    ///  current finder state, horizontal and vertical lines
+    pub finder_lines: [qr_finder_lines; 2],
 }
 
 #[repr(C)]

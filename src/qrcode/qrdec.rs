@@ -3,9 +3,17 @@
 //! This module provides low-level QR code decoding functions including
 //! point geometry operations and error correction.
 
+use std::ptr::null;
+
 use libc::{c_int, c_uint};
 
-use crate::qrcode::util::qr_ilog;
+use crate::{decoder_types::qr_finder_line, img_scanner::qr_reader, qrcode::util::qr_ilog};
+
+use super::{
+    isaac_init,
+    qrdectxt::qr_point,
+    rs::{rs_gf256_init, QR_PPOLY},
+};
 
 /// A point in QR code coordinate space: [x, y]
 pub type QrPoint = [c_int; 2];
@@ -53,6 +61,95 @@ fn qr_flipsigni(a: c_int, b: c_int) -> c_int {
 #[inline]
 fn qr_divround(x: c_int, y: c_int) -> c_int {
     (x + qr_flipsigni(y >> 1, x)) / y
+}
+
+/// collection of finder lines
+#[repr(C)]
+pub struct qr_finder_lines {
+    lines: *mut qr_finder_line,
+    nlines: c_int,
+    clines: c_int,
+}
+
+/// Initializes a client reader handle.
+#[no_mangle]
+pub unsafe extern "C" fn qr_reader_init(reader: *mut qr_reader) {
+    isaac_init((&mut (*reader).isaac) as *mut _, null(), 0);
+    rs_gf256_init((&mut (*reader).gf) as *mut _, QR_PPOLY);
+}
+
+/// Allocates a client reader handle.
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_qr_create() -> *mut qr_reader {
+    let reader = libc::calloc(1, size_of::<qr_reader>()) as *mut _;
+    qr_reader_init(reader);
+    reader
+}
+
+/// Frees a client reader handle.
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_qr_destroy(reader: *mut qr_reader) {
+    if !(*reader).finder_lines[0].lines.is_null() {
+        libc::free((*reader).finder_lines[0].lines as *mut _);
+    }
+
+    if !(*reader).finder_lines[1].lines.is_null() {
+        libc::free((*reader).finder_lines[1].lines as *mut _);
+    }
+
+    libc::free(reader as *mut _);
+}
+
+/// reset finder state between scans
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_qr_reset(reader: *mut qr_reader) {
+    (*reader).finder_lines[0].nlines = 0;
+    (*reader).finder_lines[1].nlines = 0;
+}
+
+/// A cluster of lines crossing a finder pattern (all in the same direction).
+pub struct qr_finder_cluster {
+    /// Pointers to the lines crossing the pattern.
+    lines: *mut *mut qr_finder_line,
+
+    /// The number of lines in the cluster.
+    nlines: c_int,
+}
+
+/// A point on the edge of a finder pattern. These are obtained from the
+/// endpoints of the lines crossing this particular pattern.
+struct qr_finder_edge_pt {
+    /// The location of the edge point.
+    pos: qr_point,
+
+    /// A label classifying which edge this belongs to:
+    /// 0: negative u edge (left)
+    /// 1: positive u edge (right)
+    /// 2: negative v edge (top)
+    /// 3: positive v edge (bottom)*/
+    edge: c_int,
+
+    /// The (signed) perpendicular distance of the edge point from a line parallel
+    /// to the edge passing through the finder center, in (u,v) coordinates.
+    /// This is also re-used by RANSAC to store inlier flags.*/
+    extent: c_int,
+}
+
+/*Determine if a horizontal line crosses a vertical line.
+_hline: The horizontal line.
+_vline: The vertical line.
+Return: A non-zero value if the lines cross, or zero if they do not.*/
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_lines_are_crossing(
+    _hline: *const qr_finder_line,
+    _vline: *const qr_finder_line,
+) -> c_int {
+    c_int::from(
+        (*_hline).pos[0] <= (*_vline).pos[0]
+            && (*_vline).pos[0] < (*_hline).pos[0] + (*_hline).len
+            && (*_vline).pos[1] <= (*_hline).pos[1]
+            && (*_hline).pos[1] < (*_vline).pos[1] + (*_vline).len,
+    )
 }
 
 /// Translate a point by the given offsets

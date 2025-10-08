@@ -20,6 +20,23 @@
 
 use libc::{c_int, c_uint};
 
+/// This is one of 16 irreducible primitive polynomials of degree 8:
+///     x**8+x**4+x**3+x**2+1.
+///   Under such a polynomial, x (i.e., 0x02) is a generator of GF(2**8).
+///   The high order 1 bit is implicit.
+///   From~\cite{MD88}, Ch. 5, p. 275 by Patel.
+///   @BOOK{MD88,
+///     author="C. Dennis Mee and Eric D. Daniel",
+///     title="Video, Audio, and Instrumentation Recording",
+///     series="Magnetic Recording",
+///     volume=3,
+///     publisher="McGraw-Hill Education",
+///     address="Columbus, OH",
+///     month=Jun,
+///     year=1988
+///   }
+pub const QR_PPOLY: c_uint = 0x1D;
+
 /// Galois Field GF(2**8) for Reed-Solomon operations
 #[repr(C)]
 pub struct rs_gf256 {
