@@ -5,15 +5,16 @@
 
 use std::ptr;
 
-use libc::{c_int, c_uint, c_void, free};
+use libc::{c_int, c_uint, c_void, free, malloc};
 
-use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan};
+use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan, zbar_decoder_reset};
 use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, ZBAR_NONE, ZBAR_PARTIAL};
 
 // Constants from scanner.c
 const ZBAR_FIXED: i32 = 5;
 const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
 const ZBAR_SCANNER_THRESH_FADE: u32 = 8;
+const ZBAR_SCANNER_THRESH_MIN: c_uint = 4;
 
 // EWMA_WEIGHT = (unsigned)((0.78 * (1 << 6) + 1) / 2) = 25
 const EWMA_WEIGHT: c_uint = 25;
@@ -143,6 +144,40 @@ pub extern "C" fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
             free(scn as *mut c_void);
         }
     }
+}
+
+/// Create a new scanner instance
+///
+/// Allocates and initializes a new scanner with the specified decoder.
+#[no_mangle]
+pub unsafe extern "C" fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
+    let scn = malloc(std::mem::size_of::<zbar_scanner_t>()) as *mut zbar_scanner_t;
+    if scn.is_null() {
+        return ptr::null_mut();
+    }
+
+    (*scn).decoder = dcode;
+    (*scn).y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
+    zbar_scanner_reset(scn);
+    scn
+}
+
+/// Reset scanner to initial state
+///
+/// Clears the scanner state while retaining configuration.
+#[no_mangle]
+pub unsafe extern "C" fn zbar_scanner_reset(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
+    // Zero out from x to the end of the structure
+    let start_ptr = ptr::addr_of_mut!((*scn).x) as *mut u8;
+    let scn_end = (scn as *mut u8).add(std::mem::size_of::<zbar_scanner_t>());
+    let size = scn_end as usize - start_ptr as usize;
+    ptr::write_bytes(start_ptr, 0, size);
+
+    (*scn).y1_thresh = (*scn).y1_min_thresh;
+    if !(*scn).decoder.is_null() {
+        zbar_decoder_reset((*scn).decoder);
+    }
+    ZBAR_NONE
 }
 
 /// Process an edge and pass the width to the decoder
