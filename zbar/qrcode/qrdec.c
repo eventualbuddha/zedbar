@@ -1345,37 +1345,10 @@ static int qr_finder_locate_crossing(const unsigned char *_img, int _width,
     return 0;
 }
 
-static int qr_aff_line_step(const qr_aff *_aff, qr_line _l, int _v, int _du,
-			    int *_dv)
-{
-    int shift;
-    int round;
-    int dv;
-    int n;
-    int d;
-    n = _aff->fwd[0][_v] * _l[0] + _aff->fwd[1][_v] * _l[1];
-    d = _aff->fwd[0][1 - _v] * _l[0] + _aff->fwd[1][1 - _v] * _l[1];
-    if (d < 0) {
-	n = -n;
-	d = -d;
-    }
-    shift = QR_MAXI(0, qr_ilog(_du) + qr_ilog(abs(n)) + 3 - QR_INT_BITS);
-    round = (1 << shift) >> 1;
-    n	  = (n + round) >> shift;
-    d	  = (d + round) >> shift;
-    /*The line should not be outside 45 degrees of horizontal/vertical.
-  TODO: We impose this restriction to help ensure the loop below terminates,
-   but it should not technically be required.
-  It also, however, ensures we avoid division by zero.*/
-    if (abs(n) >= d)
-	return -1;
-    n  = -_du * n;
-    dv = QR_DIVROUND(n, d);
-    if (abs(dv) >= _du)
-	return -1;
-    *_dv = dv;
-    return 0;
-}
+/* Calculate step delta for moving along a line in affine space.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_aff_line_step(const qr_aff *_aff, qr_line _l, int _v, int _du,
+			    int *_dv);
 
 /*Computes the Hamming distance between two bit patterns (the number of bits
    that differ).

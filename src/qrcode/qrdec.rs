@@ -5,11 +5,55 @@
 
 use libc::{c_int, c_uint};
 
+use crate::qrcode::util::qr_ilog;
+
 /// A point in QR code coordinate space: [x, y]
 pub type QrPoint = [c_int; 2];
 
 /// A line in QR code coordinate space: [A, B, C] for equation Ax + By + C = 0
 pub type QrLine = [c_int; 3];
+
+/// Number of bits in an int (typically 32)
+const QR_INT_BITS: c_int = (std::mem::size_of::<c_int>() * 8) as c_int;
+
+/// Affine transformation structure for QR code coordinate mapping
+///
+/// This structure represents an affine transformation between coordinate spaces,
+/// including both forward and inverse transformations.
+#[repr(C)]
+pub struct QrAff {
+    /// Forward transformation matrix [2][2]
+    pub fwd: [[c_int; 2]; 2],
+    /// Inverse transformation matrix [2][2]
+    pub inv: [[c_int; 2]; 2],
+    /// X offset
+    pub x0: c_int,
+    /// Y offset
+    pub y0: c_int,
+    /// Resolution bits
+    pub res: c_int,
+    /// Inverse resolution bits
+    pub ires: c_int,
+}
+
+/// Helper function: maximum of two integers (branchless)
+#[inline]
+fn qr_maxi(a: c_int, b: c_int) -> c_int {
+    a - ((a - b) & -((b > a) as c_int))
+}
+
+/// Helper function: flip sign of a if b is negative
+#[inline]
+fn qr_flipsigni(a: c_int, b: c_int) -> c_int {
+    let mask = -((b < 0) as c_int);
+    (a + mask) ^ mask
+}
+
+/// Helper function: divide with exact rounding
+#[inline]
+fn qr_divround(x: c_int, y: c_int) -> c_int {
+    (x + qr_flipsigni(y >> 1, x)) / y
+}
 
 /// Translate a point by the given offsets
 ///
@@ -62,6 +106,70 @@ pub unsafe extern "C" fn qr_point_ccw(
 #[no_mangle]
 pub unsafe extern "C" fn qr_line_eval(line: *const c_int, x: c_int, y: c_int) -> c_int {
     *line.offset(0) * x + *line.offset(1) * y + *line.offset(2)
+}
+
+/// Calculate step delta for moving along a line in affine space
+///
+/// This function computes how much the coordinate `dv` changes when
+/// stepping by `du` along a line in an affine coordinate system.
+///
+/// # Arguments
+/// - `aff`: The affine transformation
+/// - `line`: The line equation coefficients [A, B, C]
+/// - `v`: The coordinate index (0 for x, 1 for y)
+/// - `du`: The step amount in the u direction
+/// - `dv`: Output pointer for the computed step in v direction
+///
+/// # Returns
+/// - 0 on success
+/// - -1 if the line is too steep (>45 degrees from horizontal/vertical)
+#[no_mangle]
+pub unsafe extern "C" fn qr_aff_line_step(
+    aff: *const QrAff,
+    line: *const c_int,
+    v: c_int,
+    du: c_int,
+    dv: *mut c_int,
+) -> c_int {
+    let aff = &*aff;
+    let l0 = *line.offset(0);
+    let l1 = *line.offset(1);
+
+    // Compute n and d for the step calculation
+    let mut n = aff.fwd[0][v as usize] * l0 + aff.fwd[1][v as usize] * l1;
+    let mut d = aff.fwd[0][(1 - v) as usize] * l0 + aff.fwd[1][(1 - v) as usize] * l1;
+
+    // Ensure d is positive
+    if d < 0 {
+        n = -n;
+        d = -d;
+    }
+
+    // Calculate shift to prevent overflow
+    let shift = qr_maxi(
+        0,
+        qr_ilog(du as u32) + qr_ilog(n.unsigned_abs()) + 3 - QR_INT_BITS,
+    );
+    let round = (1 << shift) >> 1;
+
+    n = (n + round) >> shift;
+    d = (d + round) >> shift;
+
+    // The line should not be outside 45 degrees of horizontal/vertical
+    // This helps ensure loop termination and avoids division by zero
+    if n.abs() >= d {
+        return -1;
+    }
+
+    n *= -du;
+    let dv_result = qr_divround(n, d);
+
+    if dv_result.abs() >= du {
+        return -1;
+    }
+
+    *dv = dv_result;
+    0
 }
 
 /// Calculate Hamming distance between two values
