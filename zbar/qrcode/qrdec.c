@@ -609,7 +609,7 @@ extern void qr_aff_init(qr_aff *_aff, const qr_point *_p0, const qr_point *_p1,
 extern void qr_aff_unproject(qr_point *_q, const qr_aff *_aff, int _x, int _y);
 
 /*Map from the square domain into the image (at subpel resolution).*/
-static void qr_aff_project(qr_point *_p, const qr_aff *_aff, int _u, int _v);
+extern void qr_aff_project(qr_point *_p, const qr_aff *_aff, int _u, int _v);
 
 /*A full homography.
   Like the affine homography, this maps from the image (at subpel resolution)
@@ -743,32 +743,9 @@ extern int qr_cmp_edge_pt(const void *_a, const void *_b);
    distance along the corresponding axis from the center of the finder pattern
    (in the square domain).
   The resulting list of edge points is sorted by edge index, with ties broken
-   by extent.*/
-static void qr_finder_edge_pts_aff_classify(qr_finder *_f, const qr_aff *_aff)
-{
-    qr_finder_center *c;
-    int i;
-    int e;
-    c = _f->c;
-    for (e = 0; e < 4; e++)
-	_f->nedge_pts[e] = 0;
-    for (i = 0; i < c->nedge_pts; i++) {
-	qr_point q;
-	int d;
-	qr_aff_unproject(&q, _aff, c->edge_pts[i].pos[0],
-			 c->edge_pts[i].pos[1]);
-	qr_point_translate(q, -_f->o[0], -_f->o[1]);
-	d = abs(q[1]) > abs(q[0]);
-	e = d << 1 | (q[d] >= 0);
-	_f->nedge_pts[e]++;
-	c->edge_pts[i].edge   = e;
-	c->edge_pts[i].extent = q[d];
-    }
-    qsort(c->edge_pts, c->nedge_pts, sizeof(*c->edge_pts), qr_cmp_edge_pt);
-    _f->edge_pts[0] = c->edge_pts;
-    for (e = 1; e < 4; e++)
-	_f->edge_pts[e] = _f->edge_pts[e - 1] + _f->nedge_pts[e - 1];
-}
+   by extent.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_finder_edge_pts_aff_classify(qr_finder *_f, const qr_aff *_aff);
 
 /*Computes the index of the edge each edge point belongs to, and its (signed)
    distance along the corresponding axis from the center of the finder pattern

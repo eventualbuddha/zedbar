@@ -3,7 +3,7 @@
 //! This module provides low-level QR code decoding functions including
 //! point geometry operations and error correction.
 
-use std::ptr::null;
+use std::{cmp::Ordering, ptr::null};
 
 use libc::{c_int, c_uchar, c_uint};
 
@@ -87,6 +87,7 @@ pub unsafe extern "C" fn _zbar_qr_reset(reader: *mut qr_reader) {
 }
 
 /// A cluster of lines crossing a finder pattern (all in the same direction).
+#[repr(C)]
 pub struct qr_finder_cluster {
     /// Pointers to the lines crossing the pattern.
     lines: *mut *mut qr_finder_line,
@@ -97,6 +98,7 @@ pub struct qr_finder_cluster {
 
 /// A point on the edge of a finder pattern. These are obtained from the
 /// endpoints of the lines crossing this particular pattern.
+#[repr(C)]
 pub struct qr_finder_edge_pt {
     /// The location of the edge point.
     pos: qr_point,
@@ -117,6 +119,7 @@ pub struct qr_finder_edge_pt {
 /// The center of a finder pattern obtained from the crossing of one or more
 /// clusters of horizontal finder lines with one or more clusters of vertical
 /// finder lines.
+#[repr(C)]
 pub struct qr_finder_center {
     /// The estimated location of the finder center.
     pos: qr_point,
@@ -353,6 +356,7 @@ pub unsafe extern "C" fn qr_hom_fproject(
 
 /// All the information we've collected about a finder pattern in the current
 /// configuration.
+#[repr(C)]
 pub struct qr_finder {
     /// The module size along each axis (in the square domain).
     size: [c_int; 2],
@@ -418,6 +422,46 @@ pub unsafe extern "C" fn qr_cmp_edge_pt(
     ((c_int::from((*a).edge > (*b).edge) - c_int::from((*a).edge < (*b).edge)) << 1)
         + c_int::from((*a).extent > (*b).extent)
         - c_int::from((*a).extent < (*b).extent)
+}
+
+/// Computes the index of the edge each edge point belongs to, and its (signed)
+/// distance along the corresponding axis from the center of the finder pattern
+/// (in the square domain).
+/// The resulting list of edge points is sorted by edge index, with ties broken
+/// by extent.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _aff: *const qr_aff) {
+    let c = (*_f).c;
+    for item in (*_f).nedge_pts.iter_mut() {
+        *item = 0;
+    }
+    for i in 0..(*c).nedge_pts {
+        let mut q = qr_point::default();
+        let edge_pt = (*c).edge_pts.add(i as usize);
+        qr_aff_unproject(
+            (&mut q) as *mut _,
+            _aff,
+            (*edge_pt).pos[0],
+            (*edge_pt).pos[1],
+        );
+        qr_point_translate(q.as_mut_ptr(), -(*_f).o[0], -(*_f).o[1]);
+        let d = c_int::from(q[1].abs() > q[0].abs());
+        let e = d << 1 | c_int::from(q[d as usize] >= 0);
+        (*_f).nedge_pts[e as usize] += 1;
+        (*edge_pt).edge = e;
+        (*edge_pt).extent = q[d as usize];
+    }
+
+    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
+    edge_pts.sort_by(|a, b| match qr_cmp_edge_pt(a as *const _, b as *const _) {
+        ..0 => Ordering::Less,
+        0 => Ordering::Equal,
+        1.. => Ordering::Greater,
+    });
+    (*_f).edge_pts[0] = (*c).edge_pts;
+    for e in 1..(*_f).edge_pts.len() {
+        (*_f).edge_pts[e] = (*_f).edge_pts[e - 1].add((*_f).nedge_pts[e - 1] as usize);
+    }
 }
 
 #[no_mangle]
