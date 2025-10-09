@@ -21,25 +21,15 @@ pub type qr_line = [c_int; 3];
 pub type qr_point = [c_int; 2];
 
 /// Number of bits in an int (typically 32)
-const QR_INT_BITS: c_int = (std::mem::size_of::<c_int>() * 8) as c_int;
-
-/// Helper function: maximum of two integers (branchless)
-#[inline]
-fn qr_maxi(a: c_int, b: c_int) -> c_int {
-    a - ((a - b) & -((b > a) as c_int))
-}
-
-/// Helper function: flip sign of a if b is negative
-#[inline]
-fn qr_flipsigni(a: c_int, b: c_int) -> c_int {
-    let mask = -((b < 0) as c_int);
-    (a + mask) ^ mask
-}
+const QR_INT_BITS: c_int = c_int::BITS as c_int;
 
 /// Helper function: divide with exact rounding
+///
+/// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
+/// For x/y where the fractional part is exactly 0.5, rounds away from zero.
 #[inline]
 fn qr_divround(x: c_int, y: c_int) -> c_int {
-    (x + qr_flipsigni(y >> 1, x)) / y
+    (x + x.signum() * (y >> 1)) / y
 }
 
 /// collection of finder lines
@@ -265,7 +255,7 @@ pub unsafe extern "C" fn qr_aff_init(
     let dy1 = (*_p1)[1] - (*_p0)[1];
     let dy2 = (*_p2)[1] - (*_p0)[1];
     let det = dx1 * dy2 - dy1 * dx2;
-    let ires = qr_maxi(((qr_ilog(det.unsigned_abs()) as u32 >> 1) - 2) as i32, 0);
+    let ires = c_int::max(((qr_ilog(det.unsigned_abs()) as u32 >> 1) - 2) as i32, 0);
     (*_aff).fwd[0][0] = dx1;
     (*_aff).fwd[0][1] = dx2;
     (*_aff).fwd[1][0] = dy1;
@@ -591,7 +581,7 @@ pub unsafe extern "C" fn qr_aff_line_step(
     }
 
     // Calculate shift to prevent overflow
-    let shift = qr_maxi(
+    let shift = c_int::max(
         0,
         qr_ilog(du as u32) + qr_ilog(n.unsigned_abs()) + 3 - QR_INT_BITS,
     );
