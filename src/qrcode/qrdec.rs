@@ -23,6 +23,9 @@ pub type qr_point = [c_int; 2];
 /// Number of bits in an int (typically 32)
 const QR_INT_BITS: c_int = c_int::BITS as c_int;
 
+/// Number of bits of sub-module precision for alignment pattern search
+const QR_ALIGN_SUBPREC: c_int = 2;
+
 /// Helper function: divide with exact rounding
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
@@ -30,6 +33,33 @@ const QR_INT_BITS: c_int = c_int::BITS as c_int;
 #[inline]
 fn qr_divround(x: c_int, y: c_int) -> c_int {
     (x + x.signum() * (y >> 1)) / y
+}
+
+/// Fixed-point multiply with rounding and shift
+///
+/// Multiplies 32-bit numbers a and b, adds r, and takes bits [s, s+31] of the result.
+/// This is used for fixed-point arithmetic to avoid overflow.
+#[inline]
+fn qr_fixmul(a: c_int, b: c_int, r: i64, s: c_int) -> c_int {
+    ((a as i64 * b as i64 + r) >> s) as c_int
+}
+
+/// A cell in the sampling grid for homographic projection
+///
+/// Represents a mapping from a unit square to a quadrilateral in the image,
+/// used for extracting QR code modules with perspective correction.
+#[repr(C)]
+pub struct qr_hom_cell {
+    /// Forward transformation matrix [3][3]
+    pub fwd: [[c_int; 3]; 3],
+    /// X offset in image space
+    pub x0: c_int,
+    /// Y offset in image space
+    pub y0: c_int,
+    /// U offset in code space
+    pub u0: c_int,
+    /// V offset in code space
+    pub v0: c_int,
 }
 
 /// collection of finder lines
@@ -669,4 +699,185 @@ pub unsafe extern "C" fn bch18_6_correct(y: *mut c_uint) -> c_int {
     }
 
     -1
+}
+
+/// Initialize a homography cell for mapping between code and image space
+///
+/// This computes a homographic transformation from a quadrilateral in code space
+/// (u0,v0)-(u1,v1)-(u2,v2)-(u3,v3) to a quadrilateral in image space
+/// (x0,y0)-(x1,y1)-(x2,y2)-(x3,y3).
+///
+/// The transformation handles both affine and projective distortion, with careful
+/// attention to numerical stability through dynamic range scaling.
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_cell_init(
+    cell: *mut qr_hom_cell,
+    u0: c_int,
+    v0: c_int,
+    u1: c_int,
+    v1: c_int,
+    u2: c_int,
+    v2: c_int,
+    u3: c_int,
+    v3: c_int,
+    x0: c_int,
+    y0: c_int,
+    x1: c_int,
+    y1: c_int,
+    x2: c_int,
+    y2: c_int,
+    x3: c_int,
+    y3: c_int,
+) {
+    // Compute deltas for source points (code space)
+    let du10 = u1 - u0;
+    let du20 = u2 - u0;
+    let du30 = u3 - u0;
+    let du31 = u3 - u1;
+    let du32 = u3 - u2;
+    let dv10 = v1 - v0;
+    let dv20 = v2 - v0;
+    let dv30 = v3 - v0;
+    let dv31 = v3 - v1;
+    let dv32 = v3 - v2;
+
+    // Compute coefficients of forward transform from unit square to source configuration
+    let a20 = du32 * dv10 - du10 * dv32;
+    let a21 = du20 * dv31 - du31 * dv20;
+    let a22 = if a20 != 0 || a21 != 0 {
+        // Non-affine arrangement
+        du32 * dv31 - du31 * dv32
+    } else {
+        // Affine arrangement - no scaling needed for larger dynamic range
+        1
+    };
+    let a00 = du10 * (a20 + a22);
+    let a01 = du20 * (a21 + a22);
+    let a10 = dv10 * (a20 + a22);
+    let a11 = dv20 * (a21 + a22);
+
+    // Compute inverse transform
+    let i00_full = a11 * a22;
+    let i01_full = -a01 * a22;
+    let i10_full = -a10 * a22;
+    let i11_full = a00 * a22;
+    let i20_full = a10 * a21 - a11 * a20;
+    let i21_full = a01 * a20 - a00 * a21;
+    let i22 = a00 * a11 - a01 * a10;
+
+    // Invert coefficients: divide i22 by all others
+    // Zero means "infinity", used to signal when divisor is zero
+    // QR_FLIPSIGNI flips sign of result if original value was negative
+    let i00 = if i00_full != 0 {
+        let result = qr_divround(i22, i00_full.abs());
+        if i00_full < 0 { -result } else { result }
+    } else {
+        0
+    };
+    let i01 = if i01_full != 0 {
+        let result = qr_divround(i22, i01_full.abs());
+        if i01_full < 0 { -result } else { result }
+    } else {
+        0
+    };
+    let i10 = if i10_full != 0 {
+        let result = qr_divround(i22, i10_full.abs());
+        if i10_full < 0 { -result } else { result }
+    } else {
+        0
+    };
+    let i11 = if i11_full != 0 {
+        let result = qr_divround(i22, i11_full.abs());
+        if i11_full < 0 { -result } else { result }
+    } else {
+        0
+    };
+    let i20 = if i20_full != 0 {
+        let result = qr_divround(i22, i20_full.abs());
+        if i20_full < 0 { -result } else { result }
+    } else {
+        0
+    };
+    let i21 = if i21_full != 0 {
+        let result = qr_divround(i22, i21_full.abs());
+        if i21_full < 0 { -result } else { result }
+    } else {
+        0
+    };
+
+    // Compute map from unit square to image
+    let dx10 = x1 - x0;
+    let dx20 = x2 - x0;
+    let dx30 = x3 - x0;
+    let dx31 = x3 - x1;
+    let dx32 = x3 - x2;
+    let dy10 = y1 - y0;
+    let dy20 = y2 - y0;
+    let dy30 = y3 - y0;
+    let dy31 = y3 - y1;
+    let dy32 = y3 - y2;
+    let a20 = dx32 * dy10 - dx10 * dy32;
+    let a21 = dx20 * dy31 - dx31 * dy20;
+    let a22 = dx32 * dy31 - dx31 * dy32;
+
+    // Figure out if we need to downscale
+    let b0 = qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).abs() as u32);
+    let b1 = qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).abs() as u32);
+    let b2 = qr_ilog(c_int::max(c_int::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let shift = c_int::max(0, c_int::max(c_int::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC));
+    let round = (1i64 << shift) >> 1;
+
+    // Compute final coefficients of forward transform
+    let a00 = qr_fixmul(dx10, a20 + a22, round, shift);
+    let a01 = qr_fixmul(dx20, a21 + a22, round, shift);
+    let a10 = qr_fixmul(dy10, a20 + a22, round, shift);
+    let a11 = qr_fixmul(dy20, a21 + a22, round, shift);
+
+    // Compose the two transforms (divide by inverted coefficients)
+    (*cell).fwd[0][0] = (if i00 != 0 { qr_divround(a00, i00) } else { 0 })
+        + (if i10 != 0 { qr_divround(a01, i10) } else { 0 });
+    (*cell).fwd[0][1] = (if i01 != 0 { qr_divround(a00, i01) } else { 0 })
+        + (if i11 != 0 { qr_divround(a01, i11) } else { 0 });
+    (*cell).fwd[1][0] = (if i00 != 0 { qr_divround(a10, i00) } else { 0 })
+        + (if i10 != 0 { qr_divround(a11, i10) } else { 0 });
+    (*cell).fwd[1][1] = (if i01 != 0 { qr_divround(a10, i01) } else { 0 })
+        + (if i11 != 0 { qr_divround(a11, i11) } else { 0 });
+    (*cell).fwd[2][0] = ((if i00 != 0 { qr_divround(a20, i00) } else { 0 })
+        + (if i10 != 0 { qr_divround(a21, i10) } else { 0 })
+        + (if i20 != 0 { qr_divround(a22, i20) } else { 0 })
+        + round as c_int) as c_int
+        >> shift;
+    (*cell).fwd[2][1] = ((if i01 != 0 { qr_divround(a20, i01) } else { 0 })
+        + (if i11 != 0 { qr_divround(a21, i11) } else { 0 })
+        + (if i21 != 0 { qr_divround(a22, i21) } else { 0 })
+        + round as c_int) as c_int
+        >> shift;
+    (*cell).fwd[2][2] = ((a22 + round as c_int) >> shift) as c_int;
+
+    // Compute offsets to distribute rounding error over whole range
+    // (instead of concentrating it in the (u3,v3) corner)
+    let mut x = (*cell).fwd[0][0] * du10 + (*cell).fwd[0][1] * dv10;
+    let mut y = (*cell).fwd[1][0] * du10 + (*cell).fwd[1][1] * dv10;
+    let mut w = (*cell).fwd[2][0] * du10 + (*cell).fwd[2][1] * dv10 + (*cell).fwd[2][2];
+    let mut a02 = dx10 * w - x;
+    let mut a12 = dy10 * w - y;
+
+    x = (*cell).fwd[0][0] * du20 + (*cell).fwd[0][1] * dv20;
+    y = (*cell).fwd[1][0] * du20 + (*cell).fwd[1][1] * dv20;
+    w = (*cell).fwd[2][0] * du20 + (*cell).fwd[2][1] * dv20 + (*cell).fwd[2][2];
+    a02 += dx20 * w - x;
+    a12 += dy20 * w - y;
+
+    x = (*cell).fwd[0][0] * du30 + (*cell).fwd[0][1] * dv30;
+    y = (*cell).fwd[1][0] * du30 + (*cell).fwd[1][1] * dv30;
+    w = (*cell).fwd[2][0] * du30 + (*cell).fwd[2][1] * dv30 + (*cell).fwd[2][2];
+    a02 += dx30 * w - x;
+    a12 += dy30 * w - y;
+
+    (*cell).fwd[0][2] = (a02 + 2) >> 2;
+    (*cell).fwd[1][2] = (a12 + 2) >> 2;
+    (*cell).x0 = x0;
+    (*cell).y0 = y0;
+    (*cell).u0 = u0;
+    (*cell).v0 = v0;
 }
