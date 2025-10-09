@@ -16,6 +16,8 @@ use crate::img_scanner::{
     zbar_image_scanner_get_config, zbar_image_scanner_t,
 };
 
+use super::qr_point;
+
 // From zbar.h
 pub const ZBAR_QRCODE: c_int = 64;
 pub const ZBAR_CFG_BINARY: c_int = 256;
@@ -48,12 +50,6 @@ fn qr_mode_has_data(_mode: qr_mode) -> bool {
             | qr_mode::QR_MODE_BYTE
             | qr_mode::QR_MODE_KANJI
     )
-}
-
-#[repr(C)]
-pub struct qr_point {
-    pub x: c_int,
-    pub y: c_int,
 }
 
 #[repr(C)]
@@ -278,10 +274,10 @@ pub unsafe extern "C" fn qr_code_data_list_extract_text(
                 }
 
                 let qrdataj = &qrdata[sa[j] as usize];
-                sym_add_point(sym, qrdataj.bbox[0].x, qrdataj.bbox[0].y);
-                sym_add_point(sym, qrdataj.bbox[2].x, qrdataj.bbox[2].y);
-                sym_add_point(sym, qrdataj.bbox[3].x, qrdataj.bbox[3].y);
-                sym_add_point(sym, qrdataj.bbox[1].x, qrdataj.bbox[1].y);
+                sym_add_point(sym, qrdataj.bbox[0][0], qrdataj.bbox[0][1]);
+                sym_add_point(sym, qrdataj.bbox[2][0], qrdataj.bbox[2][1]);
+                sym_add_point(sym, qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
+                sym_add_point(sym, qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
 
                 let entries = slice::from_raw_parts(qrdataj.entries, qrdataj.nentries as usize);
                 for entry in entries.iter() {

@@ -5,21 +5,20 @@
 
 use std::ptr::null;
 
-use libc::{c_int, c_uint};
+use libc::{c_int, c_uchar, c_uint};
 
 use crate::{decoder_types::qr_finder_line, img_scanner::qr_reader, qrcode::util::qr_ilog};
 
 use super::{
     isaac_init,
-    qrdectxt::qr_point,
     rs::{rs_gf256_init, QR_PPOLY},
 };
 
-/// A point in QR code coordinate space: [x, y]
-pub type QrPoint = [c_int; 2];
-
 /// A line in QR code coordinate space: [A, B, C] for equation Ax + By + C = 0
-pub type QrLine = [c_int; 3];
+pub type qr_line = [c_int; 3];
+
+/// A point in QR code coordinate space: [x, y]
+pub type qr_point = [c_int; 2];
 
 /// Number of bits in an int (typically 32)
 const QR_INT_BITS: c_int = (std::mem::size_of::<c_int>() * 8) as c_int;
@@ -118,7 +117,7 @@ pub struct qr_finder_cluster {
 
 /// A point on the edge of a finder pattern. These are obtained from the
 /// endpoints of the lines crossing this particular pattern.
-struct qr_finder_edge_pt {
+pub struct qr_finder_edge_pt {
     /// The location of the edge point.
     pos: qr_point,
 
@@ -133,6 +132,20 @@ struct qr_finder_edge_pt {
     /// to the edge passing through the finder center, in (u,v) coordinates.
     /// This is also re-used by RANSAC to store inlier flags.*/
     extent: c_int,
+}
+
+/// The center of a finder pattern obtained from the crossing of one or more
+/// clusters of horizontal finder lines with one or more clusters of vertical
+/// finder lines.
+pub struct qr_finder_center {
+    /// The estimated location of the finder center.
+    pos: qr_point,
+
+    /// The list of edge points from the crossing lines.
+    edge_pts: *mut qr_finder_edge_pt,
+
+    /// The number of edge points from the crossing lines.
+    nedge_pts: c_int,
 }
 
 /*Determine if a horizontal line crosses a vertical line.
@@ -201,8 +214,267 @@ pub unsafe extern "C" fn qr_point_ccw(
 /// Given a line defined by the equation A*x + B*y + C = 0,
 /// this returns the value A*x + B*y + C for the given coordinates.
 #[no_mangle]
-pub unsafe extern "C" fn qr_line_eval(line: *const c_int, x: c_int, y: c_int) -> c_int {
-    *line.offset(0) * x + *line.offset(1) * y + *line.offset(2)
+pub unsafe extern "C" fn qr_line_eval(line: *const qr_line, x: c_int, y: c_int) -> c_int {
+    (*line)[0] * x + (*line)[1] * y + (*line)[2]
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
+    if qr_line_eval(_l, _x, _y) < 0 {
+        (*_l)[0] = -(*_l)[0];
+        (*_l)[1] = -(*_l)[1];
+        (*_l)[2] = -(*_l)[2];
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn qr_line_isect(
+    _p: *mut qr_point,
+    _l0: *const qr_line,
+    _l1: *const qr_line,
+) -> c_int {
+    let mut d = (*_l0)[0] * (*_l1)[1] - (*_l0)[1] * (*_l1)[0];
+    if d == 0 {
+        return -1;
+    }
+    let mut x = (*_l0)[1] * (*_l1)[2] - (*_l1)[1] * (*_l0)[2];
+    let mut y = (*_l1)[0] * (*_l0)[2] - (*_l0)[0] * (*_l1)[2];
+    if d < 0 {
+        x = -x;
+        y = -y;
+        d = -d;
+    }
+    (*_p)[0] = qr_divround(x, d);
+    (*_p)[1] = qr_divround(y, d);
+    0
+}
+
+/// An affine homography.
+/// This maps from the image (at subpel resolution) to a square domain with
+/// power-of-two sides (of res bits) and back.
+#[repr(C)]
+pub struct qr_aff {
+    fwd: [[c_int; 2]; 2],
+    inv: [[c_int; 2]; 2],
+    x0: c_int,
+    y0: c_int,
+    res: c_int,
+    ires: c_int,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn qr_aff_init(
+    _aff: *mut qr_aff,
+    _p0: *const qr_point,
+    _p1: *const qr_point,
+    _p2: *const qr_point,
+    _res: c_int,
+) {
+    // det is ensured to be positive by our caller.
+    let dx1 = (*_p1)[0] - (*_p0)[0];
+    let dx2 = (*_p2)[0] - (*_p0)[0];
+    let dy1 = (*_p1)[1] - (*_p0)[1];
+    let dy2 = (*_p2)[1] - (*_p0)[1];
+    let det = dx1 * dy2 - dy1 * dx2;
+    let ires = qr_maxi(((qr_ilog(det.unsigned_abs()) as u32 >> 1) - 2) as i32, 0);
+    (*_aff).fwd[0][0] = dx1;
+    (*_aff).fwd[0][1] = dx2;
+    (*_aff).fwd[1][0] = dy1;
+    (*_aff).fwd[1][1] = dy2;
+    (*_aff).inv[0][0] = qr_divround(dy2 << _res, det >> ires);
+    (*_aff).inv[0][1] = qr_divround(-dx2 << _res, det >> ires);
+    (*_aff).inv[1][0] = qr_divround(-dy1 << _res, det >> ires);
+    (*_aff).inv[1][1] = qr_divround(dx1 << _res, det >> ires);
+    (*_aff).x0 = (*_p0)[0];
+    (*_aff).y0 = (*_p0)[1];
+    (*_aff).res = _res;
+    (*_aff).ires = ires;
+}
+
+/// Map from the image (at subpel resolution) into the square domain.
+#[no_mangle]
+pub unsafe extern "C" fn qr_aff_unproject(
+    _q: *mut qr_point,
+    _aff: *const qr_aff,
+    _x: c_int,
+    _y: c_int,
+) {
+    (*_q)[0] = ((*_aff).inv[0][0] * (_x - (*_aff).x0)
+        + (*_aff).inv[0][1] * (_y - (*_aff).y0)
+        + ((1 << (*_aff).ires) >> 1))
+        >> (*_aff).ires;
+    (*_q)[1] = ((*_aff).inv[1][0] * (_x - (*_aff).x0)
+        + (*_aff).inv[1][1] * (_y - (*_aff).y0)
+        + ((1 << (*_aff).ires) >> 1))
+        >> (*_aff).ires;
+}
+
+/// Map from the square domain into the image (at subpel resolution).
+#[no_mangle]
+pub unsafe extern "C" fn qr_aff_project(
+    _p: *mut qr_point,
+    _aff: *const qr_aff,
+    _u: c_int,
+    _v: c_int,
+) {
+    (*_p)[0] = (((*_aff).fwd[0][0] * _u + (*_aff).fwd[0][1] * _v + (1 << ((*_aff).res - 1)))
+        >> (*_aff).res)
+        + (*_aff).x0;
+    (*_p)[1] = (((*_aff).fwd[1][0] * _u + (*_aff).fwd[1][1] * _v + (1 << ((*_aff).res - 1)))
+        >> (*_aff).res)
+        + (*_aff).y0;
+}
+
+/// A full homography.
+/// Like the affine homography, this maps from the image (at subpel resolution)
+/// to a square domain with power-of-two sides (of res bits) and back.
+#[repr(C)]
+pub struct qr_hom {
+    fwd: [[c_int; 2]; 3],
+    inv: [[c_int; 2]; 3],
+    fwd22: c_int,
+    inv22: c_int,
+    x0: c_int,
+    y0: c_int,
+    res: c_int,
+}
+
+/// Finish a partial projection, converting from homogeneous coordinates to the
+/// normal 2-D representation.
+/// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
+/// and _w incrementally, but we cannot avoid the divisions, done here.
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_fproject(
+    _p: *mut qr_point,
+    _hom: *const qr_hom,
+    mut _x: c_int,
+    mut _y: c_int,
+    mut _w: c_int,
+) {
+    if _w == 0 {
+        (*_p)[0] = if _x < 0 { c_int::MIN } else { c_int::MAX };
+        (*_p)[1] = if _y < 0 { c_int::MIN } else { c_int::MAX };
+    } else {
+        if _w < 0 {
+            _x = -_x;
+            _y = -_y;
+            _w = -_w;
+        }
+        (*_p)[0] = qr_divround(_x, _w) + (*_hom).x0;
+        (*_p)[1] = qr_divround(_y, _w) + (*_hom).y0;
+    }
+}
+
+/// All the information we've collected about a finder pattern in the current
+/// configuration.
+pub struct qr_finder {
+    /// The module size along each axis (in the square domain).
+    size: [c_int; 2],
+
+    /// The version estimated from the module size along each axis.
+    eversion: [c_int; 2],
+
+    /// The list of classified edge points for each edge.
+    edge_pts: [*mut qr_finder_edge_pt; 4],
+
+    /// The number of edge points classified as belonging to each edge.
+    nedge_pts: [c_int; 4],
+
+    /// The number of inliers found after running RANSAC on each edge.
+    ninliers: [c_int; 4],
+
+    /// The center of the finder pattern (in the square domain).
+    o: qr_point,
+
+    /// The finder center information from the original image.
+    c: *mut qr_finder_center,
+}
+
+/// Map from the image (at subpel resolution) into the square domain.
+/// Returns a negative value if the point went to infinity.
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_unproject(
+    _q: *mut qr_point,
+    _hom: *const qr_hom,
+    mut _x: c_int,
+    mut _y: c_int,
+) -> c_int {
+    _x -= (*_hom).x0;
+    _y -= (*_hom).y0;
+    let mut x = (*_hom).inv[0][0] * _x + (*_hom).inv[0][1] * _y;
+    let mut y = (*_hom).inv[1][0] * _x + (*_hom).inv[1][1] * _y;
+    let mut w = ((*_hom).inv[2][0] * _x
+        + (*_hom).inv[2][1] * _y
+        + (*_hom).inv22
+        + (1 << ((*_hom).res - 1)))
+        >> (*_hom).res;
+    if w == 0 {
+        (*_q)[0] = if x < 0 { c_int::MIN } else { c_int::MAX };
+        (*_q)[1] = if y < 0 { c_int::MIN } else { c_int::MAX };
+        return -1;
+    } else {
+        if w < 0 {
+            x = -x;
+            y = -y;
+            w = -w;
+        }
+        (*_q)[0] = qr_divround(x, w);
+        (*_q)[1] = qr_divround(y, w);
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn qr_cmp_edge_pt(
+    a: *const qr_finder_edge_pt,
+    b: *const qr_finder_edge_pt,
+) -> c_int {
+    ((c_int::from((*a).edge > (*b).edge) - c_int::from((*a).edge < (*b).edge)) << 1)
+        + c_int::from((*a).extent > (*b).extent)
+        - c_int::from((*a).extent < (*b).extent)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_quick_crossing_check(
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+    _x0: c_int,
+    _y0: c_int,
+    _x1: c_int,
+    _y1: c_int,
+    _v: c_int,
+) -> c_int {
+    // The points must be inside the image, and have a !_v:_v:!_v pattern.
+    // We don't scan the whole line initially, but quickly reject if the endpoints
+    // aren't !_v, or the midpoint isn't _v.
+    // If either end point is out of the image, or we don't encounter a _v pixel,
+    // we return a negative value, indicating the region should be considered
+    // empty.
+    // Otherwise, we return a positive value to indicate it is non-empty.
+    if _x0 < 0
+        || _x0 >= _width
+        || _y0 < 0
+        || _y0 >= _height
+        || _x1 < 0
+        || _x1 >= _width
+        || _y1 < 0
+        || _y1 >= _height
+    {
+        return -1;
+    }
+
+    if (c_int::from(*_img.add((_y0 * _width + _x0) as usize) == 0)) != _v
+        || (c_int::from(*_img.add((_y1 * _width + _x1) as usize) == 0)) != _v
+    {
+        return 1;
+    }
+    if (c_int::from(*_img.add((((_y0 + _y1) >> 1) * _width + ((_x0 + _x1) >> 1)) as usize) == 0))
+        == _v
+    {
+        return -1;
+    }
+    0
 }
 
 /// Calculate step delta for moving along a line in affine space

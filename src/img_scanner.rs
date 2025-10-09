@@ -10,7 +10,7 @@ use crate::{
     decoder_types::zbar_decoder_t,
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
-    qrcode::{qrdec::qr_finder_lines, rs::rs_gf256, IsaacCtx},
+    qrcode::{qr_point, qrdec::qr_finder_lines, rs::rs_gf256, IsaacCtx},
     sqcode::{SqReader, _zbar_sq_create, _zbar_sq_destroy, _zbar_sq_new_config},
     symbol::{symbol_free, symbol_set_free},
     zbar_image_scanner_set_config, zbar_scanner_create,
@@ -43,14 +43,11 @@ use crate::ffi::{refcnt, zbar_image_t, zbar_symbol_t};
 // Import functions and constants from symbol module
 use crate::symbol::_zbar_get_symbol_hash;
 
-// qr_point is typedef int qr_point[2] in C
-type QrPoint = [c_int; 2];
-
 // qr_finder_line structure from qrcode.h
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct qr_finder_line {
-    pub pos: QrPoint,
+    pub pos: qr_point,
     pub len: c_int,
     pub boffs: c_int,
     pub eoffs: c_int,

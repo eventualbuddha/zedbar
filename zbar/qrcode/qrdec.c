@@ -509,7 +509,7 @@ extern int qr_line_eval(qr_line _line, int _x, int _y);
          _l[0] or _l[1].
         Smaller numbers give less angular resolution, but allow more overhead
          room for computations.*/
-static void qr_line_fit(qr_line _l, int _x0, int _y0, int _sxx, int _sxy,
+static void qr_line_fit(qr_line *_l, int _x0, int _y0, int _sxx, int _sxy,
 			int _syy, int _res)
 {
     int dshift;
@@ -528,18 +528,18 @@ static void qr_line_fit(qr_line _l, int _x0, int _y0, int _sxx, int _sxy,
 			    ((_res + 1) >> 1));
     dround = (1 << dshift) >> 1;
     if (_sxx > _syy) {
-	_l[0] = (v + dround) >> dshift;
-	_l[1] = (u + w + dround) >> dshift;
+	(*_l)[0] = (v + dround) >> dshift;
+	(*_l)[1] = (u + w + dround) >> dshift;
     } else {
-	_l[0] = (u + w + dround) >> dshift;
-	_l[1] = (v + dround) >> dshift;
+	(*_l)[0] = (u + w + dround) >> dshift;
+	(*_l)[1] = (v + dround) >> dshift;
     }
-    _l[2] = -(_x0 * _l[0] + _y0 * _l[1]);
+    (*_l)[2] = -(_x0 * (*_l)[0] + _y0 * (*_l)[1]);
 }
 
 /*Perform a least-squares line fit to a list of points.
   At least two points are required.*/
-static void qr_line_fit_points(qr_line _l, qr_point *_p, int _np, int _res)
+static void qr_line_fit_points(qr_line *_l, qr_point *_p, int _np, int _res)
 {
     int sx;
     int sy;
@@ -586,34 +586,9 @@ static void qr_line_fit_points(qr_line _l, qr_point *_p, int _np, int _res)
     qr_line_fit(_l, xbar, ybar, sxx, sxy, syy, _res);
 }
 
-static void qr_line_orient(qr_line _l, int _x, int _y)
-{
-    if (qr_line_eval(_l, _x, _y) < 0) {
-	_l[0] = -_l[0];
-	_l[1] = -_l[1];
-	_l[2] = -_l[2];
-    }
-}
+extern void qr_line_orient(qr_line *_l, int _x, int _y);
 
-static int qr_line_isect(qr_point _p, const qr_line _l0, const qr_line _l1)
-{
-    int d;
-    int x;
-    int y;
-    d = _l0[0] * _l1[1] - _l0[1] * _l1[0];
-    if (d == 0)
-	return -1;
-    x = _l0[1] * _l1[2] - _l1[1] * _l0[2];
-    y = _l1[0] * _l0[2] - _l0[0] * _l1[2];
-    if (d < 0) {
-	x = -x;
-	y = -y;
-	d = -d;
-    }
-    _p[0] = QR_DIVROUND(x, d);
-    _p[1] = QR_DIVROUND(y, d);
-    return 0;
-}
+extern int qr_line_isect(qr_point *_p, const qr_line *_l0, const qr_line *_l1);
 
 /*An affine homography.
   This maps from the image (at subpel resolution) to a square domain with
@@ -627,59 +602,14 @@ struct qr_aff {
     int ires;
 };
 
-static void qr_aff_init(qr_aff *_aff, const qr_point _p0, const qr_point _p1,
-			const qr_point _p2, int _res)
-{
-    int det;
-    int ires;
-    int dx1;
-    int dy1;
-    int dx2;
-    int dy2;
-    /*det is ensured to be positive by our caller.*/
-    dx1		    = _p1[0] - _p0[0];
-    dx2		    = _p2[0] - _p0[0];
-    dy1		    = _p1[1] - _p0[1];
-    dy2		    = _p2[1] - _p0[1];
-    det		    = dx1 * dy2 - dy1 * dx2;
-    ires	    = QR_MAXI((qr_ilog(abs(det)) >> 1) - 2, 0);
-    _aff->fwd[0][0] = dx1;
-    _aff->fwd[0][1] = dx2;
-    _aff->fwd[1][0] = dy1;
-    _aff->fwd[1][1] = dy2;
-    _aff->inv[0][0] = QR_DIVROUND(dy2 << _res, det >> ires);
-    _aff->inv[0][1] = QR_DIVROUND(-dx2 << _res, det >> ires);
-    _aff->inv[1][0] = QR_DIVROUND(-dy1 << _res, det >> ires);
-    _aff->inv[1][1] = QR_DIVROUND(dx1 << _res, det >> ires);
-    _aff->x0	    = _p0[0];
-    _aff->y0	    = _p0[1];
-    _aff->res	    = _res;
-    _aff->ires	    = ires;
-}
+extern void qr_aff_init(qr_aff *_aff, const qr_point *_p0, const qr_point *_p1,
+			const qr_point *_p2, int _res);
 
 /*Map from the image (at subpel resolution) into the square domain.*/
-static void qr_aff_unproject(qr_point _q, const qr_aff *_aff, int _x, int _y)
-{
-    _q[0] = (_aff->inv[0][0] * (_x - _aff->x0) +
-	     _aff->inv[0][1] * (_y - _aff->y0) + ((1 << _aff->ires) >> 1)) >>
-	    _aff->ires;
-    _q[1] = (_aff->inv[1][0] * (_x - _aff->x0) +
-	     _aff->inv[1][1] * (_y - _aff->y0) + ((1 << _aff->ires) >> 1)) >>
-	    _aff->ires;
-}
+extern void qr_aff_unproject(qr_point *_q, const qr_aff *_aff, int _x, int _y);
 
 /*Map from the square domain into the image (at subpel resolution).*/
-static void qr_aff_project(qr_point _p, const qr_aff *_aff, int _u, int _v)
-{
-    _p[0] = ((_aff->fwd[0][0] * _u + _aff->fwd[0][1] * _v +
-	      (1 << (_aff->res - 1))) >>
-	     _aff->res) +
-	    _aff->x0;
-    _p[1] = ((_aff->fwd[1][0] * _u + _aff->fwd[1][1] * _v +
-	      (1 << (_aff->res - 1))) >>
-	     _aff->res) +
-	    _aff->y0;
-}
+static void qr_aff_project(qr_point *_p, const qr_aff *_aff, int _u, int _v);
 
 /*A full homography.
   Like the affine homography, this maps from the image (at subpel resolution)
@@ -779,65 +709,14 @@ static void qr_hom_init(qr_hom *_hom, int _x0, int _y0, int _x1, int _y1,
 
 /*Map from the image (at subpel resolution) into the square domain.
   Returns a negative value if the point went to infinity.*/
-static int qr_hom_unproject(qr_point _q, const qr_hom *_hom, int _x, int _y)
-{
-    int x;
-    int y;
-    int w;
-    _x -= _hom->x0;
-    _y -= _hom->y0;
-    x = _hom->inv[0][0] * _x + _hom->inv[0][1] * _y;
-    y = _hom->inv[1][0] * _x + _hom->inv[1][1] * _y;
-    w = (_hom->inv[2][0] * _x + _hom->inv[2][1] * _y + _hom->inv22 +
-	 (1 << (_hom->res - 1))) >>
-	_hom->res;
-    if (w == 0) {
-	_q[0] = x < 0 ? INT_MIN : INT_MAX;
-	_q[1] = y < 0 ? INT_MIN : INT_MAX;
-	return -1;
-    } else {
-	if (w < 0) {
-	    x = -x;
-	    y = -y;
-	    w = -w;
-	}
-	_q[0] = QR_DIVROUND(x, w);
-	_q[1] = QR_DIVROUND(y, w);
-    }
-    return 0;
-}
+extern int qr_hom_unproject(qr_point *_q, const qr_hom *_hom, int _x, int _y);
 
 /*Finish a partial projection, converting from homogeneous coordinates to the
    normal 2-D representation.
   In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
    and _w incrementally, but we cannot avoid the divisions, done here.*/
-static void qr_hom_fproject(qr_point _p, const qr_hom *_hom, int _x, int _y,
-			    int _w)
-{
-    if (_w == 0) {
-	_p[0] = _x < 0 ? INT_MIN : INT_MAX;
-	_p[1] = _y < 0 ? INT_MIN : INT_MAX;
-    } else {
-	if (_w < 0) {
-	    _x = -_x;
-	    _y = -_y;
-	    _w = -_w;
-	}
-	_p[0] = QR_DIVROUND(_x, _w) + _hom->x0;
-	_p[1] = QR_DIVROUND(_y, _w) + _hom->y0;
-    }
-}
-
-#if defined(QR_DEBUG)
-/*Map from the square domain into the image (at subpel resolution).
-  Currently only used directly by debug code.*/
-static void qr_hom_project(qr_point _p, const qr_hom *_hom, int _u, int _v)
-{
-    qr_hom_fproject(_p, _hom, _hom->fwd[0][0] * _u + _hom->fwd[0][1] * _v,
-		    _hom->fwd[1][0] * _u + _hom->fwd[1][1] * _v,
-		    _hom->fwd[2][0] * _u + _hom->fwd[2][1] * _v + _hom->fwd22);
-}
-#endif
+extern void qr_hom_fproject(qr_point *_p, const qr_hom *_hom, int _x, int _y,
+			    int _w);
 
 /*All the information we've collected about a finder pattern in the current
    configuration.*/
@@ -858,15 +737,7 @@ struct qr_finder {
     qr_finder_center *c;
 };
 
-static int qr_cmp_edge_pt(const void *_a, const void *_b)
-{
-    const qr_finder_edge_pt *a;
-    const qr_finder_edge_pt *b;
-    a = (const qr_finder_edge_pt *)_a;
-    b = (const qr_finder_edge_pt *)_b;
-    return (((a->edge > b->edge) - (a->edge < b->edge)) << 1) +
-	   (a->extent > b->extent) - (a->extent < b->extent);
-}
+extern int qr_cmp_edge_pt(const void *_a, const void *_b);
 
 /*Computes the index of the edge each edge point belongs to, and its (signed)
    distance along the corresponding axis from the center of the finder pattern
@@ -884,7 +755,8 @@ static void qr_finder_edge_pts_aff_classify(qr_finder *_f, const qr_aff *_aff)
     for (i = 0; i < c->nedge_pts; i++) {
 	qr_point q;
 	int d;
-	qr_aff_unproject(q, _aff, c->edge_pts[i].pos[0], c->edge_pts[i].pos[1]);
+	qr_aff_unproject(&q, _aff, c->edge_pts[i].pos[0],
+			 c->edge_pts[i].pos[1]);
 	qr_point_translate(q, -_f->o[0], -_f->o[1]);
 	d = abs(q[1]) > abs(q[0]);
 	e = d << 1 | (q[d] >= 0);
@@ -914,7 +786,7 @@ static void qr_finder_edge_pts_hom_classify(qr_finder *_f, const qr_hom *_hom)
     for (i = 0; i < c->nedge_pts; i++) {
 	qr_point q;
 	int d;
-	if (qr_hom_unproject(q, _hom, c->edge_pts[i].pos[0],
+	if (qr_hom_unproject(&q, _hom, c->edge_pts[i].pos[0],
 			     c->edge_pts[i].pos[1]) >= 0) {
 	    qr_point_translate(q, -_f->o[0], -_f->o[1]);
 	    d = abs(q[1]) > abs(q[0]);
@@ -1090,8 +962,8 @@ static void qr_finder_ransac(qr_finder *_f, const qr_aff *_hom,
    be misclassified into the wrong edge.
   The irony is that using such points might produce a line which _does_
    pass the corresponding validity checks.*/
-	    qr_aff_unproject(q0, _hom, p0[0], p0[1]);
-	    qr_aff_unproject(q1, _hom, p1[0], p1[1]);
+	    qr_aff_unproject(&q0, _hom, p0[0], p0[1]);
+	    qr_aff_unproject(&q1, _hom, p1[0], p1[1]);
 	    qr_point_translate(q0, -_f->o[0], -_f->o[1]);
 	    qr_point_translate(q1, -_f->o[0], -_f->o[1]);
 	    if (abs(q0[_e >> 1] - q1[_e >> 1]) >
@@ -1148,7 +1020,7 @@ static void qr_finder_ransac(qr_finder *_f, const qr_aff *_hom,
 
 /*Perform a least-squares line fit to an edge of a finder pattern using the
    inliers found by RANSAC.*/
-static int qr_line_fit_finder_edge(qr_line _l, const qr_finder *_f, int _e,
+static int qr_line_fit_finder_edge(qr_line *_l, const qr_finder *_f, int _e,
 				   int _res)
 {
     qr_finder_edge_pt *edge_pts;
@@ -1180,7 +1052,7 @@ static int qr_line_fit_finder_edge(qr_line _l, const qr_finder *_f, int _e,
   Unlike a normal edge fit, we guarantee that this one succeeds by creating at
    least one point on each edge using the estimated module size if it has no
    inliers.*/
-static void qr_line_fit_finder_pair(qr_line _l, const qr_aff *_aff,
+static void qr_line_fit_finder_pair(qr_line *_l, const qr_aff *_aff,
 				    const qr_finder *_f0, const qr_finder *_f1,
 				    int _e)
 {
@@ -1208,7 +1080,7 @@ static void qr_line_fit_finder_pair(qr_line _l, const qr_aff *_aff,
 	q[0] = _f0->o[0];
 	q[1] = _f0->o[1];
 	q[_e >> 1] += _f0->size[_e >> 1] * (2 * (_e & 1) - 1);
-	qr_aff_project(pts[0], _aff, q[0], q[1]);
+	qr_aff_project(&pts[0], _aff, q[0], q[1]);
 	n0++;
     }
     if (n1 > 0) {
@@ -1221,7 +1093,7 @@ static void qr_line_fit_finder_pair(qr_line _l, const qr_aff *_aff,
 	q[0] = _f1->o[0];
 	q[1] = _f1->o[1];
 	q[_e >> 1] += _f1->size[_e >> 1] * (2 * (_e & 1) - 1);
-	qr_aff_project(pts[n0], _aff, q[0], q[1]);
+	qr_aff_project(&pts[n0], _aff, q[0], q[1]);
 	n1++;
     }
     qr_line_fit_points(_l, pts, npts, _aff->res);
@@ -1230,27 +1102,9 @@ static void qr_line_fit_finder_pair(qr_line _l, const qr_aff *_aff,
     free(pts);
 }
 
-static int qr_finder_quick_crossing_check(const unsigned char *_img, int _width,
+extern int qr_finder_quick_crossing_check(const unsigned char *_img, int _width,
 					  int _height, int _x0, int _y0,
-					  int _x1, int _y1, int _v)
-{
-    /*The points must be inside the image, and have a !_v:_v:!_v pattern.
-  We don't scan the whole line initially, but quickly reject if the endpoints
-   aren't !_v, or the midpoint isn't _v.
-  If either end point is out of the image, or we don't encounter a _v pixel,
-   we return a negative value, indicating the region should be considered
-   empty.
-  Otherwise, we return a positive value to indicate it is non-empty.*/
-    if (_x0 < 0 || _x0 >= _width || _y0 < 0 || _y0 >= _height || _x1 < 0 ||
-	_x1 >= _width || _y1 < 0 || _y1 >= _height) {
-	return -1;
-    }
-    if ((!_img[_y0 * _width + _x0]) != _v || (!_img[_y1 * _width + _x1]) != _v)
-	return 1;
-    if ((!_img[((_y0 + _y1) >> 1) * _width + ((_x0 + _x1) >> 1)]) == _v)
-	return -1;
-    return 0;
-}
+					  int _x1, int _y1, int _v);
 
 /*Locate the midpoint of a _v segment along a !_v:_v:!_v line from (_x0,_y0) to
    (_x1,_y1).
@@ -1532,24 +1386,24 @@ static void qr_hom_cell_init(qr_hom_cell *_cell, int _u0, int _v0, int _u1,
    normal 2-D representation.
   In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
    and _w incrementally, but we cannot avoid the divisions, done here.*/
-static void qr_hom_cell_fproject(qr_point _p, const qr_hom_cell *_cell, int _x,
+static void qr_hom_cell_fproject(qr_point *_p, const qr_hom_cell *_cell, int _x,
 				 int _y, int _w)
 {
     if (_w == 0) {
-	_p[0] = _x < 0 ? INT_MIN : INT_MAX;
-	_p[1] = _y < 0 ? INT_MIN : INT_MAX;
+	(*_p)[0] = _x < 0 ? INT_MIN : INT_MAX;
+	(*_p)[1] = _y < 0 ? INT_MIN : INT_MAX;
     } else {
 	if (_w < 0) {
 	    _x = -_x;
 	    _y = -_y;
 	    _w = -_w;
 	}
-	_p[0] = QR_DIVROUND(_x, _w) + _cell->x0;
-	_p[1] = QR_DIVROUND(_y, _w) + _cell->y0;
+	(*_p)[0] = QR_DIVROUND(_x, _w) + _cell->x0;
+	(*_p)[1] = QR_DIVROUND(_y, _w) + _cell->y0;
     }
 }
 
-static void qr_hom_cell_project(qr_point _p, const qr_hom_cell *_cell, int _u,
+static void qr_hom_cell_project(qr_point *_p, const qr_hom_cell *_cell, int _u,
 				int _v, int _res)
 {
     _u -= _cell->u0 << _res;
@@ -1645,7 +1499,7 @@ static int qr_alignment_pattern_search(qr_point _p, const qr_hom_cell *_cell,
 	y = y0;
 	w = w0;
 	for (j = 0; j < 5; j++) {
-	    qr_hom_cell_fproject(p[i][j], _cell, x, y, w);
+	    qr_hom_cell_fproject(&p[i][j], _cell, x, y, w);
 	    x += dxdu;
 	    y += dydu;
 	    w += dwdu;
@@ -1678,7 +1532,7 @@ static int qr_alignment_pattern_search(qr_point _p, const qr_hom_cell *_cell,
 	    w -= dwdu + dwdv;
 	    for (j = 0; j < 4 * side_len; j++) {
 		int dir;
-		qr_hom_cell_fproject(pc, _cell, x, y, w);
+		qr_hom_cell_fproject(&pc, _cell, x, y, w);
 		match = qr_alignment_pattern_fetch(p, pc[0], pc[1], _img,
 						   _width, _height);
 		dist  = qr_hamming_dist(match, 0x1F8D63F, best_dist + 1);
@@ -1882,14 +1736,14 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
    the other two finder patterns aren't, something is wrong.*/
     qr_finder_ransac(_ul, _aff, _isaac, 0);
     qr_finder_ransac(_dl, _aff, _isaac, 0);
-    qr_line_fit_finder_pair(l[0], _aff, _ul, _dl, 0);
+    qr_line_fit_finder_pair(&l[0], _aff, _ul, _dl, 0);
     if (qr_line_eval(l[0], _dl->c->pos[0], _dl->c->pos[1]) < 0 ||
 	qr_line_eval(l[0], _ur->c->pos[0], _ur->c->pos[1]) < 0) {
 	return -1;
     }
     qr_finder_ransac(_ul, _aff, _isaac, 2);
     qr_finder_ransac(_ur, _aff, _isaac, 2);
-    qr_line_fit_finder_pair(l[2], _aff, _ul, _ur, 2);
+    qr_line_fit_finder_pair(&l[2], _aff, _ul, _ur, 2);
     if (qr_line_eval(l[2], _dl->c->pos[0], _dl->c->pos[1]) < 0 ||
 	qr_line_eval(l[2], _ur->c->pos[0], _ur->c->pos[1]) < 0) {
 	return -1;
@@ -1909,7 +1763,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
   At the end, we re-fit the line using all such sample points found.*/
     drv = _ur->size[1] >> 1;
     qr_finder_ransac(_ur, _aff, _isaac, 1);
-    if (qr_line_fit_finder_edge(l[1], _ur, 1, _aff->res) >= 0) {
+    if (qr_line_fit_finder_edge(&l[1], _ur, 1, _aff->res) >= 0) {
 	if (qr_line_eval(l[1], _ul->c->pos[0], _ul->c->pos[1]) < 0 ||
 	    qr_line_eval(l[1], _dl->c->pos[0], _dl->c->pos[1]) < 0) {
 	    return -1;
@@ -1924,7 +1778,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
     rv	= _ur->o[1] - 2 * drv;
     dbu = _dl->size[0] >> 1;
     qr_finder_ransac(_dl, _aff, _isaac, 3);
-    if (qr_line_fit_finder_edge(l[3], _dl, 3, _aff->res) >= 0) {
+    if (qr_line_fit_finder_edge(&l[3], _dl, 3, _aff->res) >= 0) {
 	if (qr_line_eval(l[3], _ul->c->pos[0], _ul->c->pos[1]) < 0 ||
 	    qr_line_eval(l[3], _ur->c->pos[0], _ur->c->pos[1]) < 0) {
 	    return -1;
@@ -2000,7 +1854,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 	    }
 	    if (ret >= 0) {
 		if (!ret) {
-		    qr_aff_unproject(q, _aff, r[nr][0], r[nr][1]);
+		    qr_aff_unproject(&q, _aff, r[nr][0], r[nr][1]);
 		    /*Move the current point halfway towards the crossing.
   We don't move the whole way to give us some robustness to noise.*/
 		    ru = (ru + q[0]) >> 1;
@@ -2012,7 +1866,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 		    nr++;
 		    /*Re-fit the line to update the step direction periodically.*/
 		    if (nr > QR_MAXI(1, rlastfit + (rlastfit >> 2))) {
-			qr_line_fit_points(l[1], r, nr, _aff->res);
+			qr_line_fit_points(&l[1], r, nr, _aff->res);
 			if (qr_aff_line_step(_aff, l[1], 1, drv, &dru) >= 0) {
 			    drxi =
 				_aff->fwd[0][0] * dru + _aff->fwd[0][1] * drv;
@@ -2050,7 +1904,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 	    }
 	    if (ret >= 0) {
 		if (!ret) {
-		    qr_aff_unproject(q, _aff, b[nb][0], b[nb][1]);
+		    qr_aff_unproject(&q, _aff, b[nb][0], b[nb][1]);
 		    /*Move the current point halfway towards the crossing.
   We don't move the whole way to give us some robustness to noise.*/
 		    /*But ensure that bu monotonically increases.*/
@@ -2062,7 +1916,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 		    nb++;
 		    /*Re-fit the line to update the step direction periodically.*/
 		    if (nb > QR_MAXI(1, blastfit + (blastfit >> 2))) {
-			qr_line_fit_points(l[3], b, nb, _aff->res);
+			qr_line_fit_points(&l[3], b, nb, _aff->res);
 			if (qr_aff_line_step(_aff, l[3], 0, dbu, &dbv) >= 0) {
 			    dbxi =
 				_aff->fwd[0][0] * dbu + _aff->fwd[0][1] * dbv;
@@ -2091,9 +1945,9 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
    axis-aligned line from the affine coordinate system (e.g., one parallel
    to the opposite edge in the image).*/
     if (nr > 1)
-	qr_line_fit_points(l[1], r, nr, _aff->res);
+	qr_line_fit_points(&l[1], r, nr, _aff->res);
     else {
-	qr_aff_project(p, _aff, _ur->o[0] + 3 * _ur->size[0], _ur->o[1]);
+	qr_aff_project(&p, _aff, _ur->o[0] + 3 * _ur->size[0], _ur->o[1]);
 	shift	= QR_MAXI(0, qr_ilog(QR_MAXI(abs(_aff->fwd[0][1]),
 					     abs(_aff->fwd[1][1]))) -
 				 ((_aff->res + 1) >> 1));
@@ -2104,9 +1958,9 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
     }
     free(r);
     if (nb > 1)
-	qr_line_fit_points(l[3], b, nb, _aff->res);
+	qr_line_fit_points(&l[3], b, nb, _aff->res);
     else {
-	qr_aff_project(p, _aff, _dl->o[0], _dl->o[1] + 3 * _dl->size[1]);
+	qr_aff_project(&p, _aff, _dl->o[0], _dl->o[1] + 3 * _dl->size[1]);
 	shift	= QR_MAXI(0, qr_ilog(QR_MAXI(abs(_aff->fwd[0][1]),
 					     abs(_aff->fwd[1][1]))) -
 				 ((_aff->res + 1) >> 1));
@@ -2117,7 +1971,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
     }
     free(b);
     for (i = 0; i < 4; i++) {
-	if (qr_line_isect(_p[i], l[i & 1], l[2 + (i >> 1)]) < 0)
+	if (qr_line_isect(&_p[i], &l[i & 1], &l[2 + (i >> 1)]) < 0)
 	    return -1;
 	/*It's plausible for points to be somewhat outside the image, but too far
    and too much of the pattern will be gone for it to be decodable.*/
@@ -2261,7 +2115,7 @@ static int qr_finder_version_decode(qr_finder *_f, const qr_hom *_hom,
 	w = w0;
 	for (j = 0; j < 3; j++, k++) {
 	    qr_point p;
-	    qr_hom_fproject(p, _hom, x, y, w);
+	    qr_hom_fproject(&p, _hom, x, y, w);
 	    v |= qr_img_get_bit(_img, _width, _height, p[0], p[1]) << k;
 	    x += dxj;
 	    y += dyj;
@@ -2319,7 +2173,7 @@ static int qr_finder_fmt_info_decode(qr_finder *_ul, qr_finder *_ur,
     for (k = i = 0;; i++) {
 	/*Skip the timing pattern row.*/
 	if (i != 6) {
-	    qr_hom_fproject(p, _hom, x, y, w);
+	    qr_hom_fproject(&p, _hom, x, y, w);
 	    lo[0] |= qr_img_get_bit(_img, _width, _height, p[0], p[1]) << k++;
 	    /*Don't advance q in the last iteration... we'll start the next loop from
    the current position.*/
@@ -2340,7 +2194,7 @@ static int qr_finder_fmt_info_decode(qr_finder *_ul, qr_finder *_ur,
 	w += dw;
 	/*Skip the timing pattern column.*/
 	if (i != 6) {
-	    qr_hom_fproject(p, _hom, x, y, w);
+	    qr_hom_fproject(&p, _hom, x, y, w);
 	    hi[0] |= qr_img_get_bit(_img, _width, _height, p[0], p[1]) << k++;
 	}
     }
@@ -2355,7 +2209,7 @@ static int qr_finder_fmt_info_decode(qr_finder *_ul, qr_finder *_ur,
     dy	  = -_hom->fwd[1][0] * _ur->size[0];
     dw	  = -_hom->fwd[2][0] * _ur->size[0];
     for (k = 0; k < 8; k++) {
-	qr_hom_fproject(p, _hom, x, y, w);
+	qr_hom_fproject(&p, _hom, x, y, w);
 	lo[1] |= qr_img_get_bit(_img, _width, _height, p[0], p[1]) << k;
 	x += dx;
 	y += dy;
@@ -2372,7 +2226,7 @@ static int qr_finder_fmt_info_decode(qr_finder *_ul, qr_finder *_ur,
     dy	  = _hom->fwd[1][1] * _dl->size[1];
     dw	  = _hom->fwd[2][1] * _dl->size[1];
     for (k = 8; k < 15; k++) {
-	qr_hom_fproject(p, _hom, x, y, w);
+	qr_hom_fproject(&p, _hom, x, y, w);
 	hi[1] |= qr_img_get_bit(_img, _width, _height, p[0], p[1]) << k;
 	x += dx;
 	y += dy;
@@ -2580,11 +2434,11 @@ static void qr_sampling_grid_init(qr_sampling_grid *_grid, int _version,
 		    /*Each predictor is basically a straight-line extrapolation from two
    neighboring alignment patterns (except possibly near the opposing
    finder patterns).*/
-		    qr_hom_cell_project(p0, _grid->cells[i - 2] + j - 1, u, v,
+		    qr_hom_cell_project(&p0, _grid->cells[i - 2] + j - 1, u, v,
 					0);
-		    qr_hom_cell_project(p1, _grid->cells[i - 2] + j - 2, u, v,
+		    qr_hom_cell_project(&p1, _grid->cells[i - 2] + j - 2, u, v,
 					0);
-		    qr_hom_cell_project(p2, _grid->cells[i - 1] + j - 2, u, v,
+		    qr_hom_cell_project(&p2, _grid->cells[i - 1] + j - 2, u, v,
 					0);
 		    /*Take the median of the predictions as the search center.*/
 		    QR_SORT2I(p0[0], p1[0]);
@@ -2640,12 +2494,12 @@ static void qr_sampling_grid_init(qr_sampling_grid *_grid, int _version,
    but it should be good enough.
   I don't think it's worth computing a convex hull or anything silly like
    that.*/
-    qr_hom_cell_project(_p[0], _grid->cells[0] + 0, -1, -1, 1);
-    qr_hom_cell_project(_p[1], _grid->cells[0] + _grid->ncells - 1,
+    qr_hom_cell_project(&_p[0], _grid->cells[0] + 0, -1, -1, 1);
+    qr_hom_cell_project(&_p[1], _grid->cells[0] + _grid->ncells - 1,
 			(dim << 1) - 1, -1, 1);
-    qr_hom_cell_project(_p[2], _grid->cells[_grid->ncells - 1] + 0, -1,
+    qr_hom_cell_project(&_p[2], _grid->cells[_grid->ncells - 1] + 0, -1,
 			(dim << 1) - 1, 1);
-    qr_hom_cell_project(_p[3],
+    qr_hom_cell_project(&_p[3],
 			_grid->cells[_grid->ncells - 1] + _grid->ncells - 1,
 			(dim << 1) - 1, (dim << 1) - 1, 1);
     /*Clamp the points somewhere near the image (this is really just in case a
@@ -2852,7 +2706,7 @@ static void qr_sampling_grid_sample(const qr_sampling_grid *_grid,
    function pattern.*/
 		    if (!qr_sampling_grid_is_in_fp(_grid, _dim, u, v)) {
 			qr_point p;
-			qr_hom_cell_fproject(p, cell, x, y, w);
+			qr_hom_cell_fproject(&p, cell, x, y, w);
 			_data_bits[u * stride + (v >> QR_INT_LOGBITS)] ^=
 			    qr_img_get_bit(_img, _width, _height, p[0], p[1])
 			    << (v & (QR_INT_BITS - 1));
@@ -3577,13 +3431,13 @@ static int qr_reader_try_configuration(qr_reader *_reader,
    estimates to account for any remaining projective distortion.*/
 	res = QR_INT_BITS - 2 - QR_FINDER_SUBPREC -
 	      qr_ilog(QR_MAXI(_width, _height) - 1);
-	qr_aff_init(&aff, ul.c->pos, ur.c->pos, dl.c->pos, res);
-	qr_aff_unproject(ur.o, &aff, ur.c->pos[0], ur.c->pos[1]);
+	qr_aff_init(&aff, &ul.c->pos, &ur.c->pos, &dl.c->pos, res);
+	qr_aff_unproject(&ur.o, &aff, ur.c->pos[0], ur.c->pos[1]);
 	qr_finder_edge_pts_aff_classify(&ur, &aff);
 	if (qr_finder_estimate_module_size_and_version(&ur, 1 << res,
 						       1 << res) < 0)
 	    continue;
-	qr_aff_unproject(dl.o, &aff, dl.c->pos[0], dl.c->pos[1]);
+	qr_aff_unproject(&dl.o, &aff, dl.c->pos[0], dl.c->pos[1]);
 	qr_finder_edge_pts_aff_classify(&dl, &aff);
 	if (qr_finder_estimate_module_size_and_version(&dl, 1 << res,
 						       1 << res) < 0)
@@ -3592,7 +3446,7 @@ static int qr_reader_try_configuration(qr_reader *_reader,
    configuration.*/
 	if (abs(ur.eversion[1] - dl.eversion[0]) > QR_LARGE_VERSION_SLACK)
 	    continue;
-	qr_aff_unproject(ul.o, &aff, ul.c->pos[0], ul.c->pos[1]);
+	qr_aff_unproject(&ul.o, &aff, ul.c->pos[0], ul.c->pos[1]);
 	qr_finder_edge_pts_aff_classify(&ul, &aff);
 	if (qr_finder_estimate_module_size_and_version(&ul, 1 << res,
 						       1 << res) < 0 ||
@@ -3611,9 +3465,9 @@ static int qr_reader_try_configuration(qr_reader *_reader,
 	    continue;
 	}
 	memcpy(_qrdata->bbox, bbox, sizeof(bbox));
-	qr_hom_unproject(ul.o, &hom, ul.c->pos[0], ul.c->pos[1]);
-	qr_hom_unproject(ur.o, &hom, ur.c->pos[0], ur.c->pos[1]);
-	qr_hom_unproject(dl.o, &hom, dl.c->pos[0], dl.c->pos[1]);
+	qr_hom_unproject(&ul.o, &hom, ul.c->pos[0], ul.c->pos[1]);
+	qr_hom_unproject(&ur.o, &hom, ur.c->pos[0], ur.c->pos[1]);
+	qr_hom_unproject(&dl.o, &hom, dl.c->pos[0], dl.c->pos[1]);
 	qr_finder_edge_pts_hom_classify(&ur, &hom);
 	if (qr_finder_estimate_module_size_and_version(&ur, ur.o[0] - ul.o[0],
 						       ur.o[0] - ul.o[0]) < 0) {
