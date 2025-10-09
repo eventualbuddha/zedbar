@@ -23,26 +23,6 @@ pub type qr_point = [c_int; 2];
 /// Number of bits in an int (typically 32)
 const QR_INT_BITS: c_int = (std::mem::size_of::<c_int>() * 8) as c_int;
 
-/// Affine transformation structure for QR code coordinate mapping
-///
-/// This structure represents an affine transformation between coordinate spaces,
-/// including both forward and inverse transformations.
-#[repr(C)]
-pub struct QrAff {
-    /// Forward transformation matrix [2][2]
-    pub fwd: [[c_int; 2]; 2],
-    /// Inverse transformation matrix [2][2]
-    pub inv: [[c_int; 2]; 2],
-    /// X offset
-    pub x0: c_int,
-    /// Y offset
-    pub y0: c_int,
-    /// Resolution bits
-    pub res: c_int,
-    /// Inverse resolution bits
-    pub ires: c_int,
-}
-
 /// Helper function: maximum of two integers (branchless)
 #[inline]
 fn qr_maxi(a: c_int, b: c_int) -> c_int {
@@ -254,12 +234,18 @@ pub unsafe extern "C" fn qr_line_isect(
 /// power-of-two sides (of res bits) and back.
 #[repr(C)]
 pub struct qr_aff {
-    fwd: [[c_int; 2]; 2],
-    inv: [[c_int; 2]; 2],
-    x0: c_int,
-    y0: c_int,
-    res: c_int,
-    ires: c_int,
+    /// Forward transformation matrix [2][2]
+    pub fwd: [[c_int; 2]; 2],
+    /// Inverse transformation matrix [2][2]
+    pub inv: [[c_int; 2]; 2],
+    /// X offset
+    pub x0: c_int,
+    /// Y offset
+    pub y0: c_int,
+    /// Resolution bits
+    pub res: c_int,
+    /// Inverse resolution bits
+    pub ires: c_int,
 }
 
 #[no_mangle]
@@ -494,7 +480,7 @@ pub unsafe extern "C" fn qr_finder_quick_crossing_check(
 /// - -1 if the line is too steep (>45 degrees from horizontal/vertical)
 #[no_mangle]
 pub unsafe extern "C" fn qr_aff_line_step(
-    aff: *const QrAff,
+    aff: *const qr_aff,
     line: *const c_int,
     v: c_int,
     du: c_int,

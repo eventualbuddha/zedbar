@@ -15,6 +15,6 @@ pub use binarize::qr_binarize;
 pub use isaac::{isaac_init, isaac_next_uint, isaac_next_uint32, IsaacCtx};
 pub use qrdec::{
     bch18_6_correct, qr_aff_line_step, qr_hamming_dist, qr_line_eval, qr_point, qr_point_ccw,
-    qr_point_distance2, qr_point_translate, QrAff,
+    qr_point_distance2, qr_point_translate,
 };
 pub use util::{qr_ihypot, qr_ilog, qr_isqrt};
