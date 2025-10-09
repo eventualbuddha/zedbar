@@ -414,14 +414,15 @@ pub unsafe extern "C" fn qr_hom_unproject(
     0
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn qr_cmp_edge_pt(
-    a: *const qr_finder_edge_pt,
-    b: *const qr_finder_edge_pt,
-) -> c_int {
-    ((c_int::from((*a).edge > (*b).edge) - c_int::from((*a).edge < (*b).edge)) << 1)
-        + c_int::from((*a).extent > (*b).extent)
-        - c_int::from((*a).extent < (*b).extent)
+pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
+    match ((c_int::from(a.edge > b.edge) - c_int::from(a.edge < b.edge)) << 1)
+        + c_int::from(a.extent > b.extent)
+        - c_int::from(a.extent < b.extent)
+    {
+        ..0 => Ordering::Less,
+        0 => Ordering::Equal,
+        1.. => Ordering::Greater,
+    }
 }
 
 /// Computes the index of the edge each edge point belongs to, and its (signed)
@@ -453,11 +454,7 @@ pub unsafe extern "C" fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _af
     }
 
     let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
-    edge_pts.sort_by(|a, b| match qr_cmp_edge_pt(a as *const _, b as *const _) {
-        ..0 => Ordering::Less,
-        0 => Ordering::Equal,
-        1.. => Ordering::Greater,
-    });
+    edge_pts.sort_by(qr_cmp_edge_pt);
     (*_f).edge_pts[0] = (*c).edge_pts;
     for e in 1..(*_f).edge_pts.len() {
         (*_f).edge_pts[e] = (*_f).edge_pts[e - 1].add((*_f).nedge_pts[e - 1] as usize);
@@ -506,11 +503,7 @@ pub unsafe extern "C" fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _ho
     }
 
     let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
-    edge_pts.sort_by(|a, b| match qr_cmp_edge_pt(a as *const _, b as *const _) {
-        ..0 => Ordering::Less,
-        0 => Ordering::Equal,
-        1.. => Ordering::Greater,
-    });
+    edge_pts.sort_by(qr_cmp_edge_pt);
     (*_f).edge_pts[0] = (*c).edge_pts;
     for e in 1..(*_f).edge_pts.len() {
         (*_f).edge_pts[e] = (*_f).edge_pts[e - 1].add((*_f).nedge_pts[e - 1] as usize);

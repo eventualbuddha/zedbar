@@ -737,8 +737,6 @@ struct qr_finder {
     qr_finder_center *c;
 };
 
-extern int qr_cmp_edge_pt(const void *_a, const void *_b);
-
 /*Computes the index of the edge each edge point belongs to, and its (signed)
    distance along the corresponding axis from the center of the finder pattern
    (in the square domain).
