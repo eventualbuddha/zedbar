@@ -464,6 +464,59 @@ pub unsafe extern "C" fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _af
     }
 }
 
+/// Computes the index of the edge each edge point belongs to, and its (signed)
+/// distance along the corresponding axis from the center of the finder pattern
+/// (in the square domain), using homography projection.
+///
+/// This is similar to `qr_finder_edge_pts_aff_classify` but uses full homography
+/// projection which can fail (return infinity). Failed projections are marked
+/// with edge=4.
+///
+/// The resulting list of edge points is sorted by edge index, with ties broken
+/// by extent.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _hom: *const qr_hom) {
+    let c = (*_f).c;
+    for item in (*_f).nedge_pts.iter_mut() {
+        *item = 0;
+    }
+    for i in 0..(*c).nedge_pts {
+        let mut q = qr_point::default();
+        let edge_pt = (*c).edge_pts.add(i as usize);
+
+        if qr_hom_unproject(
+            (&mut q) as *mut _,
+            _hom,
+            (*edge_pt).pos[0],
+            (*edge_pt).pos[1],
+        ) >= 0
+        {
+            // Successful projection
+            qr_point_translate(q.as_mut_ptr(), -(*_f).o[0], -(*_f).o[1]);
+            let d = c_int::from(q[1].abs() > q[0].abs());
+            let e = d << 1 | c_int::from(q[d as usize] >= 0);
+            (*_f).nedge_pts[e as usize] += 1;
+            (*edge_pt).edge = e;
+            (*edge_pt).extent = q[d as usize];
+        } else {
+            // Projection failed (went to infinity)
+            (*edge_pt).edge = 4;
+            (*edge_pt).extent = q[0];
+        }
+    }
+
+    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
+    edge_pts.sort_by(|a, b| match qr_cmp_edge_pt(a as *const _, b as *const _) {
+        ..0 => Ordering::Less,
+        0 => Ordering::Equal,
+        1.. => Ordering::Greater,
+    });
+    (*_f).edge_pts[0] = (*c).edge_pts;
+    for e in 1..(*_f).edge_pts.len() {
+        (*_f).edge_pts[e] = (*_f).edge_pts[e - 1].add((*_f).nedge_pts[e - 1] as usize);
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn qr_finder_quick_crossing_check(
     _img: *const c_uchar,

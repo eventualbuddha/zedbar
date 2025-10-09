@@ -749,38 +749,11 @@ extern void qr_finder_edge_pts_aff_classify(qr_finder *_f, const qr_aff *_aff);
 
 /*Computes the index of the edge each edge point belongs to, and its (signed)
    distance along the corresponding axis from the center of the finder pattern
-   (in the square domain).
+   (in the square domain), using homography projection.
   The resulting list of edge points is sorted by edge index, with ties broken
-   by extent.*/
-static void qr_finder_edge_pts_hom_classify(qr_finder *_f, const qr_hom *_hom)
-{
-    qr_finder_center *c;
-    int i;
-    int e;
-    c = _f->c;
-    for (e = 0; e < 4; e++)
-	_f->nedge_pts[e] = 0;
-    for (i = 0; i < c->nedge_pts; i++) {
-	qr_point q;
-	int d;
-	if (qr_hom_unproject(&q, _hom, c->edge_pts[i].pos[0],
-			     c->edge_pts[i].pos[1]) >= 0) {
-	    qr_point_translate(q, -_f->o[0], -_f->o[1]);
-	    d = abs(q[1]) > abs(q[0]);
-	    e = d << 1 | (q[d] >= 0);
-	    _f->nedge_pts[e]++;
-	    c->edge_pts[i].edge	  = e;
-	    c->edge_pts[i].extent = q[d];
-	} else {
-	    c->edge_pts[i].edge	  = 4;
-	    c->edge_pts[i].extent = q[0];
-	}
-    }
-    qsort(c->edge_pts, c->nedge_pts, sizeof(*c->edge_pts), qr_cmp_edge_pt);
-    _f->edge_pts[0] = c->edge_pts;
-    for (e = 1; e < 4; e++)
-	_f->edge_pts[e] = _f->edge_pts[e - 1] + _f->nedge_pts[e - 1];
-}
+   by extent.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_finder_edge_pts_hom_classify(qr_finder *_f, const qr_hom *_hom);
 
 /*TODO: Perhaps these thresholds should be on the module size instead?
   Unfortunately, I'd need real-world images of codes with larger versions to
