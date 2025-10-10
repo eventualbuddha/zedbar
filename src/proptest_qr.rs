@@ -2,6 +2,7 @@
 //!
 //! These tests generate random QR code data, encode it to an image,
 //! and verify that the decoder can correctly decode it back.
+//! Also verifies that zbar matches rqrr's decoding results.
 
 use crate::{scanner, Image, Scanner, SymbolType};
 use image::{GrayImage, Luma};
@@ -20,7 +21,36 @@ fn generate_qr_image(data: &[u8]) -> Option<GrayImage> {
     Some(image)
 }
 
+/// Helper to decode a QR code image with rqrr and return the decoded data
+fn decode_qr_image_rqrr(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
+    let width = img.width() as usize;
+    let height = img.height() as usize;
+    let raw = img.as_raw();
+
+    let mut prepared_img = rqrr::PreparedImage::prepare_from_greyscale(
+        width,
+        height,
+        |x, y| raw[y * width + x],
+    );
+
+    let grids = prepared_img.detect_grids();
+    if grids.is_empty() {
+        return Err("rqrr: No grids found".to_string());
+    }
+
+    let mut results = Vec::new();
+    for grid in grids {
+        let (_meta, content) = grid
+            .decode()
+            .map_err(|e| format!("rqrr: Failed to decode grid: {e:?}"))?;
+        results.push(content.into_bytes());
+    }
+
+    Ok(results)
+}
+
 /// Helper to decode a QR code image and return the decoded data
+/// Also verifies that zbar and rqrr produce the same results
 fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     let (width, height) = img.dimensions();
     let data = img.as_raw();
@@ -47,9 +77,26 @@ fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     }
 
     // Collect all decoded data
-    let results: Vec<Vec<u8>> = symbols.iter().map(|s| s.data().to_vec()).collect();
+    let zbar_results: Vec<Vec<u8>> = symbols.iter().map(|s| s.data().to_vec()).collect();
 
-    Ok(results)
+    // Also decode with rqrr and verify they match
+    let rqrr_results = decode_qr_image_rqrr(img)?;
+
+    // Sort both results for comparison (order may differ)
+    let mut zbar_sorted = zbar_results.clone();
+    let mut rqrr_sorted = rqrr_results.clone();
+    zbar_sorted.sort();
+    rqrr_sorted.sort();
+
+    if zbar_sorted != rqrr_sorted {
+        return Err(format!(
+            "zbar and rqrr produced different results!\nzbar: {} symbols\nrqrr: {} symbols",
+            zbar_sorted.len(),
+            rqrr_sorted.len()
+        ));
+    }
+
+    Ok(zbar_results)
 }
 
 proptest! {

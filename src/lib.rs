@@ -66,20 +66,50 @@ mod tests {
         // Scan the image
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
 
-        println!("Found {num_symbols} symbols");
+        println!("Found {num_symbols} symbols with zbar");
 
         // Get and verify symbols
         let symbols = zbar_img.symbols();
         assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
+        let mut zbar_results = Vec::new();
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
-            let data = symbol.data_string().unwrap_or("<invalid UTF-8>");
-            println!("Decoded {symbol_type:?}: {data}");
+            let data = symbol.data();
+            println!("Decoded {symbol_type:?}: {} bytes", data.len());
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
+            zbar_results.push(data.to_vec());
         }
+
+        // Also decode with rqrr and verify they match
+        let width_usize = width as usize;
+        let height_usize = height as usize;
+        let raw = gray.as_raw();
+        let mut prepared_img = rqrr::PreparedImage::prepare_from_greyscale(
+            width_usize,
+            height_usize,
+            |x, y| raw[y * width_usize + x],
+        );
+        let grids = prepared_img.detect_grids();
+        assert!(!grids.is_empty(), "rqrr: Expected to find at least one grid");
+
+        let mut rqrr_results = Vec::new();
+        for grid in grids {
+            let (_meta, content) = grid.decode().expect("rqrr: Failed to decode grid");
+            rqrr_results.push(content.into_bytes());
+        }
+
+        // Sort both results for comparison
+        zbar_results.sort();
+        rqrr_results.sort();
+
+        assert_eq!(
+            zbar_results, rqrr_results,
+            "zbar and rqrr produced different results"
+        );
+        println!("✓ zbar and rqrr agree on {} symbols", zbar_results.len());
     }
 
     #[test]
@@ -108,20 +138,50 @@ mod tests {
         // Scan the image
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
 
-        println!("Found {num_symbols} symbols");
+        println!("Found {num_symbols} symbols with zbar");
 
         // Get and verify symbols
         let symbols = zbar_img.symbols();
         assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
+        let mut zbar_results = Vec::new();
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
-            let data = symbol.data_string().unwrap_or("<invalid UTF-8>");
-            println!("Decoded {symbol_type:?}: {data}");
+            let data = symbol.data();
+            println!("Decoded {symbol_type:?}: {} bytes", data.len());
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
+            zbar_results.push(data.to_vec());
         }
+
+        // Also decode with rqrr and verify they match
+        let width_usize = width as usize;
+        let height_usize = height as usize;
+        let raw = gray.as_raw();
+        let mut prepared_img = rqrr::PreparedImage::prepare_from_greyscale(
+            width_usize,
+            height_usize,
+            |x, y| raw[y * width_usize + x],
+        );
+        let grids = prepared_img.detect_grids();
+        assert!(!grids.is_empty(), "rqrr: Expected to find at least one grid");
+
+        let mut rqrr_results = Vec::new();
+        for grid in grids {
+            let (_meta, content) = grid.decode().expect("rqrr: Failed to decode grid");
+            rqrr_results.push(content.into_bytes());
+        }
+
+        // Sort both results for comparison
+        zbar_results.sort();
+        rqrr_results.sort();
+
+        assert_eq!(
+            zbar_results, rqrr_results,
+            "zbar and rqrr produced different results"
+        );
+        println!("✓ zbar and rqrr agree on {} symbols", zbar_results.len());
     }
 
     #[test]
