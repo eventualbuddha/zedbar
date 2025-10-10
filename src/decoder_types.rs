@@ -395,6 +395,40 @@ pub struct databar_segment_t {
     pub width: c_short,
 }
 
+impl databar_segment_t {
+    #[inline]
+    pub fn finder(&self) -> i8 {
+        // finder is a signed 5-bit field (bits 0-4)
+        let val = (self.bitfields & 0x1F) as i8;
+        // Sign extend from 5 bits to 8 bits
+        if val & 0x10 != 0 {
+            val | 0xE0_u8 as i8
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub fn set_finder(&mut self, val: i8) {
+        self.bitfields = (self.bitfields & !0x1F) | ((val as c_uint) & 0x1F);
+    }
+
+    #[inline]
+    pub fn partial(&self) -> bool {
+        // partial is bit 8
+        (self.bitfields & (1 << 8)) != 0
+    }
+
+    #[inline]
+    pub fn set_partial(&mut self, val: bool) {
+        if val {
+            self.bitfields |= 1 << 8;
+        } else {
+            self.bitfields &= !(1 << 8);
+        }
+    }
+}
+
 /// DataBar decoder state
 #[repr(C)]
 #[allow(non_camel_case_types)]

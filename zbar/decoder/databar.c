@@ -30,26 +30,10 @@
 #define GS ('\035')
 
 /* DataBar helper function implementations */
+/* Converted to Rust - see src/decoder.rs */
 
-void _zbar_databar_new_scan(databar_decoder_t *db)
-{
-    int i;
-    for (i = 0; i < 16; i++)
-	if (db->chars[i] >= 0) {
-	    databar_segment_t *seg = db->segs + db->chars[i];
-	    if (seg->partial)
-		seg->finder = -1;
-	    db->chars[i] = -1;
-	}
-}
-
-void _zbar_databar_reset(databar_decoder_t *db)
-{
-    int i, n = db->csegs;
-    _zbar_databar_new_scan(db);
-    for (i = 0; i < n; i++)
-	db->segs[i].finder = -1;
-}
+extern void _zbar_databar_new_scan(databar_decoder_t *db);
+extern void _zbar_databar_reset(databar_decoder_t *db);
 
 enum {
     SCH_NUM,

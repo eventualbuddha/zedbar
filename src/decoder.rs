@@ -19,8 +19,6 @@ const ZBAR_CFG_NUM: c_int = 5;
 
 // External C functions for decoders and reset functions not yet converted
 extern "C" {
-    fn _zbar_databar_reset(databar: *mut databar_decoder_t);
-    fn _zbar_databar_new_scan(databar: *mut databar_decoder_t);
     fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
     fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
     fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
@@ -265,6 +263,33 @@ pub unsafe extern "C" fn _zbar_i25_reset(i25: *mut i25_decoder_t) {
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_qr_finder_reset(qrf: *mut qr_finder_t) {
     (*qrf).s5 = 0;
+}
+
+/// Prepare DataBar decoder for new scan
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_databar_new_scan(db: *mut databar_decoder_t) {
+    use crate::decoder_types::databar_segment_t;
+
+    for i in 0..16 {
+        if (*db).chars[i] >= 0 {
+            let seg = ((*db).segs).offset((*db).chars[i] as isize) as *mut databar_segment_t;
+            if (*seg).partial() {
+                (*seg).set_finder(-1);
+            }
+            (*db).chars[i] = -1;
+        }
+    }
+}
+
+/// Reset DataBar decoder state
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_databar_reset(db: *mut databar_decoder_t) {
+    let n = (*db).csegs() as isize;
+    _zbar_databar_new_scan(db);
+    for i in 0..n {
+        let seg = ((*db).segs).offset(i);
+        (*seg).set_finder(-1);
+    }
 }
 
 /// Prepare EAN decoder for new scan
