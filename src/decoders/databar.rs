@@ -208,8 +208,7 @@ pub unsafe extern "C" fn _zbar_databar_decode10(buf: *mut u8, mut n: u64, i: c_i
 // TODO: Port `databar_postprocess_exp`
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_uint) {
+pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_uint) {
     let db = &mut (*dcode).databar;
     let mut d_array = [*d.offset(0), *d.offset(1), *d.offset(2), *d.offset(3)];
 
@@ -334,8 +333,7 @@ pub extern "C" fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
 }
 
 /// Merge or update a DataBar segment with existing segments
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_databar_merge_segment(
+pub unsafe fn _zbar_databar_merge_segment(
     db: *mut databar_decoder_t,
     seg: *mut crate::decoder_types::databar_segment_t,
 ) {
@@ -386,8 +384,7 @@ pub unsafe extern "C" fn _zbar_databar_merge_segment(
 }
 
 /// Match DataBar segment to find complete symbol
-#[no_mangle]
-pub unsafe extern "C" fn match_segment(
+pub unsafe fn match_segment(
     dcode: *mut zbar_decoder_t,
     seg: *mut crate::decoder_types::databar_segment_t,
 ) -> zbar_symbol_type_t {
@@ -576,13 +573,7 @@ pub unsafe extern "C" fn lookup_sequence(
 ///
 /// # Returns
 /// Calculated checksum value
-#[no_mangle]
-pub extern "C" fn _zbar_databar_calc_check(
-    mut sig0: u32,
-    mut sig1: u32,
-    side: u32,
-    mod_val: u32,
-) -> u32 {
+pub fn _zbar_databar_calc_check(mut sig0: u32, mut sig1: u32, side: u32, mod_val: u32) -> u32 {
     let mut chk: u32 = 0;
 
     for i in (0..4).rev() {
@@ -603,13 +594,7 @@ pub extern "C" fn _zbar_databar_calc_check(
 
 /// Calculate DataBar character value from 4-element signature
 /// Returns -1 on error
-#[no_mangle]
-pub unsafe extern "C" fn calc_value4(
-    sig: c_uint,
-    mut n: c_uint,
-    wmax: c_uint,
-    mut nonarrow: c_uint,
-) -> c_int {
+pub fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -> c_int {
     let mut v = 0u32;
     n = n.wrapping_sub(1);
 
@@ -754,8 +739,7 @@ pub unsafe extern "C" fn calc_value4(
 }
 
 /// Decode a DataBar character from width measurements
-#[no_mangle]
-pub unsafe extern "C" fn decode_char(
+pub unsafe fn decode_char(
     dcode: *mut zbar_decoder_t,
     seg: *mut crate::decoder_types::databar_segment_t,
     off: c_int,
@@ -914,8 +898,7 @@ pub unsafe extern "C" fn decode_char(
 
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
+pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
     use crate::decoder_types::databar_segment_t;
     use std::mem::size_of;
 
@@ -997,8 +980,7 @@ pub unsafe extern "C" fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t)
 }
 
 /// Decode DataBar finder pattern
-#[no_mangle]
-pub unsafe extern "C" fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let db = &mut (*dcode).databar;
     let e0 = _zbar_decoder_pair_width(dcode, 1);
     let e2 = _zbar_decoder_pair_width(dcode, 3);
@@ -1078,8 +1060,7 @@ pub unsafe extern "C" fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbo
     rc
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let db = &mut (*dcode).databar;
     let i = (*dcode).idx & 0xf;
 

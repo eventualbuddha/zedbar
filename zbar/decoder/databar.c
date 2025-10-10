@@ -363,15 +363,8 @@ int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 }
 #undef FEED_BITS
 
-/* Converted to Rust - see src/decoder.rs */
-extern void _zbar_databar_postprocess(zbar_decoder_t *dcode, unsigned d[4]);
-
 // Rust implementation - converted to src/databar_utils.rs
 extern int _zbar_databar_check_width(unsigned wf, unsigned wd, unsigned n);
-
-/* Converted to Rust - see src/decoder.rs */
-extern void _zbar_databar_merge_segment(databar_decoder_t *db,
-					databar_segment_t *seg);
 
 extern signed lookup_sequence(databar_segment_t *seg, int fixed, int seq[22],
 			      const size_t maxsize);
@@ -498,20 +491,3 @@ abort:
     return (ZBAR_NONE);
 }
 #undef IDX
-
-// Rust implementation - converted to src/databar_utils.rs
-extern unsigned _zbar_databar_calc_check(unsigned sig0, unsigned sig1,
-					 unsigned side, unsigned mod);
-
-extern int calc_value4(unsigned sig, unsigned n, unsigned wmax,
-		       unsigned nonarrow);
-
-extern zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
-				      databar_segment_t *seg, int off, int dir);
-
-/* Converted to Rust - see src/decoder.rs */
-extern int _zbar_databar_alloc_segment(databar_decoder_t *db);
-
-extern zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode);
-
-extern zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode);

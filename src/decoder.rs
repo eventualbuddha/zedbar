@@ -12,7 +12,8 @@ use crate::{
     },
     decoders::{
         codabar::_zbar_decode_codabar, code128::_zbar_decode_code128, code39::_zbar_decode_code39,
-        code93::_zbar_decode_code93, ean::_zbar_decode_ean, i25::_zbar_decode_i25,
+        code93::_zbar_decode_code93, databar::_zbar_decode_databar, ean::_zbar_decode_ean,
+        i25::_zbar_decode_i25,
     },
 };
 use libc::{c_char, c_int, c_uint, c_void};
@@ -23,7 +24,6 @@ const ZBAR_CFG_NUM: c_int = 5;
 // External C functions for decoders not yet converted
 extern "C" {
     fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
 }
 
 // Macro equivalents

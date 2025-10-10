@@ -62,9 +62,6 @@ extern void _zbar_databar_reset(databar_decoder_t *db);
 #define databar_new_scan(db) _zbar_databar_new_scan(db)
 #define databar_reset(db)    _zbar_databar_reset(db)
 
-/* decode DataBar symbols */
-zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode);
-
 #define zassert(condition, retval, format, ...) \
     do {                                        \
 	if (!(condition)) {                     \
