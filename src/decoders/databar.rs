@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, ptr::null_mut};
 
 use libc::{c_char, c_int, c_uint};
 
@@ -1076,6 +1076,52 @@ pub unsafe extern "C" fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbo
     }
     db.chars[i] = iseg as i8;
     rc
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+    let db = &mut (*dcode).databar;
+    let i = (*dcode).idx & 0xf;
+
+    let mut sym = decode_finder(dcode);
+
+    let iseg = db.chars[i as usize];
+    if iseg < 0 {
+        return sym;
+    }
+
+    db.chars[i as usize] = -1;
+    let mut seg = db.segs.offset(iseg as isize);
+
+    let pair;
+    if (*seg).partial() {
+        pair = null_mut();
+        (*seg).set_side(!(*seg).side());
+    } else {
+        let jseg = _zbar_databar_alloc_segment(db as *mut _);
+        pair = db.segs.offset(iseg as isize);
+        seg = db.segs.offset(jseg as isize);
+        (*seg).set_finder((*pair).finder());
+        (*seg).set_exp((*pair).exp());
+        (*seg).set_color((*pair).color());
+        (*seg).set_side(!(*pair).side());
+        (*seg).set_partial(false);
+        (*seg).set_count(1);
+        (*seg).width = (*pair).width;
+        (*seg).set_epoch(db.epoch());
+    }
+
+    sym = decode_char(dcode, seg, 1, 1);
+    if sym == 0 {
+        (*seg).set_finder(-1);
+        if !pair.is_null() {
+            (*pair).set_partial(true);
+        }
+    } else {
+        db.set_epoch(db.epoch() + 1);
+    }
+
+    sym
 }
 
 #[cfg(test)]

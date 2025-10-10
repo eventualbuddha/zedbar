@@ -369,12 +369,6 @@ extern void _zbar_databar_postprocess(zbar_decoder_t *dcode, unsigned d[4]);
 // Rust implementation - converted to src/databar_utils.rs
 extern int _zbar_databar_check_width(unsigned wf, unsigned wd, unsigned n);
 
-// Compatibility wrapper
-static inline int check_width(unsigned wf, unsigned wd, unsigned n)
-{
-    return _zbar_databar_check_width(wf, wd, n);
-}
-
 /* Converted to Rust - see src/decoder.rs */
 extern void _zbar_databar_merge_segment(databar_decoder_t *db,
 					databar_segment_t *seg);
@@ -412,14 +406,16 @@ zbar_symbol_type_t match_segment_exp(zbar_decoder_t *dcode,
 
 	    if (seq[i] == fixed) {
 		seg = db->segs + ifixed;
-		if (segs[i] < 0 && check_width(width, seg->width, 14)) {
+		if (segs[i] < 0 &&
+		    _zbar_databar_check_width(width, seg->width, 14)) {
 		    j = ifixed;
 		} else
 		    continue;
 	    } else {
 		for (j = segs[i] + 1; (int)j < (int)csegs; j++) {
 		    if (iseg[j] == seq[i] &&
-			(!i || check_width(width, db->segs[j].width, 14))) {
+			(!i || _zbar_databar_check_width(
+				   width, db->segs[j].width, 14))) {
 			seg = db->segs + j;
 			break;
 		    }
@@ -518,48 +514,4 @@ extern int _zbar_databar_alloc_segment(databar_decoder_t *db);
 
 extern zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode);
 
-zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode)
-{
-    databar_decoder_t *db = &dcode->databar;
-    databar_segment_t *seg, *pair;
-    zbar_symbol_type_t sym;
-    int iseg, i = dcode->idx & 0xf;
-
-    sym = decode_finder(dcode);
-
-    iseg = db->chars[i];
-    if (iseg < 0)
-	return (sym);
-
-    db->chars[i] = -1;
-    seg		 = db->segs + iseg;
-    zassert(seg->finder >= 0, ZBAR_NONE, "i=%d f=%d(%x%x%x) part=%x\n", iseg,
-	    seg->finder, seg->exp, seg->color, seg->side, seg->partial);
-
-    if (seg->partial) {
-	pair	  = NULL;
-	seg->side = !seg->side;
-    } else {
-	int jseg     = _zbar_databar_alloc_segment(db);
-	pair	     = db->segs + iseg;
-	seg	     = db->segs + jseg;
-	seg->finder  = pair->finder;
-	seg->exp     = pair->exp;
-	seg->color   = pair->color;
-	seg->side    = !pair->side;
-	seg->partial = 0;
-	seg->count   = 1;
-	seg->width   = pair->width;
-	seg->epoch   = db->epoch;
-    }
-
-    sym = decode_char(dcode, seg, 1, 1);
-    if (!sym) {
-	seg->finder = -1;
-	if (pair)
-	    pair->partial = 1;
-    } else
-	db->epoch++;
-
-    return (sym);
-}
+extern zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode);
