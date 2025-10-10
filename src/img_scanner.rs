@@ -4,16 +4,16 @@ use std::{
     ptr::{copy_nonoverlapping, null_mut},
 };
 
-use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, size_t};
+use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, memcmp, size_t};
 
 use crate::{
     decoder_types::zbar_decoder_t,
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
-    qrcode::{qr_point, qrdec::qr_finder_lines, rs::rs_gf256, IsaacCtx},
-    sqcode::{SqReader, _zbar_sq_create, _zbar_sq_destroy, _zbar_sq_new_config},
-    symbol::{symbol_free, symbol_set_free},
-    zbar_image_scanner_set_config, zbar_scanner_create,
+    qrcode::{qr_point, qrdec::{qr_finder_lines, _zbar_qr_reset}, rs::rs_gf256, IsaacCtx},
+    sqcode::{SqReader, _zbar_sq_create, _zbar_sq_decode, _zbar_sq_destroy, _zbar_sq_new_config, _zbar_sq_reset},
+    symbol::{symbol_free, symbol_set_free, _zbar_symbol_set_create},
+    zbar_scanner_create,
 };
 
 const RECYCLE_BUCKETS: usize = 5;
@@ -93,30 +93,66 @@ extern "C" {
     ) -> c_int;
     fn _zbar_qr_create() -> *mut qr_reader;
     fn _zbar_qr_destroy(qr: *mut qr_reader);
+    fn _zbar_qr_decode(
+        reader: *mut qr_reader,
+        iscn: *mut zbar_image_scanner_t,
+        img: *mut zbar_image_t,
+    ) -> c_int;
 }
 
 // Import from line_scanner, decoder, and symbol modules
 use crate::decoder::{
-    zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_set_handler, zbar_decoder_set_userdata,
+    zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_get_configs,
+    zbar_decoder_get_data, zbar_decoder_get_data_length, zbar_decoder_get_direction,
+    zbar_decoder_get_modifiers, zbar_decoder_get_type, zbar_decoder_get_userdata,
+    zbar_decoder_set_config, zbar_decoder_set_handler, zbar_decoder_set_userdata,
 };
-use crate::line_scanner::{zbar_scanner_destroy, zbar_scanner_get_edge};
-use crate::symbol::zbar_symbol_set_ref;
+use crate::image_ffi::{_zbar_image_copy, _zbar_image_swap_symbols, zbar_image_destroy};
+use crate::line_scanner::{
+    zbar_scan_y, zbar_scanner_destroy, zbar_scanner_get_edge, zbar_scanner_get_width,
+};
+use crate::symbol::{_zbar_symbol_add_point, zbar_symbol_set_ref};
 
 // Config constants (from zbar.h)
+const ZBAR_CFG_ENABLE: c_int = 0;
 const ZBAR_CFG_UNCERTAINTY: c_int = 64;
 const ZBAR_CFG_BINARY: c_int = 66;
 const ZBAR_CFG_POSITION: c_int = 128;
+const ZBAR_CFG_TEST_INVERTED: c_int = 129;
 const ZBAR_CFG_X_DENSITY: c_int = 256;
 const ZBAR_CFG_Y_DENSITY: c_int = 257;
 
 // Symbol type constants (from zbar.h)
 const ZBAR_PARTIAL: c_int = 1;
+const ZBAR_EAN5: c_int = 5;
+const ZBAR_ISBN10: c_int = 10;
 const ZBAR_COMPOSITE: c_int = 15;
+const ZBAR_DATABAR: c_int = 34;
+const ZBAR_DATABAR_EXP: c_int = 35;
 const ZBAR_CODABAR: c_int = 38;
 const ZBAR_CODE39: c_int = 39;
 const ZBAR_QRCODE: c_int = 64;
 const ZBAR_CODE93: c_int = 93;
 const ZBAR_CODE128: c_int = 128;
+
+// Helper macros for configuration access
+macro_rules! CFG {
+    ($iscn:expr, $cfg:expr) => {
+        (*$iscn).configs[($cfg - ZBAR_CFG_X_DENSITY) as usize]
+    };
+}
+
+macro_rules! TEST_CFG {
+    ($iscn:expr, $cfg:expr) => {
+        (((*$iscn).config >> (($cfg - ZBAR_CFG_POSITION) as u32)) & 1) != 0
+    };
+}
+
+// FourCC code for image formats
+#[inline]
+const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
+    (a as u32) | ((b as u32) << 8) | ((c as u32) << 16) | ((d as u32) << 24)
+}
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -138,11 +174,9 @@ pub struct zbar_symbol_set_t {
     pub tail: *mut zbar_symbol_t,
 }
 
-#[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct zbar_image_data_handler_t {
-    _private: [u8; 0],
-}
+// Function pointer type for image data handler callbacks
+pub type zbar_image_data_handler_t =
+    unsafe extern "C" fn(img: *mut zbar_image_t, userdata: *const c_void);
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -168,7 +202,7 @@ pub struct zbar_image_scanner_t {
     /// application data
     userdata: *const c_void,
     /// user result callback
-    handler: *mut zbar_image_data_handler_t,
+    handler: Option<zbar_image_data_handler_t>,
 
     /// scan start time
     time: c_ulong,
@@ -198,7 +232,7 @@ pub struct zbar_image_scanner_t {
     /// int valued configurations
     configs: [c_int; NUM_SCN_CFGS],
     /// per-symbology configurations
-    sym_configs: [[c_int; 1]; NUM_SYMS],
+    sym_configs: [[c_int; NUM_SYMS]; 1],
 }
 
 /// Set the data handler callback for the image scanner
@@ -213,11 +247,11 @@ pub struct zbar_image_scanner_t {
 #[no_mangle]
 pub unsafe extern "C" fn zbar_image_scanner_set_data_handler(
     iscn: *mut zbar_image_scanner_t,
-    handler: *mut zbar_image_data_handler_t,
+    handler: Option<zbar_image_data_handler_t>,
     userdata: *const c_void,
-) -> *mut zbar_image_data_handler_t {
+) -> Option<zbar_image_data_handler_t> {
     if iscn.is_null() {
-        return null_mut();
+        return None;
     }
 
     let result = (*iscn).handler;
@@ -750,7 +784,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_sc
 /// # Returns
 /// Pointer to new scanner or null on allocation failure
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_create_rust() -> *mut zbar_image_scanner_t {
+pub unsafe extern "C" fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
     let iscn = calloc(1, size_of::<zbar_image_scanner_t>()) as *mut zbar_image_scanner_t;
     if iscn.is_null() {
         return null_mut();
@@ -760,7 +794,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_create_rust() -> *mut zbar_image_sc
     (*iscn).scn = zbar_scanner_create((*iscn).dcode as *mut _);
 
     if (*iscn).dcode.is_null() || (*iscn).scn.is_null() {
-        _zbar_image_scanner_destroy_rust(iscn);
+        zbar_image_scanner_destroy(iscn);
         return null_mut();
     }
 
@@ -795,7 +829,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_create_rust() -> *mut zbar_image_sc
 /// # Parameters
 /// - `iscn`: Scanner to destroy (null-safe)
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_destroy_rust(iscn: *mut zbar_image_scanner_t) {
+pub unsafe extern "C" fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
     if iscn.is_null() {
         return;
     }
@@ -845,7 +879,498 @@ pub unsafe extern "C" fn _zbar_image_scanner_destroy_rust(iscn: *mut zbar_image_
     free(iscn as *mut c_void);
 }
 
-// Forward declaration of symbol_handler for zbar_image_scanner_create
-extern "C" {
-    fn symbol_handler(dcode: *mut zbar_decoder_t);
+/// Symbol handler callback for 1D barcode decoding
+///
+/// This function is called by the decoder when a barcode is successfully decoded.
+/// It manages symbol deduplication, position tracking, and adds symbols to the result set.
+///
+/// # Arguments
+/// * `dcode` - The decoder that found the symbol
+#[no_mangle]
+pub unsafe extern "C" fn symbol_handler(dcode: *mut zbar_decoder_t) {
+    let iscn = zbar_decoder_get_userdata(dcode) as *mut zbar_image_scanner_t;
+    let type_ = zbar_decoder_get_type(dcode);
+    let mut x = 0;
+    let mut y = 0;
+
+    // QR codes are handled separately
+    if type_ as c_int == ZBAR_QRCODE {
+        _zbar_image_scanner_qr_handler(iscn);
+        return;
+    }
+
+    // Calculate position if position tracking is enabled
+    if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
+        let w = zbar_scanner_get_width((*iscn).scn);
+        let u = (*iscn).umin + (*iscn).du * zbar_scanner_get_edge((*iscn).scn, w, 0) as c_int;
+        if (*iscn).dx != 0 {
+            x = u;
+            y = (*iscn).v;
+        } else {
+            x = (*iscn).v;
+            y = u;
+        }
+    }
+
+    // Ignore partial results
+    if (type_ as c_int) <= ZBAR_PARTIAL {
+        return;
+    }
+
+    let data = zbar_decoder_get_data(dcode);
+    let datalen = zbar_decoder_get_data_length(dcode);
+
+    // Check for duplicate symbols
+    let syms = (*iscn).syms;
+    let mut sym = if !syms.is_null() {
+        (*syms).head
+    } else {
+        null_mut()
+    };
+    while !sym.is_null() {
+        if (*sym).symbol_type == type_
+            && (*sym).datalen == datalen
+            && memcmp(
+                (*sym).data as *const c_void,
+                data as *const c_void,
+                datalen as size_t,
+            ) == 0
+        {
+            (*sym).quality += 1;
+            if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
+                _zbar_symbol_add_point(sym, x, y);
+            }
+            return;
+        }
+        sym = (*sym).next;
+    }
+
+    // Allocate new symbol
+    sym = _zbar_image_scanner_alloc_sym(iscn, type_ as c_int, (datalen + 1) as c_int);
+    (*sym).configs = zbar_decoder_get_configs(dcode, type_);
+    (*sym).modifiers = zbar_decoder_get_modifiers(dcode);
+
+    // Copy data
+    copy_nonoverlapping(
+        data as *const u8,
+        (*sym).data as *mut u8,
+        (datalen + 1) as usize,
+    );
+
+    // Initialize position
+    if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
+        _zbar_symbol_add_point(sym, x, y);
+    }
+
+    // Set orientation
+    let dir = zbar_decoder_get_direction(dcode);
+    if dir != 0 {
+        (*sym).orient = (if (*iscn).dy != 0 { 1 } else { 0 }) + (((*iscn).du ^ dir) & 2);
+    }
+
+    _zbar_image_scanner_add_sym(iscn, sym);
+}
+
+/// Set configuration for image scanner
+///
+/// Configures various settings for the scanner and its decoders.
+///
+/// # Arguments
+/// * `iscn` - Image scanner instance
+/// * `sym` - Symbol type (0 for all symbols, or specific type)
+/// * `cfg` - Configuration parameter
+/// * `val` - Configuration value
+///
+/// # Returns
+/// 0 on success, 1 on error
+#[no_mangle]
+pub unsafe extern "C" fn zbar_image_scanner_set_config(
+    iscn: *mut zbar_image_scanner_t,
+    sym: c_int,
+    cfg: c_int,
+    val: c_int,
+) -> c_int {
+    // Handle EAN composite configuration
+    if (sym == 0 || sym == ZBAR_COMPOSITE) && cfg == ZBAR_CFG_ENABLE {
+        (*iscn).ean_config = if val != 0 { 1 } else { 0 };
+        if sym != 0 {
+            return 0;
+        }
+    }
+
+    // Delegate decoder configuration
+    if cfg < ZBAR_CFG_UNCERTAINTY {
+        return zbar_decoder_set_config((*iscn).dcode, sym, cfg, val);
+    }
+
+    // Handle uncertainty and related configs
+    if cfg < ZBAR_CFG_POSITION {
+        if cfg > ZBAR_CFG_UNCERTAINTY {
+            return 1;
+        }
+        let c = (cfg - ZBAR_CFG_UNCERTAINTY) as usize;
+        if sym > ZBAR_PARTIAL {
+            let i = _zbar_get_symbol_hash(sym) as usize;
+            (*iscn).sym_configs[c][i] = val;
+        } else {
+            for i in 0..NUM_SYMS {
+                (*iscn).sym_configs[c][i] = val;
+            }
+        }
+        return 0;
+    }
+
+    // Image scanner parameters apply only to ZBAR_PARTIAL
+    if sym > ZBAR_PARTIAL {
+        return 1;
+    }
+
+    // Handle density configuration
+    if cfg >= ZBAR_CFG_X_DENSITY && cfg <= ZBAR_CFG_Y_DENSITY {
+        (*iscn).configs[(cfg - ZBAR_CFG_X_DENSITY) as usize] = val;
+        return 0;
+    }
+
+    // Handle position and related configuration flags
+    let cfg_bit = cfg - ZBAR_CFG_POSITION;
+
+    if val == 0 {
+        (*iscn).config &= !(1 << cfg_bit);
+    } else if val == 1 {
+        (*iscn).config |= 1 << cfg_bit;
+    } else {
+        return 1;
+    }
+
+    0
+}
+
+/// Internal image scanning implementation
+///
+/// Performs the actual barcode scanning on an image with horizontal and vertical passes.
+///
+/// # Arguments
+/// * `iscn` - Image scanner instance
+/// * `img` - Image to scan
+///
+/// # Returns
+/// Pointer to symbol set on success, null on error
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_scan_image(
+    iscn: *mut zbar_image_scanner_t,
+    img: *mut zbar_image_t,
+) -> *mut zbar_symbol_set_t {
+    // Static counter for timestamping
+    static mut SCAN_COUNTER: c_uint = 0;
+    SCAN_COUNTER = SCAN_COUNTER.wrapping_add(1);
+    (*iscn).time = SCAN_COUNTER as c_ulong;
+
+    // Reset QR and SQ decoders
+    _zbar_qr_reset((*iscn).qr);
+    _zbar_sq_reset((*iscn).sq);
+
+    // Image must be in grayscale format
+    if (*img).format != fourcc(b'Y', b'8', b'0', b'0')
+        && (*img).format != fourcc(b'G', b'R', b'E', b'Y')
+    {
+        return null_mut();
+    }
+    (*iscn).img = img;
+
+    // Recycle previous scanner and image results
+    zbar_image_scanner_recycle_image(iscn, img);
+    let mut syms = (*iscn).syms;
+    if syms.is_null() {
+        syms = _zbar_symbol_set_create() as *mut zbar_symbol_set_t;
+        (*iscn).syms = syms;
+        zbar_symbol_set_ref(syms, 1);
+    } else {
+        zbar_symbol_set_ref(syms, 2);
+    }
+    (*img).syms = syms;
+
+    let w = (*img).width;
+    let h = (*img).height;
+    let data = (*img).data as *const u8;
+
+    let scn = (*iscn).scn;
+    zbar_scanner_new_scan(scn);
+
+    // Horizontal scanning pass
+    let density = CFG!(iscn, ZBAR_CFG_Y_DENSITY);
+    if density > 0 {
+        let mut p = data;
+        let mut x = 0i32;
+        let mut y = 0i32;
+
+        let mut border = (((h - 1) % (density as c_uint)) + 1) / 2;
+        if border > h / 2 {
+            border = h / 2;
+        }
+        c_assert!(border <= h);
+        (*iscn).dy = 0;
+
+        // movedelta(0, border)
+        y += border as i32;
+        p = p.offset((border * w) as isize);
+        (*iscn).v = y;
+
+        while (y as c_uint) < h {
+            (*iscn).dx = 1;
+            (*iscn).du = 1;
+            (*iscn).umin = 0;
+            while (x as c_uint) < w {
+                let d = *p;
+                x += 1;
+                p = p.offset(1);
+                zbar_scan_y(scn, d as c_int);
+            }
+            _zbar_image_scanner_quiet_border(iscn);
+
+            // movedelta(-1, density)
+            x -= 1;
+            y += density;
+            p = p.offset((-1 + (density * w as i32) as isize) as isize);
+            (*iscn).v = y;
+            if (y as c_uint) >= h {
+                break;
+            }
+
+            (*iscn).dx = -1;
+            (*iscn).du = -1;
+            (*iscn).umin = w as c_int;
+            while x >= 0 {
+                let d = *p;
+                x -= 1;
+                p = p.offset(-1);
+                zbar_scan_y(scn, d as c_int);
+            }
+            _zbar_image_scanner_quiet_border(iscn);
+
+            // movedelta(1, density)
+            x += 1;
+            y += density;
+            p = p.offset((1 + (density * w as i32) as isize) as isize);
+            (*iscn).v = y;
+        }
+    }
+    (*iscn).dx = 0;
+
+    // Vertical scanning pass
+    let density = CFG!(iscn, ZBAR_CFG_X_DENSITY);
+    if density > 0 {
+        let mut p = data;
+        let mut x = 0i32;
+        let mut y = 0i32;
+
+        let mut border = (((w - 1) % (density as c_uint)) + 1) / 2;
+        if border > w / 2 {
+            border = w / 2;
+        }
+        c_assert!(border <= w);
+        // movedelta(border, 0)
+        x += border as i32;
+        p = p.offset(border as isize);
+        (*iscn).v = x;
+
+        while (x as c_uint) < w {
+            (*iscn).dy = 1;
+            (*iscn).du = 1;
+            (*iscn).umin = 0;
+            while (y as c_uint) < h {
+                let d = *p;
+                y += 1;
+                p = p.offset(w as isize);
+                zbar_scan_y(scn, d as c_int);
+            }
+            _zbar_image_scanner_quiet_border(iscn);
+
+            // movedelta(density, -1)
+            x += density;
+            y -= 1;
+            p = p.offset((density as isize) - (w as isize));
+            (*iscn).v = x;
+            if (x as c_uint) >= w {
+                break;
+            }
+
+            (*iscn).dy = -1;
+            (*iscn).du = -1;
+            (*iscn).umin = h as c_int;
+            while y >= 0 {
+                let d = *p;
+                y -= 1;
+                p = p.offset(-(w as isize));
+                zbar_scan_y(scn, d as c_int);
+            }
+            _zbar_image_scanner_quiet_border(iscn);
+
+            // movedelta(density, 1)
+            x += density;
+            y += 1;
+            p = p.offset((density as isize) + (w as isize));
+            (*iscn).v = x;
+        }
+    }
+    (*iscn).dy = 0;
+    (*iscn).img = null_mut();
+
+    // Decode QR and SQ codes
+    _zbar_qr_decode((*iscn).qr, iscn, img);
+
+    _zbar_image_scanner_sq_handler(iscn);
+    _zbar_sq_decode((*iscn).sq, iscn, img);
+
+    // Filter and merge EAN composite results
+    let filter = (*iscn).enable_cache == 0
+        && (density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1);
+    let mut nean = 0;
+    let mut naddon = 0;
+
+    if (*syms).nsyms != 0 {
+        let mut symp = &mut (*syms).head as *mut *mut zbar_symbol_t;
+        while !(*symp).is_null() {
+            let sym = *symp;
+            let sym_type = (*sym).symbol_type as c_int;
+
+            if (*sym).cache_count <= 0
+                && ((sym_type < ZBAR_COMPOSITE && sym_type > ZBAR_PARTIAL)
+                    || sym_type == ZBAR_DATABAR
+                    || sym_type == ZBAR_DATABAR_EXP
+                    || sym_type == ZBAR_CODABAR)
+            {
+                if (sym_type == ZBAR_CODABAR || filter) && (*sym).quality < 4 {
+                    if (*iscn).enable_cache != 0 {
+                        // Revert cache update
+                        let entry = _zbar_image_scanner_cache_lookup(iscn, sym);
+                        if !entry.is_null() {
+                            (*entry).cache_count -= 1;
+                        } else {
+                            c_assert!(false);
+                        }
+                    }
+
+                    // Recycle symbol
+                    *symp = (*sym).next;
+                    (*syms).nsyms -= 1;
+                    (*sym).next = null_mut();
+                    _zbar_image_scanner_recycle_syms(iscn, sym);
+                    continue;
+                } else if sym_type < ZBAR_COMPOSITE && sym_type != ZBAR_ISBN10 {
+                    if sym_type > ZBAR_EAN5 {
+                        nean += 1;
+                    } else {
+                        naddon += 1;
+                    }
+                }
+            }
+            symp = &mut (*sym).next as *mut *mut zbar_symbol_t;
+        }
+
+        // Merge EAN composite if we have exactly one EAN and one add-on
+        if nean == 1 && naddon == 1 && (*iscn).ean_config != 0 {
+            let mut ean: *mut zbar_symbol_t = null_mut();
+            let mut addon: *mut zbar_symbol_t = null_mut();
+
+            // Extract EAN and add-on symbols
+            let mut symp = &mut (*syms).head as *mut *mut zbar_symbol_t;
+            while !(*symp).is_null() {
+                let sym = *symp;
+                let sym_type = (*sym).symbol_type as c_int;
+                if sym_type < ZBAR_COMPOSITE && sym_type > ZBAR_PARTIAL {
+                    // Move to composite
+                    *symp = (*sym).next;
+                    (*syms).nsyms -= 1;
+                    (*sym).next = null_mut();
+                    if sym_type <= ZBAR_EAN5 {
+                        addon = sym;
+                    } else {
+                        ean = sym;
+                    }
+                } else {
+                    symp = &mut (*sym).next as *mut *mut zbar_symbol_t;
+                }
+            }
+            c_assert!(!ean.is_null());
+            c_assert!(!addon.is_null());
+
+            // Create composite symbol
+            let datalen = (*ean).datalen + (*addon).datalen + 1;
+            let ean_sym =
+                _zbar_image_scanner_alloc_sym(iscn, ZBAR_COMPOSITE, datalen as c_int);
+            (*ean_sym).orient = (*ean).orient;
+            (*ean_sym).syms = _zbar_symbol_set_create() as *mut zbar_symbol_set_t;
+
+            // Copy data
+            copy_nonoverlapping(
+                (*ean).data as *const u8,
+                (*ean_sym).data as *mut u8,
+                (*ean).datalen as usize,
+            );
+            copy_nonoverlapping(
+                (*addon).data as *const u8,
+                ((*ean_sym).data as *mut u8).offset((*ean).datalen as isize),
+                ((*addon).datalen + 1) as usize,
+            );
+
+            // Link symbols
+            (*(*ean_sym).syms).head = ean;
+            (*ean).next = addon;
+            (*(*ean_sym).syms).nsyms = 2;
+
+            _zbar_image_scanner_add_sym(iscn, ean_sym);
+        }
+    }
+
+    syms
+}
+
+/// Public wrapper for zbar_scan_image
+///
+/// Scans an image for barcodes, with optional inverted image retry.
+///
+/// # Arguments
+/// * `iscn` - Image scanner instance
+/// * `img` - Image to scan
+///
+/// # Returns
+/// Number of symbols found, -1 on error
+#[no_mangle]
+pub unsafe extern "C" fn zbar_scan_image(
+    iscn: *mut zbar_image_scanner_t,
+    img: *mut zbar_image_t,
+) -> c_int {
+    let mut syms = _zbar_scan_image(iscn, img);
+    if syms.is_null() {
+        return -1;
+    }
+
+    let mut inv: *mut zbar_image_t = null_mut();
+
+    // Try inverted image if no symbols found and TEST_INVERTED is enabled
+    if (*syms).nsyms == 0 && TEST_CFG!(iscn, ZBAR_CFG_TEST_INVERTED) {
+        inv = _zbar_image_copy(img, 1);
+        if !inv.is_null() {
+            if !(*iscn).cache.is_null() {
+                // Recycle all cached syms
+                _zbar_image_scanner_recycle_syms(iscn, (*iscn).cache);
+                (*iscn).cache = null_mut();
+            }
+            syms = _zbar_scan_image(iscn, inv);
+            _zbar_image_swap_symbols(img, inv);
+        }
+    }
+
+    // Call user handler if symbols found
+    if (*syms).nsyms != 0 {
+        if let Some(handler) = (*iscn).handler {
+            handler(img, (*iscn).userdata);
+        }
+    }
+
+    if !inv.is_null() {
+        zbar_image_destroy(inv);
+    }
+
+    (*syms).nsyms as c_int
 }

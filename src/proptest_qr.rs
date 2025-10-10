@@ -27,11 +27,8 @@ fn decode_qr_image_rqrr(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     let height = img.height() as usize;
     let raw = img.as_raw();
 
-    let mut prepared_img = rqrr::PreparedImage::prepare_from_greyscale(
-        width,
-        height,
-        |x, y| raw[y * width + x],
-    );
+    let mut prepared_img =
+        rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| raw[y * width + x]);
 
     let grids = prepared_img.detect_grids();
     if grids.is_empty() {

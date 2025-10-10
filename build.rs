@@ -9,7 +9,7 @@ fn main() {
             // "zbar/decoder.c", // Converted to Rust
             // "zbar/error.c", // Converted to Rust
             // "zbar/image.c", // Converted to Rust
-            "zbar/img_scanner.c",
+            // "zbar/img_scanner.c", // Converted to Rust
             // "zbar/processor.c", // Converted to Rust
             // "zbar/refcnt.c", // Converted to Rust
             // "zbar/scanner.c", // Converted to Rust
