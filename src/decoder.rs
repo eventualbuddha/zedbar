@@ -8,9 +8,9 @@ use crate::{
         ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_CFG_EMIT_CHECK,
         ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_DATABAR, ZBAR_DATABAR_EXP,
         ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13,
-        ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
+        ZBAR_MOD_GS1, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
-    databar_utils::_zbar_databar_check_width,
+    databar_utils::{_zbar_databar_calc_check, _zbar_databar_check_width},
     decoders::{
         codabar::_zbar_decode_codabar,
         code128::_zbar_decode_code128,
@@ -27,6 +27,568 @@ const ZBAR_CFG_NUM: c_int = 5;
 
 // DataBar constants
 const DATABAR_MAX_SEGMENTS: usize = 32;
+const GS: u8 = 29; // Group separator
+const SCH_NUM: i32 = 0;
+const SCH_ALNUM: i32 = 1;
+const SCH_ISO646: i32 = 2;
+
+#[repr(C)]
+struct GroupS {
+    sum: u16,
+    wmax: u8,
+    todd: u8,
+    teven: u8,
+}
+
+static GROUPS: [GroupS; 14] = [
+    // (17,4) DataBar Expanded character groups
+    GroupS { sum: 0, wmax: 7, todd: 87, teven: 4 },
+    GroupS { sum: 348, wmax: 5, todd: 52, teven: 20 },
+    GroupS { sum: 1388, wmax: 4, todd: 30, teven: 52 },
+    GroupS { sum: 2948, wmax: 3, todd: 10, teven: 104 },
+    GroupS { sum: 3988, wmax: 1, todd: 1, teven: 204 },
+    // (16,4) DataBar outer character groups
+    GroupS { sum: 0, wmax: 8, todd: 161, teven: 1 },
+    GroupS { sum: 161, wmax: 6, todd: 80, teven: 10 },
+    GroupS { sum: 961, wmax: 4, todd: 31, teven: 34 },
+    GroupS { sum: 2015, wmax: 3, todd: 10, teven: 70 },
+    GroupS { sum: 2715, wmax: 1, todd: 1, teven: 126 },
+    // (15,4) DataBar inner character groups
+    GroupS { sum: 1516, wmax: 8, todd: 81, teven: 1 },
+    GroupS { sum: 1036, wmax: 6, todd: 48, teven: 10 },
+    GroupS { sum: 336, wmax: 4, todd: 20, teven: 35 },
+    GroupS { sum: 0, wmax: 2, todd: 4, teven: 84 },
+];
+
+static EXP_CHECKSUMS: [u8; 12] = [1, 189, 62, 113, 46, 43, 109, 134, 6, 79, 161, 45];
+
+/// DataBar expanded sequences
+static EXP_SEQUENCES: [u8; 30] = [
+    // sequence Group 1
+    0x01, 0x23, 0x25, 0x07, 0x29, 0x47, 0x29, 0x67, 0x0b, 0x29, 0x87, 0xab,
+    // sequence Group 2
+    0x21, 0x43, 0x65, 0x07, 0x21, 0x43, 0x65, 0x89, 0x21, 0x43, 0x65, 0xa9, 0x0b, 0x21, 0x43,
+    0x67, 0x89, 0xab,
+];
+
+/// DataBar finder pattern hash table
+static FINDER_HASH: [i8; 0x20] = [
+    0x16, 0x1f, 0x02, 0x00, 0x03, 0x00, 0x06, 0x0b, 0x1f, 0x0e, 0x17, 0x0c, 0x0b, 0x14, 0x11,
+    0x0c, 0x1f, 0x03, 0x13, 0x08, 0x00, 0x0a, -1, 0x16, 0x0c, 0x09, -1, 0x1a, 0x1f, 0x1c, 0x00,
+    -1,
+];
+
+/// Calculate DataBar character value from 4-element signature
+/// Returns -1 on error
+unsafe fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -> c_int {
+    let mut v = 0u32;
+    n -= 1;
+
+    let w0 = (sig >> 12) & 0xF;
+    if w0 > 1 {
+        if w0 > wmax {
+            return -1;
+        }
+        let n0 = n - w0;
+        let sk20 = (n - 1) * n * (2 * n - 1);
+        let sk21 = n0 * (n0 + 1) * (2 * n0 + 1);
+        v = sk20 - sk21 - 3 * (w0 - 1) * (2 * n - w0);
+
+        if nonarrow == 0 && w0 > 2 && n > 4 {
+            let mut k = (n - 2) * (n - 1) * (2 * n - 3) - sk21;
+            k -= 3 * (w0 - 2) * (14 * n - 7 * w0 - 31);
+            v -= k;
+        }
+
+        if n - 2 > wmax {
+            let wm20 = 2 * wmax * (wmax + 1);
+            let wm21 = 2 * wmax + 1;
+            let mut k = sk20;
+            if n0 > wmax {
+                k -= sk21;
+                k += 3 * (w0 - 1) * (wm20 - wm21 * (2 * n - w0));
+            } else {
+                k -= (wmax + 1) * (wmax + 2) * (2 * wmax + 3);
+                k += 3 * (n - wmax - 2) * (wm20 - wm21 * (n + wmax + 1));
+            }
+            k *= 3;
+            v -= k;
+        }
+        v /= 12;
+    } else {
+        nonarrow = 1;
+    }
+    n -= w0;
+
+    let w1 = (sig >> 8) & 0xF;
+    if w1 > 1 {
+        if w1 > wmax {
+            return -1;
+        }
+        v += (2 * n - w1) * (w1 - 1) / 2;
+        if nonarrow == 0 && w1 > 2 && n > 3 {
+            v -= (2 * n - w1 - 5) * (w1 - 2) / 2;
+        }
+        if n - 1 > wmax {
+            if n - w1 > wmax {
+                v -= (w1 - 1) * (2 * n - w1 - 2 * wmax);
+            } else {
+                v -= (n - wmax) * (n - wmax - 1);
+            }
+        }
+    } else {
+        nonarrow = 1;
+    }
+    n -= w1;
+
+    let w2 = (sig >> 4) & 0xF;
+    if w2 > 1 {
+        if w2 > wmax {
+            return -1;
+        }
+        v += w2 - 1;
+        if nonarrow == 0 && w2 > 2 && n > 2 {
+            v -= n - 2;
+        }
+        if n > wmax {
+            v -= n - wmax;
+        }
+    } else {
+        nonarrow = 1;
+    }
+
+    let w3 = sig & 0xF;
+    if w3 == 1 {
+        nonarrow = 1;
+    } else if w3 > wmax {
+        return -1;
+    }
+
+    if nonarrow == 0 {
+        return -1;
+    }
+
+    v as c_int
+}
+
+// Forward declarations for complex C functions not yet ported
+extern "C" {
+    fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut c_int) -> c_int;
+
+    fn match_segment_exp(
+        dcode: *mut zbar_decoder_t,
+        seg: *mut crate::decoder_types::databar_segment_t,
+        dir: c_int,
+    ) -> zbar_symbol_type_t;
+}
+
+/// Match DataBar segment to find complete symbol
+unsafe fn match_segment(
+    dcode: *mut zbar_decoder_t,
+    seg: *mut crate::decoder_types::databar_segment_t,
+) -> zbar_symbol_type_t {
+    let db = &mut (*dcode).databar;
+    let csegs = db.csegs();
+    let mut maxage = 0xfff;
+    let mut maxcnt = 0;
+    let mut smax: [*mut crate::decoder_types::databar_segment_t; 3] =
+        [std::ptr::null_mut(); 3];
+    let mut d = [0u32; 4];
+
+    if (*seg).partial() && (*seg).count() < 4 {
+        return ZBAR_PARTIAL;
+    }
+
+    for i0 in 0..(csegs as usize) {
+        let s0 = db.segs.offset(i0 as isize);
+        if s0 == seg
+            || (*s0).finder() != (*seg).finder()
+            || (*s0).exp()
+            || (*s0).color() != (*seg).color()
+            || (*s0).side() == (*seg).side()
+            || ((*s0).partial() && (*s0).count() < 4)
+            || _zbar_databar_check_width((*seg).width as c_uint, (*s0).width as c_uint, 14) == 0
+        {
+            continue;
+        }
+
+        for i1 in 0..(csegs as usize) {
+            let s1 = db.segs.offset(i1 as isize);
+            if i1 == i0
+                || (*s1).finder() < 0
+                || (*s1).exp()
+                || (*s1).color() == (*seg).color()
+                || ((*s1).partial() && (*s1).count() < 4)
+                || _zbar_databar_check_width((*seg).width as c_uint, (*s1).width as c_uint, 14)
+                    == 0
+            {
+                continue;
+            }
+
+            let mut chkf = if (*seg).color() != 0 {
+                (*seg).finder() as i32 + (*s1).finder() as i32 * 9
+            } else {
+                (*s1).finder() as i32 + (*seg).finder() as i32 * 9
+            };
+            if chkf > 72 {
+                chkf -= 1;
+            }
+            if chkf > 8 {
+                chkf -= 1;
+            }
+
+            let chks = (((*seg).check() as i32) + ((*s0).check() as i32) + ((*s1).check() as i32))
+                % 79;
+
+            let chk = if chkf >= chks {
+                chkf - chks
+            } else {
+                79 + chkf - chks
+            };
+
+            let age1 = ((db.epoch().wrapping_sub((*s0).epoch())) as u32)
+                + ((db.epoch().wrapping_sub((*s1).epoch())) as u32);
+
+            for i2 in (i1 + 1)..(csegs as usize) {
+                let s2 = db.segs.offset(i2 as isize);
+                if i2 == i0
+                    || (*s2).finder() != (*s1).finder()
+                    || (*s2).exp()
+                    || (*s2).color() != (*s1).color()
+                    || (*s2).side() == (*s1).side()
+                    || (*s2).check() as i32 != chk
+                    || ((*s2).partial() && (*s2).count() < 4)
+                    || _zbar_databar_check_width(
+                        (*seg).width as c_uint,
+                        (*s2).width as c_uint,
+                        14,
+                    ) == 0
+                {
+                    continue;
+                }
+                let age2 = db.epoch().wrapping_sub((*s2).epoch()) as u32;
+                let age = age1 + age2;
+                let cnt = (*s0).count() as u32 + (*s1).count() as u32 + (*s2).count() as u32;
+                if maxcnt < cnt as i32 || (maxcnt == cnt as i32 && (maxage as i32) > (age as i32))
+                {
+                    maxcnt = cnt as i32;
+                    maxage = age;
+                    smax[0] = s0;
+                    smax[1] = s1;
+                    smax[2] = s2;
+                }
+            }
+        }
+    }
+
+    if smax[0].is_null() {
+        return ZBAR_PARTIAL;
+    }
+
+    d[(((*seg).color() as usize) << 1) | ((*seg).side() as usize)] = (*seg).data as u32;
+    for i0 in 0..3 {
+        d[(((*smax[i0]).color() as usize) << 1) | ((*smax[i0]).side() as usize)] =
+            (*smax[i0]).data as u32;
+        let new_count = (*smax[i0]).count().wrapping_sub(1);
+        (*smax[i0]).set_count(new_count);
+        if new_count == 0 {
+            (*smax[i0]).set_finder(-1);
+        }
+    }
+    (*seg).set_finder(-1);
+
+    if _zbar_decoder_size_buf(dcode, 18) != 0 {
+        return ZBAR_PARTIAL;
+    }
+
+    if _zbar_decoder_acquire_lock(dcode, ZBAR_DATABAR) != 0 {
+        return ZBAR_PARTIAL;
+    }
+
+    _zbar_databar_postprocess(dcode, d.as_mut_ptr());
+    (*dcode).modifiers = 1 << ZBAR_MOD_GS1;
+    (*dcode).direction = 1 - 2 * (((*seg).side() as i32) ^ ((*seg).color() as i32) ^ 1);
+    ZBAR_DATABAR
+}
+
+/// Lookup DataBar expanded sequence
+/// Returns -1 on error, 0 or 1 on success
+unsafe fn lookup_sequence(
+    seg: *mut crate::decoder_types::databar_segment_t,
+    fixed: i32,
+    seq: *mut i32,
+    maxsize: usize,
+) -> i32 {
+    let mut n = ((*seg).data as u32 / 211) as usize;
+    let mut i = (n + 1) / 2 + 1;
+    n += 4;
+    i = (i * i) / 4;
+    let mut p = &EXP_SEQUENCES[i..];
+
+    if n >= maxsize - 1 {
+        // The loop below checks i<n and increments i by one within the loop
+        // when accessing seq[22]. For this to be safe, n needs to be < 21.
+        // See CVE-2023-40890.
+        return -1;
+    }
+
+    let mut fixed = fixed >> 1;
+    *seq.offset(0) = 0;
+    *seq.offset(1) = 1;
+    let mut i = 2;
+    let mut p_idx = 0;
+    while i < n {
+        let mut s = p[p_idx] as i32;
+        if (i & 2) == 0 {
+            p_idx += 1;
+            s >>= 4;
+        } else {
+            s &= 0xf;
+        }
+        if s == fixed {
+            fixed = -1;
+        }
+        s <<= 1;
+        *seq.offset(i as isize) = s;
+        i += 1;
+        s += 1;
+        *seq.offset(i as isize) = s;
+        i += 1;
+    }
+    *seq.offset(n as isize) = -1;
+    if fixed < 1 { 1 } else { 0 }
+}
+
+/// Decode a DataBar character from width measurements
+unsafe fn decode_char(
+    dcode: *mut zbar_decoder_t,
+    seg: *mut crate::decoder_types::databar_segment_t,
+    off: c_int,
+    dir: c_int,
+) -> zbar_symbol_type_t {
+    let db = &mut (*dcode).databar;
+    let s = _zbar_decoder_calc_s(
+        dcode as *const zbar_decoder_t,
+        if dir > 0 { off } else { off - 6 } as u8,
+        8,
+    );
+    let mut emin = [0i32, 0i32];
+    let mut sum = 0i32;
+    let mut sig0 = 0u32;
+    let mut sig1 = 0u32;
+
+    let n = if (*seg).exp() {
+        17
+    } else if (*seg).side() != 0 {
+        15
+    } else {
+        16
+    };
+    emin[1] = -(n as i32);
+
+    if s < 13 || _zbar_databar_check_width((*seg).width as c_uint, s, n) == 0 {
+        return ZBAR_NONE;
+    }
+
+    let mut off = off;
+    for i in (0..4).rev() {
+        let e = _zbar_decoder_decode_e(_zbar_decoder_pair_width(dcode, off as u8), s, n);
+        if e < 0 {
+            return ZBAR_NONE;
+        }
+        sum = e - sum;
+        off += dir;
+        sig1 <<= 4;
+        if emin[1] < -sum {
+            emin[1] = -sum;
+        }
+        sig1 += sum as u32;
+        if i == 0 {
+            break;
+        }
+
+        let e = _zbar_decoder_decode_e(_zbar_decoder_pair_width(dcode, off as u8), s, n);
+        if e < 0 {
+            return ZBAR_NONE;
+        }
+        sum = e - sum;
+        off += dir;
+        sig0 <<= 4;
+        if emin[0] > sum {
+            emin[0] = sum;
+        }
+        sig0 += sum as u32;
+    }
+
+    let mut diff = emin[(!(n as i32) & 1) as usize];
+    diff = diff + (diff << 4);
+    diff = diff + (diff << 8);
+
+    sig0 = sig0.wrapping_sub(diff as u32);
+    sig1 = sig1.wrapping_add(diff as u32);
+
+    let mut sum0 = sig0 + (sig0 >> 8);
+    let mut sum1 = sig1 + (sig1 >> 8);
+    sum0 += sum0 >> 4;
+    sum1 += sum1 >> 4;
+    sum0 &= 0xf;
+    sum1 &= 0xf;
+
+    if (sum0 + sum1 + 8) as c_int != n as c_int {
+        return ZBAR_NONE;
+    }
+
+    if ((sum0 ^ (n >> 1)) | (sum1 ^ (n >> 1) ^ n)) & 1 != 0 {
+        return ZBAR_NONE;
+    }
+
+    let i = ((n & 0x3) ^ 1) * 5 + (sum1 >> 1);
+    if i as usize >= GROUPS.len() {
+        return ZBAR_NONE;
+    }
+    let g = &GROUPS[i as usize];
+
+    let vodd = calc_value4(sig0 + 0x1111, sum0 + 4, g.wmax as c_uint, (!(n as i32) & 1) as c_uint);
+    if vodd < 0 || vodd > g.todd as i32 {
+        return ZBAR_NONE;
+    }
+
+    let veven = calc_value4(sig1 + 0x1111, sum1 + 4, (9 - g.wmax) as c_uint, (n & 1) as c_uint);
+    if veven < 0 || veven > g.teven as i32 {
+        return ZBAR_NONE;
+    }
+
+    let mut v = g.sum as i32;
+    if (n & 2) != 0 {
+        v += vodd + veven * g.todd as i32;
+    } else {
+        v += veven + vodd * g.teven as i32;
+    }
+
+    let mut chk = 0u32;
+    if (*seg).exp() {
+        let side = ((*seg).color() as u8) ^ ((*seg).side() as u8) ^ 1;
+        if v >= 4096 {
+            return ZBAR_NONE;
+        }
+        chk = _zbar_databar_calc_check(sig0, sig1, side as c_uint, 211);
+        if (*seg).finder() != 0 || (*seg).color() != 0 || (*seg).side() != 0 {
+            let i = ((*seg).finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
+            if i < 0 || i >= 12 {
+                return ZBAR_NONE;
+            }
+            chk = (chk * EXP_CHECKSUMS[i as usize] as u32) % 211;
+        } else if v >= 4009 {
+            return ZBAR_NONE;
+        } else {
+            chk = 0;
+        }
+    } else {
+        chk = _zbar_databar_calc_check(sig0, sig1, (*seg).side() as c_uint, 79);
+        if (*seg).color() != 0 {
+            chk = (chk * 16) % 79;
+        }
+    }
+
+    (*seg).set_check(chk as u8);
+    (*seg).data = v as i16;
+
+    _zbar_databar_merge_segment(db, seg);
+
+    if (*seg).exp() {
+        return match_segment_exp(dcode, seg, dir);
+    } else if dir > 0 {
+        return match_segment(dcode, seg);
+    }
+    ZBAR_PARTIAL
+}
+
+/// Decode DataBar finder pattern
+unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+    let db = &mut (*dcode).databar;
+    let e0 = _zbar_decoder_pair_width(dcode, 1);
+    let e2 = _zbar_decoder_pair_width(dcode, 3);
+    let (dir, e2, e3) = if e0 < e2 {
+        let e = e2 * 4;
+        if e < 15 * e0 || e > 34 * e0 {
+            return ZBAR_NONE;
+        }
+        (0, e2, _zbar_decoder_pair_width(dcode, 4))
+    } else {
+        let e = e0 * 4;
+        if e < 15 * e2 || e > 34 * e2 {
+            return ZBAR_NONE;
+        }
+        (1, e0, _zbar_decoder_pair_width(dcode, 0))
+    };
+    let e1 = _zbar_decoder_pair_width(dcode, 2);
+
+    let s = e1 + e3;
+    if s < 12 {
+        return ZBAR_NONE;
+    }
+
+    let sig = (_zbar_decoder_decode_e(e3, s, 14) << 8)
+        | (_zbar_decoder_decode_e(e2, s, 14) << 4)
+        | _zbar_decoder_decode_e(e1, s, 14);
+    if sig < 0
+        || ((sig >> 4) & 0xf) < 8
+        || ((sig >> 4) & 0xf) > 10
+        || (sig & 0xf) >= 10
+        || ((sig >> 8) & 0xf) >= 10
+        || (((sig >> 8) + sig) & 0xf) != 10
+    {
+        return ZBAR_NONE;
+    }
+
+    let finder = (FINDER_HASH[((sig - (sig >> 5)) & 0x1f) as usize]
+        + FINDER_HASH[((sig >> 1) & 0x1f) as usize])
+        & 0x1f;
+    if finder == 0x1f
+        || (((if finder < 9 {
+            db.config
+        } else {
+            db.config_exp
+        }) >> ZBAR_CFG_ENABLE)
+            & 1)
+            == 0
+    {
+        return ZBAR_NONE;
+    }
+
+    if finder < 0 {
+        return ZBAR_NONE;
+    }
+
+    let iseg = _zbar_databar_alloc_segment(db);
+    if iseg < 0 {
+        return ZBAR_NONE;
+    }
+
+    let seg = &mut (*db.segs.offset(iseg as isize));
+    seg.set_finder(if finder >= 9 { finder - 9 } else { finder });
+    seg.set_exp(finder >= 9);
+    seg.set_color(((_zbar_decoder_get_color(dcode) as c_int) ^ dir ^ 1) as u8);
+    seg.set_side(dir as u8);
+    seg.set_partial(false);
+    seg.set_count(1);
+    seg.width = s as i16;
+    seg.set_epoch(db.epoch());
+
+    let rc = decode_char(dcode, seg, 12 - dir, -1);
+    if rc == 0 {
+        seg.set_partial(true);
+    } else {
+        db.set_epoch(db.epoch().wrapping_add(1));
+    }
+
+    let i = (((*dcode).idx as c_int + 8 + dir) & 0xf) as usize;
+    if db.chars[i] != -1 {
+        return ZBAR_NONE;
+    }
+    db.chars[i] = iseg as i8;
+    rc
+}
 
 // External C functions for decoders not yet converted
 extern "C" {

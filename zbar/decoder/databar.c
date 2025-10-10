@@ -110,7 +110,7 @@ extern void _zbar_databar_decode10(unsigned char *buf, unsigned long n, int i);
 	PUSH_CHAR(c3);             \
     } while (0);
 
-static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
+int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 {
     int i = 0, enc;
     unsigned n;
@@ -543,8 +543,9 @@ static signed lookup_sequence(databar_segment_t *seg, int fixed, int seq[22],
 #define IDX(s) \
     (((s)->finder << 2) | ((s)->color << 1) | ((s)->color ^ (s)->side))
 
-static zbar_symbol_type_t match_segment_exp(zbar_decoder_t *dcode,
-					    databar_segment_t *seg, int dir)
+/* Temporarily exported for Rust */
+zbar_symbol_type_t match_segment_exp(zbar_decoder_t *dcode,
+				      databar_segment_t *seg, int dir)
 {
     databar_decoder_t *db = &dcode->databar;
     int bestsegs[22], i = 0, segs[22], seq[22];
