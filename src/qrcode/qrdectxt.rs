@@ -10,7 +10,9 @@ use std::slice;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
-use crate::decoder_types::{ZBAR_QRCODE, ZBAR_CFG_BINARY, ZBAR_PARTIAL, ZBAR_MOD_GS1, ZBAR_MOD_AIM};
+use crate::decoder_types::{
+    ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_PARTIAL, ZBAR_QRCODE,
+};
 use crate::ffi::{_zbar_symbol_set_create, zbar_image_t, zbar_symbol_t};
 use crate::img_scanner::{
     _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,

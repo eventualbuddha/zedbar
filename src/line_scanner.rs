@@ -300,9 +300,7 @@ pub unsafe extern "C" fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar
     let mut edge = ZBAR_NONE;
 
     // 2nd zero-crossing is 1st local min/max - could be edge
-    if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0)))
-        && (calc_thresh(scn) <= y1_1.abs() as c_uint)
-    {
+    if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (calc_thresh(scn) <= y1_1.abs() as c_uint) {
         // check for 1st sign change
         let y1_rev = if (*scn).y1_sign > 0 {
             y1_1 < 0
@@ -320,7 +318,8 @@ pub unsafe extern "C" fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar
 
             // adaptive thresholding
             // start at multiple of new min/max
-            (*scn).y1_thresh = ((y1_1.abs() as c_uint * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
+            (*scn).y1_thresh =
+                ((y1_1.abs() as c_uint * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
             if (*scn).y1_thresh < (*scn).y1_min_thresh {
                 (*scn).y1_thresh = (*scn).y1_min_thresh;
             }

@@ -256,7 +256,7 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
         if codabar.direction() {
             ic = 11 - ic;
         }
-        
+
         CODABAR_LO[ic as usize]
     } else if s1s1 > s0s2 + s0s2 / 8 {
         // Two wide spaces, check start/stop

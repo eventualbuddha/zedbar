@@ -87,13 +87,15 @@ mod tests {
         let width_usize = width as usize;
         let height_usize = height as usize;
         let raw = gray.as_raw();
-        let mut prepared_img = rqrr::PreparedImage::prepare_from_greyscale(
-            width_usize,
-            height_usize,
-            |x, y| raw[y * width_usize + x],
-        );
+        let mut prepared_img =
+            rqrr::PreparedImage::prepare_from_greyscale(width_usize, height_usize, |x, y| {
+                raw[y * width_usize + x]
+            });
         let grids = prepared_img.detect_grids();
-        assert!(!grids.is_empty(), "rqrr: Expected to find at least one grid");
+        assert!(
+            !grids.is_empty(),
+            "rqrr: Expected to find at least one grid"
+        );
 
         let mut rqrr_results = Vec::new();
         for grid in grids {
@@ -159,13 +161,15 @@ mod tests {
         let width_usize = width as usize;
         let height_usize = height as usize;
         let raw = gray.as_raw();
-        let mut prepared_img = rqrr::PreparedImage::prepare_from_greyscale(
-            width_usize,
-            height_usize,
-            |x, y| raw[y * width_usize + x],
-        );
+        let mut prepared_img =
+            rqrr::PreparedImage::prepare_from_greyscale(width_usize, height_usize, |x, y| {
+                raw[y * width_usize + x]
+            });
         let grids = prepared_img.detect_grids();
-        assert!(!grids.is_empty(), "rqrr: Expected to find at least one grid");
+        assert!(
+            !grids.is_empty(),
+            "rqrr: Expected to find at least one grid"
+        );
 
         let mut rqrr_results = Vec::new();
         for grid in grids {

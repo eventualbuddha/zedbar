@@ -4,8 +4,7 @@
 
 use crate::decoder_types::{
     i25_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN,
-    DECODE_WINDOW, ZBAR_BAR, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_I25, ZBAR_NONE,
-    ZBAR_PARTIAL,
+    DECODE_WINDOW, ZBAR_BAR, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_I25, ZBAR_NONE, ZBAR_PARTIAL,
 };
 use libc::{c_char, c_int, c_uint};
 

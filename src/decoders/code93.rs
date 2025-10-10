@@ -59,7 +59,6 @@ fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
 /// Fixed character width decode assist
 #[inline]
 fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_uint {
-    
     ((e * n * 2 + 1) / s).wrapping_sub(3) / 2
 }
 

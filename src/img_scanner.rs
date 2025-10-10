@@ -8,17 +8,24 @@ use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, memcmp, size_t};
 
 use crate::{
     decoder_types::{
-        zbar_decoder_t, ZBAR_CFG_ENABLE, ZBAR_CFG_UNCERTAINTY, ZBAR_CFG_BINARY,
-        ZBAR_CFG_POSITION, ZBAR_CFG_TEST_INVERTED, ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY,
-        ZBAR_PARTIAL, ZBAR_EAN5, ZBAR_ISBN10, ZBAR_COMPOSITE, ZBAR_DATABAR,
-        ZBAR_DATABAR_EXP, ZBAR_CODABAR, ZBAR_CODE39, ZBAR_QRCODE, ZBAR_CODE93,
-        ZBAR_CODE128, ZBAR_ORIENT_UNKNOWN,
+        zbar_decoder_t, ZBAR_CFG_BINARY, ZBAR_CFG_ENABLE, ZBAR_CFG_POSITION,
+        ZBAR_CFG_TEST_INVERTED, ZBAR_CFG_UNCERTAINTY, ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY,
+        ZBAR_CODABAR, ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR,
+        ZBAR_DATABAR_EXP, ZBAR_EAN5, ZBAR_ISBN10, ZBAR_ORIENT_UNKNOWN, ZBAR_PARTIAL, ZBAR_QRCODE,
     },
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
-    qrcode::{qr_point, qrdec::{qr_finder_lines, _zbar_qr_reset}, rs::rs_gf256, IsaacCtx},
-    sqcode::{SqReader, _zbar_sq_create, _zbar_sq_decode, _zbar_sq_destroy, _zbar_sq_new_config, _zbar_sq_reset},
-    symbol::{symbol_free, symbol_set_free, _zbar_symbol_set_create},
+    qrcode::{
+        qr_point,
+        qrdec::{_zbar_qr_reset, qr_finder_lines},
+        rs::rs_gf256,
+        IsaacCtx,
+    },
+    sqcode::{
+        SqReader, _zbar_sq_create, _zbar_sq_decode, _zbar_sq_destroy, _zbar_sq_new_config,
+        _zbar_sq_reset,
+    },
+    symbol::{_zbar_symbol_set_create, symbol_free, symbol_set_free},
     zbar_scanner_create,
 };
 
@@ -105,10 +112,10 @@ extern "C" {
 
 // Import from line_scanner, decoder, and symbol modules
 use crate::decoder::{
-    zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_get_configs,
-    zbar_decoder_get_data, zbar_decoder_get_data_length, zbar_decoder_get_direction,
-    zbar_decoder_get_modifiers, zbar_decoder_get_type, zbar_decoder_get_userdata,
-    zbar_decoder_set_config, zbar_decoder_set_handler, zbar_decoder_set_userdata,
+    zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_get_configs, zbar_decoder_get_data,
+    zbar_decoder_get_data_length, zbar_decoder_get_direction, zbar_decoder_get_modifiers,
+    zbar_decoder_get_type, zbar_decoder_get_userdata, zbar_decoder_set_config,
+    zbar_decoder_set_handler, zbar_decoder_set_userdata,
 };
 use crate::image_ffi::{_zbar_image_copy, _zbar_image_swap_symbols, zbar_image_destroy};
 use crate::line_scanner::{
@@ -1007,7 +1014,7 @@ pub unsafe extern "C" fn zbar_image_scanner_set_config(
     }
 
     // Handle density configuration
-    if cfg >= ZBAR_CFG_X_DENSITY && cfg <= ZBAR_CFG_Y_DENSITY {
+    if (ZBAR_CFG_X_DENSITY..=ZBAR_CFG_Y_DENSITY).contains(&cfg) {
         (*iscn).configs[(cfg - ZBAR_CFG_X_DENSITY) as usize] = val;
         return 0;
     }
@@ -1084,7 +1091,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
         let mut x = 0i32;
         let mut y = 0i32;
 
-        let mut border = (((h - 1) % (density as c_uint)) + 1) / 2;
+        let mut border = ((h - 1) % (density as c_uint)).div_ceil(2);
         if border > h / 2 {
             border = h / 2;
         }
@@ -1111,7 +1118,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
             // movedelta(-1, density)
             x -= 1;
             y += density;
-            p = p.offset((-1 + (density * w as i32) as isize) as isize);
+            p = p.offset(-1 + (density * w as i32) as isize);
             (*iscn).v = y;
             if (y as c_uint) >= h {
                 break;
@@ -1131,7 +1138,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
             // movedelta(1, density)
             x += 1;
             y += density;
-            p = p.offset((1 + (density * w as i32) as isize) as isize);
+            p = p.offset(1 + (density * w as i32) as isize);
             (*iscn).v = y;
         }
     }
@@ -1144,7 +1151,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
         let mut x = 0i32;
         let mut y = 0i32;
 
-        let mut border = (((w - 1) % (density as c_uint)) + 1) / 2;
+        let mut border = ((w - 1) % (density as c_uint)).div_ceil(2);
         if border > w / 2 {
             border = w / 2;
         }
@@ -1203,8 +1210,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
     _zbar_sq_decode((*iscn).sq, iscn, img);
 
     // Filter and merge EAN composite results
-    let filter = (*iscn).enable_cache == 0
-        && (density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1);
+    let filter = (*iscn).enable_cache == 0 && (density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1);
     let mut nean = 0;
     let mut naddon = 0;
 
@@ -1277,8 +1283,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
 
             // Create composite symbol
             let datalen = (*ean).datalen + (*addon).datalen + 1;
-            let ean_sym =
-                _zbar_image_scanner_alloc_sym(iscn, ZBAR_COMPOSITE, datalen as c_int);
+            let ean_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_COMPOSITE, datalen as c_int);
             (*ean_sym).orient = (*ean).orient;
             (*ean_sym).syms = _zbar_symbol_set_create() as *mut zbar_symbol_set_t;
 

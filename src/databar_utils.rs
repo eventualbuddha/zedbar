@@ -190,13 +190,17 @@ mod tests {
     fn test_append_check14() {
         unsafe {
             // Test with 13 ASCII digits
-            let mut buf = [b'9', b'7', b'8', b'0', b'1', b'4', b'3', b'0', b'0', b'7', b'2', b'3', b'0', 0];
+            let mut buf = [
+                b'9', b'7', b'8', b'0', b'1', b'4', b'3', b'0', b'0', b'7', b'2', b'3', b'0', 0,
+            ];
             _zbar_databar_append_check14(buf.as_mut_ptr());
             // Check digit: (9+7+8+0+1+4+3+0+0+7+2+3) + (9+8+1+3+0+2)*2 = 44 + 46 = 90, 90%10=0, check=0
             assert_eq!(buf[13], b'0');
 
             // Test another example: 1234567890120
-            let mut buf2 = [b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2', b'0', 0];
+            let mut buf2 = [
+                b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2', b'0', 0,
+            ];
             _zbar_databar_append_check14(buf2.as_mut_ptr());
             // Check: (1+2+3+4+5+6+7+8+9+0+1+2) + (1+3+5+7+9+1)*2 = 48 + 52 = 100, 100%10=0, check=0
             assert_eq!(buf2[13], b'0');
