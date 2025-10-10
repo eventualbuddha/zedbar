@@ -41,12 +41,6 @@ enum {
     SCH_ISO646
 };
 
-static const signed char finder_hash[0x20] = {
-    0x16, 0x1f, 0x02, 0x00, 0x03, 0x00, 0x06, 0x0b, 0x1f, 0x0e, 0x17,
-    0x0c, 0x0b, 0x14, 0x11, 0x0c, 0x1f, 0x03, 0x13, 0x08, 0x00, 0x0a,
-    -1,	  0x16, 0x0c, 0x09, -1,	  0x1a, 0x1f, 0x1c, 0x00, -1,
-};
-
 /* DataBar character encoding groups */
 struct group_s {
     unsigned short sum;
@@ -73,14 +67,6 @@ struct group_s {
     { 1036, 6, 48, 10 },
     { 336, 4, 20, 35 },
     { 0, 2, 4, 84 },
-};
-
-static const unsigned char exp_sequences[] = {
-    /* sequence Group 1 */
-    0x01, 0x23, 0x25, 0x07, 0x29, 0x47, 0x29, 0x67, 0x0b, 0x29, 0x87, 0xab,
-    /* sequence Group 2 */
-    0x21, 0x43, 0x65, 0x07, 0x21, 0x43, 0x65, 0x89, 0x21, 0x43, 0x65, 0xa9,
-    0x0b, 0x21, 0x43, 0x67, 0x89, 0xab
 };
 
 /* DataBar expanded checksum multipliers */
@@ -384,11 +370,6 @@ int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 /* Converted to Rust - see src/decoder.rs */
 extern void _zbar_databar_postprocess(zbar_decoder_t *dcode, unsigned d[4]);
 
-static inline void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
-{
-    _zbar_databar_postprocess(dcode, d);
-}
-
 // Rust implementation - converted to src/databar_utils.rs
 extern int _zbar_databar_check_width(unsigned wf, unsigned wd, unsigned n);
 
@@ -401,11 +382,6 @@ static inline int check_width(unsigned wf, unsigned wd, unsigned n)
 /* Converted to Rust - see src/decoder.rs */
 extern void _zbar_databar_merge_segment(databar_decoder_t *db,
 					databar_segment_t *seg);
-
-static inline void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
-{
-    _zbar_databar_merge_segment(db, seg);
-}
 
 static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
 					databar_segment_t *seg)
@@ -497,7 +473,7 @@ static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
     if (acquire_lock(dcode, ZBAR_DATABAR))
 	return (ZBAR_PARTIAL);
 
-    databar_postprocess(dcode, d);
+    _zbar_databar_postprocess(dcode, d);
     dcode->modifiers = MOD(ZBAR_MOD_GS1);
     dcode->direction = 1 - 2 * (seg->side ^ seg->color ^ 1);
     return (ZBAR_DATABAR);
@@ -638,88 +614,8 @@ static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
     return _zbar_databar_calc_check(sig0, sig1, side, mod);
 }
 
-static int calc_value4(unsigned sig, unsigned n, unsigned wmax,
-		       unsigned nonarrow)
-{
-    unsigned w0, w1, w2, w3;
-    unsigned v = 0;
-    n--;
-
-    w0 = (sig >> 12) & 0xf;
-    if (w0 > 1) {
-	unsigned n0, sk20, sk21;
-	if (w0 > wmax)
-	    return (-1);
-	n0   = n - w0;
-	sk20 = (n - 1) * n * (2 * n - 1);
-	sk21 = n0 * (n0 + 1) * (2 * n0 + 1);
-	v    = sk20 - sk21 - 3 * (w0 - 1) * (2 * n - w0);
-
-	if (!nonarrow && w0 > 2 && n > 4) {
-	    unsigned k = (n - 2) * (n - 1) * (2 * n - 3) - sk21;
-	    k -= 3 * (w0 - 2) * (14 * n - 7 * w0 - 31);
-	    v -= k;
-	}
-
-	if (n - 2 > wmax) {
-	    unsigned wm20 = 2 * wmax * (wmax + 1);
-	    unsigned wm21 = (2 * wmax + 1);
-	    unsigned k	  = sk20;
-	    if (n0 > wmax) {
-		k -= sk21;
-		k += 3 * (w0 - 1) * (wm20 - wm21 * (2 * n - w0));
-	    } else {
-		k -= (wmax + 1) * (wmax + 2) * (2 * wmax + 3);
-		k += 3 * (n - wmax - 2) * (wm20 - wm21 * (n + wmax + 1));
-	    }
-	    k *= 3;
-	    v -= k;
-	}
-	v /= 12;
-    } else
-	nonarrow = 1;
-    n -= w0;
-
-    w1 = (sig >> 8) & 0xf;
-    if (w1 > 1) {
-	if (w1 > wmax)
-	    return (-1);
-	v += (2 * n - w1) * (w1 - 1) / 2;
-	if (!nonarrow && w1 > 2 && n > 3)
-	    v -= (2 * n - w1 - 5) * (w1 - 2) / 2;
-	if (n - 1 > wmax) {
-	    if (n - w1 > wmax)
-		v -= (w1 - 1) * (2 * n - w1 - 2 * wmax);
-	    else
-		v -= (n - wmax) * (n - wmax - 1);
-	}
-    } else
-	nonarrow = 1;
-    n -= w1;
-
-    w2 = (sig >> 4) & 0xf;
-    if (w2 > 1) {
-	if (w2 > wmax)
-	    return (-1);
-	v += w2 - 1;
-	if (!nonarrow && w2 > 2 && n > 2)
-	    v -= n - 2;
-	if (n > wmax)
-	    v -= n - wmax;
-    } else
-	nonarrow = 1;
-
-    w3 = sig & 0xf;
-    if (w3 == 1)
-	nonarrow = 1;
-    else if (w3 > wmax)
-	return (-1);
-
-    if (!nonarrow)
-	return (-1);
-
-    return (v);
-}
+extern int calc_value4(unsigned sig, unsigned n, unsigned wmax,
+		       unsigned nonarrow);
 
 static zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
 				      databar_segment_t *seg, int off, int dir)
@@ -833,7 +729,7 @@ static zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
     seg->check = chk;
     seg->data  = v;
 
-    merge_segment(db, seg);
+    _zbar_databar_merge_segment(db, seg);
 
     if (seg->exp)
 	return (match_segment_exp(dcode, seg, dir));

@@ -23,10 +23,6 @@ const ZBAR_CFG_NUM: c_int = 5;
 
 // DataBar constants
 const DATABAR_MAX_SEGMENTS: usize = 32;
-const GS: u8 = 29; // Group separator
-const SCH_NUM: i32 = 0;
-const SCH_ALNUM: i32 = 1;
-const SCH_ISO646: i32 = 2;
 
 #[repr(C)]
 struct GroupS {
@@ -145,7 +141,13 @@ static FINDER_HASH: [i8; 0x20] = [
 
 /// Calculate DataBar character value from 4-element signature
 /// Returns -1 on error
-unsafe fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -> c_int {
+#[no_mangle]
+pub unsafe extern "C" fn calc_value4(
+    sig: c_uint,
+    mut n: c_uint,
+    wmax: c_uint,
+    mut nonarrow: c_uint,
+) -> c_int {
     let mut v = 0u32;
     n = n.wrapping_sub(1);
 
@@ -291,8 +293,6 @@ unsafe fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_
 
 // Forward declarations for complex C functions not yet ported
 extern "C" {
-    fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut c_int) -> c_int;
-
     fn match_segment_exp(
         dcode: *mut zbar_decoder_t,
         seg: *mut crate::decoder_types::databar_segment_t,
