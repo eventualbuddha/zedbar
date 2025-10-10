@@ -852,8 +852,10 @@ pub unsafe extern "C" fn qr_hom_cell_init(
     let a22 = dx32 * dy31 - dx31 * dy32;
 
     // Figure out if we need to downscale
-    let b0 = qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).abs() as u32);
-    let b1 = qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).abs() as u32);
+    let b0 =
+        qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
+    let b1 =
+        qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
     let b2 = qr_ilog(c_int::max(c_int::max(a20.abs(), a21.abs()), a22.abs()) as u32);
     let shift = c_int::max(
         0,
@@ -1069,10 +1071,9 @@ unsafe fn qr_alignment_pattern_fetch(
     let dy = y0 - p[2][2][1];
     let mut v = 0u32;
     let mut k = 0;
-    for i in 0..5 {
-        for j in 0..5 {
-            v |= (qr_img_get_bit(img, width, height, p[i][j][0] + dx, p[i][j][1] + dy) as c_uint)
-                << k;
+    for pi in p {
+        for pij in pi {
+            v |= (qr_img_get_bit(img, width, height, pij[0] + dx, pij[1] + dy) as c_uint) << k;
             k += 1;
         }
     }
@@ -1112,12 +1113,12 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
     let dydv = (*cell).fwd[1][1];
     let dwdv = (*cell).fwd[2][1];
 
-    for i in 0..5 {
+    for item in pattern.iter_mut() {
         let mut x = x0;
         let mut y = y0;
         let mut w = w0;
-        for j in 0..5 {
-            qr_hom_cell_fproject(&mut pattern[i][j], cell, x, y, w);
+        for subitem in item.iter_mut() {
+            qr_hom_cell_fproject(subitem, cell, x, y, w);
             x += dxdu;
             y += dydu;
             w += dwdu;
@@ -1167,12 +1168,10 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
                     } else {
                         0
                     }
+                } else if j >= 3 * side_len {
+                    1
                 } else {
-                    if j >= 3 * side_len {
-                        1
-                    } else {
-                        0
-                    }
+                    0
                 };
 
                 if j < 2 * side_len {

@@ -400,7 +400,7 @@ static inline int check_width(unsigned wf, unsigned wd, unsigned n)
 
 /* Converted to Rust - see src/decoder.rs */
 extern void _zbar_databar_merge_segment(databar_decoder_t *db,
-					 databar_segment_t *seg);
+					databar_segment_t *seg);
 
 static inline void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
 {
@@ -503,49 +503,15 @@ static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
     return (ZBAR_DATABAR);
 }
 
-static signed lookup_sequence(databar_segment_t *seg, int fixed, int seq[22],
-			      const size_t maxsize)
-{
-    unsigned n = seg->data / 211, i;
-    const unsigned char *p;
-    i = (n + 1) / 2 + 1;
-    n += 4;
-    i = (i * i) / 4;
-    p = exp_sequences + i;
-
-    if (n >= maxsize - 1) {
-	// The loop below checks i<n and increments i by one within the loop
-	// when accessing seq[22]. For this to be safe, n needs to be < 21.
-	// See CVE-2023-40890.
-	return -1;
-    }
-
-    fixed >>= 1;
-    seq[0] = 0;
-    seq[1] = 1;
-    for (i = 2; i < n;) {
-	int s = *p;
-	if (!(i & 2)) {
-	    p++;
-	    s >>= 4;
-	} else
-	    s &= 0xf;
-	if (s == fixed)
-	    fixed = -1;
-	s <<= 1;
-	seq[i++] = s++;
-	seq[i++] = s;
-    }
-    seq[n] = -1;
-    return (fixed < 1);
-}
+extern signed lookup_sequence(databar_segment_t *seg, int fixed, int seq[22],
+			      const size_t maxsize);
 
 #define IDX(s) \
     (((s)->finder << 2) | ((s)->color << 1) | ((s)->color ^ (s)->side))
 
 /* Temporarily exported for Rust */
 zbar_symbol_type_t match_segment_exp(zbar_decoder_t *dcode,
-				      databar_segment_t *seg, int dir)
+				     databar_segment_t *seg, int dir)
 {
     databar_decoder_t *db = &dcode->databar;
     int bestsegs[22], i = 0, segs[22], seq[22];
@@ -884,77 +850,7 @@ static inline int alloc_segment(databar_decoder_t *db)
     return _zbar_databar_alloc_segment(db);
 }
 
-static zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode)
-{
-    databar_decoder_t *db = &dcode->databar;
-    databar_segment_t *seg;
-    unsigned e0 = pair_width(dcode, 1);
-    unsigned e2 = pair_width(dcode, 3);
-    unsigned e1, e3, s, finder, dir;
-    int sig, iseg;
-    int rc, i;
-    if (e0 < e2) {
-	unsigned e = e2 * 4;
-	if (e < 15 * e0 || e > 34 * e0)
-	    return (ZBAR_NONE);
-	dir = 0;
-	e3  = pair_width(dcode, 4);
-    } else {
-	unsigned e = e0 * 4;
-	if (e < 15 * e2 || e > 34 * e2)
-	    return (ZBAR_NONE);
-	dir = 1;
-	e2  = e0;
-	e3  = pair_width(dcode, 0);
-    }
-    e1 = pair_width(dcode, 2);
-
-    s = e1 + e3;
-    if (s < 12)
-	return (ZBAR_NONE);
-
-    sig = ((decode_e(e3, s, 14) << 8) | (decode_e(e2, s, 14) << 4) |
-	   decode_e(e1, s, 14));
-    if (sig < 0 || ((sig >> 4) & 0xf) < 8 || ((sig >> 4) & 0xf) > 10 ||
-	(sig & 0xf) >= 10 || ((sig >> 8) & 0xf) >= 10 ||
-	(((sig >> 8) + sig) & 0xf) != 10)
-	return (ZBAR_NONE);
-
-    finder = (finder_hash[(sig - (sig >> 5)) & 0x1f] +
-	      finder_hash[(sig >> 1) & 0x1f]) &
-	     0x1f;
-    if (finder == 0x1f ||
-	!TEST_CFG((finder < 9) ? db->config : db->config_exp, ZBAR_CFG_ENABLE))
-	return (ZBAR_NONE);
-
-    zassert((signed)finder >= 0, ZBAR_NONE, "dir=%d sig=%04x f=%d\n", dir,
-	    sig & 0xfff, finder);
-
-    iseg = alloc_segment(db);
-    if (iseg < 0)
-	return (ZBAR_NONE);
-
-    seg		 = db->segs + iseg;
-    seg->finder	 = (finder >= 9) ? finder - 9 : finder;
-    seg->exp	 = (finder >= 9);
-    seg->color	 = get_color(dcode) ^ dir ^ 1;
-    seg->side	 = dir;
-    seg->partial = 0;
-    seg->count	 = 1;
-    seg->width	 = s;
-    seg->epoch	 = db->epoch;
-
-    rc = decode_char(dcode, seg, 12 - dir, -1);
-    if (!rc)
-	seg->partial = 1;
-    else
-	db->epoch++;
-
-    i = (dcode->idx + 8 + dir) & 0xf;
-    zassert(db->chars[i] == -1, ZBAR_NONE, "\n");
-    db->chars[i] = iseg;
-    return (rc);
-}
+extern zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode);
 
 zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode)
 {
