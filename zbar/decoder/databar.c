@@ -967,61 +967,12 @@ static zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
     return (ZBAR_PARTIAL);
 }
 
-static int alloc_segment(databar_decoder_t *db)
+/* Converted to Rust - see src/decoder.rs */
+extern int _zbar_databar_alloc_segment(databar_decoder_t *db);
+
+static inline int alloc_segment(databar_decoder_t *db)
 {
-    unsigned maxage = 0, csegs = db->csegs;
-    int i, old		       = -1;
-    for (i = 0; (int)i < (int)csegs; i++) {
-	databar_segment_t *seg = db->segs + i;
-	unsigned age;
-	if (seg->finder < 0) {
-	    return (i);
-	}
-	age = (db->epoch - seg->epoch) & 0xff;
-	if (age >= 128 && seg->count < 2) {
-	    seg->finder = -1;
-	    return (i);
-	}
-
-	/* score based on both age and count */
-	if (age > seg->count)
-	    age = age - seg->count + 1;
-	else
-	    age = 1;
-
-	if (maxage < age) {
-	    maxage = age;
-	    old	   = i;
-	}
-    }
-
-    if (csegs < DATABAR_MAX_SEGMENTS) {
-	i = csegs;
-	csegs *= 2;
-	if (csegs > DATABAR_MAX_SEGMENTS)
-	    csegs = DATABAR_MAX_SEGMENTS;
-	if (csegs != db->csegs) {
-	    databar_segment_t *seg;
-	    db->segs  = realloc(db->segs, csegs * sizeof(*db->segs));
-	    db->csegs = csegs;
-	    seg	      = db->segs + csegs;
-	    while (--seg, (int)(--csegs) >= i) {
-		seg->finder  = -1;
-		seg->exp     = 0;
-		seg->color   = 0;
-		seg->side    = 0;
-		seg->partial = 0;
-		seg->count   = 0;
-		seg->epoch   = 0;
-		seg->check   = 0;
-	    }
-	    return (i);
-	}
-    }
-    zassert(old >= 0, -1, "\n");
-
-    db->segs[old].finder = -1;
-    return (old);
+    return _zbar_databar_alloc_segment(db);
 }
 
 static zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode)

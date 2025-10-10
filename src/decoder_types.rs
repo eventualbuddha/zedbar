@@ -427,6 +427,76 @@ impl databar_segment_t {
             self.bitfields &= !(1 << 8);
         }
     }
+
+    #[inline]
+    pub fn exp(&self) -> bool {
+        // exp is bit 5
+        (self.bitfields & (1 << 5)) != 0
+    }
+
+    #[inline]
+    pub fn set_exp(&mut self, val: bool) {
+        if val {
+            self.bitfields |= 1 << 5;
+        } else {
+            self.bitfields &= !(1 << 5);
+        }
+    }
+
+    #[inline]
+    pub fn color(&self) -> u8 {
+        // color is bit 6
+        ((self.bitfields >> 6) & 1) as u8
+    }
+
+    #[inline]
+    pub fn set_color(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(1 << 6)) | (((val & 1) as c_uint) << 6);
+    }
+
+    #[inline]
+    pub fn side(&self) -> u8 {
+        // side is bit 7
+        ((self.bitfields >> 7) & 1) as u8
+    }
+
+    #[inline]
+    pub fn set_side(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(1 << 7)) | (((val & 1) as c_uint) << 7);
+    }
+
+    #[inline]
+    pub fn count(&self) -> u8 {
+        // count is bits 9-15 (7 bits)
+        ((self.bitfields >> 9) & 0x7F) as u8
+    }
+
+    #[inline]
+    pub fn set_count(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0x7F << 9)) | (((val & 0x7F) as c_uint) << 9);
+    }
+
+    #[inline]
+    pub fn epoch(&self) -> u8 {
+        // epoch is bits 16-23 (8 bits)
+        ((self.bitfields >> 16) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub fn set_epoch(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xFF << 16)) | ((val as c_uint) << 16);
+    }
+
+    #[inline]
+    pub fn check(&self) -> u8 {
+        // check is bits 24-31 (8 bits)
+        ((self.bitfields >> 24) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub fn set_check(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xFF << 24)) | ((val as c_uint) << 24);
+    }
 }
 
 /// DataBar decoder state

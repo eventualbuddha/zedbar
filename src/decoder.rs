@@ -24,6 +24,9 @@ use libc::{c_char, c_int, c_uint, c_void};
 // Config constant not in decoder_types
 const ZBAR_CFG_NUM: c_int = 5;
 
+// DataBar constants
+const DATABAR_MAX_SEGMENTS: usize = 32;
+
 // External C functions for decoders not yet converted
 extern "C" {
     fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
@@ -292,6 +295,90 @@ pub unsafe extern "C" fn _zbar_databar_reset(db: *mut databar_decoder_t) {
         let seg = ((*db).segs).offset(i);
         (*seg).set_finder(-1);
     }
+}
+
+/// Allocate a new DataBar segment (or reuse an old one)
+/// Returns the index of the allocated segment, or -1 on failure
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
+    use crate::decoder_types::databar_segment_t;
+    use std::mem::size_of;
+
+    let mut maxage = 0u32;
+    let csegs = (*db).csegs() as usize;
+    let mut old: c_int = -1;
+
+    // First pass: look for empty slots or very old segments
+    for i in 0..csegs {
+        let seg = ((*db).segs).offset(i as isize);
+
+        if (*seg).finder() < 0 {
+            return i as c_int;
+        }
+
+        let age = ((*db).epoch().wrapping_sub((*seg).epoch())) & 0xFF;
+        if age >= 128 && (*seg).count() < 2 {
+            (*seg).set_finder(-1);
+            return i as c_int;
+        }
+
+        // Score based on both age and count
+        let score = if age > (*seg).count() as u8 {
+            age - (*seg).count() + 1
+        } else {
+            1
+        };
+
+        if maxage < score as u32 {
+            maxage = score as u32;
+            old = i as c_int;
+        }
+    }
+
+    // Try to grow the segment array if not at max
+    if csegs < DATABAR_MAX_SEGMENTS {
+        let i = csegs;
+        let mut new_csegs = csegs * 2;
+        if new_csegs > DATABAR_MAX_SEGMENTS {
+            new_csegs = DATABAR_MAX_SEGMENTS;
+        }
+
+        if new_csegs != csegs {
+            // Reallocate segment array
+            let new_ptr = libc::realloc(
+                (*db).segs as *mut c_void,
+                new_csegs * size_of::<databar_segment_t>(),
+            ) as *mut databar_segment_t;
+
+            if new_ptr.is_null() {
+                // Allocation failed, fall through to reuse old segment
+            } else {
+                (*db).segs = new_ptr;
+                (*db).set_csegs(new_csegs as u8);
+
+                // Initialize new segments
+                for j in i..new_csegs {
+                    let seg = ((*db).segs).offset(j as isize);
+                    (*seg).set_finder(-1);
+                    (*seg).set_exp(false);
+                    (*seg).set_color(0);
+                    (*seg).set_side(0);
+                    (*seg).set_partial(false);
+                    (*seg).set_count(0);
+                    (*seg).set_epoch(0);
+                    (*seg).set_check(0);
+                }
+                return i as c_int;
+            }
+        }
+    }
+
+    // Reuse oldest segment
+    if old >= 0 {
+        let seg = ((*db).segs).offset(old as isize);
+        (*seg).set_finder(-1);
+    }
+    old
 }
 
 /// Prepare EAN decoder for new scan
