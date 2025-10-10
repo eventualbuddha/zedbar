@@ -26,6 +26,10 @@ const QR_INT_BITS: c_int = c_int::BITS as c_int;
 /// Number of bits of sub-module precision for alignment pattern search
 const QR_ALIGN_SUBPREC: c_int = 2;
 
+/// Number of bits of sub-module precision for finder pattern coordinates
+#[allow(dead_code)]
+const QR_FINDER_SUBPREC: c_int = 2;
+
 /// Helper function: divide with exact rounding
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
@@ -907,6 +911,31 @@ pub unsafe extern "C" fn qr_hom_cell_init(
     (*cell).y0 = y0;
     (*cell).u0 = u0;
     (*cell).v0 = v0;
+}
+
+/// Get a bit from a binarized image
+///
+/// Samples a pixel from the binarized image, with coordinates in QR_FINDER_SUBPREC
+/// subpixel units. Clamps coordinates to valid image bounds.
+#[inline]
+#[allow(dead_code)]
+unsafe fn qr_img_get_bit(
+    img: *const u8,
+    width: c_int,
+    height: c_int,
+    mut x: c_int,
+    mut y: c_int,
+) -> c_int {
+    x >>= QR_FINDER_SUBPREC;
+    y >>= QR_FINDER_SUBPREC;
+    let y_clamped = y.clamp(0, height - 1);
+    let x_clamped = x.clamp(0, width - 1);
+    let idx = y_clamped * width + x_clamped;
+    if *img.offset(idx as isize) != 0 {
+        1
+    } else {
+        0
+    }
 }
 
 /// Finish a partial projection, converting from homogeneous coordinates to the
