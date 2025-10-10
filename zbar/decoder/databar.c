@@ -462,30 +462,13 @@ static inline int check_width(unsigned wf, unsigned wd, unsigned n)
     return _zbar_databar_check_width(wf, wd, n);
 }
 
-static void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
+/* Converted to Rust - see src/decoder.rs */
+extern void _zbar_databar_merge_segment(databar_decoder_t *db,
+					 databar_segment_t *seg);
+
+static inline void merge_segment(databar_decoder_t *db, databar_segment_t *seg)
 {
-    unsigned csegs = db->csegs;
-    int i;
-    for (i = 0; (int)i < (int)csegs; i++) {
-	databar_segment_t *s = db->segs + i;
-	if (s != seg && s->finder == seg->finder && s->exp == seg->exp &&
-	    s->color == seg->color && s->side == seg->side &&
-	    s->data == seg->data && s->check == seg->check &&
-	    check_width(seg->width, s->width, 14)) {
-	    /* merge with existing segment */
-	    unsigned cnt = s->count;
-	    if (cnt < 0x7f)
-		cnt++;
-	    seg->count = cnt;
-	    seg->partial &= s->partial;
-	    seg->width = (3 * seg->width + s->width + 2) / 4;
-	    s->finder  = -1;
-	} else if (s->finder >= 0) {
-	    unsigned age = (db->epoch - s->epoch) & 0xff;
-	    if (age >= 248 || (age >= 128 && s->count < 2))
-		s->finder = -1;
-	}
-    }
+    _zbar_databar_merge_segment(db, seg);
 }
 
 static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,

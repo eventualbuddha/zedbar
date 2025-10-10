@@ -10,6 +10,7 @@ use crate::{
         ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13,
         ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
+    databar_utils::_zbar_databar_check_width,
     decoders::{
         codabar::_zbar_decode_codabar,
         code128::_zbar_decode_code128,
@@ -379,6 +380,58 @@ pub unsafe extern "C" fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t)
         (*seg).set_finder(-1);
     }
     old
+}
+
+/// Merge or update a DataBar segment with existing segments
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_databar_merge_segment(
+    db: *mut databar_decoder_t,
+    seg: *mut crate::decoder_types::databar_segment_t,
+) {
+    let csegs = (*db).csegs() as isize;
+
+    for i in 0..csegs {
+        let s = ((*db).segs).offset(i);
+
+        // Skip if this is the same segment
+        if s == seg {
+            continue;
+        }
+
+        // Check if this segment matches and should be merged
+        if (*s).finder() == (*seg).finder()
+            && (*s).exp() == (*seg).exp()
+            && (*s).color() == (*seg).color()
+            && (*s).side() == (*seg).side()
+            && (*s).data == (*seg).data
+            && (*s).check() == (*seg).check()
+            && _zbar_databar_check_width((*seg).width as u32, (*s).width as u32, 14) != 0
+        {
+            // Found a matching segment - merge with it
+            let mut cnt = (*s).count();
+            if cnt < 0x7F {
+                cnt += 1;
+            }
+            (*seg).set_count(cnt);
+
+            // Merge partial flags (bitwise AND)
+            let new_partial = (*seg).partial() && (*s).partial();
+            (*seg).set_partial(new_partial);
+
+            // Average the widths (weighted average favoring new measurement)
+            let new_width = (3 * (*seg).width + (*s).width + 2) / 4;
+            (*seg).width = new_width;
+
+            // Mark old segment as unused
+            (*s).set_finder(-1);
+        } else if (*s).finder() >= 0 {
+            // Not a match, check if we should age it out
+            let age = ((*db).epoch().wrapping_sub((*s).epoch())) & 0xFF;
+            if age >= 248 || (age >= 128 && (*s).count() < 2) {
+                (*s).set_finder(-1);
+            }
+        }
+    }
 }
 
 /// Prepare EAN decoder for new scan
