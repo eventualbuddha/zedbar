@@ -5,53 +5,23 @@
 //!
 //! Handles symbol lifecycle, reference counting, and data access.
 
-use crate::{ffi::zbar_symbol_t, img_scanner::zbar_symbol_set_t, refcnt};
+use crate::{
+    decoder_types::{
+        ZBAR_PARTIAL, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_UPCE, ZBAR_ISBN10,
+        ZBAR_UPCA, ZBAR_EAN13, ZBAR_ISBN13, ZBAR_COMPOSITE, ZBAR_I25, ZBAR_DATABAR,
+        ZBAR_DATABAR_EXP, ZBAR_CODABAR, ZBAR_CODE39, ZBAR_CODE93, ZBAR_CODE128,
+        ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_SYMBOL, ZBAR_CFG_ENABLE, ZBAR_CFG_ADD_CHECK,
+        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ASCII, ZBAR_CFG_BINARY, ZBAR_CFG_MIN_LEN,
+        ZBAR_CFG_MAX_LEN, ZBAR_CFG_UNCERTAINTY, ZBAR_CFG_POSITION, ZBAR_CFG_X_DENSITY,
+        ZBAR_CFG_Y_DENSITY, ZBAR_MOD_GS1, ZBAR_MOD_AIM, ZBAR_ORIENT_UP, ZBAR_ORIENT_RIGHT,
+        ZBAR_ORIENT_DOWN, ZBAR_ORIENT_LEFT,
+    },
+    ffi::zbar_symbol_t,
+    img_scanner::zbar_symbol_set_t,
+    refcnt,
+};
 use libc::{c_char, c_int, c_void};
 use std::ptr;
-
-// Symbol type constants (from zbar.h)
-const ZBAR_PARTIAL: i32 = 1;
-const ZBAR_EAN2: i32 = 2;
-const ZBAR_EAN5: i32 = 5;
-const ZBAR_EAN8: i32 = 8;
-const ZBAR_UPCE: i32 = 9;
-const ZBAR_ISBN10: i32 = 10;
-const ZBAR_UPCA: i32 = 12;
-const ZBAR_EAN13: i32 = 13;
-const ZBAR_ISBN13: i32 = 14;
-const ZBAR_COMPOSITE: i32 = 15;
-const ZBAR_I25: i32 = 25;
-const ZBAR_DATABAR: i32 = 34;
-const ZBAR_DATABAR_EXP: i32 = 35;
-const ZBAR_CODABAR: i32 = 38;
-const ZBAR_CODE39: i32 = 39;
-const ZBAR_CODE93: i32 = 93;
-const ZBAR_CODE128: i32 = 128;
-const ZBAR_QRCODE: i32 = 64;
-const ZBAR_SQCODE: i32 = 80;
-const ZBAR_SYMBOL: i32 = 0x00ff;
-
-// Config type constants
-const ZBAR_CFG_ENABLE: i32 = 0;
-const ZBAR_CFG_ADD_CHECK: i32 = 1;
-const ZBAR_CFG_EMIT_CHECK: i32 = 2;
-const ZBAR_CFG_ASCII: i32 = 3;
-const ZBAR_CFG_BINARY: i32 = 4;
-const ZBAR_CFG_MIN_LEN: i32 = 32;
-const ZBAR_CFG_MAX_LEN: i32 = 33;
-const ZBAR_CFG_UNCERTAINTY: i32 = 64;
-const ZBAR_CFG_POSITION: i32 = 128;
-const ZBAR_CFG_X_DENSITY: i32 = 256;
-const ZBAR_CFG_Y_DENSITY: i32 = 257;
-// Modifier constants
-const ZBAR_MOD_GS1: i32 = 0;
-const ZBAR_MOD_AIM: i32 = 1;
-
-// Orientation constants
-const ZBAR_ORIENT_UP: i32 = 0;
-const ZBAR_ORIENT_RIGHT: i32 = 1;
-const ZBAR_ORIENT_DOWN: i32 = 2;
-const ZBAR_ORIENT_LEFT: i32 = 3;
 
 const NUM_SYMS: usize = 20;
 

@@ -10,6 +10,7 @@ use std::slice;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
+use crate::decoder_types::{ZBAR_QRCODE, ZBAR_CFG_BINARY, ZBAR_PARTIAL, ZBAR_MOD_GS1, ZBAR_MOD_AIM};
 use crate::ffi::{_zbar_symbol_set_create, zbar_image_t, zbar_symbol_t};
 use crate::img_scanner::{
     _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
@@ -17,30 +18,7 @@ use crate::img_scanner::{
 };
 
 use super::qr_point;
-
-// From zbar.h
-pub const ZBAR_QRCODE: c_int = 64;
-pub const ZBAR_CFG_BINARY: c_int = 256;
-pub const ZBAR_PARTIAL: c_int = 1;
-
-// From zbar_modifier_t
-const ZBAR_MOD_GS1: i32 = 0;
-const ZBAR_MOD_AIM: i32 = 1;
-
-// From qrdec.h
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[allow(non_camel_case_types)]
-pub enum qr_mode {
-    QR_MODE_NUM = 1,
-    QR_MODE_ALNUM = 2,
-    QR_MODE_STRUCT = 3,
-    QR_MODE_BYTE = 4,
-    QR_MODE_FNC1_1ST = 5,
-    QR_MODE_ECI = 7,
-    QR_MODE_KANJI = 8,
-    QR_MODE_FNC1_2ND = 9,
-}
+use super::qrdec::qr_mode;
 
 fn qr_mode_has_data(_mode: qr_mode) -> bool {
     matches!(

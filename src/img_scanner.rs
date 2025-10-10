@@ -7,7 +7,13 @@ use std::{
 use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, memcmp, size_t};
 
 use crate::{
-    decoder_types::zbar_decoder_t,
+    decoder_types::{
+        zbar_decoder_t, ZBAR_CFG_ENABLE, ZBAR_CFG_UNCERTAINTY, ZBAR_CFG_BINARY,
+        ZBAR_CFG_POSITION, ZBAR_CFG_TEST_INVERTED, ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY,
+        ZBAR_PARTIAL, ZBAR_EAN5, ZBAR_ISBN10, ZBAR_COMPOSITE, ZBAR_DATABAR,
+        ZBAR_DATABAR_EXP, ZBAR_CODABAR, ZBAR_CODE39, ZBAR_QRCODE, ZBAR_CODE93,
+        ZBAR_CODE128, ZBAR_ORIENT_UNKNOWN,
+    },
     finder::_zbar_decoder_get_sq_finder_config,
     line_scanner::zbar_scanner_t,
     qrcode::{qr_point, qrdec::{qr_finder_lines, _zbar_qr_reset}, rs::rs_gf256, IsaacCtx},
@@ -24,9 +30,6 @@ const NUM_SYMS: usize = 25; // Number of symbol types
 const CACHE_PROXIMITY: c_ulong = 1000;
 const CACHE_HYSTERESIS: c_ulong = 2000;
 const CACHE_TIMEOUT: c_ulong = CACHE_HYSTERESIS * 2;
-
-// Orientation constant
-const ZBAR_ORIENT_UNKNOWN: c_int = -1;
 
 // QR Code finder precision constant
 const QR_FINDER_SUBPREC: c_int = 2;
@@ -112,28 +115,6 @@ use crate::line_scanner::{
     zbar_scan_y, zbar_scanner_destroy, zbar_scanner_get_edge, zbar_scanner_get_width,
 };
 use crate::symbol::{_zbar_symbol_add_point, zbar_symbol_set_ref};
-
-// Config constants (from zbar.h)
-const ZBAR_CFG_ENABLE: c_int = 0;
-const ZBAR_CFG_UNCERTAINTY: c_int = 64;
-const ZBAR_CFG_BINARY: c_int = 66;
-const ZBAR_CFG_POSITION: c_int = 128;
-const ZBAR_CFG_TEST_INVERTED: c_int = 129;
-const ZBAR_CFG_X_DENSITY: c_int = 256;
-const ZBAR_CFG_Y_DENSITY: c_int = 257;
-
-// Symbol type constants (from zbar.h)
-const ZBAR_PARTIAL: c_int = 1;
-const ZBAR_EAN5: c_int = 5;
-const ZBAR_ISBN10: c_int = 10;
-const ZBAR_COMPOSITE: c_int = 15;
-const ZBAR_DATABAR: c_int = 34;
-const ZBAR_DATABAR_EXP: c_int = 35;
-const ZBAR_CODABAR: c_int = 38;
-const ZBAR_CODE39: c_int = 39;
-const ZBAR_QRCODE: c_int = 64;
-const ZBAR_CODE93: c_int = 93;
-const ZBAR_CODE128: c_int = 128;
 
 // Helper macros for configuration access
 macro_rules! CFG {

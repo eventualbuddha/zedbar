@@ -56,6 +56,7 @@ pub const ZBAR_CFG_MIN_LEN: c_int = 0x20;
 pub const ZBAR_CFG_MAX_LEN: c_int = 0x21;
 pub const ZBAR_CFG_UNCERTAINTY: c_int = 64;
 pub const ZBAR_CFG_POSITION: c_int = 128;
+pub const ZBAR_CFG_TEST_INVERTED: c_int = 129;
 pub const ZBAR_CFG_X_DENSITY: c_int = 256;
 pub const ZBAR_CFG_Y_DENSITY: c_int = 257;
 
@@ -72,6 +73,16 @@ pub const ZBAR_BAR: u8 = 1;
 
 pub const ZBAR_MOD_GS1: c_int = 0;
 pub const ZBAR_MOD_AIM: c_int = 1;
+
+// ============================================================================
+// Orientation constants
+// ============================================================================
+
+pub const ZBAR_ORIENT_UNKNOWN: c_int = -1;
+pub const ZBAR_ORIENT_UP: c_int = 0;
+pub const ZBAR_ORIENT_RIGHT: c_int = 1;
+pub const ZBAR_ORIENT_DOWN: c_int = 2;
+pub const ZBAR_ORIENT_LEFT: c_int = 3;
 
 // ============================================================================
 // Buffer size constants
