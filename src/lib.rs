@@ -6,7 +6,6 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(non_camel_case_types)]
 
-pub mod databar_utils;
 pub mod decoder;
 pub mod decoder_types;
 pub mod decoders;
