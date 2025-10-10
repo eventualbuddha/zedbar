@@ -3,9 +3,13 @@
 //! This module provides low-level QR code decoding functions including
 //! point geometry operations and error correction.
 
-use std::{cmp::Ordering, ptr::null};
+use std::{
+    cmp::Ordering,
+    ffi::c_void,
+    ptr::{null, null_mut},
+};
 
-use libc::{c_int, c_uchar, c_uint};
+use libc::{c_int, c_uchar, c_uint, free, memcpy, realloc};
 
 use crate::{decoder_types::qr_finder_line, img_scanner::qr_reader, qrcode::util::qr_ilog};
 
@@ -1003,10 +1007,7 @@ pub unsafe extern "C" fn qr_finder_locate_crossing(
     let mut x1_pos = [x1, y1];
     let dx = [(x1 - x0).abs(), (y1 - y0).abs()];
     let steep = if dx[1] > dx[0] { 1 } else { 0 };
-    let step = [
-        if x0 < x1 { 1 } else { -1 },
-        if y0 < y1 { 1 } else { -1 },
-    ];
+    let step = [if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 }];
     let derr = dx[1 - steep];
 
     // Find the first crossing from !v to v
@@ -1134,12 +1135,12 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
     if best_dist > 0 {
         let u = _u - (*cell).u0;
         let v = _v - (*cell).v0;
-        let mut x = ((*cell).fwd[0][0] * u + (*cell).fwd[0][1] * v + (*cell).fwd[0][2])
-            << QR_ALIGN_SUBPREC;
-        let mut y = ((*cell).fwd[1][0] * u + (*cell).fwd[1][1] * v + (*cell).fwd[1][2])
-            << QR_ALIGN_SUBPREC;
-        let mut w = ((*cell).fwd[2][0] * u + (*cell).fwd[2][1] * v + (*cell).fwd[2][2])
-            << QR_ALIGN_SUBPREC;
+        let mut x =
+            ((*cell).fwd[0][0] * u + (*cell).fwd[0][1] * v + (*cell).fwd[0][2]) << QR_ALIGN_SUBPREC;
+        let mut y =
+            ((*cell).fwd[1][0] * u + (*cell).fwd[1][1] * v + (*cell).fwd[1][2]) << QR_ALIGN_SUBPREC;
+        let mut w =
+            ((*cell).fwd[2][0] * u + (*cell).fwd[2][1] * v + (*cell).fwd[2][2]) << QR_ALIGN_SUBPREC;
 
         // Search an area at most r modules around the target location, in concentric squares
         for i in 1..(r << QR_ALIGN_SUBPREC) {
@@ -1150,7 +1151,8 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
 
             for j in 0..(4 * side_len) {
                 qr_hom_cell_fproject(&mut pc, cell, x, y, w);
-                let match_val = qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
+                let match_val =
+                    qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
                 let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
                 if dist < best_dist {
                     best_match = match_val;
@@ -1160,9 +1162,17 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
                 }
 
                 let dir = if j < 2 * side_len {
-                    if j >= side_len { 1 } else { 0 }
+                    if j >= side_len {
+                        1
+                    } else {
+                        0
+                    }
                 } else {
-                    if j >= 3 * side_len { 1 } else { 0 }
+                    if j >= 3 * side_len {
+                        1
+                    } else {
+                        0
+                    }
                 };
 
                 if j < 2 * side_len {
@@ -1208,7 +1218,14 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
         [0x0003800, 0x0001000],
     ];
     const MASK_COORDS: [[usize; 2]; 8] = [
-        [0, 0], [1, 1], [4, 0], [3, 1], [2, 0], [2, 1], [0, 2], [1, 2],
+        [0, 0],
+        [1, 1],
+        [4, 0],
+        [3, 1],
+        [2, 0],
+        [2, 1],
+        [0, 2],
+        [1, 2],
     ];
 
     for i in 0..8 {
@@ -1265,14 +1282,8 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
         let b = nc[(i << 1) | 1];
         if a != 0 && b != 0 {
             let w = c_int::max(a, b);
-            c[i << 1][0] = qr_divround(
-                w * (b * c[i << 1][0] + a * c[(i << 1) | 1][0]),
-                a * b,
-            );
-            c[i << 1][1] = qr_divround(
-                w * (b * c[i << 1][1] + a * c[(i << 1) | 1][1]),
-                a * b,
-            );
+            c[i << 1][0] = qr_divround(w * (b * c[i << 1][0] + a * c[(i << 1) | 1][0]), a * b);
+            c[i << 1][1] = qr_divround(w * (b * c[i << 1][1] + a * c[(i << 1) | 1][1]), a * b);
             nc[i << 1] = w << 1;
         } else {
             c[i << 1][0] += c[(i << 1) | 1][0];
@@ -1291,7 +1302,8 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
         let dx = qr_divround(c[0][0], nc[0]);
         let dy = qr_divround(c[0][1], nc[0]);
         // But only if it doesn't make things too much worse
-        let match_val = qr_alignment_pattern_fetch(&pattern, bestx + dx, besty + dy, img, width, height);
+        let match_val =
+            qr_alignment_pattern_fetch(&pattern, bestx + dx, besty + dy, img, width, height);
         let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
         if dist <= best_dist + 1 {
             bestx += dx;
@@ -1302,4 +1314,157 @@ pub unsafe extern "C" fn qr_alignment_pattern_search(
     (*p)[0] = bestx;
     (*p)[1] = besty;
     0
+}
+
+// QR Code data structures and functions
+
+/// QR code data mode
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum qr_mode {
+    /// Numeric digits ('0'...'9')
+    QR_MODE_NUM = 1,
+    /// Alphanumeric characters ('0'...'9', 'A'...'Z', plus punctuation ' ', '$', '%', '*', '+', '-', '.', '/', ':')
+    QR_MODE_ALNUM = 2,
+    /// Structured-append header
+    QR_MODE_STRUCT = 3,
+    /// Raw 8-bit bytes
+    QR_MODE_BYTE = 4,
+    /// FNC1 marker in first position (GS1 formatting)
+    QR_MODE_FNC1_1ST = 5,
+    /// Extended Channel Interpretation code
+    QR_MODE_ECI = 7,
+    /// SJIS kanji characters
+    QR_MODE_KANJI = 8,
+    /// FNC1 marker in second position (industry application)
+    QR_MODE_FNC1_2ND = 9,
+}
+
+/// Check if a mode has a data buffer associated with it
+#[inline]
+fn qr_mode_has_data(mode: qr_mode) -> bool {
+    let mode_val = mode as c_uint;
+    (mode_val & (mode_val - 1)) == 0
+}
+
+/// Data payload for a QR code data entry
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union qr_code_data_payload {
+    /// Data buffer for modes that have one
+    pub data: qr_code_data_buffer,
+    /// Decoded "Extended Channel Interpretation" data
+    pub eci: c_uint,
+    /// Decoded "Application Indicator" for FNC1 in 2nd position
+    pub ai: c_int,
+    /// Structured-append header data
+    pub sa: qr_code_data_sa,
+}
+
+/// Data buffer
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct qr_code_data_buffer {
+    pub buf: *mut c_uchar,
+    pub len: c_int,
+}
+
+/// Structured-append data
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct qr_code_data_sa {
+    pub sa_index: c_uchar,
+    pub sa_size: c_uchar,
+    pub sa_parity: c_uchar,
+}
+
+/// A single QR code data entry
+#[repr(C)]
+pub struct qr_code_data_entry {
+    /// The mode of this data block
+    pub mode: qr_mode,
+    /// The payload (union)
+    pub payload: qr_code_data_payload,
+}
+
+/// Low-level QR code data
+#[repr(C)]
+pub struct qr_code_data {
+    /// The decoded data entries
+    pub entries: *mut qr_code_data_entry,
+    pub nentries: c_int,
+    /// The code version (1...40)
+    pub version: c_uchar,
+    /// The ECC level (0...3, corresponding to 'L', 'M', 'Q', and 'H')
+    pub ecc_level: c_uchar,
+    /// The index of this code in the structured-append group
+    pub sa_index: c_uchar,
+    /// The size of the structured-append group, or 0 if there was no S-A header
+    pub sa_size: c_uchar,
+    /// The parity of the entire structured-append group
+    pub sa_parity: c_uchar,
+    /// The parity of this code
+    pub self_parity: c_uchar,
+    /// An approximate bounding box for the code
+    pub bbox: [qr_point; 4],
+}
+
+/// List of QR code data
+#[repr(C)]
+pub struct qr_code_data_list {
+    pub qrdata: *mut qr_code_data,
+    pub nqrdata: c_int,
+    pub cqrdata: c_int,
+}
+
+/// Clear a QR code data structure, freeing all allocated memory
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_data_clear(qrdata: *mut qr_code_data) {
+    for i in 0..(*qrdata).nentries {
+        let entry = (*qrdata).entries.offset(i as isize);
+        if qr_mode_has_data((*entry).mode) {
+            free((*entry).payload.data.buf as *mut c_void);
+        }
+    }
+    free((*qrdata).entries as *mut c_void);
+}
+
+/// Initialize a QR code data list
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_data_list_init(qrlist: *mut qr_code_data_list) {
+    (*qrlist).qrdata = null_mut();
+    (*qrlist).nqrdata = 0;
+    (*qrlist).cqrdata = 0;
+}
+
+/// Clear a QR code data list, freeing all allocated memory
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_data_list_clear(qrlist: *mut qr_code_data_list) {
+    for i in 0..(*qrlist).nqrdata {
+        qr_code_data_clear((*qrlist).qrdata.offset(i as isize));
+    }
+    free((*qrlist).qrdata as *mut c_void);
+    qr_code_data_list_init(qrlist);
+}
+
+/// Add a QR code data to the list
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_data_list_add(
+    qrlist: *mut qr_code_data_list,
+    qrdata: *const qr_code_data,
+) {
+    if (*qrlist).nqrdata >= (*qrlist).cqrdata {
+        (*qrlist).cqrdata = ((*qrlist).cqrdata << 1) | 1;
+        (*qrlist).qrdata = realloc(
+            (*qrlist).qrdata as *mut c_void,
+            ((*qrlist).cqrdata as usize) * std::mem::size_of::<qr_code_data>(),
+        ) as *mut qr_code_data;
+    }
+    memcpy(
+        (*qrlist).qrdata.offset((*qrlist).nqrdata as isize) as *mut c_void,
+        qrdata as *const c_void,
+        std::mem::size_of::<qr_code_data>(),
+    );
+    (*qrlist).nqrdata += 1;
 }

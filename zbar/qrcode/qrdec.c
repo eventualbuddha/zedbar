@@ -2619,42 +2619,22 @@ static int qr_code_data_parse(qr_code_data *_qrdata, int _version,
     return 0;
 }
 
-static void qr_code_data_clear(qr_code_data *_qrdata)
-{
-    int i;
-    for (i = 0; i < _qrdata->nentries; i++) {
-	if (QR_MODE_HAS_DATA(_qrdata->entries[i].mode)) {
-	    free(_qrdata->entries[i].payload.data.buf);
-	}
-    }
-    free(_qrdata->entries);
-}
+/* Clear a QR code data structure, freeing all allocated memory.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_code_data_clear(qr_code_data *_qrdata);
 
-void qr_code_data_list_init(qr_code_data_list *_qrlist)
-{
-    _qrlist->qrdata  = NULL;
-    _qrlist->nqrdata = _qrlist->cqrdata = 0;
-}
+/* Initialize a QR code data list.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_code_data_list_init(qr_code_data_list *_qrlist);
 
-void qr_code_data_list_clear(qr_code_data_list *_qrlist)
-{
-    int i;
-    for (i = 0; i < _qrlist->nqrdata; i++)
-	qr_code_data_clear(_qrlist->qrdata + i);
-    free(_qrlist->qrdata);
-    qr_code_data_list_init(_qrlist);
-}
+/* Clear a QR code data list, freeing all allocated memory.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_code_data_list_clear(qr_code_data_list *_qrlist);
 
-static void qr_code_data_list_add(qr_code_data_list *_qrlist,
-				  qr_code_data *_qrdata)
-{
-    if (_qrlist->nqrdata >= _qrlist->cqrdata) {
-	_qrlist->cqrdata = _qrlist->cqrdata << 1 | 1;
-	_qrlist->qrdata	 = (qr_code_data *)realloc(
-	     _qrlist->qrdata, _qrlist->cqrdata * sizeof(*_qrlist->qrdata));
-    }
-    memcpy(_qrlist->qrdata + _qrlist->nqrdata++, _qrdata, sizeof(*_qrdata));
-}
+/* Add a QR code data to the list.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_code_data_list_add(qr_code_data_list *_qrlist,
+				  qr_code_data *_qrdata);
 
 /*The total number of codewords in a QR code.*/
 static int qr_code_ncodewords(unsigned _version)
