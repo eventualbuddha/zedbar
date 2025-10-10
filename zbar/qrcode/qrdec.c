@@ -1131,14 +1131,8 @@ extern int qr_hamming_dist(unsigned _y1, unsigned _y2, int _maxdiff);
 
 /*Retrieve a bit (guaranteed to be 0 or 1) from the image, given coordinates in
    subpel resolution which have not been bounds checked.*/
-static int qr_img_get_bit(const unsigned char *_img, int _width, int _height,
-			  int _x, int _y)
-{
-    _x >>= QR_FINDER_SUBPREC;
-    _y >>= QR_FINDER_SUBPREC;
-    return _img[QR_CLAMPI(0, _y, _height - 1) * _width +
-		QR_CLAMPI(0, _x, _width - 1)] != 0;
-}
+extern int qr_img_get_bit(const unsigned char *_img, int _width, int _height,
+			  int _x, int _y);
 
 /*A homography from one region of the grid back to the image.
   Unlike a qr_hom, this does not include an inverse transform and maps directly

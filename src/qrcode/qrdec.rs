@@ -27,7 +27,6 @@ const QR_INT_BITS: c_int = c_int::BITS as c_int;
 const QR_ALIGN_SUBPREC: c_int = 2;
 
 /// Number of bits of sub-module precision for finder pattern coordinates
-#[allow(dead_code)]
 const QR_FINDER_SUBPREC: c_int = 2;
 
 /// Helper function: divide with exact rounding
@@ -917,9 +916,8 @@ pub unsafe extern "C" fn qr_hom_cell_init(
 ///
 /// Samples a pixel from the binarized image, with coordinates in QR_FINDER_SUBPREC
 /// subpixel units. Clamps coordinates to valid image bounds.
-#[inline]
-#[allow(dead_code)]
-unsafe fn qr_img_get_bit(
+#[no_mangle]
+pub unsafe extern "C" fn qr_img_get_bit(
     img: *const u8,
     width: c_int,
     height: c_int,
