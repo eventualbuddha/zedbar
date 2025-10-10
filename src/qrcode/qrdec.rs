@@ -315,13 +315,15 @@ pub unsafe extern "C" fn qr_aff_unproject(
     _x: c_int,
     _y: c_int,
 ) {
-    (*_q)[0] = ((*_aff).inv[0][0] * (_x - (*_aff).x0)
-        + (*_aff).inv[0][1] * (_y - (*_aff).y0)
-        + ((1 << (*_aff).ires) >> 1))
+    (*_q)[0] = ((*_aff).inv[0][0]
+        .wrapping_mul(_x.wrapping_sub((*_aff).x0))
+        .wrapping_add((*_aff).inv[0][1].wrapping_mul(_y.wrapping_sub((*_aff).y0)))
+        .wrapping_add((1 << (*_aff).ires) >> 1))
         >> (*_aff).ires;
-    (*_q)[1] = ((*_aff).inv[1][0] * (_x - (*_aff).x0)
-        + (*_aff).inv[1][1] * (_y - (*_aff).y0)
-        + ((1 << (*_aff).ires) >> 1))
+    (*_q)[1] = ((*_aff).inv[1][0]
+        .wrapping_mul(_x.wrapping_sub((*_aff).x0))
+        .wrapping_add((*_aff).inv[1][1].wrapping_mul(_y.wrapping_sub((*_aff).y0)))
+        .wrapping_add((1 << (*_aff).ires) >> 1))
         >> (*_aff).ires;
 }
 
@@ -333,12 +335,18 @@ pub unsafe extern "C" fn qr_aff_project(
     _u: c_int,
     _v: c_int,
 ) {
-    (*_p)[0] = (((*_aff).fwd[0][0] * _u + (*_aff).fwd[0][1] * _v + (1 << ((*_aff).res - 1)))
+    (*_p)[0] = (((*_aff).fwd[0][0]
+        .wrapping_mul(_u)
+        .wrapping_add((*_aff).fwd[0][1].wrapping_mul(_v))
+        .wrapping_add(1 << ((*_aff).res - 1)))
         >> (*_aff).res)
-        + (*_aff).x0;
-    (*_p)[1] = (((*_aff).fwd[1][0] * _u + (*_aff).fwd[1][1] * _v + (1 << ((*_aff).res - 1)))
+        .wrapping_add((*_aff).x0);
+    (*_p)[1] = (((*_aff).fwd[1][0]
+        .wrapping_mul(_u)
+        .wrapping_add((*_aff).fwd[1][1].wrapping_mul(_v))
+        .wrapping_add(1 << ((*_aff).res - 1)))
         >> (*_aff).res)
-        + (*_aff).y0;
+        .wrapping_add((*_aff).y0);
 }
 
 /// A full homography.
