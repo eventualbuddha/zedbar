@@ -980,3 +980,326 @@ pub unsafe extern "C" fn qr_hom_cell_project(
         (*_cell).fwd[2][0] * _u + (*_cell).fwd[2][1] * _v + ((*_cell).fwd[2][2] << _res),
     );
 }
+
+/// Locate the crossing of a finder or alignment pattern along a line
+///
+/// Uses Bresenham's algorithm to trace along the line and find the exact
+/// transitions from !_v to _v and back. Returns the midpoint of the segment.
+///
+/// Returns 0 on success, -1 if no crossing found.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_locate_crossing(
+    img: *const u8,
+    width: c_int,
+    _height: c_int,
+    x0: c_int,
+    y0: c_int,
+    x1: c_int,
+    y1: c_int,
+    v: c_int,
+    p: *mut qr_point,
+) -> c_int {
+    let mut x0_pos = [x0, y0];
+    let mut x1_pos = [x1, y1];
+    let dx = [(x1 - x0).abs(), (y1 - y0).abs()];
+    let steep = if dx[1] > dx[0] { 1 } else { 0 };
+    let step = [
+        if x0 < x1 { 1 } else { -1 },
+        if y0 < y1 { 1 } else { -1 },
+    ];
+    let derr = dx[1 - steep];
+
+    // Find the first crossing from !v to v
+    let mut err = 0;
+    loop {
+        // If we make it all the way to the other side, there's no crossing
+        if x0_pos[steep] == x1_pos[steep] {
+            return -1;
+        }
+        x0_pos[steep] += step[steep];
+        err += derr;
+        if (err << 1) > dx[steep] {
+            x0_pos[1 - steep] += step[1 - steep];
+            err -= dx[steep];
+        }
+        let pixel = *img.offset((x0_pos[1] * width + x0_pos[0]) as isize);
+        if ((pixel == 0) as c_int) != v {
+            break;
+        }
+    }
+
+    // Find the last crossing from v to !v
+    err = 0;
+    loop {
+        if x0_pos[steep] == x1_pos[steep] {
+            break;
+        }
+        x1_pos[steep] -= step[steep];
+        err += derr;
+        if (err << 1) > dx[steep] {
+            x1_pos[1 - steep] -= step[1 - steep];
+            err -= dx[steep];
+        }
+        let pixel = *img.offset((x1_pos[1] * width + x1_pos[0]) as isize);
+        if ((pixel == 0) as c_int) != v {
+            break;
+        }
+    }
+
+    // Return the midpoint of the v segment
+    (*p)[0] = ((x0_pos[0] + x1_pos[0] + 1) << QR_FINDER_SUBPREC) >> 1;
+    (*p)[1] = ((x0_pos[1] + x1_pos[1] + 1) << QR_FINDER_SUBPREC) >> 1;
+    0
+}
+
+/// Fetch a 5x5 alignment pattern and return it as a 25-bit value
+///
+/// Samples a 5x5 grid of pixels offset by (x0, y0) from the template positions
+/// in p, returning the result as a packed 25-bit unsigned integer.
+unsafe fn qr_alignment_pattern_fetch(
+    p: &[[qr_point; 5]; 5],
+    x0: c_int,
+    y0: c_int,
+    img: *const u8,
+    width: c_int,
+    height: c_int,
+) -> c_uint {
+    let dx = x0 - p[2][2][0];
+    let dy = y0 - p[2][2][1];
+    let mut v = 0u32;
+    let mut k = 0;
+    for i in 0..5 {
+        for j in 0..5 {
+            v |= (qr_img_get_bit(img, width, height, p[i][j][0] + dx, p[i][j][1] + dy) as c_uint)
+                << k;
+            k += 1;
+        }
+    }
+    v
+}
+
+/// Search for an alignment pattern near the given location
+///
+/// Searches for an alignment pattern around the specified grid coordinates (u, v)
+/// within a radius of r modules. Returns 0 on success, -1 if the best match is too poor.
+#[no_mangle]
+pub unsafe extern "C" fn qr_alignment_pattern_search(
+    p: *mut qr_point,
+    cell: *const qr_hom_cell,
+    _u: c_int,
+    _v: c_int,
+    r: c_int,
+    img: *const u8,
+    width: c_int,
+    height: c_int,
+) -> c_int {
+    let mut pattern: [[qr_point; 5]; 5] = [[Default::default(); 5]; 5];
+    let mut nc = [0 as c_int; 4];
+    let mut c: [qr_point; 4] = [[0; 2]; 4];
+    let mut pc: qr_point = [0; 2];
+
+    // Build up a basic template using cell to control shape and scale
+    let u = (_u - 2) - (*cell).u0;
+    let v = (_v - 2) - (*cell).v0;
+    let mut x0 = (*cell).fwd[0][0] * u + (*cell).fwd[0][1] * v + (*cell).fwd[0][2];
+    let mut y0 = (*cell).fwd[1][0] * u + (*cell).fwd[1][1] * v + (*cell).fwd[1][2];
+    let mut w0 = (*cell).fwd[2][0] * u + (*cell).fwd[2][1] * v + (*cell).fwd[2][2];
+    let dxdu = (*cell).fwd[0][0];
+    let dydu = (*cell).fwd[1][0];
+    let dwdu = (*cell).fwd[2][0];
+    let dxdv = (*cell).fwd[0][1];
+    let dydv = (*cell).fwd[1][1];
+    let dwdv = (*cell).fwd[2][1];
+
+    for i in 0..5 {
+        let mut x = x0;
+        let mut y = y0;
+        let mut w = w0;
+        for j in 0..5 {
+            qr_hom_cell_fproject(&mut pattern[i][j], cell, x, y, w);
+            x += dxdu;
+            y += dydu;
+            w += dwdu;
+        }
+        x0 += dxdv;
+        y0 += dydv;
+        w0 += dwdv;
+    }
+
+    let mut bestx = pattern[2][2][0];
+    let mut besty = pattern[2][2][1];
+    let mut best_match = qr_alignment_pattern_fetch(&pattern, bestx, besty, img, width, height);
+    let mut best_dist = qr_hamming_dist(best_match, 0x1F8D63F, 25);
+
+    if best_dist > 0 {
+        let u = _u - (*cell).u0;
+        let v = _v - (*cell).v0;
+        let mut x = ((*cell).fwd[0][0] * u + (*cell).fwd[0][1] * v + (*cell).fwd[0][2])
+            << QR_ALIGN_SUBPREC;
+        let mut y = ((*cell).fwd[1][0] * u + (*cell).fwd[1][1] * v + (*cell).fwd[1][2])
+            << QR_ALIGN_SUBPREC;
+        let mut w = ((*cell).fwd[2][0] * u + (*cell).fwd[2][1] * v + (*cell).fwd[2][2])
+            << QR_ALIGN_SUBPREC;
+
+        // Search an area at most r modules around the target location, in concentric squares
+        for i in 1..(r << QR_ALIGN_SUBPREC) {
+            let side_len = (i << 1) - 1;
+            x -= dxdu + dxdv;
+            y -= dydu + dydv;
+            w -= dwdu + dwdv;
+
+            for j in 0..(4 * side_len) {
+                qr_hom_cell_fproject(&mut pc, cell, x, y, w);
+                let match_val = qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
+                let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
+                if dist < best_dist {
+                    best_match = match_val;
+                    best_dist = dist;
+                    bestx = pc[0];
+                    besty = pc[1];
+                }
+
+                let dir = if j < 2 * side_len {
+                    if j >= side_len { 1 } else { 0 }
+                } else {
+                    if j >= 3 * side_len { 1 } else { 0 }
+                };
+
+                if j < 2 * side_len {
+                    x += (*cell).fwd[0][dir];
+                    y += (*cell).fwd[1][dir];
+                    w += (*cell).fwd[2][dir];
+                } else {
+                    x -= (*cell).fwd[0][dir];
+                    y -= (*cell).fwd[1][dir];
+                    w -= (*cell).fwd[2][dir];
+                }
+
+                if best_dist == 0 {
+                    break;
+                }
+            }
+            if best_dist == 0 {
+                break;
+            }
+        }
+    }
+
+    // If the best result we got was sufficiently bad, reject the match
+    if best_dist > 6 {
+        (*p)[0] = pattern[2][2][0];
+        (*p)[1] = pattern[2][2][1];
+        return -1;
+    }
+
+    // Now try to get a more accurate location of the pattern center
+    let dx = bestx - pattern[2][2][0];
+    let dy = besty - pattern[2][2][1];
+
+    // We consider 8 lines across the finder pattern in turn
+    const MASK_TESTS: [[c_uint; 2]; 8] = [
+        [0x1040041, 0x1000001],
+        [0x0041040, 0x0001000],
+        [0x0110110, 0x0100010],
+        [0x0011100, 0x0001000],
+        [0x0420084, 0x0400004],
+        [0x0021080, 0x0001000],
+        [0x0006C00, 0x0004400],
+        [0x0003800, 0x0001000],
+    ];
+    const MASK_COORDS: [[usize; 2]; 8] = [
+        [0, 0], [1, 1], [4, 0], [3, 1], [2, 0], [2, 1], [0, 2], [1, 2],
+    ];
+
+    for i in 0..8 {
+        if (best_match & MASK_TESTS[i][0]) == MASK_TESTS[i][1] {
+            let x0 = (pattern[MASK_COORDS[i][1]][MASK_COORDS[i][0]][0] + dx) >> QR_FINDER_SUBPREC;
+            if x0 < 0 || x0 >= width {
+                continue;
+            }
+            let y0 = (pattern[MASK_COORDS[i][1]][MASK_COORDS[i][0]][1] + dy) >> QR_FINDER_SUBPREC;
+            if y0 < 0 || y0 >= height {
+                continue;
+            }
+            let x1 = (pattern[4 - MASK_COORDS[i][1]][4 - MASK_COORDS[i][0]][0] + dx)
+                >> QR_FINDER_SUBPREC;
+            if x1 < 0 || x1 >= width {
+                continue;
+            }
+            let y1 = (pattern[4 - MASK_COORDS[i][1]][4 - MASK_COORDS[i][0]][1] + dy)
+                >> QR_FINDER_SUBPREC;
+            if y1 < 0 || y1 >= height {
+                continue;
+            }
+            if qr_finder_locate_crossing(
+                img,
+                width,
+                height,
+                x0,
+                y0,
+                x1,
+                y1,
+                (i & 1) as c_int,
+                &mut pc,
+            ) == 0
+            {
+                let cx = pc[0] - bestx;
+                let cy = pc[1] - besty;
+                if (i & 1) != 0 {
+                    // Weight crossings around the center dot more highly
+                    nc[i >> 1] += 3;
+                    c[i >> 1][0] += cx + (cx << 1);
+                    c[i >> 1][1] += cy + (cy << 1);
+                } else {
+                    nc[i >> 1] += 1;
+                    c[i >> 1][0] += cx;
+                    c[i >> 1][1] += cy;
+                }
+            }
+        }
+    }
+
+    // Sum offsets from lines in orthogonal directions
+    for i in 0..2 {
+        let a = nc[i << 1];
+        let b = nc[(i << 1) | 1];
+        if a != 0 && b != 0 {
+            let w = c_int::max(a, b);
+            c[i << 1][0] = qr_divround(
+                w * (b * c[i << 1][0] + a * c[(i << 1) | 1][0]),
+                a * b,
+            );
+            c[i << 1][1] = qr_divround(
+                w * (b * c[i << 1][1] + a * c[(i << 1) | 1][1]),
+                a * b,
+            );
+            nc[i << 1] = w << 1;
+        } else {
+            c[i << 1][0] += c[(i << 1) | 1][0];
+            c[i << 1][1] += c[(i << 1) | 1][1];
+            nc[i << 1] += b;
+        }
+    }
+
+    // Average offsets from pairs of orthogonal lines
+    c[0][0] += c[2][0];
+    c[0][1] += c[2][1];
+    nc[0] += nc[2];
+
+    // If we actually found any such lines, apply the adjustment
+    if nc[0] != 0 {
+        let dx = qr_divround(c[0][0], nc[0]);
+        let dy = qr_divround(c[0][1], nc[0]);
+        // But only if it doesn't make things too much worse
+        let match_val = qr_alignment_pattern_fetch(&pattern, bestx + dx, besty + dy, img, width, height);
+        let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
+        if dist <= best_dist + 1 {
+            bestx += dx;
+            besty += dy;
+        }
+    }
+
+    (*p)[0] = bestx;
+    (*p)[1] = besty;
+    0
+}
