@@ -477,7 +477,8 @@ pub unsafe extern "C" fn lookup_sequence(
 }
 
 /// Decode a DataBar character from width measurements
-unsafe fn decode_char(
+#[no_mangle]
+pub unsafe extern "C" fn decode_char(
     dcode: *mut zbar_decoder_t,
     seg: *mut crate::decoder_types::databar_segment_t,
     off: c_int,

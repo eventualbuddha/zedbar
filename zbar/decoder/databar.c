@@ -69,10 +69,6 @@ struct group_s {
     { 0, 2, 4, 84 },
 };
 
-/* DataBar expanded checksum multipliers */
-static const unsigned char exp_checksums[] = { 1,   189, 62, 113, 46,  43,
-					       109, 134, 6,  79,  161, 45 };
-
 // Rust implementations - converted to src/databar_utils.rs
 extern void _zbar_databar_append_check14(unsigned char *buf);
 extern void _zbar_databar_decode10(unsigned char *buf, unsigned long n, int i);
@@ -383,102 +379,6 @@ static inline int check_width(unsigned wf, unsigned wd, unsigned n)
 extern void _zbar_databar_merge_segment(databar_decoder_t *db,
 					databar_segment_t *seg);
 
-static zbar_symbol_type_t match_segment(zbar_decoder_t *dcode,
-					databar_segment_t *seg)
-{
-    databar_decoder_t *db = &dcode->databar;
-    unsigned csegs = db->csegs, maxage = 0xfff;
-    int i0, i1, i2, maxcnt = 0;
-    databar_segment_t *smax[3] = {
-	NULL,
-    };
-    unsigned d[4];
-
-    if (seg->partial && seg->count < 4)
-	return (ZBAR_PARTIAL);
-
-    for (i0 = 0; (int)i0 < (int)csegs; i0++) {
-	databar_segment_t *s0 = db->segs + i0;
-	if (s0 == seg || s0->finder != seg->finder || s0->exp ||
-	    s0->color != seg->color || s0->side == seg->side ||
-	    (s0->partial && s0->count < 4) ||
-	    !check_width(seg->width, s0->width, 14))
-	    continue;
-
-	for (i1 = 0; (int)i1 < (int)csegs; i1++) {
-	    databar_segment_t *s1 = db->segs + i1;
-	    int chkf, chks, chk;
-	    unsigned age1;
-	    if (i1 == i0 || s1->finder < 0 || s1->exp ||
-		s1->color == seg->color || (s1->partial && s1->count < 4) ||
-		!check_width(seg->width, s1->width, 14))
-		continue;
-
-	    if (seg->color)
-		chkf = seg->finder + s1->finder * 9;
-	    else
-		chkf = s1->finder + seg->finder * 9;
-	    if (chkf > 72)
-		chkf--;
-	    if (chkf > 8)
-		chkf--;
-
-	    chks = (seg->check + s0->check + s1->check) % 79;
-
-	    if (chkf >= chks)
-		chk = chkf - chks;
-	    else
-		chk = 79 + chkf - chks;
-
-	    age1 = (((db->epoch - s0->epoch) & 0xff) +
-		    ((db->epoch - s1->epoch) & 0xff));
-
-	    for (i2 = i1 + 1; (int)i2 < (int)csegs; i2++) {
-		databar_segment_t *s2 = db->segs + i2;
-		unsigned cnt, age2, age;
-		if (i2 == i0 || s2->finder != s1->finder || s2->exp ||
-		    s2->color != s1->color || s2->side == s1->side ||
-		    s2->check != chk || (s2->partial && s2->count < 4) ||
-		    !check_width(seg->width, s2->width, 14))
-		    continue;
-		age2 = (db->epoch - s2->epoch) & 0xff;
-		age  = age1 + age2;
-		cnt  = s0->count + s1->count + s2->count;
-		if (maxcnt < (int)cnt ||
-		    (maxcnt == (int)cnt && (int)maxage > (int)age)) {
-		    maxcnt  = cnt;
-		    maxage  = age;
-		    smax[0] = s0;
-		    smax[1] = s1;
-		    smax[2] = s2;
-		}
-	    }
-	}
-    }
-
-    if (!smax[0])
-	return (ZBAR_PARTIAL);
-
-    d[(seg->color << 1) | seg->side] = seg->data;
-    for (i0 = 0; i0 < 3; i0++) {
-	d[(smax[i0]->color << 1) | smax[i0]->side] = smax[i0]->data;
-	if (!--(smax[i0]->count))
-	    smax[i0]->finder = -1;
-    }
-    seg->finder = -1;
-
-    if (size_buf(dcode, 18))
-	return (ZBAR_PARTIAL);
-
-    if (acquire_lock(dcode, ZBAR_DATABAR))
-	return (ZBAR_PARTIAL);
-
-    _zbar_databar_postprocess(dcode, d);
-    dcode->modifiers = MOD(ZBAR_MOD_GS1);
-    dcode->direction = 1 - 2 * (seg->side ^ seg->color ^ 1);
-    return (ZBAR_DATABAR);
-}
-
 extern signed lookup_sequence(databar_segment_t *seg, int fixed, int seq[22],
 			      const size_t maxsize);
 
@@ -607,144 +507,14 @@ abort:
 extern unsigned _zbar_databar_calc_check(unsigned sig0, unsigned sig1,
 					 unsigned side, unsigned mod);
 
-// Compatibility wrapper
-static inline unsigned calc_check(unsigned sig0, unsigned sig1, unsigned side,
-				  unsigned mod)
-{
-    return _zbar_databar_calc_check(sig0, sig1, side, mod);
-}
-
 extern int calc_value4(unsigned sig, unsigned n, unsigned wmax,
 		       unsigned nonarrow);
 
-static zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
-				      databar_segment_t *seg, int off, int dir)
-{
-    databar_decoder_t *db = &dcode->databar;
-    unsigned s		  = calc_s(dcode, (dir > 0) ? off : off - 6, 8);
-    int n, i, emin[2] = { 0, }, sum = 0;
-    unsigned sig0 = 0, sig1 = 0;
-    int diff, vodd, veven, v;
-    unsigned sum0, sum1, chk;
-    struct group_s *g;
-
-    if (seg->exp)
-	n = 17;
-    else if (seg->side)
-	n = 15;
-    else
-	n = 16;
-    emin[1] = -n;
-
-    if (s < 13 || !check_width(seg->width, s, n))
-	return (ZBAR_NONE);
-
-    for (i = 4; --i >= 0;) {
-	int e = decode_e(pair_width(dcode, off), s, n);
-	if (e < 0)
-	    return (ZBAR_NONE);
-	sum = e - sum;
-	off += dir;
-	sig1 <<= 4;
-	if (emin[1] < -sum)
-	    emin[1] = -sum;
-	sig1 += sum;
-	if (!i)
-	    break;
-
-	e = decode_e(pair_width(dcode, off), s, n);
-	if (e < 0)
-	    return (ZBAR_NONE);
-	sum = e - sum;
-	off += dir;
-	sig0 <<= 4;
-	if (emin[0] > sum)
-	    emin[0] = sum;
-	sig0 += sum;
-    }
-
-    diff = emin[~n & 1];
-    diff = diff + (diff << 4);
-    diff = diff + (diff << 8);
-
-    sig0 -= diff;
-    sig1 += diff;
-
-    sum0 = sig0 + (sig0 >> 8);
-    sum1 = sig1 + (sig1 >> 8);
-    sum0 += sum0 >> 4;
-    sum1 += sum1 >> 4;
-    sum0 &= 0xf;
-    sum1 &= 0xf;
-
-    if ((int)(sum0 + sum1 + 8) != (int)n) {
-	return (ZBAR_NONE);
-    }
-
-    if (((sum0 ^ (n >> 1)) | (sum1 ^ (n >> 1) ^ n)) & 1) {
-	return (ZBAR_NONE);
-    }
-
-    i = ((n & 0x3) ^ 1) * 5 + (sum1 >> 1);
-    zassert((size_t)i < sizeof(groups) / sizeof(*groups), -1,
-	    "n=%d sum=%d/%d sig=%04x/%04x g=%d", n, sum0, sum1, sig0, sig1, i);
-    g = groups + i;
-
-    vodd = calc_value4(sig0 + 0x1111, sum0 + 4, g->wmax, ~n & 1);
-    if (vodd < 0 || vodd > g->todd)
-	return (ZBAR_NONE);
-
-    veven = calc_value4(sig1 + 0x1111, sum1 + 4, 9 - g->wmax, n & 1);
-    if (veven < 0 || veven > g->teven)
-	return (ZBAR_NONE);
-
-    v = g->sum;
-    if (n & 2)
-	v += vodd + veven * g->todd;
-    else
-	v += veven + vodd * g->teven;
-
-    chk = 0;
-    if (seg->exp) {
-	unsigned side = seg->color ^ seg->side ^ 1;
-	if (v >= 4096)
-	    return (ZBAR_NONE);
-	/* skip A1 left */
-	chk = calc_check(sig0, sig1, side, 211);
-	if (seg->finder || seg->color || seg->side) {
-	    i = (seg->finder << 1) - side + seg->color;
-	    zassert(i >= 0 && i < 12, ZBAR_NONE, "f=%d(%x%x%x) side=%d i=%d\n",
-		    seg->finder, seg->exp, seg->color, seg->side, side, i);
-	    chk = (chk * exp_checksums[i]) % 211;
-	} else if (v >= 4009)
-	    return (ZBAR_NONE);
-	else
-	    chk = 0;
-    } else {
-	chk = calc_check(sig0, sig1, seg->side, 79);
-	if (seg->color)
-	    chk = (chk * 16) % 79;
-    }
-
-    seg->check = chk;
-    seg->data  = v;
-
-    _zbar_databar_merge_segment(db, seg);
-
-    if (seg->exp)
-	return (match_segment_exp(dcode, seg, dir));
-    else if (dir > 0)
-	return (match_segment(dcode, seg));
-    return (ZBAR_PARTIAL);
-}
+extern zbar_symbol_type_t decode_char(zbar_decoder_t *dcode,
+				      databar_segment_t *seg, int off, int dir);
 
 /* Converted to Rust - see src/decoder.rs */
 extern int _zbar_databar_alloc_segment(databar_decoder_t *db);
-
-static inline int alloc_segment(databar_decoder_t *db)
-{
-    return _zbar_databar_alloc_segment(db);
-}
 
 extern zbar_symbol_type_t decode_finder(zbar_decoder_t *dcode);
 
@@ -770,7 +540,7 @@ zbar_symbol_type_t _zbar_decode_databar(zbar_decoder_t *dcode)
 	pair	  = NULL;
 	seg->side = !seg->side;
     } else {
-	int jseg     = alloc_segment(db);
+	int jseg     = _zbar_databar_alloc_segment(db);
 	pair	     = db->segs + iseg;
 	seg	     = db->segs + jseg;
 	seg->finder  = pair->finder;
