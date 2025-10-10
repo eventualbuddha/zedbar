@@ -91,17 +91,6 @@ static const unsigned char exp_checksums[] = { 1,   189, 62, 113, 46,  43,
 extern void _zbar_databar_append_check14(unsigned char *buf);
 extern void _zbar_databar_decode10(unsigned char *buf, unsigned long n, int i);
 
-// Compatibility wrappers
-static inline void append_check14(unsigned char *buf)
-{
-    _zbar_databar_append_check14(buf);
-}
-
-static inline void decode10(unsigned char *buf, unsigned long n, int i)
-{
-    _zbar_databar_decode10(buf, n, i);
-}
-
 #define VAR_MAX(l, i) ((((l) * 12 + (i)) * 2 + 6) / 7)
 
 #define FEED_BITS(b)                         \
@@ -193,10 +182,10 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 	    n = (d >> i) & 0x3ff;
 	    if (n >= 1000)
 		return (-1);
-	    decode10(buf, n, 3);
+	    _zbar_databar_decode10(buf, n, 3);
 	    buf += 3;
 	}
-	append_check14(buf - 13);
+	_zbar_databar_append_check14(buf - 13);
 	buf++;
     }
 
@@ -217,7 +206,7 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 	n = (d >> i) & 0x3ff;
 	if (n >= 1000)
 	    return (-1);
-	decode10(buf, n, 3);
+	_zbar_databar_decode10(buf, n, 3);
 	buf += 3;
 	break;
 
@@ -226,7 +215,7 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 	i -= 15;
 	n = (d >> i) & 0x7fff;
 	PUSH_CHAR4('3', '1', '0', '3');
-	decode10(buf, n, 6);
+	_zbar_databar_decode10(buf, n, 6);
 	buf += 6;
 	break;
 
@@ -237,7 +226,7 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 	PUSH_CHAR4('3', '2', '0', (n >= 10000) ? '3' : '2');
 	if (n >= 10000)
 	    n -= 10000;
-	decode10(buf, n, 6);
+	_zbar_databar_decode10(buf, n, 6);
 	buf += 6;
 	break;
     }
@@ -249,7 +238,7 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 	n = (d >> i) & 0xfffff;
 	if (n >= 1000000)
 	    return (-1);
-	decode10(buf, n, 6);
+	_zbar_databar_decode10(buf, n, 6);
 	*(buf - 1) = *buf;
 	*buf	   = '0';
 	buf += 6;
@@ -266,11 +255,11 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 	    yy = n;
 	    PUSH_CHAR('1');
 	    PUSH_CHAR('0' + ((enc - 6) | 1));
-	    decode10(buf, yy, 2);
+	    _zbar_databar_decode10(buf, yy, 2);
 	    buf += 2;
-	    decode10(buf, mm, 2);
+	    _zbar_databar_decode10(buf, mm, 2);
 	    buf += 2;
-	    decode10(buf, dd, 2);
+	    _zbar_databar_decode10(buf, dd, 2);
 	    buf += 2;
 	} else if (n > 38400)
 	    return (-1);
