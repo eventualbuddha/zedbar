@@ -10,22 +10,24 @@ use crate::{
         ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13,
         ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
-    decoders::ean::_zbar_decode_ean,
+    decoders::{
+        codabar::_zbar_decode_codabar,
+        code128::_zbar_decode_code128,
+        code39::_zbar_decode_code39,
+        code93::_zbar_decode_code93,
+        ean::_zbar_decode_ean,
+        i25::_zbar_decode_i25,
+    },
 };
 use libc::{c_char, c_int, c_uint, c_void};
 
 // Config constant not in decoder_types
 const ZBAR_CFG_NUM: c_int = 5;
 
-// External C functions for decoders and reset functions not yet converted
+// External C functions for decoders not yet converted
 extern "C" {
     fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
     fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
-    fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t;
 }
 
 // Macro equivalents
