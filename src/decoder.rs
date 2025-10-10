@@ -382,6 +382,106 @@ pub unsafe extern "C" fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t)
     old
 }
 
+/// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_databar_postprocess(
+    dcode: *mut zbar_decoder_t,
+    d: *mut c_uint,
+) {
+    let db = &mut (*dcode).databar;
+    let mut d_array = [*d.offset(0), *d.offset(1), *d.offset(2), *d.offset(3)];
+
+    let buf = (*dcode).buf;
+    let mut chk = 0u32;
+
+    // Write "01" prefix
+    *buf.offset(0) = b'0' as c_char;
+    *buf.offset(1) = b'1' as c_char;
+
+    // Start at position 15 and work backwards
+    let mut buf_idx = 15;
+
+    // Write two null terminators
+    *buf.offset(buf_idx) = 0;
+    buf_idx -= 1;
+    *buf.offset(buf_idx) = 0;
+    buf_idx -= 1;
+
+    // First conversion
+    let mut r = (d_array[0] as u64) * 1597 + (d_array[1] as u64);
+    d_array[1] = (r / 10000) as c_uint;
+    r %= 10000;
+    r = r * 2841 + (d_array[2] as u64);
+    d_array[2] = (r / 10000) as c_uint;
+    r %= 10000;
+    r = r * 1597 + (d_array[3] as u64);
+    d_array[3] = (r / 10000) as c_uint;
+
+    // Extract 4 decimal digits
+    for i in (0..4).rev() {
+        let c = (r % 10) as u32;
+        chk += c;
+        if (i & 1) != 0 {
+            chk += c << 1;
+        }
+        *buf.offset(buf_idx) = (c as u8 + b'0') as c_char;
+        buf_idx -= 1;
+        if i != 0 {
+            r /= 10;
+        }
+    }
+
+    // Second conversion
+    r = (d_array[1] as u64) * 2841 + (d_array[2] as u64);
+    d_array[2] = (r / 10000) as c_uint;
+    r %= 10000;
+    r = r * 1597 + (d_array[3] as u64);
+    d_array[3] = (r / 10000) as c_uint;
+
+    // Extract 4 more decimal digits
+    for i in (0..4).rev() {
+        let c = (r % 10) as u32;
+        chk += c;
+        if (i & 1) != 0 {
+            chk += c << 1;
+        }
+        *buf.offset(buf_idx) = (c as u8 + b'0') as c_char;
+        buf_idx -= 1;
+        if i != 0 {
+            r /= 10;
+        }
+    }
+
+    // Third conversion
+    r = (d_array[2] as u64) * 1597 + (d_array[3] as u64);
+
+    // Extract 5 decimal digits
+    for i in (0..5).rev() {
+        let c = (r % 10) as u32;
+        chk += c;
+        if (i & 1) == 0 {
+            chk += c << 1;
+        }
+        *buf.offset(buf_idx) = (c as u8 + b'0') as c_char;
+        buf_idx -= 1;
+        if i != 0 {
+            r /= 10;
+        }
+    }
+
+    // Add check digit if configured
+    if ((db.config >> ZBAR_CFG_EMIT_CHECK) & 1) != 0 {
+        chk %= 10;
+        if chk != 0 {
+            chk = 10 - chk;
+        }
+        *buf.offset(13) = (chk as u8 + b'0') as c_char;
+        (*dcode).buflen = 14;
+    } else {
+        (*dcode).buflen = 13;
+    }
+}
+
 /// Merge or update a DataBar segment with existing segments
 #[no_mangle]
 pub unsafe extern "C" fn _zbar_databar_merge_segment(

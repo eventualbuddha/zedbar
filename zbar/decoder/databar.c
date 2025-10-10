@@ -381,76 +381,12 @@ static int databar_postprocess_exp(zbar_decoder_t *dcode, int *data)
 }
 #undef FEED_BITS
 
-/* convert from heterogeneous base {1597,2841}
- * to base 10 character representation
- */
-static void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
+/* Converted to Rust - see src/decoder.rs */
+extern void _zbar_databar_postprocess(zbar_decoder_t *dcode, unsigned d[4]);
+
+static inline void databar_postprocess(zbar_decoder_t *dcode, unsigned d[4])
 {
-    unsigned long r;
-    databar_decoder_t *db = &dcode->databar;
-    int i;
-    unsigned c, chk = 0;
-    unsigned char *buf = dcode->buf;
-    *(buf++)	       = '0';
-    *(buf++)	       = '1';
-    buf += 15;
-    *--buf = '\0';
-    *--buf = '\0';
-    r	   = d[0] * 1597 + d[1];
-    d[1]   = r / 10000;
-    r %= 10000;
-    r	 = r * 2841 + d[2];
-    d[2] = r / 10000;
-    r %= 10000;
-    r	 = r * 1597 + d[3];
-    d[3] = r / 10000;
-
-    for (i = 4; --i >= 0;) {
-	c = r % 10;
-	chk += c;
-	if (i & 1)
-	    chk += c << 1;
-	*--buf = c + '0';
-	if (i)
-	    r /= 10;
-    }
-    r	 = d[1] * 2841 + d[2];
-    d[2] = r / 10000;
-    r %= 10000;
-    r	 = r * 1597 + d[3];
-    d[3] = r / 10000;
-
-    for (i = 4; --i >= 0;) {
-	c = r % 10;
-	chk += c;
-	if (i & 1)
-	    chk += c << 1;
-	*--buf = c + '0';
-	if (i)
-	    r /= 10;
-    }
-
-    r = d[2] * 1597 + d[3];
-
-    for (i = 5; --i >= 0;) {
-	c = r % 10;
-	chk += c;
-	if (!(i & 1))
-	    chk += c << 1;
-	*--buf = c + '0';
-	if (i)
-	    r /= 10;
-    }
-
-    /* NB linkage flag not supported */
-    if (TEST_CFG(db->config, ZBAR_CFG_EMIT_CHECK)) {
-	chk %= 10;
-	if (chk)
-	    chk = 10 - chk;
-	buf[13]	      = chk + '0';
-	dcode->buflen = buf - dcode->buf + 14;
-    } else
-	dcode->buflen = buf - dcode->buf + 13;
+    _zbar_databar_postprocess(dcode, d);
 }
 
 // Rust implementation - converted to src/databar_utils.rs
