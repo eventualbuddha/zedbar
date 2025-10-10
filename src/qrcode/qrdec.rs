@@ -770,37 +770,61 @@ pub unsafe extern "C" fn qr_hom_cell_init(
     // QR_FLIPSIGNI flips sign of result if original value was negative
     let i00 = if i00_full != 0 {
         let result = qr_divround(i22, i00_full.abs());
-        if i00_full < 0 { -result } else { result }
+        if i00_full < 0 {
+            -result
+        } else {
+            result
+        }
     } else {
         0
     };
     let i01 = if i01_full != 0 {
         let result = qr_divround(i22, i01_full.abs());
-        if i01_full < 0 { -result } else { result }
+        if i01_full < 0 {
+            -result
+        } else {
+            result
+        }
     } else {
         0
     };
     let i10 = if i10_full != 0 {
         let result = qr_divround(i22, i10_full.abs());
-        if i10_full < 0 { -result } else { result }
+        if i10_full < 0 {
+            -result
+        } else {
+            result
+        }
     } else {
         0
     };
     let i11 = if i11_full != 0 {
         let result = qr_divround(i22, i11_full.abs());
-        if i11_full < 0 { -result } else { result }
+        if i11_full < 0 {
+            -result
+        } else {
+            result
+        }
     } else {
         0
     };
     let i20 = if i20_full != 0 {
         let result = qr_divround(i22, i20_full.abs());
-        if i20_full < 0 { -result } else { result }
+        if i20_full < 0 {
+            -result
+        } else {
+            result
+        }
     } else {
         0
     };
     let i21 = if i21_full != 0 {
         let result = qr_divround(i22, i21_full.abs());
-        if i21_full < 0 { -result } else { result }
+        if i21_full < 0 {
+            -result
+        } else {
+            result
+        }
     } else {
         0
     };
@@ -824,7 +848,10 @@ pub unsafe extern "C" fn qr_hom_cell_init(
     let b0 = qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).abs() as u32);
     let b1 = qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).abs() as u32);
     let b2 = qr_ilog(c_int::max(c_int::max(a20.abs(), a21.abs()), a22.abs()) as u32);
-    let shift = c_int::max(0, c_int::max(c_int::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC));
+    let shift = c_int::max(
+        0,
+        c_int::max(c_int::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC),
+    );
     let round = (1i64 << shift) >> 1;
 
     // Compute final coefficients of forward transform
@@ -880,4 +907,49 @@ pub unsafe extern "C" fn qr_hom_cell_init(
     (*cell).y0 = y0;
     (*cell).u0 = u0;
     (*cell).v0 = v0;
+}
+
+/// Finish a partial projection, converting from homogeneous coordinates to the
+/// normal 2-D representation.
+/// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
+/// and _w incrementally, but we cannot avoid the divisions, done here.*/
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_cell_fproject(
+    _p: *mut qr_point,
+    _cell: *const qr_hom_cell,
+    mut _x: c_int,
+    mut _y: c_int,
+    mut _w: c_int,
+) {
+    if _w == 0 {
+        (*_p)[0] = if _x < 0 { c_int::MIN } else { c_int::MAX };
+        (*_p)[1] = if _y < 0 { c_int::MIN } else { c_int::MAX };
+    } else {
+        if _w < 0 {
+            _x = -_x;
+            _y = -_y;
+            _w = -_w;
+        }
+        (*_p)[0] = qr_divround(_x, _w) + (*_cell).x0;
+        (*_p)[1] = qr_divround(_y, _w) + (*_cell).y0;
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_cell_project(
+    _p: *mut qr_point,
+    _cell: *const qr_hom_cell,
+    mut _u: c_int,
+    mut _v: c_int,
+    _res: c_int,
+) {
+    _u -= (*_cell).u0 << _res;
+    _v -= (*_cell).v0 << _res;
+    qr_hom_cell_fproject(
+        _p,
+        _cell,
+        (*_cell).fwd[0][0] * _u + (*_cell).fwd[0][1] * _v + ((*_cell).fwd[0][2] << _res),
+        (*_cell).fwd[1][0] * _u + (*_cell).fwd[1][1] * _v + ((*_cell).fwd[1][2] << _res),
+        (*_cell).fwd[2][0] * _u + (*_cell).fwd[2][1] * _v + ((*_cell).fwd[2][2] << _res),
+    );
 }

@@ -1162,36 +1162,11 @@ extern void qr_hom_cell_init(qr_hom_cell *_cell, int _u0, int _v0, int _u1,
    normal 2-D representation.
   In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
    and _w incrementally, but we cannot avoid the divisions, done here.*/
-static void qr_hom_cell_fproject(qr_point *_p, const qr_hom_cell *_cell, int _x,
-				 int _y, int _w)
-{
-    if (_w == 0) {
-	(*_p)[0] = _x < 0 ? INT_MIN : INT_MAX;
-	(*_p)[1] = _y < 0 ? INT_MIN : INT_MAX;
-    } else {
-	if (_w < 0) {
-	    _x = -_x;
-	    _y = -_y;
-	    _w = -_w;
-	}
-	(*_p)[0] = QR_DIVROUND(_x, _w) + _cell->x0;
-	(*_p)[1] = QR_DIVROUND(_y, _w) + _cell->y0;
-    }
-}
+extern void qr_hom_cell_fproject(qr_point *_p, const qr_hom_cell *_cell, int _x,
+				 int _y, int _w);
 
-static void qr_hom_cell_project(qr_point *_p, const qr_hom_cell *_cell, int _u,
-				int _v, int _res)
-{
-    _u -= _cell->u0 << _res;
-    _v -= _cell->v0 << _res;
-    qr_hom_cell_fproject(_p, _cell,
-			 _cell->fwd[0][0] * _u + _cell->fwd[0][1] * _v +
-			     (_cell->fwd[0][2] << _res),
-			 _cell->fwd[1][0] * _u + _cell->fwd[1][1] * _v +
-			     (_cell->fwd[1][2] << _res),
-			 _cell->fwd[2][0] * _u + _cell->fwd[2][1] * _v +
-			     (_cell->fwd[2][2] << _res));
-}
+extern void qr_hom_cell_project(qr_point *_p, const qr_hom_cell *_cell, int _u,
+				int _v, int _res);
 
 /*Retrieves the bits corresponding to the alignment pattern template centered
    at the given location in the original image (at subpel precision).*/
