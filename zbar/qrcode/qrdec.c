@@ -132,79 +132,11 @@ extern int qr_finder_vline_cmp(const void *_a, const void *_b);
                with ties broken by Y coordinate.
   _nlines:    The number of lines in the set of lines to cluster.
   _v:         0 for horizontal lines, or 1 for vertical lines.
-  Return: The number of clusters.*/
-static int qr_finder_cluster_lines(qr_finder_cluster *_clusters,
+  Return: The number of clusters.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_cluster_lines(qr_finder_cluster *_clusters,
 				   qr_finder_line **_neighbors,
-				   qr_finder_line *_lines, int _nlines, int _v)
-{
-    unsigned char *mark;
-    qr_finder_line **neighbors;
-    int nneighbors;
-    int nclusters;
-    int i;
-    /*TODO: Kalman filters!*/
-    mark      = (unsigned char *)calloc(_nlines, sizeof(*mark));
-    neighbors = _neighbors;
-    nclusters = 0;
-    for (i = 0; i < _nlines - 1; i++)
-	if (!mark[i]) {
-	    int len;
-	    int j;
-	    nneighbors	 = 1;
-	    neighbors[0] = _lines + i;
-	    len		 = _lines[i].len;
-	    for (j = i + 1; j < _nlines; j++)
-		if (!mark[j]) {
-		    const qr_finder_line *a;
-		    const qr_finder_line *b;
-		    int thresh;
-		    a = neighbors[nneighbors - 1];
-		    b = _lines + j;
-		    /*The clustering threshold is proportional to the size of the lines,
-since minor noise in large areas can interrupt patterns more easily
-at high resolutions.*/
-		    thresh = (a->len + 7) >> 2;
-		    if (abs(a->pos[1 - _v] - b->pos[1 - _v]) > thresh)
-			break;
-		    if (abs(a->pos[_v] - b->pos[_v]) > thresh)
-			continue;
-		    if (abs(a->pos[_v] + a->len - b->pos[_v] - b->len) > thresh)
-			continue;
-		    if (a->boffs > 0 && b->boffs > 0 &&
-			abs(a->pos[_v] - a->boffs - b->pos[_v] + b->boffs) >
-			    thresh) {
-			continue;
-		    }
-		    if (a->eoffs > 0 && b->eoffs > 0 &&
-			abs(a->pos[_v] + a->len + a->eoffs - b->pos[_v] -
-			    b->len - b->eoffs) > thresh) {
-			continue;
-		    }
-		    neighbors[nneighbors++] = _lines + j;
-		    len += b->len;
-		}
-	    /*We require at least three lines to form a cluster, which eliminates a
- large number of false positives, saving considerable decoding time.
-This should still be sufficient for 1-pixel codes with no noise.*/
-	    if (nneighbors < 3)
-		continue;
-	    /*The expected number of lines crossing a finder pattern is equal to their
- average length.
-We accept the cluster if size is at least 1/3 their average length (this
- is a very small threshold, but was needed for some test images).*/
-	    len = ((len << 1) + nneighbors) / (nneighbors << 1);
-	    if (nneighbors * (5 << QR_FINDER_SUBPREC) >= len) {
-		_clusters[nclusters].lines  = neighbors;
-		_clusters[nclusters].nlines = nneighbors;
-		for (j = 0; j < nneighbors; j++)
-		    mark[neighbors[j] - _lines] = 1;
-		neighbors += nneighbors;
-		nclusters++;
-	    }
-	}
-    free(mark);
-    return nclusters;
-}
+				   qr_finder_line *_lines, int _nlines, int _v);
 
 /*Adds the coordinates of the edge points from the lines contained in the
    given list of clusters to the list of edge points for a finder center.

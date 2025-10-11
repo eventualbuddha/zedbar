@@ -9,7 +9,7 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use libc::{c_int, c_uchar, c_uint, free, memcpy, realloc};
+use libc::{c_int, c_uchar, c_uint, calloc, free, memcpy, realloc};
 
 use crate::{
     decoder_types::qr_finder_line,
@@ -616,7 +616,7 @@ pub unsafe extern "C" fn qr_pack_buf_init(
 #[no_mangle]
 pub unsafe extern "C" fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
     let m = 16 - _bits;
-    let mut bits = _bits + (*_b).endbit;
+    let bits = _bits + (*_b).endbit;
     let d = (*_b).storage - (*_b).endbyte;
 
     if d <= 2 {
@@ -676,9 +676,9 @@ pub unsafe extern "C" fn qr_code_ncodewords(_version: c_uint) -> c_int {
 pub unsafe extern "C" fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
     let a = _a as *const qr_finder_line;
     let b = _b as *const qr_finder_line;
-    (((c_int::from((*a).pos[0] > (*b).pos[0]) - c_int::from((*a).pos[0] < (*b).pos[0])) << 1)
+    ((c_int::from((*a).pos[0] > (*b).pos[0]) - c_int::from((*a).pos[0] < (*b).pos[0])) << 1)
         + c_int::from((*a).pos[1] > (*b).pos[1])
-        - c_int::from((*a).pos[1] < (*b).pos[1]))
+        - c_int::from((*a).pos[1] < (*b).pos[1])
 }
 
 /// Comparison function for sorting finder centers
@@ -689,13 +689,135 @@ pub unsafe extern "C" fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_voi
 pub unsafe extern "C" fn qr_finder_center_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
     let a = _a as *const qr_finder_center;
     let b = _b as *const qr_finder_center;
-    (((c_int::from((*b).nedge_pts > (*a).nedge_pts)
+    ((c_int::from((*b).nedge_pts > (*a).nedge_pts)
         - c_int::from((*b).nedge_pts < (*a).nedge_pts))
         << 2)
         + ((c_int::from((*a).pos[1] > (*b).pos[1]) - c_int::from((*a).pos[1] < (*b).pos[1]))
             << 1)
         + c_int::from((*a).pos[0] > (*b).pos[0])
-        - c_int::from((*a).pos[0] < (*b).pos[0]))
+        - c_int::from((*a).pos[0] < (*b).pos[0])
+}
+
+/// Clusters adjacent lines into groups that are large enough to be crossing a
+/// finder pattern (relative to their length).
+///
+/// # Parameters
+/// - `_clusters`: The buffer in which to store the clusters found.
+/// - `_neighbors`: The buffer used to store the lists of lines in each cluster.
+/// - `_lines`: The list of lines to cluster.
+///   Horizontal lines must be sorted in ascending order by Y coordinate, with ties broken by X coordinate.
+///   Vertical lines must be sorted in ascending order by X coordinate, with ties broken by Y coordinate.
+/// - `_nlines`: The number of lines in the set of lines to cluster.
+/// - `_v`: 0 for horizontal lines, or 1 for vertical lines.
+///
+/// # Returns
+/// The number of clusters found.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_cluster_lines(
+    _clusters: *mut qr_finder_cluster,
+    _neighbors: *mut *mut qr_finder_line,
+    _lines: *mut qr_finder_line,
+    _nlines: c_int,
+    _v: c_int,
+) -> c_int {
+    // Allocate mark array to track which lines have been clustered
+    let mark = calloc(_nlines as usize, 1) as *mut c_uchar;
+    let mut neighbors = _neighbors;
+    let mut nclusters = 0;
+
+    for i in 0..(_nlines - 1) {
+        if *mark.offset(i as isize) != 0 {
+            continue;
+        }
+
+        let mut nneighbors = 1;
+        *neighbors.offset(0) = _lines.offset(i as isize);
+        let mut len = (*_lines.offset(i as isize)).len;
+
+        for j in (i + 1).._nlines {
+            if *mark.offset(j as isize) != 0 {
+                continue;
+            }
+
+            let a = *neighbors.offset((nneighbors - 1) as isize);
+            let b = _lines.offset(j as isize);
+
+            // The clustering threshold is proportional to the size of the lines,
+            // since minor noise in large areas can interrupt patterns more easily
+            // at high resolutions.
+            let thresh = ((*a).len + 7) >> 2;
+
+            // Check if lines are too far apart perpendicular to their direction
+            if ((*a).pos[(1 - _v) as usize] - (*b).pos[(1 - _v) as usize]).abs() > thresh {
+                break;
+            }
+
+            // Check if lines are too far apart along their direction
+            if ((*a).pos[_v as usize] - (*b).pos[_v as usize]).abs() > thresh {
+                continue;
+            }
+
+            // Check if line ends are too far apart
+            if ((*a).pos[_v as usize] + (*a).len - (*b).pos[_v as usize] - (*b).len).abs()
+                > thresh
+            {
+                continue;
+            }
+
+            // Check beginning offset alignment
+            if (*a).boffs > 0
+                && (*b).boffs > 0
+                && ((*a).pos[_v as usize] - (*a).boffs - (*b).pos[_v as usize] + (*b).boffs).abs()
+                    > thresh
+            {
+                continue;
+            }
+
+            // Check ending offset alignment
+            if (*a).eoffs > 0
+                && (*b).eoffs > 0
+                && ((*a).pos[_v as usize] + (*a).len + (*a).eoffs - (*b).pos[_v as usize]
+                    - (*b).len
+                    - (*b).eoffs)
+                    .abs()
+                    > thresh
+            {
+                continue;
+            }
+
+            *neighbors.offset(nneighbors as isize) = _lines.offset(j as isize);
+            nneighbors += 1;
+            len += (*b).len;
+        }
+
+        // We require at least three lines to form a cluster, which eliminates a
+        // large number of false positives, saving considerable decoding time.
+        // This should still be sufficient for 1-pixel codes with no noise.
+        if nneighbors < 3 {
+            continue;
+        }
+
+        // The expected number of lines crossing a finder pattern is equal to their
+        // average length.
+        // We accept the cluster if size is at least 1/3 their average length (this
+        // is a very small threshold, but was needed for some test images).
+        len = ((len << 1) + nneighbors) / (nneighbors << 1);
+        if nneighbors * (5 << QR_FINDER_SUBPREC) >= len {
+            (*_clusters.offset(nclusters as isize)).lines = neighbors;
+            (*_clusters.offset(nclusters as isize)).nlines = nneighbors;
+
+            for j in 0..nneighbors {
+                let line_offset = (*neighbors.offset(j as isize)).offset_from(_lines);
+                *mark.offset(line_offset) = 1;
+            }
+
+            neighbors = neighbors.offset(nneighbors as isize);
+            nclusters += 1;
+        }
+    }
+
+    free(mark as *mut c_void);
+    nclusters
 }
 
 /// Mark a given rectangular region as belonging to the function pattern
