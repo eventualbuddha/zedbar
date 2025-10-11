@@ -1645,31 +1645,14 @@ struct qr_sampling_grid {
 };
 
 /*Mark a given region as belonging to the function pattern.*/
-static void qr_sampling_grid_fp_mask_rect(qr_sampling_grid *_grid, int _dim,
-					  int _u, int _v, int _w, int _h)
-{
-    int i;
-    int j;
-    int stride;
-    stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
-    /*Note that we store bits column-wise, since that's how they're read out of
-   the grid.*/
-    for (j = _u; j < _u + _w; j++)
-	for (i = _v; i < _v + _h; i++) {
-	    _grid->fpmask[j * stride + (i >> QR_INT_LOGBITS)] |=
-		1 << (i & (QR_INT_BITS - 1));
-	}
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_sampling_grid_fp_mask_rect(qr_sampling_grid *_grid, int _dim,
+					  int _u, int _v, int _w, int _h);
 
-/*Determine if a given grid location is inside the function pattern.*/
-static int qr_sampling_grid_is_in_fp(const qr_sampling_grid *_grid, int _dim,
-				     int _u, int _v)
-{
-    return (_grid->fpmask[_u * ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) +
-			  (_v >> QR_INT_LOGBITS)] >>
-	    (_v & (QR_INT_BITS - 1))) &
-	   1;
-}
+/*Determine if a given grid location is inside the function pattern.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_sampling_grid_is_in_fp(const qr_sampling_grid *_grid, int _dim,
+				     int _u, int _v);
 
 /*The spacing between alignment patterns after the second for versions >= 7.
   We could compact this more, but the code to access it would eliminate the

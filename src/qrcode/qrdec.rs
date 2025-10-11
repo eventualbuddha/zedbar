@@ -31,6 +31,9 @@ pub type qr_point = [c_int; 2];
 /// Number of bits in an int (typically 32)
 const QR_INT_BITS: c_int = c_int::BITS as c_int;
 
+/// Log2 of QR_INT_BITS (typically 5 for 32-bit ints)
+const QR_INT_LOGBITS: c_int = 5; // qr_ilog(32) = 5
+
 /// Number of bits of sub-module precision for alignment pattern search
 const QR_ALIGN_SUBPREC: c_int = 2;
 
@@ -71,6 +74,19 @@ pub struct qr_hom_cell {
     pub u0: c_int,
     /// V offset in code space
     pub v0: c_int,
+}
+
+/// Sampling grid for QR code module extraction
+#[repr(C)]
+pub struct qr_sampling_grid {
+    /// Array of homography cells for mapping between code and image space
+    pub cells: [*mut qr_hom_cell; 6],
+    /// Mask indicating which modules are part of function patterns
+    pub fpmask: *mut c_uint,
+    /// Limits for each cell region
+    pub cell_limits: [c_int; 6],
+    /// Number of cells in use
+    pub ncells: c_int,
 }
 
 /// collection of finder lines
@@ -680,6 +696,44 @@ pub unsafe extern "C" fn qr_finder_center_cmp(_a: *const c_void, _b: *const c_vo
             << 1)
         + c_int::from((*a).pos[0] > (*b).pos[0])
         - c_int::from((*a).pos[0] < (*b).pos[0]))
+}
+
+/// Mark a given rectangular region as belonging to the function pattern
+///
+/// Function patterns include finder patterns, timing patterns, and alignment patterns.
+/// We store bits column-wise, since that's how they're read out of the grid.
+#[no_mangle]
+pub unsafe extern "C" fn qr_sampling_grid_fp_mask_rect(
+    _grid: *mut qr_sampling_grid,
+    _dim: c_int,
+    _u: c_int,
+    _v: c_int,
+    _w: c_int,
+    _h: c_int,
+) {
+    let stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
+    for j in _u..(_u + _w) {
+        for i in _v..(_v + _h) {
+            *(*_grid).fpmask.offset((j * stride + (i >> QR_INT_LOGBITS)) as isize) |=
+                1 << (i & (QR_INT_BITS - 1));
+        }
+    }
+}
+
+/// Determine if a given grid location is inside a function pattern
+///
+/// Returns 1 if the location (_u, _v) is part of a function pattern, 0 otherwise.
+#[no_mangle]
+pub unsafe extern "C" fn qr_sampling_grid_is_in_fp(
+    _grid: *const qr_sampling_grid,
+    _dim: c_int,
+    _u: c_int,
+    _v: c_int,
+) -> c_int {
+    ((*(*_grid).fpmask.offset(
+        (_u * ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) + (_v >> QR_INT_LOGBITS)) as isize,
+    )) >> (_v & (QR_INT_BITS - 1))
+        & 1) as c_int
 }
 
 pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
