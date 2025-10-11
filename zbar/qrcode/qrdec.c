@@ -2502,45 +2502,19 @@ extern void qr_code_data_list_add(qr_code_data_list *_qrlist,
   Implemented in Rust (src/qrcode/qrdec.rs) */
 extern int qr_code_ncodewords(unsigned _version);
 
-/*Bulk data for the number of parity bytes per Reed-Solomon block.*/
-static const unsigned char QR_RS_NPAR_VALS[71] = {
-    /*[ 0]*/ 7,	 10, 13, 17,
-    /*[ 4]*/ 10, 16, 22, 28, 26, 26, 26, 22, 24, 22, 22, 26,
-    24,		 18, 22,
-    /*[19]*/ 15, 26, 18, 22, 24, 30, 24, 20, 24,
-    /*[28]*/ 18, 16, 24, 28, 28, 28, 28, 30, 24,
-    /*[37]*/ 20, 18, 18, 26, 24, 28, 24, 30, 26, 28, 28, 26,
-    28,		 30, 30, 22, 20, 24,
-    /*[55]*/ 20, 18, 26, 16,
-    /*[59]*/ 20, 30, 28, 24, 22, 26, 28, 26, 30, 28, 30, 30
-};
+/*Bulk data for the number of parity bytes per Reed-Solomon block.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern const unsigned char QR_RS_NPAR_VALS[71];
 
-/*An offset into QR_RS_NPAR_DATA for each version that gives the number of
-   parity bytes per Reed-Solomon block for each error correction level.*/
-static const unsigned char QR_RS_NPAR_OFFS[40] = {
-    0,	4,  19, 55, 15, 28, 37, 12, 51, 39, 59, 62, 10, 24,
-    22, 41, 31, 44, 7,	65, 47, 33, 67, 67, 48, 32, 67, 67,
-    67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67
-};
+/*An offset into QR_RS_NPAR_VALS for each version that gives the number of
+   parity bytes per Reed-Solomon block for each error correction level.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern const unsigned char QR_RS_NPAR_OFFS[40];
 
 /*The number of Reed-Solomon blocks for each version and error correction
-   level.*/
-static const unsigned char QR_RS_NBLOCKS[40][4] = {
-    { 1, 1, 1, 1 },	{ 1, 1, 1, 1 },	    { 1, 1, 2, 2 },
-    { 1, 2, 2, 4 },	{ 1, 2, 4, 4 },	    { 2, 4, 4, 4 },
-    { 2, 4, 6, 5 },	{ 2, 4, 6, 6 },	    { 2, 5, 8, 8 },
-    { 4, 5, 8, 8 },	{ 4, 5, 8, 11 },    { 4, 8, 10, 11 },
-    { 4, 9, 12, 16 },	{ 4, 9, 16, 16 },   { 6, 10, 12, 18 },
-    { 6, 10, 17, 16 },	{ 6, 11, 16, 19 },  { 6, 13, 18, 21 },
-    { 7, 14, 21, 25 },	{ 8, 16, 20, 25 },  { 8, 17, 23, 25 },
-    { 9, 17, 23, 34 },	{ 9, 18, 25, 30 },  { 10, 20, 27, 32 },
-    { 12, 21, 29, 35 }, { 12, 23, 34, 37 }, { 12, 25, 34, 40 },
-    { 13, 26, 35, 42 }, { 14, 28, 38, 45 }, { 15, 29, 40, 48 },
-    { 16, 31, 43, 51 }, { 17, 33, 45, 54 }, { 18, 35, 48, 57 },
-    { 19, 37, 51, 60 }, { 19, 38, 53, 63 }, { 20, 40, 56, 66 },
-    { 21, 43, 59, 70 }, { 22, 45, 62, 74 }, { 24, 47, 65, 77 },
-    { 25, 49, 68, 81 }
-};
+   level.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern const unsigned char QR_RS_NBLOCKS[40][4];
 
 /*Attempts to fully decode a QR code.
   _qrdata:   Returns the parsed code data.
