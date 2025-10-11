@@ -14,10 +14,11 @@ use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, qsort, realloc,
 use crate::{
     decoder_types::qr_finder_line,
     img_scanner::qr_reader,
-    qrcode::util::{qr_ihypot, qr_ilog},
+    qrcode::util::{qr_ihypot, qr_ilog, qr_isqrt},
 };
 
 use super::{
+    isaac::{isaac_next_uint, IsaacCtx},
     isaac_init,
     rs::{rs_gf256_init, QR_PPOLY},
 };
@@ -179,6 +180,7 @@ pub struct qr_finder_cluster {
 /// A point on the edge of a finder pattern. These are obtained from the
 /// endpoints of the lines crossing this particular pattern.
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct qr_finder_edge_pt {
     /// The location of the edge point.
     pos: qr_point,
@@ -791,6 +793,119 @@ pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
     (*_f).eversion[1] = vversion;
 
     0
+}
+
+/// Eliminate outliers from the classified edge points with RANSAC.
+///
+/// Uses the RANSAC (RANdom SAmple Consensus) algorithm to identify inliers
+/// among the edge points and eliminate outliers.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_ransac(
+    _f: *mut qr_finder,
+    _hom: *const qr_aff,
+    _isaac: *mut IsaacCtx,
+    _e: c_int,
+) {
+    let edge_pts = (*_f).edge_pts[_e as usize];
+    let n = (*_f).nedge_pts[_e as usize];
+    let mut best_ninliers = 0;
+
+    if n > 1 {
+        // 17 iterations is enough to guarantee an outlier-free sample with more
+        // than 99% probability given as many as 50% outliers.
+        let mut max_iters = 17;
+        let mut iter_count = 0;
+
+        while iter_count < max_iters {
+            iter_count += 1;
+            let mut q0: qr_point = [0, 0];
+            let mut q1: qr_point = [0, 0];
+
+            // Pick two random points on this edge
+            let p0i = isaac_next_uint(_isaac, n as u32) as isize;
+            let mut p1i = isaac_next_uint(_isaac, (n - 1) as u32) as isize;
+            if p1i >= p0i {
+                p1i += 1;
+            }
+
+            let p0 = &(*edge_pts.offset(p0i)).pos;
+            let p1 = &(*edge_pts.offset(p1i)).pos;
+
+            // If the corresponding line is not within 45 degrees of the proper
+            // orientation in the square domain, reject it outright.
+            // This can happen, e.g., when highly skewed orientations cause points to
+            // be misclassified into the wrong edge.
+            qr_aff_unproject(&mut q0 as *mut _, _hom, p0[0], p0[1]);
+            qr_aff_unproject(&mut q1 as *mut _, _hom, p1[0], p1[1]);
+            qr_point_translate(&mut q0 as *mut _, -(*_f).o[0], -(*_f).o[1]);
+            qr_point_translate(&mut q1 as *mut _, -(*_f).o[0], -(*_f).o[1]);
+
+            if (q0[(_e >> 1) as usize] - q1[(_e >> 1) as usize]).abs()
+                > (q0[(1 - (_e >> 1)) as usize] - q1[(1 - (_e >> 1)) as usize]).abs()
+            {
+                continue;
+            }
+
+            // Identify the other edge points which are inliers.
+            // The squared distance should be distributed as a Chi^2 distribution
+            // with one degree of freedom, which means for a 95% confidence the
+            // point should lie within a factor 3.8414588 ~= 4 times the expected
+            // variance of the point locations.
+            // We grossly approximate the standard deviation as 1 pixel in one
+            // direction, and 0.5 pixels in the other (because we average two
+            // coordinates).
+            let thresh = qr_isqrt(qr_point_distance2(p0.as_ptr(), p1.as_ptr()) << (2 * QR_FINDER_SUBPREC + 1)) as c_int;
+            let mut ninliers = 0;
+
+            for j in 0..n {
+                if qr_point_ccw(p0.as_ptr(), p1.as_ptr(), (*edge_pts.offset(j as isize)).pos.as_ptr()).abs() <= thresh {
+                    (*edge_pts.offset(j as isize)).extent |= 1;
+                    ninliers += 1;
+                } else {
+                    (*edge_pts.offset(j as isize)).extent &= !1;
+                }
+            }
+
+            if ninliers > best_ninliers {
+                for j in 0..n {
+                    (*edge_pts.offset(j as isize)).extent <<= 1;
+                }
+                best_ninliers = ninliers;
+
+                // The actual number of iterations required is
+                //   log(1-alpha)/log(1-r*r),
+                // where alpha is the required probability of taking a sample with
+                // no outliers (e.g., 0.99) and r is the estimated ratio of inliers
+                // (e.g. ninliers/n).
+                // This is just a rough (but conservative) approximation, but it
+                // should be good enough to stop the iteration early when we find
+                // a good set of inliers.
+                if ninliers > n >> 1 {
+                    max_iters = (67 * n - 63 * ninliers - 1) / (n << 1);
+                }
+            }
+        }
+
+        // Now collect all the inliers at the beginning of the list
+        let mut i = 0;
+        let mut j = 0;
+        while j < best_ninliers {
+            if (*edge_pts.offset(i as isize)).extent & 2 != 0 {
+                if j < i {
+                    let tmp = *edge_pts.offset(i as isize);
+                    *edge_pts.offset(j as isize) = *edge_pts.offset(i as isize);
+                    *edge_pts.offset(i as isize) = tmp;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+    }
+
+    (*_f).ninliers[_e as usize] = best_ninliers;
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
