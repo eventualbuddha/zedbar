@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 63578f04cdd69e2c4f70d8611b7e991a6e325e10d206558300f167b868d1e86c # shrinks to data = "566769080"
 cc 7fad08d3892f6a5a9ad2d0a8d5e981b905505ea78b650a85e25ab49c91422063 # shrinks to data = [0]
+cc 54e50534d3d6d1689644e6913ad4cc89ade3dc9caca9bd73190303eb3bbf54e0 # shrinks to protocol = "ftp", domain = "aaa", tld = "com", path = None

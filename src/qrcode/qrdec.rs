@@ -6,7 +6,7 @@
 use std::{
     cmp::Ordering,
     ffi::c_void,
-    mem::size_of,
+    mem::{size_of, swap},
     ptr::{null, null_mut},
 };
 
@@ -2291,6 +2291,224 @@ pub unsafe extern "C" fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
     if !_grid.is_null() {
         free((*_grid).fpmask as *mut c_void);
         free((*_grid).cells[0] as *mut c_void);
+    }
+}
+
+/// Initialize a QR sampling grid
+///
+/// Sets up the sampling grid for reading QR code data bits from an image.
+/// This includes creating homography cells, masking function patterns,
+/// and locating alignment patterns.
+///
+/// # Safety
+/// This function is unsafe because it allocates memory and dereferences raw pointers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_sampling_grid_init(
+    _grid: *mut qr_sampling_grid,
+    _version: c_int,
+    _ul_pos: *const qr_point,
+    _ur_pos: *const qr_point,
+    _dl_pos: *const qr_point,
+    _p: *mut qr_point,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+) {
+    let mut base_cell: qr_hom_cell = qr_hom_cell {
+        fwd: [[0; 3]; 3],
+        x0: 0,
+        y0: 0,
+        u0: 0,
+        v0: 0,
+    };
+    let mut align_pos: [c_int; 7] = [0; 7];
+
+    let dim = 17 + (_version << 2);
+    let nalign = (_version / 7) + 2;
+
+    // Create a base cell to bootstrap the alignment pattern search
+    qr_hom_cell_init(
+        &mut base_cell,
+        0, 0,
+        dim - 1, 0,
+        0, dim - 1,
+        dim - 1, dim - 1,
+        (*_p.offset(0))[0], (*_p.offset(0))[1],
+        (*_p.offset(1))[0], (*_p.offset(1))[1],
+        (*_p.offset(2))[0], (*_p.offset(2))[1],
+        (*_p.offset(3))[0], (*_p.offset(3))[1],
+    );
+
+    // Allocate the array of cells
+    (*_grid).ncells = nalign - 1;
+    (*_grid).cells[0] = malloc(
+        ((nalign - 1) * (nalign - 1)) as usize * size_of::<qr_hom_cell>()
+    ) as *mut qr_hom_cell;
+    for i in 1..((*_grid).ncells as usize) {
+        (*_grid).cells[i] = (*_grid).cells[i - 1].add((*_grid).ncells as usize);
+    }
+
+    // Initialize the function pattern mask
+    (*_grid).fpmask = calloc(
+        dim as size_t,
+        (((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) * size_of::<c_uint>() as c_int) as size_t,
+    ) as *mut c_uint;
+
+    // Mask out the finder patterns (and separators and format info bits)
+    qr_sampling_grid_fp_mask_rect(_grid, dim, 0, 0, 9, 9);
+    qr_sampling_grid_fp_mask_rect(_grid, dim, 0, dim - 8, 9, 8);
+    qr_sampling_grid_fp_mask_rect(_grid, dim, dim - 8, 0, 8, 9);
+
+    // Mask out the version number bits
+    if _version > 6 {
+        qr_sampling_grid_fp_mask_rect(_grid, dim, 0, dim - 11, 6, 3);
+        qr_sampling_grid_fp_mask_rect(_grid, dim, dim - 11, 0, 3, 6);
+    }
+
+    // Mask out the timing patterns
+    qr_sampling_grid_fp_mask_rect(_grid, dim, 9, 6, dim - 17, 1);
+    qr_sampling_grid_fp_mask_rect(_grid, dim, 6, 9, 1, dim - 17);
+
+    // If we have no alignment patterns (e.g., this is a version 1 code), just use
+    // the base cell and hope it's good enough
+    if _version < 2 {
+        memcpy(
+            (*_grid).cells[0] as *mut c_void,
+            &base_cell as *const qr_hom_cell as *const c_void,
+            size_of::<qr_hom_cell>(),
+        );
+    } else {
+        let q = malloc((nalign * nalign) as usize * size_of::<qr_point>()) as *mut qr_point;
+        let p = malloc((nalign * nalign) as usize * size_of::<qr_point>()) as *mut qr_point;
+
+        // Initialize the alignment pattern position list
+        align_pos[0] = 6;
+        align_pos[(nalign - 1) as usize] = dim - 7;
+        if _version > 6 {
+            let d = QR_ALIGNMENT_SPACING[(_version - 7) as usize] as c_int;
+            for i in (1..(nalign - 1)).rev() {
+                align_pos[i as usize] = align_pos[(i + 1) as usize] - d;
+            }
+        }
+
+        // Three of the corners use a finder pattern instead of a separate alignment pattern
+        (*q.offset(0))[0] = 3;
+        (*q.offset(0))[1] = 3;
+        (*p.offset(0))[0] = (*_ul_pos)[0];
+        (*p.offset(0))[1] = (*_ul_pos)[1];
+        (*q.offset((nalign - 1) as isize))[0] = dim - 4;
+        (*q.offset((nalign - 1) as isize))[1] = 3;
+        (*p.offset((nalign - 1) as isize))[0] = (*_ur_pos)[0];
+        (*p.offset((nalign - 1) as isize))[1] = (*_ur_pos)[1];
+        (*q.offset(((nalign - 1) * nalign) as isize))[0] = 3;
+        (*q.offset(((nalign - 1) * nalign) as isize))[1] = dim - 4;
+        (*p.offset(((nalign - 1) * nalign) as isize))[0] = (*_dl_pos)[0];
+        (*p.offset(((nalign - 1) * nalign) as isize))[1] = (*_dl_pos)[1];
+
+        // Scan for alignment patterns using a diagonal sweep
+        for k in 1..(2 * nalign - 1) {
+            let jmax = c_int::min(k, nalign - 1) - (if k == nalign - 1 { 1 } else { 0 });
+            let jmin = c_int::max(0, k - (nalign - 1)) + (if k == nalign - 1 { 1 } else { 0 });
+            for j in jmin..=jmax {
+                let i = jmax - (j - jmin);
+                let k_idx = i * nalign + j;
+                let u = align_pos[j as usize];
+                let v = align_pos[i as usize];
+                (*q.offset(k_idx as isize))[0] = u;
+                (*q.offset(k_idx as isize))[1] = v;
+
+                // Mask out the alignment pattern
+                qr_sampling_grid_fp_mask_rect(_grid, dim, u - 2, v - 2, 5, 5);
+
+                // Pick a cell to use to govern the alignment pattern search
+                let cell = if i > 1 && j > 1 {
+                    let mut p0: qr_point = [0, 0];
+                    let mut p1: qr_point = [0, 0];
+                    let mut p2: qr_point = [0, 0];
+
+                    // Each predictor is basically a straight-line extrapolation from two
+                    // neighboring alignment patterns
+                    qr_hom_cell_project(&mut p0, (*_grid).cells[(i - 2) as usize].add((j - 1) as usize), u, v, 0);
+                    qr_hom_cell_project(&mut p1, (*_grid).cells[(i - 2) as usize].add((j - 2) as usize), u, v, 0);
+                    qr_hom_cell_project(&mut p2, (*_grid).cells[(i - 1) as usize].add((j - 2) as usize), u, v, 0);
+
+                    // Take the median of the predictions as the search center
+                    // QR_SORT2I implementation using swap
+                    if p0[0] > p1[0] { swap(&mut p0[0], &mut p1[0]); }
+                    if p0[1] > p1[1] { swap(&mut p0[1], &mut p1[1]); }
+                    if p1[0] > p2[0] { swap(&mut p1[0], &mut p2[0]); }
+                    if p1[1] > p2[1] { swap(&mut p1[1], &mut p2[1]); }
+                    if p0[0] > p1[0] { swap(&mut p0[0], &mut p1[0]); }
+                    if p0[1] > p1[1] { swap(&mut p0[1], &mut p1[1]); }
+
+                    // We need a cell that has the target point at a known (u,v) location
+                    let cell_ptr = (*_grid).cells[(i - 1) as usize].add((j - 1) as usize);
+                    qr_hom_cell_init(
+                        cell_ptr,
+                        (*q.offset((k_idx - nalign - 1) as isize))[0], (*q.offset((k_idx - nalign - 1) as isize))[1],
+                        (*q.offset((k_idx - nalign) as isize))[0], (*q.offset((k_idx - nalign) as isize))[1],
+                        (*q.offset((k_idx - 1) as isize))[0], (*q.offset((k_idx - 1) as isize))[1],
+                        (*q.offset(k_idx as isize))[0], (*q.offset(k_idx as isize))[1],
+                        (*p.offset((k_idx - nalign - 1) as isize))[0], (*p.offset((k_idx - nalign - 1) as isize))[1],
+                        (*p.offset((k_idx - nalign) as isize))[0], (*p.offset((k_idx - nalign) as isize))[1],
+                        (*p.offset((k_idx - 1) as isize))[0], (*p.offset((k_idx - 1) as isize))[1],
+                        p1[0], p1[1],
+                    );
+                    cell_ptr
+                } else if i > 1 && j > 0 {
+                    (*_grid).cells[(i - 2) as usize].add((j - 1) as usize)
+                } else if i > 0 && j > 1 {
+                    (*_grid).cells[(i - 1) as usize].add((j - 2) as usize)
+                } else {
+                    &base_cell as *const qr_hom_cell as *mut qr_hom_cell
+                };
+
+                // Use a very small search radius
+                qr_alignment_pattern_search(p.add(k_idx as usize), cell, u, v, 2, _img, _width, _height);
+
+                if i > 0 && j > 0 {
+                    qr_hom_cell_init(
+                        (*_grid).cells[(i - 1) as usize].add((j - 1) as usize),
+                        (*q.offset((k_idx - nalign - 1) as isize))[0], (*q.offset((k_idx - nalign - 1) as isize))[1],
+                        (*q.offset((k_idx - nalign) as isize))[0], (*q.offset((k_idx - nalign) as isize))[1],
+                        (*q.offset((k_idx - 1) as isize))[0], (*q.offset((k_idx - 1) as isize))[1],
+                        (*q.offset(k_idx as isize))[0], (*q.offset(k_idx as isize))[1],
+                        (*p.offset((k_idx - nalign - 1) as isize))[0], (*p.offset((k_idx - nalign - 1) as isize))[1],
+                        (*p.offset((k_idx - nalign) as isize))[0], (*p.offset((k_idx - nalign) as isize))[1],
+                        (*p.offset((k_idx - 1) as isize))[0], (*p.offset((k_idx - 1) as isize))[1],
+                        (*p.offset(k_idx as isize))[0], (*p.offset(k_idx as isize))[1],
+                    );
+                }
+            }
+        }
+        free(q as *mut c_void);
+        free(p as *mut c_void);
+    }
+
+    // Set the limits over which each cell is used
+    memcpy(
+        (*_grid).cell_limits.as_mut_ptr() as *mut c_void,
+        align_pos.as_ptr().offset(1) as *const c_void,
+        (((*_grid).ncells - 1) * size_of::<c_int>() as c_int) as size_t,
+    );
+    (*_grid).cell_limits[((*_grid).ncells - 1) as usize] = dim;
+
+    // Produce a bounding square for the code
+    qr_hom_cell_project(_p.offset(0), (*_grid).cells[0].add(0), -1, -1, 1);
+    qr_hom_cell_project(_p.offset(1), (*_grid).cells[0].add(((*_grid).ncells - 1) as usize), (dim << 1) - 1, -1, 1);
+    qr_hom_cell_project(_p.offset(2), (*_grid).cells[((*_grid).ncells - 1) as usize].add(0), -1, (dim << 1) - 1, 1);
+    qr_hom_cell_project(_p.offset(3), (*_grid).cells[((*_grid).ncells - 1) as usize].add(((*_grid).ncells - 1) as usize), (dim << 1) - 1, (dim << 1) - 1, 1);
+
+    // Clamp the points somewhere near the image
+    for i in 0..4 {
+        (*_p.offset(i))[0] = c_int::max(
+            -(_width << QR_FINDER_SUBPREC),
+            c_int::min((*_p.offset(i))[0], (_width << QR_FINDER_SUBPREC) + 1)
+        );
+        (*_p.offset(i))[1] = c_int::max(
+            -(_height << QR_FINDER_SUBPREC),
+            c_int::min((*_p.offset(i))[1], (_height << QR_FINDER_SUBPREC) + 1)
+        );
     }
 }
 
