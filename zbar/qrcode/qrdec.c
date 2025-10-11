@@ -118,15 +118,8 @@ struct qr_finder_center {
     int nedge_pts;
 };
 
-static int qr_finder_vline_cmp(const void *_a, const void *_b)
-{
-    const qr_finder_line *a;
-    const qr_finder_line *b;
-    a = (const qr_finder_line *)_a;
-    b = (const qr_finder_line *)_b;
-    return (((a->pos[0] > b->pos[0]) - (a->pos[0] < b->pos[0])) << 1) +
-	   (a->pos[1] > b->pos[1]) - (a->pos[1] < b->pos[1]);
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_vline_cmp(const void *_a, const void *_b);
 
 /*Clusters adjacent lines into groups that are large enough to be crossing a
    finder pattern (relative to their length).
@@ -253,17 +246,8 @@ static int qr_finder_edge_pts_fill(qr_finder_edge_pt *_edge_pts, int _nedge_pts,
     return _nedge_pts;
 }
 
-static int qr_finder_center_cmp(const void *_a, const void *_b)
-{
-    const qr_finder_center *a;
-    const qr_finder_center *b;
-    a = (const qr_finder_center *)_a;
-    b = (const qr_finder_center *)_b;
-    return (((b->nedge_pts > a->nedge_pts) - (b->nedge_pts < a->nedge_pts))
-	    << 2) +
-	   (((a->pos[1] > b->pos[1]) - (a->pos[1] < b->pos[1])) << 1) +
-	   (a->pos[0] > b->pos[0]) - (a->pos[0] < b->pos[0]);
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_center_cmp(const void *_a, const void *_b);
 
 /*Determine if a horizontal line crosses a vertical line.
   _hline: The horizontal line.

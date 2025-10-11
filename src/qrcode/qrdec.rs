@@ -652,6 +652,36 @@ pub unsafe extern "C" fn qr_code_ncodewords(_version: c_uint) -> c_int {
         >> 3) as c_int
 }
 
+/// Comparison function for sorting vertical finder lines
+///
+/// Used by qsort to sort vertical lines in ascending order by X coordinate,
+/// with ties broken by Y coordinate.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
+    let a = _a as *const qr_finder_line;
+    let b = _b as *const qr_finder_line;
+    (((c_int::from((*a).pos[0] > (*b).pos[0]) - c_int::from((*a).pos[0] < (*b).pos[0])) << 1)
+        + c_int::from((*a).pos[1] > (*b).pos[1])
+        - c_int::from((*a).pos[1] < (*b).pos[1]))
+}
+
+/// Comparison function for sorting finder centers
+///
+/// Sorts primarily by number of edge points (descending), then by Y coordinate
+/// (ascending), then by X coordinate (ascending).
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_center_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
+    let a = _a as *const qr_finder_center;
+    let b = _b as *const qr_finder_center;
+    (((c_int::from((*b).nedge_pts > (*a).nedge_pts)
+        - c_int::from((*b).nedge_pts < (*a).nedge_pts))
+        << 2)
+        + ((c_int::from((*a).pos[1] > (*b).pos[1]) - c_int::from((*a).pos[1] < (*b).pos[1]))
+            << 1)
+        + c_int::from((*a).pos[0] > (*b).pos[0])
+        - c_int::from((*a).pos[0] < (*b).pos[0]))
+}
+
 pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
     match ((c_int::from(a.edge > b.edge) - c_int::from(a.edge < b.edge)) << 1)
         + c_int::from(a.extent > b.extent)
