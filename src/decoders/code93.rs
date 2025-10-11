@@ -125,7 +125,7 @@ fn cfg(decoder: &code93_decoder_t, cfg: c_int) -> c_int {
 /// Check width variance
 #[inline]
 fn check_width(cur: c_uint, prev: c_uint) -> bool {
-    let dw = if prev > cur { prev - cur } else { cur - prev };
+    let dw = prev.abs_diff(cur);
     let dw = dw * 4;
     dw > prev
 }

@@ -143,7 +143,7 @@ fn rs_quadratic_solve(gf: &rs_gf256, b: u8, c: u8, x: &mut [u8]) -> c_int {
     let mut logc = gf.log[c as usize] as usize;
 
     // If b lies in GF(2**4), scale x to move it out
-    let inc = if logb % (255 / 15) == 0 { 1 } else { 0 };
+    let inc = if logb.is_multiple_of(255 / 15) { 1 } else { 0 };
     let b = if inc != 0 {
         let b = gf.exp[logb + 254];
         logb = gf.log[b as usize] as usize;
@@ -170,7 +170,7 @@ fn rs_quadratic_solve(gf: &rs_gf256, b: u8, c: u8, x: &mut [u8]) -> c_int {
     );
 
     // If g3 doesn't lie in GF(2**4), then our roots lie in an extension field
-    if gf.log[g3 as usize] as usize % (255 / 15) != 0 {
+    if !(gf.log[g3 as usize] as usize).is_multiple_of(255 / 15) {
         return 0;
     }
 
@@ -253,7 +253,7 @@ fn rs_cubic_solve(gf: &rs_gf256, a: u8, b: u8, c: u8, x: &mut [u8]) -> c_int {
 
     let logw = gf.log[x[0] as usize] as usize;
     if logw != 0 {
-        if logw % 3 != 0 {
+        if !logw.is_multiple_of(3) {
             return 0;
         }
         let logw = logw / 3;

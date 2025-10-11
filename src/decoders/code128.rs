@@ -665,11 +665,7 @@ pub unsafe extern "C" fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zba
         dcode.code128.set_character(-1);
         return 0;
     } else {
-        let dw = if dcode.code128.width > dcode.code128.s6 {
-            dcode.code128.width - dcode.code128.s6
-        } else {
-            dcode.code128.s6 - dcode.code128.width
-        };
+        let dw = dcode.code128.width.abs_diff(dcode.code128.s6);
         let dw = dw * 4;
         if dw > dcode.code128.width {
             if dcode.code128.character() > 1 {

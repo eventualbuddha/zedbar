@@ -274,9 +274,9 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
             return -1;
         }
         let c = (c & 0x3) | 0x10;
-        return c as i8;
+        c as i8
     } else {
-        return -1;
+        -1
     }
 }
 
