@@ -2714,6 +2714,315 @@ pub unsafe extern "C" fn qr_samples_unpack(
     }
 }
 
+/// The characters available in QR_MODE_ALNUM
+const QR_ALNUM_TABLE: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+
+/// Parse QR code data from corrected codewords
+///
+/// Decodes the various data modes (numeric, alphanumeric, byte, Kanji, etc.)
+/// and populates the qr_code_data structure.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers and performs memory allocation.
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_data_parse(
+    _qrdata: *mut qr_code_data,
+    _version: c_int,
+    _data: *const c_uchar,
+    _ndata: c_int,
+) -> c_int {
+    // The number of bits used to encode the character count for each version range and data mode
+    const LEN_BITS: [[c_int; 4]; 3] = [
+        [10, 9, 8, 8],      // Versions 1-9
+        [12, 11, 16, 10],   // Versions 10-26
+        [14, 13, 16, 12],   // Versions 27-40
+    ];
+
+    let mut qpb: qr_pack_buf = std::mem::zeroed();
+    let mut self_parity: c_uint = 0;
+    let mut centries = 0;
+
+    // Entries are stored directly in the struct during parsing
+    (*_qrdata).entries = null_mut();
+    (*_qrdata).nentries = 0;
+    (*_qrdata).sa_size = 0;
+
+    // The versions are divided into 3 ranges that each use a different number of bits for length fields
+    let len_bits_idx = (if _version > 9 { 1 } else { 0 }) + (if _version > 26 { 1 } else { 0 });
+
+    qr_pack_buf_init(&mut qpb, _data, _ndata);
+
+    // While we have enough bits to read a mode...
+    while qr_pack_buf_avail(&qpb) >= 4 {
+        let mode = qr_pack_buf_read(&mut qpb, 4);
+
+        // Mode 0 is a terminator
+        if mode == 0 {
+            break;
+        }
+
+        if (*_qrdata).nentries >= centries {
+            centries = (centries << 1) | 1;
+            (*_qrdata).entries = libc::realloc(
+                (*_qrdata).entries as *mut c_void,
+                (centries as usize) * size_of::<qr_code_data_entry>(),
+            ) as *mut qr_code_data_entry;
+        }
+
+        let entry = (*_qrdata).entries.add((*_qrdata).nentries as usize);
+        (*_qrdata).nentries += 1;
+        (*entry).mode = std::mem::transmute::<c_int, qr_mode>(mode);
+        (*entry).payload.data.buf = null_mut();
+
+        match mode {
+            1 => {
+                // QR_MODE_NUM
+                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]);
+                if len < 0 {
+                    return -1;
+                }
+
+                let count = len / 3;
+                let rem = len % 3;
+                if qr_pack_buf_avail(&qpb) < 10 * count + 7 * ((rem >> 1) & 1) + 4 * (rem & 1) {
+                    return -1;
+                }
+
+                let buf = libc::malloc(len as usize) as *mut c_uchar;
+                (*entry).payload.data.buf = buf;
+                (*entry).payload.data.len = len;
+
+                let mut buf_ptr = buf;
+                // Read groups of 3 digits encoded in 10 bits
+                for _ in 0..count {
+                    let bits = qr_pack_buf_read(&mut qpb, 10) as c_uint;
+                    if bits >= 1000 {
+                        return -1;
+                    }
+                    let c = b'0' + (bits / 100) as u8;
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+
+                    let bits = bits % 100;
+                    let c = b'0' + (bits / 10) as u8;
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+
+                    let c = b'0' + (bits % 10) as u8;
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+                }
+
+                // Read the last two digits encoded in 7 bits
+                if rem > 1 {
+                    let bits = qr_pack_buf_read(&mut qpb, 7) as c_uint;
+                    if bits >= 100 {
+                        return -1;
+                    }
+                    let c = b'0' + (bits / 10) as u8;
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+
+                    let c = b'0' + (bits % 10) as u8;
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+                }
+                // Or the last one digit encoded in 4 bits
+                else if rem != 0 {
+                    let bits = qr_pack_buf_read(&mut qpb, 4) as c_uint;
+                    if bits >= 10 {
+                        return -1;
+                    }
+                    let c = b'0' + bits as u8;
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                }
+            }
+            2 => {
+                // QR_MODE_ALNUM
+                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]);
+                if len < 0 {
+                    return -1;
+                }
+
+                let count = len >> 1;
+                let rem = len & 1;
+                if qr_pack_buf_avail(&qpb) < 11 * count + 6 * rem {
+                    return -1;
+                }
+
+                let buf = libc::malloc(len as usize) as *mut c_uchar;
+                (*entry).payload.data.buf = buf;
+                (*entry).payload.data.len = len;
+
+                let mut buf_ptr = buf;
+                // Read groups of two characters encoded in 11 bits
+                for _ in 0..count {
+                    let bits = qr_pack_buf_read(&mut qpb, 11) as c_uint;
+                    if bits >= 2025 {
+                        return -1;
+                    }
+                    let c = QR_ALNUM_TABLE[(bits / 45) as usize];
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+
+                    let c = QR_ALNUM_TABLE[(bits % 45) as usize];
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                    buf_ptr = buf_ptr.add(1);
+                }
+
+                // Read the last character encoded in 6 bits
+                if rem != 0 {
+                    let bits = qr_pack_buf_read(&mut qpb, 6) as c_uint;
+                    if bits >= 45 {
+                        return -1;
+                    }
+                    let c = QR_ALNUM_TABLE[bits as usize];
+                    self_parity ^= c as c_uint;
+                    *buf_ptr = c;
+                }
+            }
+            3 => {
+                // QR_MODE_STRUCT - Structured-append header
+                let bits = qr_pack_buf_read(&mut qpb, 16);
+                if bits < 0 {
+                    return -1;
+                }
+
+                // If this is the first S-A header, save it
+                if (*_qrdata).sa_size == 0 {
+                    (*_qrdata).sa_index = ((bits >> 12) & 0xF) as c_uchar;
+                    (*entry).payload.sa.sa_index = (*_qrdata).sa_index;
+                    (*_qrdata).sa_size = (((bits >> 8) & 0xF) + 1) as c_uchar;
+                    (*entry).payload.sa.sa_size = (*_qrdata).sa_size;
+                    (*_qrdata).sa_parity = (bits & 0xFF) as c_uchar;
+                    (*entry).payload.sa.sa_parity = (*_qrdata).sa_parity;
+                }
+            }
+            4 => {
+                // QR_MODE_BYTE
+                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]);
+                if len < 0 {
+                    return -1;
+                }
+
+                if qr_pack_buf_avail(&qpb) < len << 3 {
+                    return -1;
+                }
+
+                let buf = libc::malloc(len as usize) as *mut c_uchar;
+                (*entry).payload.data.buf = buf;
+                (*entry).payload.data.len = len;
+
+                for i in 0..len {
+                    let c = qr_pack_buf_read(&mut qpb, 8) as c_uchar;
+                    self_parity ^= c as c_uint;
+                    *buf.add(i as usize) = c;
+                }
+            }
+            5 => {
+                // QR_MODE_FNC1_1ST - FNC1 first position marker
+                // No data to read
+            }
+            7 => {
+                // QR_MODE_ECI - Extended Channel Interpretation
+                let bits = qr_pack_buf_read(&mut qpb, 8);
+                if bits < 0 {
+                    return -1;
+                }
+
+                let val = if (bits & 0x80) == 0 {
+                    // One byte
+                    bits as c_uint
+                } else if (bits & 0x40) == 0 {
+                    // Two bytes
+                    let mut val = ((bits & 0x3F) as c_uint) << 8;
+                    let bits = qr_pack_buf_read(&mut qpb, 8);
+                    if bits < 0 {
+                        return -1;
+                    }
+                    val |= bits as c_uint;
+                    val
+                } else if (bits & 0x20) == 0 {
+                    // Three bytes
+                    let mut val = ((bits & 0x1F) as c_uint) << 16;
+                    let bits = qr_pack_buf_read(&mut qpb, 16);
+                    if bits < 0 {
+                        return -1;
+                    }
+                    val |= bits as c_uint;
+                    if val >= 1000000 {
+                        return -1;
+                    }
+                    val
+                } else {
+                    // Invalid lead byte
+                    return -1;
+                };
+
+                (*entry).payload.eci = val;
+            }
+            8 => {
+                // QR_MODE_KANJI
+                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]);
+                if len < 0 {
+                    return -1;
+                }
+
+                if qr_pack_buf_avail(&qpb) < 13 * len {
+                    return -1;
+                }
+
+                let buf = libc::malloc((2 * len) as usize) as *mut c_uchar;
+                (*entry).payload.data.buf = buf;
+                (*entry).payload.data.len = 2 * len;
+
+                // Decode 2-byte SJIS characters encoded in 13 bits
+                for i in 0..len {
+                    let mut bits = qr_pack_buf_read(&mut qpb, 13) as c_uint;
+                    bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
+                    if bits >= 0xA000 {
+                        bits += 0x4000;
+                    }
+                    self_parity ^= bits;
+                    *buf.add((2 * i) as usize) = (bits >> 8) as c_uchar;
+                    *buf.add((2 * i + 1) as usize) = (bits & 0xFF) as c_uchar;
+                }
+            }
+            9 => {
+                // QR_MODE_FNC1_2ND - FNC1 second position marker
+                let bits = qr_pack_buf_read(&mut qpb, 8);
+                if !((0..100).contains(&bits) || (165..191).contains(&bits) || (197..223).contains(&bits)) {
+                    return -1;
+                }
+                (*entry).payload.ai = bits;
+            }
+            _ => {
+                // Unknown mode - we can't skip it, so fail
+                return -1;
+            }
+        }
+    }
+
+    // Store the parity of the data from this code
+    (*_qrdata).self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
+
+    // Shrink entries array to actual size
+    (*_qrdata).entries = libc::realloc(
+        (*_qrdata).entries as *mut c_void,
+        ((*_qrdata).nentries as usize) * size_of::<qr_code_data_entry>(),
+    ) as *mut qr_code_data_entry;
+
+    0
+}
+
 /// Correct a BCH(18,6,3) code word
 ///
 /// Takes a code word and attempts to correct errors using the BCH(18,6,3) code.
