@@ -41,34 +41,6 @@ enum {
     SCH_ISO646
 };
 
-/* DataBar character encoding groups */
-struct group_s {
-    unsigned short sum;
-    unsigned char wmax;
-    unsigned char todd;
-    unsigned char teven;
-} groups[] = {
-    /* (17,4) DataBar Expanded character groups */
-    { 0, 7, 87, 4 },
-    { 348, 5, 52, 20 },
-    { 1388, 4, 30, 52 },
-    { 2948, 3, 10, 104 },
-    { 3988, 1, 1, 204 },
-
-    /* (16,4) DataBar outer character groups */
-    { 0, 8, 161, 1 },
-    { 161, 6, 80, 10 },
-    { 961, 4, 31, 34 },
-    { 2015, 3, 10, 70 },
-    { 2715, 1, 1, 126 },
-
-    /* (15,4) DataBar inner character groups */
-    { 1516, 8, 81, 1 },
-    { 1036, 6, 48, 10 },
-    { 336, 4, 20, 35 },
-    { 0, 2, 4, 84 },
-};
-
 // Rust implementations - converted to src/databar_utils.rs
 extern void _zbar_databar_append_check14(unsigned char *buf);
 extern void _zbar_databar_decode10(unsigned char *buf, unsigned long n, int i);
