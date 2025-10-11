@@ -2533,20 +2533,9 @@ extern void qr_code_data_list_clear(qr_code_data_list *_qrlist);
 extern void qr_code_data_list_add(qr_code_data_list *_qrlist,
 				  qr_code_data *_qrdata);
 
-/*The total number of codewords in a QR code.*/
-static int qr_code_ncodewords(unsigned _version)
-{
-    unsigned nalign;
-    /*This is 24-27 instructions on ARM in thumb mode, or a 26-32 byte savings
-   over just using a table (not counting the instructions that would be
-   needed to do the table lookup).*/
-    if (_version == 1)
-	return 26;
-    nalign = (_version / 7) + 2;
-    return (((_version << 4) * (_version + 8) -
-	     (5 * nalign) * (5 * nalign - 2) + 36 * (_version < 7) + 83) >>
-	    3);
-}
+/*The total number of codewords in a QR code.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_code_ncodewords(unsigned _version);
 
 /*Bulk data for the number of parity bytes per Reed-Solomon block.*/
 static const unsigned char QR_RS_NPAR_VALS[71] = {

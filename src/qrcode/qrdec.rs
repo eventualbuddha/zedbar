@@ -636,6 +636,22 @@ pub unsafe extern "C" fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
     (((*_b).storage - (*_b).endbyte) << 3) - (*_b).endbit
 }
 
+/// Calculate the number of codewords in a QR code of a given version
+///
+/// This is a compact calculation that avoids a lookup table.
+/// Returns the total number of data and error correction codewords.
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_ncodewords(_version: c_uint) -> c_int {
+    if _version == 1 {
+        return 26;
+    }
+    let nalign = (_version / 7) + 2;
+    (((_version << 4) * (_version + 8) - (5 * nalign) * (5 * nalign - 2)
+        + 36 * c_uint::from(_version < 7)
+        + 83)
+        >> 3) as c_int
+}
+
 pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
     match ((c_int::from(a.edge > b.edge) - c_int::from(a.edge < b.edge)) << 1)
         + c_int::from(a.extent > b.extent)
