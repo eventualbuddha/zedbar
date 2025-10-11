@@ -1014,107 +1014,12 @@ extern const unsigned char QR_RS_NPAR_OFFS[40];
   Implemented in Rust (src/qrcode/qrdec.rs) */
 extern const unsigned char QR_RS_NBLOCKS[40][4];
 
-/*Attempts to fully decode a QR code.
-  _qrdata:   Returns the parsed code data.
-  _gf:       Used for Reed-Solomon error correction.
-  _ul_pos:   The location of the UL finder pattern.
-  _ur_pos:   The location of the UR finder pattern.
-  _dl_pos:   The location of the DL finder pattern.
-  _version:  The (decoded) version number.
-  _fmt_info: The decoded format info.
-  _img:      The binary input image.
-  _width:    The width of the input image.
-  _height:   The height of the input image.
-  Return: 0 on success, or a negative value on error.*/
-static int qr_code_decode(qr_code_data *_qrdata, const rs_gf256 *_gf,
-			  const qr_point _ul_pos, const qr_point _ur_pos,
-			  const qr_point _dl_pos, int _version, int _fmt_info,
-			  const unsigned char *_img, int _width, int _height)
-{
-    qr_sampling_grid grid;
-    unsigned *data_bits;
-    unsigned char **blocks;
-    unsigned char *block_data;
-    int nblocks;
-    int nshort_blocks;
-    int ncodewords;
-    int block_sz;
-    int ecc_level;
-    int ndata;
-    int npar;
-    int dim;
-    int ret;
-    int i;
-    /*Read the bits out of the image.*/
-    qr_sampling_grid_init(&grid, _version, _ul_pos, _ur_pos, _dl_pos,
-			  _qrdata->bbox, _img, _width, _height);
-#if defined(QR_DEBUG)
-    qr_sampling_grid_dump(&grid, _version, _img, _width, _height);
-#endif
-    dim	      = 17 + (_version << 2);
-    data_bits = (unsigned *)malloc(
-	dim * ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) * sizeof(*data_bits));
-    qr_sampling_grid_sample(&grid, data_bits, dim, _fmt_info, _img, _width,
-			    _height);
-    /*Group those bits into Reed-Solomon codewords.*/
-    ecc_level  = (_fmt_info >> 3) ^ 1;
-    nblocks    = QR_RS_NBLOCKS[_version - 1][ecc_level];
-    npar       = *(QR_RS_NPAR_VALS + QR_RS_NPAR_OFFS[_version - 1] + ecc_level);
-    ncodewords = qr_code_ncodewords(_version);
-    block_sz   = ncodewords / nblocks;
-    nshort_blocks = nblocks - (ncodewords % nblocks);
-    blocks	  = (unsigned char **)malloc(nblocks * sizeof(*blocks));
-    block_data	  = (unsigned char *)malloc(ncodewords * sizeof(*block_data));
-    blocks[0]	  = block_data;
-    for (i = 1; i < nblocks; i++)
-	blocks[i] = blocks[i - 1] + block_sz + (i > nshort_blocks);
-    qr_samples_unpack(blocks, nblocks, block_sz - npar, nshort_blocks,
-		      data_bits, grid.fpmask, dim);
-    qr_sampling_grid_clear(&grid);
-    free(blocks);
-    free(data_bits);
-    /*Perform the error correction.*/
-    ndata      = 0;
-    ncodewords = 0;
-    ret	       = 0;
-    for (i = 0; i < nblocks; i++) {
-	int block_szi;
-	int ndatai;
-	block_szi = block_sz + (i >= nshort_blocks);
-	ret = rs_correct(_gf, QR_M0, block_data + ncodewords, block_szi, npar,
-			 NULL, 0);
-	/*For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
-   to use all the parity bytes for correction.
-  They are instead used to improve detection.
-  Version 1-L reserves 3 parity bytes for detection.
-  Versions 1-M and 2-L reserve 2 parity bytes for detection.
-  Versions 1-Q, 1-H, and 3-L reserve 1 parity byte for detection.
-  We can ignore the version 3-L restriction because it has an odd number of
-   parity bytes, and we don't support erasure detection.*/
-	if (ret < 0 || (_version == 1 && ret > ((ecc_level + 1) << 1)) ||
-	    (_version == 2 && ecc_level == 0 && ret > 4)) {
-	    ret = -1;
-	    break;
-	}
-	ndatai = block_szi - npar;
-	memmove(block_data + ndata, block_data + ncodewords,
-		ndatai * sizeof(*block_data));
-	ncodewords += block_szi;
-	ndata += ndatai;
-    }
-    /*Parse the corrected bitstream.*/
-    if (ret >= 0) {
-	ret = qr_code_data_parse(_qrdata, _version, block_data, ndata);
-	/*We could return any partially decoded data, but then we'd have to have
-   API support for that; a mode ignoring ECC errors might also be useful.*/
-	if (ret < 0)
-	    qr_code_data_clear(_qrdata);
-	_qrdata->version   = _version;
-	_qrdata->ecc_level = ecc_level;
-    }
-    free(block_data);
-    return ret;
-}
+/*Decode a QR code from an image.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_code_decode(qr_code_data *_qrdata, const rs_gf256 *_gf,
+			   const qr_point *_ul_pos, const qr_point *_ur_pos,
+			   const qr_point *_dl_pos, int _version, int _fmt_info,
+			   const unsigned char *_img, int _width, int _height);
 
 /*Searches for an arrangement of these three finder centers that yields a valid
    configuration.
@@ -1277,8 +1182,8 @@ static int qr_reader_try_configuration(qr_reader *_reader,
 	fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, _img, _width,
 					     _height);
 	if (fmt_info < 0 ||
-	    qr_code_decode(_qrdata, &_reader->gf, ul.c->pos, ur.c->pos,
-			   dl.c->pos, ur_version, fmt_info, _img, _width,
+	    qr_code_decode(_qrdata, &_reader->gf, &ul.c->pos, &ur.c->pos,
+			   &dl.c->pos, ur_version, fmt_info, _img, _width,
 			   _height) < 0) {
 	    /*The code may be flipped.
   Try again, swapping the UR and DL centers.
@@ -1307,8 +1212,8 @@ static int qr_reader_try_configuration(qr_reader *_reader,
 	    QR_SWAP2I(bbox[1][0], bbox[2][0]);
 	    QR_SWAP2I(bbox[1][1], bbox[2][1]);
 	    memcpy(_qrdata->bbox, bbox, sizeof(bbox));
-	    if (qr_code_decode(_qrdata, &_reader->gf, ul.c->pos, dl.c->pos,
-			       ur.c->pos, ur_version, fmt_info, _img, _width,
+	    if (qr_code_decode(_qrdata, &_reader->gf, &ul.c->pos, &dl.c->pos,
+			       &ur.c->pos, ur_version, fmt_info, _img, _width,
 			       _height) < 0) {
 		continue;
 	    }

@@ -22,7 +22,7 @@ use super::{
     bch15_5::bch15_5_correct,
     isaac::{isaac_next_uint, IsaacCtx},
     isaac_init,
-    rs::{rs_gf256_init, QR_PPOLY},
+    rs::{rs_correct, rs_gf256, rs_gf256_init, QR_PPOLY},
 };
 
 /// A line in QR code coordinate space: [A, B, C] for equation Ax + By + C = 0
@@ -3021,6 +3021,135 @@ pub unsafe extern "C" fn qr_code_data_parse(
     ) as *mut qr_code_data_entry;
 
     0
+}
+
+/// Decode a QR code from an image
+///
+/// This is the main decoding function that:
+/// 1. Initializes the sampling grid
+/// 2. Samples data bits from the image
+/// 3. Groups bits into Reed-Solomon codewords
+/// 4. Performs error correction on each block
+/// 5. Parses the corrected data
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers and performs memory allocation.
+#[no_mangle]
+pub unsafe extern "C" fn qr_code_decode(
+    _qrdata: *mut qr_code_data,
+    _gf: *const rs_gf256,
+    _ul_pos: *const qr_point,
+    _ur_pos: *const qr_point,
+    _dl_pos: *const qr_point,
+    _version: c_int,
+    _fmt_info: c_int,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+) -> c_int {
+    let mut grid: qr_sampling_grid = std::mem::zeroed();
+
+    // Read the bits out of the image
+    qr_sampling_grid_init(
+        &mut grid,
+        _version,
+        _ul_pos,
+        _ur_pos,
+        _dl_pos,
+        (*_qrdata).bbox.as_mut_ptr(),
+        _img,
+        _width,
+        _height,
+    );
+
+    let dim = 17 + (_version << 2);
+    let data_bits = libc::malloc(
+        (dim * ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS)) as usize * size_of::<c_uint>(),
+    ) as *mut c_uint;
+
+    qr_sampling_grid_sample(&grid, data_bits, dim, _fmt_info, _img, _width, _height);
+
+    // Group those bits into Reed-Solomon codewords
+    let ecc_level = (_fmt_info >> 3) ^ 1;
+    let nblocks = QR_RS_NBLOCKS[(_version - 1) as usize][ecc_level as usize] as c_int;
+    let npar = QR_RS_NPAR_VALS[(QR_RS_NPAR_OFFS[(_version - 1) as usize] as usize)
+        + (ecc_level as usize)] as c_int;
+    let ncodewords = qr_code_ncodewords(_version as c_uint);
+    let block_sz = ncodewords / nblocks;
+    let nshort_blocks = nblocks - (ncodewords % nblocks);
+
+    let blocks = libc::malloc((nblocks as usize) * size_of::<*mut c_uchar>()) as *mut *mut c_uchar;
+    let block_data = libc::malloc(ncodewords as usize) as *mut c_uchar;
+    *blocks = block_data;
+    for i in 1..nblocks {
+        *blocks.add(i as usize) =
+            (*blocks.add((i - 1) as usize)).add((block_sz + (i > nshort_blocks) as c_int) as usize);
+    }
+
+    qr_samples_unpack(
+        blocks,
+        nblocks,
+        block_sz - npar,
+        nshort_blocks,
+        data_bits,
+        grid.fpmask,
+        dim,
+    );
+
+    qr_sampling_grid_clear(&mut grid);
+    libc::free(blocks as *mut c_void);
+    libc::free(data_bits as *mut c_void);
+
+    // Perform the error correction
+    let mut ndata = 0;
+    let mut ncodewords_processed = 0;
+    let mut ret = 0;
+
+    for i in 0..nblocks {
+        let block_szi = block_sz + (i >= nshort_blocks) as c_int;
+        ret = rs_correct(
+            _gf,
+            0, // QR_M0
+            block_data.add(ncodewords_processed as usize),
+            block_szi,
+            npar,
+            null(),
+            0,
+        );
+
+        // For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
+        // to use all the parity bytes for correction.
+        // They are instead used to improve detection.
+        if ret < 0
+            || (_version == 1 && ret > ((ecc_level + 1) << 1))
+            || (_version == 2 && ecc_level == 0 && ret > 4)
+        {
+            ret = -1;
+            break;
+        }
+
+        let ndatai = block_szi - npar;
+        libc::memmove(
+            block_data.add(ndata as usize) as *mut c_void,
+            block_data.add(ncodewords_processed as usize) as *const c_void,
+            ndatai as usize,
+        );
+        ncodewords_processed += block_szi;
+        ndata += ndatai;
+    }
+
+    // Parse the corrected bitstream
+    if ret >= 0 {
+        ret = qr_code_data_parse(_qrdata, _version, block_data, ndata);
+        if ret < 0 {
+            qr_code_data_clear(_qrdata);
+        }
+        (*_qrdata).version = _version as c_uchar;
+        (*_qrdata).ecc_level = ecc_level as c_uchar;
+    }
+
+    libc::free(block_data as *mut c_void);
+    ret
 }
 
 /// Correct a BCH(18,6,3) code word
