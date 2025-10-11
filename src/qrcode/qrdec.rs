@@ -66,6 +66,22 @@ fn qr_mini(a: c_int, b: c_int) -> c_int {
     a + (((b - a) & -((b < a) as c_int)))
 }
 
+/// Returns the maximum of two integers
+///
+/// Uses bitwise arithmetic to avoid branches (matching C macro QR_MAXI).
+#[inline]
+fn qr_maxi(a: c_int, b: c_int) -> c_int {
+    a - (((a - b) & -((b > a) as c_int)))
+}
+
+/// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
+///
+/// This matches C macro QR_EXTMUL.
+#[inline]
+fn qr_extmul(a: c_int, b: c_int, r: i64) -> i64 {
+    a as i64 * b as i64 + r
+}
+
 /// A cell in the sampling grid for homographic projection
 ///
 /// Represents a mapping from a unit square to a quadrilateral in the image,
@@ -499,6 +515,102 @@ pub struct qr_hom {
     x0: c_int,
     y0: c_int,
     res: c_int,
+}
+
+/// Initialize a homography mapping from four corner points
+///
+/// Computes both the forward and inverse homography transformations
+/// from the given corner points to a square domain.
+///
+/// # Safety
+/// This function is unsafe because it dereferences the raw _hom pointer.
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_init(
+    _hom: *mut qr_hom,
+    _x0: c_int,
+    _y0: c_int,
+    _x1: c_int,
+    _y1: c_int,
+    _x2: c_int,
+    _y2: c_int,
+    _x3: c_int,
+    _y3: c_int,
+    _res: c_int,
+) {
+    let dx10 = _x1 - _x0;
+    let dx20 = _x2 - _x0;
+    let dx30 = _x3 - _x0;
+    let dx31 = _x3 - _x1;
+    let dx32 = _x3 - _x2;
+    let dy10 = _y1 - _y0;
+    let dy20 = _y2 - _y0;
+    let dy30 = _y3 - _y0;
+    let dy31 = _y3 - _y1;
+    let dy32 = _y3 - _y2;
+    let a20 = dx32 * dy10 - dx10 * dy32;
+    let a21 = dx20 * dy31 - dx31 * dy20;
+    let a22 = dx32 * dy31 - dx31 * dy32;
+
+    // Figure out if we need to downscale anything
+    let b0 = qr_ilog(qr_maxi(dx10.abs(), dy10.abs()) as u32)
+        + qr_ilog((a20 + a22).abs() as u32);
+    let b1 = qr_ilog(qr_maxi(dx20.abs(), dy20.abs()) as u32)
+        + qr_ilog((a21 + a22).abs() as u32);
+    let b2 = qr_ilog(qr_maxi(qr_maxi(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let s1 = qr_maxi(0, _res + qr_maxi(qr_maxi(b0, b1), b2) - (QR_INT_BITS - 2));
+    let r1 = (1i64 << s1) >> 1;
+
+    // Compute the final coefficients of the forward transform
+    // The 32x32->64 bit multiplies are really needed for accuracy with large versions
+    (*_hom).fwd[0][0] = qr_fixmul(dx10, a20 + a22, r1, s1);
+    (*_hom).fwd[0][1] = qr_fixmul(dx20, a21 + a22, r1, s1);
+    (*_hom).x0 = _x0;
+    (*_hom).fwd[1][0] = qr_fixmul(dy10, a20 + a22, r1, s1);
+    (*_hom).fwd[1][1] = qr_fixmul(dy20, a21 + a22, r1, s1);
+    (*_hom).y0 = _y0;
+    (*_hom).fwd[2][0] = (a20 + r1 as c_int) >> s1;
+    (*_hom).fwd[2][1] = (a21 + r1 as c_int) >> s1;
+    (*_hom).fwd22 = if s1 > _res {
+        (a22 + ((r1 >> _res) as c_int)) >> (s1 - _res)
+    } else {
+        a22 << (_res - s1)
+    };
+
+    // Now compute the inverse transform
+    let b0 = qr_ilog(qr_maxi(qr_maxi(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
+        + qr_ilog(qr_maxi((*_hom).fwd[0][0].abs(), (*_hom).fwd[1][0].abs()) as u32);
+    let b1 = qr_ilog(qr_maxi(qr_maxi(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
+        + qr_ilog(qr_maxi((*_hom).fwd[0][1].abs(), (*_hom).fwd[1][1].abs()) as u32);
+    let b2 = qr_ilog(a22.abs() as u32) - s1;
+    let s2 = qr_maxi(0, qr_maxi(b0, b1) + b2 - (QR_INT_BITS - 3));
+    let r2 = (1i64 << s2) >> 1;
+    let s1 = s1 + s2;
+    let r1 = r1 << s2;
+
+    // The 32x32->64 bit multiplies are really needed for accuracy with large versions
+    (*_hom).inv[0][0] = qr_fixmul((*_hom).fwd[1][1], a22, r1, s1);
+    (*_hom).inv[0][1] = qr_fixmul(-(*_hom).fwd[0][1], a22, r1, s1);
+    (*_hom).inv[1][0] = qr_fixmul(-(*_hom).fwd[1][0], a22, r1, s1);
+    (*_hom).inv[1][1] = qr_fixmul((*_hom).fwd[0][0], a22, r1, s1);
+    (*_hom).inv[2][0] = qr_fixmul(
+        (*_hom).fwd[1][0],
+        (*_hom).fwd[2][1],
+        -qr_extmul((*_hom).fwd[1][1], (*_hom).fwd[2][0], r2),
+        s2,
+    );
+    (*_hom).inv[2][1] = qr_fixmul(
+        (*_hom).fwd[0][1],
+        (*_hom).fwd[2][0],
+        -qr_extmul((*_hom).fwd[0][0], (*_hom).fwd[2][1], r2),
+        s2,
+    );
+    (*_hom).inv22 = qr_fixmul(
+        (*_hom).fwd[0][0],
+        (*_hom).fwd[1][1],
+        -qr_extmul((*_hom).fwd[0][1], (*_hom).fwd[1][0], r2),
+        s2,
+    );
+    (*_hom).res = _res;
 }
 
 /// Finish a partial projection, converting from homogeneous coordinates to the
