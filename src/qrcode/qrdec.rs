@@ -18,6 +18,7 @@ use crate::{
 };
 
 use super::{
+    bch15_5::bch15_5_correct,
     isaac::{isaac_next_uint, IsaacCtx},
     isaac_init,
     rs::{rs_gf256_init, QR_PPOLY},
@@ -1955,6 +1956,173 @@ pub unsafe extern "C" fn qr_finder_version_decode(
         (v >> 12) as c_int
     } else {
         ret
+    }
+}
+
+/// Decode the format information from a QR code
+///
+/// Reads the 15-bit format information pattern (5 data bits + 10 parity bits)
+/// from around the three finder patterns and uses BCH(15,5) error correction
+/// to decode it. The function tries all combinations of duplicate samples and
+/// picks the most popular valid code.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers and accesses image data.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_fmt_info_decode(
+    _ul: *const qr_finder,
+    _ur: *const qr_finder,
+    _dl: *const qr_finder,
+    _hom: *const qr_hom,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+) -> c_int {
+    let mut lo: [c_uint; 2] = [0; 2];
+    let mut hi: [c_uint; 2] = [0; 2];
+
+    // Read the bits around the UL corner
+    lo[0] = 0;
+    let mut u = (*_ul).o[0] + 5 * (*_ul).size[0];
+    let mut v = (*_ul).o[1] - 3 * (*_ul).size[1];
+    let mut x = (*_hom).fwd[0][0] * u + (*_hom).fwd[0][1] * v;
+    let mut y = (*_hom).fwd[1][0] * u + (*_hom).fwd[1][1] * v;
+    let mut w = (*_hom).fwd[2][0] * u + (*_hom).fwd[2][1] * v + (*_hom).fwd22;
+    let mut dx = (*_hom).fwd[0][1] * (*_ul).size[1];
+    let mut dy = (*_hom).fwd[1][1] * (*_ul).size[1];
+    let mut dw = (*_hom).fwd[2][1] * (*_ul).size[1];
+
+    let mut k = 0;
+    let mut i = 0;
+    loop {
+        // Skip the timing pattern row
+        if i != 6 {
+            let mut p: qr_point = [0, 0];
+            qr_hom_fproject(&mut p, _hom, x, y, w);
+            lo[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+            k += 1;
+            // Don't advance q in the last iteration... we'll start the next loop from
+            // the current position.
+            if i >= 8 {
+                break;
+            }
+        }
+        x += dx;
+        y += dy;
+        w += dw;
+        i += 1;
+    }
+
+    hi[0] = 0;
+    dx = -(*_hom).fwd[0][0] * (*_ul).size[0];
+    dy = -(*_hom).fwd[1][0] * (*_ul).size[0];
+    dw = -(*_hom).fwd[2][0] * (*_ul).size[0];
+    while i > 0 {
+        i -= 1;
+        x += dx;
+        y += dy;
+        w += dw;
+        // Skip the timing pattern column
+        if i != 6 {
+            let mut p: qr_point = [0, 0];
+            qr_hom_fproject(&mut p, _hom, x, y, w);
+            hi[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+            k += 1;
+        }
+    }
+
+    // Read the bits next to the UR corner
+    lo[1] = 0;
+    u = (*_ur).o[0] + 3 * (*_ur).size[0];
+    v = (*_ur).o[1] + 5 * (*_ur).size[1];
+    x = (*_hom).fwd[0][0] * u + (*_hom).fwd[0][1] * v;
+    y = (*_hom).fwd[1][0] * u + (*_hom).fwd[1][1] * v;
+    w = (*_hom).fwd[2][0] * u + (*_hom).fwd[2][1] * v + (*_hom).fwd22;
+    dx = -(*_hom).fwd[0][0] * (*_ur).size[0];
+    dy = -(*_hom).fwd[1][0] * (*_ur).size[0];
+    dw = -(*_hom).fwd[2][0] * (*_ur).size[0];
+    for k in 0..8 {
+        let mut p: qr_point = [0, 0];
+        qr_hom_fproject(&mut p, _hom, x, y, w);
+        lo[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+        x += dx;
+        y += dy;
+        w += dw;
+    }
+
+    // Read the bits next to the DL corner
+    hi[1] = 0;
+    u = (*_dl).o[0] + 5 * (*_dl).size[0];
+    v = (*_dl).o[1] - 3 * (*_dl).size[1];
+    x = (*_hom).fwd[0][0] * u + (*_hom).fwd[0][1] * v;
+    y = (*_hom).fwd[1][0] * u + (*_hom).fwd[1][1] * v;
+    w = (*_hom).fwd[2][0] * u + (*_hom).fwd[2][1] * v + (*_hom).fwd22;
+    dx = (*_hom).fwd[0][1] * (*_dl).size[1];
+    dy = (*_hom).fwd[1][1] * (*_dl).size[1];
+    dw = (*_hom).fwd[2][1] * (*_dl).size[1];
+    for k in 8..15 {
+        let mut p: qr_point = [0, 0];
+        qr_hom_fproject(&mut p, _hom, x, y, w);
+        hi[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+        x += dx;
+        y += dy;
+        w += dw;
+    }
+
+    // For each group of bits we have two samples... try them in all combinations
+    // and pick the most popular valid code, breaking ties using the number of
+    // bit errors.
+    let imax = 2 << (hi[0] != hi[1]) as c_int;
+    let di = 1 + (lo[0] == lo[1]) as c_int;
+    let mut fmt_info: [c_int; 4] = [0; 4];
+    let mut count: [c_int; 4] = [0; 4];
+    let mut nerrs: [c_int; 4] = [0; 4];
+    let mut nfmt_info = 0;
+
+    let mut i = 0;
+    while i < imax {
+        let mut v = (lo[(i & 1) as usize] | hi[(i >> 1) as usize]) ^ 0x5412;
+        let mut ret = bch15_5_correct(&mut v);
+        v >>= 10;
+        if ret < 0 {
+            ret = 4;
+        }
+
+        let mut j = 0;
+        loop {
+            if j >= nfmt_info {
+                fmt_info[j] = v as c_int;
+                count[j] = 1;
+                nerrs[j] = ret;
+                nfmt_info += 1;
+                break;
+            }
+            if fmt_info[j] == v as c_int {
+                count[j] += 1;
+                if ret < nerrs[j] {
+                    nerrs[j] = ret;
+                }
+                break;
+            }
+            j += 1;
+        }
+        i += di;
+    }
+
+    let mut besti = 0;
+    for i in 1..nfmt_info {
+        if (nerrs[besti] > 3 && nerrs[i] <= 3)
+            || count[i] > count[besti]
+            || (count[i] == count[besti] && nerrs[i] < nerrs[besti])
+        {
+            besti = i;
+        }
+    }
+
+    if nerrs[besti] < 4 {
+        fmt_info[besti]
+    } else {
+        -1
     }
 }
 
