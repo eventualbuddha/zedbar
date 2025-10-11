@@ -40,6 +40,15 @@ const QR_ALIGN_SUBPREC: c_int = 2;
 /// Number of bits of sub-module precision for finder pattern coordinates
 const QR_FINDER_SUBPREC: c_int = 2;
 
+/// The amount that the estimated version numbers are allowed to differ from the
+/// real version number and still be considered valid.
+#[allow(dead_code)] // Used in functions not yet ported to Rust
+const QR_SMALL_VERSION_SLACK: c_int = 1;
+
+/// Since cell phone cameras can have severe radial distortion, the estimated
+/// version for larger versions can be off by larger amounts.
+const QR_LARGE_VERSION_SLACK: c_int = 3;
+
 /// Helper function: divide with exact rounding
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
@@ -663,6 +672,125 @@ pub struct qr_finder {
 
     /// The finder center information from the original image.
     c: *mut qr_finder_center,
+}
+
+/// Estimates the size of a module after classifying the edge points.
+///
+/// _width:  The distance between UL and UR in the square domain.
+/// _height: The distance between UL and DL in the square domain.
+///
+/// Returns 0 on success, or -1 if the module size or version could not be estimated.
+///
+/// # Safety
+/// This function is unsafe because it dereferences the raw _f pointer.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
+    _f: *mut qr_finder,
+    _width: c_int,
+    _height: c_int,
+) -> c_int {
+    let mut offs: qr_point = [0, 0];
+    let mut sums: [c_int; 4] = [0; 4];
+    let mut nsums: [c_int; 4] = [0; 4];
+
+    for e in 0..4 {
+        if (*_f).nedge_pts[e] > 0 {
+            let edge_pts = (*_f).edge_pts[e];
+            let mut n = (*_f).nedge_pts[e];
+
+            // Average the samples for this edge, dropping the top and bottom 25%
+            let mut sum = 0;
+            for i in (n >> 2)..(n - (n >> 2)) {
+                sum += (*edge_pts.offset(i as isize)).extent;
+            }
+            n -= (n >> 2) << 1;
+            let mean = qr_divround(sum, n);
+            offs[e >> 1] += mean;
+            sums[e] = sum;
+            nsums[e] = n;
+        } else {
+            nsums[e] = 0;
+            sums[e] = 0;
+        }
+    }
+
+    // If we have samples on both sides of an axis, refine our idea of where the
+    // unprojected finder center is located.
+    if (*_f).nedge_pts[0] > 0 && (*_f).nedge_pts[1] > 0 {
+        (*_f).o[0] -= offs[0] >> 1;
+        sums[0] -= (offs[0] * nsums[0]) >> 1;
+        sums[1] -= (offs[0] * nsums[1]) >> 1;
+    }
+    if (*_f).nedge_pts[2] > 0 && (*_f).nedge_pts[3] > 0 {
+        (*_f).o[1] -= offs[1] >> 1;
+        sums[2] -= (offs[1] * nsums[2]) >> 1;
+        sums[3] -= (offs[1] * nsums[3]) >> 1;
+    }
+
+    // We must have _some_ samples along each axis... if we don't, our transform
+    // must be pretty severely distorting the original square (e.g., with
+    // coordinates so large as to cause overflow).
+    let mut nusize = nsums[0] + nsums[1];
+    if nusize <= 0 {
+        return -1;
+    }
+
+    // The module size is 1/3 the average edge extent.
+    nusize *= 3;
+    let mut usize = sums[1] - sums[0];
+    usize = ((usize << 1) + nusize) / (nusize << 1);
+    if usize <= 0 {
+        return -1;
+    }
+
+    // Now estimate the version directly from the module size and the distance
+    // between the finder patterns.
+    // This is done independently using the extents along each axis.
+    // If either falls significantly outside the valid range (1 to 40), reject the
+    // configuration.
+    let uversion = (_width - 8 * usize) / (usize << 2);
+    if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&uversion) {
+        return -1;
+    }
+
+    // Now do the same for the other axis.
+    let mut nvsize = nsums[2] + nsums[3];
+    if nvsize <= 0 {
+        return -1;
+    }
+    nvsize *= 3;
+    let mut vsize = sums[3] - sums[2];
+    vsize = ((vsize << 1) + nvsize) / (nvsize << 1);
+    if vsize <= 0 {
+        return -1;
+    }
+
+    let vversion = (_height - 8 * vsize) / (vsize << 2);
+    if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&vversion) {
+        return -1;
+    }
+
+    // If the estimated version using extents along one axis is significantly
+    // different than the estimated version along the other axis, then the axes
+    // have significantly different scalings (relative to the grid).
+    // This can happen, e.g., when we have multiple adjacent QR codes, and we've
+    // picked two finder patterns from one and the third finder pattern from
+    // another
+    if (uversion - vversion).abs() > QR_LARGE_VERSION_SLACK {
+        return -1;
+    }
+
+    (*_f).size[0] = usize;
+    (*_f).size[1] = vsize;
+
+    // We intentionally do not compute an average version from the sizes along
+    // both axes.
+    // In the presence of projective distortion, one of them will be much more
+    // accurate than the other.
+    (*_f).eversion[0] = uversion;
+    (*_f).eversion[1] = vversion;
+
+    0
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
