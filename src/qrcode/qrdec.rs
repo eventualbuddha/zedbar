@@ -688,13 +688,13 @@ pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
             let mut n = (*_f).nedge_pts[e];
 
             // Average the samples for this edge, dropping the top and bottom 25%
-            let mut sum = 0;
+            let mut sum: c_int = 0;
             for i in (n >> 2)..(n - (n >> 2)) {
-                sum += (*edge_pts.offset(i as isize)).extent;
+                sum = sum.wrapping_add((*edge_pts.offset(i as isize)).extent);
             }
             n -= (n >> 2) << 1;
             let mean = qr_divround(sum, n);
-            offs[e >> 1] += mean;
+            offs[e >> 1] = offs[e >> 1].wrapping_add(mean);
             sums[e] = sum;
             nsums[e] = n;
         } else {
@@ -706,28 +706,28 @@ pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
     // If we have samples on both sides of an axis, refine our idea of where the
     // unprojected finder center is located.
     if (*_f).nedge_pts[0] > 0 && (*_f).nedge_pts[1] > 0 {
-        (*_f).o[0] -= offs[0] >> 1;
-        sums[0] -= (offs[0] * nsums[0]) >> 1;
-        sums[1] -= (offs[0] * nsums[1]) >> 1;
+        (*_f).o[0] = (*_f).o[0].wrapping_sub(offs[0] >> 1);
+        sums[0] = sums[0].wrapping_sub((offs[0].wrapping_mul(nsums[0])) >> 1);
+        sums[1] = sums[1].wrapping_sub((offs[0].wrapping_mul(nsums[1])) >> 1);
     }
     if (*_f).nedge_pts[2] > 0 && (*_f).nedge_pts[3] > 0 {
-        (*_f).o[1] -= offs[1] >> 1;
-        sums[2] -= (offs[1] * nsums[2]) >> 1;
-        sums[3] -= (offs[1] * nsums[3]) >> 1;
+        (*_f).o[1] = (*_f).o[1].wrapping_sub(offs[1] >> 1);
+        sums[2] = sums[2].wrapping_sub((offs[1].wrapping_mul(nsums[2])) >> 1);
+        sums[3] = sums[3].wrapping_sub((offs[1].wrapping_mul(nsums[3])) >> 1);
     }
 
     // We must have _some_ samples along each axis... if we don't, our transform
     // must be pretty severely distorting the original square (e.g., with
     // coordinates so large as to cause overflow).
-    let mut nusize = nsums[0] + nsums[1];
+    let mut nusize = nsums[0].wrapping_add(nsums[1]);
     if nusize <= 0 {
         return -1;
     }
 
     // The module size is 1/3 the average edge extent.
-    nusize *= 3;
-    let mut usize = sums[1] - sums[0];
-    usize = ((usize << 1) + nusize) / (nusize << 1);
+    nusize = nusize.wrapping_mul(3);
+    let mut usize = sums[1].wrapping_sub(sums[0]);
+    usize = ((usize.wrapping_shl(1)).wrapping_add(nusize)) / (nusize.wrapping_shl(1));
     if usize <= 0 {
         return -1;
     }
@@ -737,24 +737,24 @@ pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
     // This is done independently using the extents along each axis.
     // If either falls significantly outside the valid range (1 to 40), reject the
     // configuration.
-    let uversion = (_width - 8 * usize) / (usize << 2);
+    let uversion = (_width.wrapping_sub(usize.wrapping_mul(8))) / (usize.wrapping_shl(2));
     if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&uversion) {
         return -1;
     }
 
     // Now do the same for the other axis.
-    let mut nvsize = nsums[2] + nsums[3];
+    let mut nvsize = nsums[2].wrapping_add(nsums[3]);
     if nvsize <= 0 {
         return -1;
     }
-    nvsize *= 3;
-    let mut vsize = sums[3] - sums[2];
-    vsize = ((vsize << 1) + nvsize) / (nvsize << 1);
+    nvsize = nvsize.wrapping_mul(3);
+    let mut vsize = sums[3].wrapping_sub(sums[2]);
+    vsize = ((vsize.wrapping_shl(1)).wrapping_add(nvsize)) / (nvsize.wrapping_shl(1));
     if vsize <= 0 {
         return -1;
     }
 
-    let vversion = (_height - 8 * vsize) / (vsize << 2);
+    let vversion = (_height.wrapping_sub(vsize.wrapping_mul(8))) / (vsize.wrapping_shl(2));
     if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&vversion) {
         return -1;
     }
@@ -765,7 +765,7 @@ pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
     // This can happen, e.g., when we have multiple adjacent QR codes, and we've
     // picked two finder patterns from one and the third finder pattern from
     // another
-    if (uversion - vversion).abs() > QR_LARGE_VERSION_SLACK {
+    if uversion.wrapping_sub(vversion).abs() > QR_LARGE_VERSION_SLACK {
         return -1;
     }
 
@@ -902,6 +902,97 @@ pub unsafe extern "C" fn qr_finder_ransac(
     }
 
     (*_f).ninliers[_e as usize] = best_ninliers;
+}
+
+/// Perform a least-squares line fit to an edge of a finder pattern using the inliers found by RANSAC.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_line_fit_finder_edge(
+    _l: *mut qr_line,
+    _f: *const qr_finder,
+    _e: c_int,
+    _res: c_int,
+) -> c_int {
+    let npts = (*_f).ninliers[_e as usize];
+    if npts < 2 {
+        return -1;
+    }
+
+    // We could write a custom version of qr_line_fit_points that accesses
+    // edge_pts directly, but this saves on code size and doesn't measurably slow things down.
+    let pts = malloc((npts as usize) * size_of::<qr_point>()) as *mut qr_point;
+    let edge_pts = (*_f).edge_pts[_e as usize];
+
+    for i in 0..npts {
+        (*pts.offset(i as isize))[0] = (*edge_pts.offset(i as isize)).pos[0];
+        (*pts.offset(i as isize))[1] = (*edge_pts.offset(i as isize)).pos[1];
+    }
+
+    qr_line_fit_points(_l, pts, npts, _res);
+
+    // Make sure the center of the finder pattern lies in the positive halfspace of the line.
+    qr_line_orient(_l, (*(*_f).c).pos[0], (*(*_f).c).pos[1]);
+
+    free(pts as *mut c_void);
+    0
+}
+
+/// Perform a least-squares line fit to a pair of common finder edges using the inliers found by RANSAC.
+///
+/// Unlike a normal edge fit, we guarantee that this one succeeds by creating at
+/// least one point on each edge using the estimated module size if it has no inliers.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_line_fit_finder_pair(
+    _l: *mut qr_line,
+    _aff: *const qr_aff,
+    _f0: *const qr_finder,
+    _f1: *const qr_finder,
+    _e: c_int,
+) {
+    let mut n0 = (*_f0).ninliers[_e as usize];
+    let n1 = (*_f1).ninliers[_e as usize];
+
+    // We could write a custom version of qr_line_fit_points that accesses
+    // edge_pts directly, but this saves on code size and doesn't measurably slow things down.
+    let npts = c_int::max(n0, 1) + c_int::max(n1, 1);
+    let pts = malloc((npts as usize) * size_of::<qr_point>()) as *mut qr_point;
+
+    if n0 > 0 {
+        let edge_pts = (*_f0).edge_pts[_e as usize];
+        for i in 0..n0 {
+            (*pts.offset(i as isize))[0] = (*edge_pts.offset(i as isize)).pos[0];
+            (*pts.offset(i as isize))[1] = (*edge_pts.offset(i as isize)).pos[1];
+        }
+    } else {
+        let mut q: qr_point = [(*_f0).o[0], (*_f0).o[1]];
+        q[(_e >> 1) as usize] += (*_f0).size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
+        qr_aff_project(&mut (*pts.offset(0)), _aff, q[0], q[1]);
+        n0 += 1;
+    }
+
+    if n1 > 0 {
+        let edge_pts = (*_f1).edge_pts[_e as usize];
+        for i in 0..n1 {
+            (*pts.offset((n0 + i) as isize))[0] = (*edge_pts.offset(i as isize)).pos[0];
+            (*pts.offset((n0 + i) as isize))[1] = (*edge_pts.offset(i as isize)).pos[1];
+        }
+    } else {
+        let mut q: qr_point = [(*_f1).o[0], (*_f1).o[1]];
+        q[(_e >> 1) as usize] += (*_f1).size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
+        qr_aff_project(&mut (*pts.offset(n0 as isize)), _aff, q[0], q[1]);
+    }
+
+    qr_line_fit_points(_l, pts, npts, (*_aff).res);
+
+    // Make sure at least one finder center lies in the positive halfspace.
+    qr_line_orient(_l, (*(*_f0).c).pos[0], (*(*_f0).c).pos[1]);
+
+    free(pts as *mut c_void);
 }
 
 /// Map from the image (at subpel resolution) into the square domain.

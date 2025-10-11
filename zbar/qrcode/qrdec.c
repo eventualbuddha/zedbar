@@ -386,88 +386,19 @@ extern void qr_finder_ransac(qr_finder *_f, const qr_aff *_hom,
 			      isaac_ctx *_isaac, int _e);
 
 /*Perform a least-squares line fit to an edge of a finder pattern using the
-   inliers found by RANSAC.*/
-static int qr_line_fit_finder_edge(qr_line *_l, const qr_finder *_f, int _e,
-				   int _res)
-{
-    qr_finder_edge_pt *edge_pts;
-    qr_point *pts;
-    int npts;
-    int i;
-    npts = _f->ninliers[_e];
-    if (npts < 2)
-	return -1;
-    /*We could write a custom version of qr_line_fit_points that accesses
-   edge_pts directly, but this saves on code size and doesn't measurably slow
-   things down.*/
-    pts	     = (qr_point *)malloc(npts * sizeof(*pts));
-    edge_pts = _f->edge_pts[_e];
-    for (i = 0; i < npts; i++) {
-	pts[i][0] = edge_pts[i].pos[0];
-	pts[i][1] = edge_pts[i].pos[1];
-    }
-    qr_line_fit_points(_l, pts, npts, _res);
-    /*Make sure the center of the finder pattern lies in the positive halfspace
-   of the line.*/
-    qr_line_orient(_l, _f->c->pos[0], _f->c->pos[1]);
-    free(pts);
-    return 0;
-}
+  inliers found by RANSAC.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_line_fit_finder_edge(qr_line *_l, const qr_finder *_f, int _e,
+				    int _res);
 
 /*Perform a least-squares line fit to a pair of common finder edges using the
-   inliers found by RANSAC.
+  inliers found by RANSAC.
   Unlike a normal edge fit, we guarantee that this one succeeds by creating at
-   least one point on each edge using the estimated module size if it has no
-   inliers.*/
-static void qr_line_fit_finder_pair(qr_line *_l, const qr_aff *_aff,
-				    const qr_finder *_f0, const qr_finder *_f1,
-				    int _e)
-{
-    qr_point *pts;
-    int npts;
-    qr_finder_edge_pt *edge_pts;
-    qr_point q;
-    int n0;
-    int n1;
-    int i;
-    n0 = _f0->ninliers[_e];
-    n1 = _f1->ninliers[_e];
-    /*We could write a custom version of qr_line_fit_points that accesses
-   edge_pts directly, but this saves on code size and doesn't measurably slow
-   things down.*/
-    npts = QR_MAXI(n0, 1) + QR_MAXI(n1, 1);
-    pts	 = (qr_point *)malloc(npts * sizeof(*pts));
-    if (n0 > 0) {
-	edge_pts = _f0->edge_pts[_e];
-	for (i = 0; i < n0; i++) {
-	    pts[i][0] = edge_pts[i].pos[0];
-	    pts[i][1] = edge_pts[i].pos[1];
-	}
-    } else {
-	q[0] = _f0->o[0];
-	q[1] = _f0->o[1];
-	q[_e >> 1] += _f0->size[_e >> 1] * (2 * (_e & 1) - 1);
-	qr_aff_project(&pts[0], _aff, q[0], q[1]);
-	n0++;
-    }
-    if (n1 > 0) {
-	edge_pts = _f1->edge_pts[_e];
-	for (i = 0; i < n1; i++) {
-	    pts[n0 + i][0] = edge_pts[i].pos[0];
-	    pts[n0 + i][1] = edge_pts[i].pos[1];
-	}
-    } else {
-	q[0] = _f1->o[0];
-	q[1] = _f1->o[1];
-	q[_e >> 1] += _f1->size[_e >> 1] * (2 * (_e & 1) - 1);
-	qr_aff_project(&pts[n0], _aff, q[0], q[1]);
-	n1++;
-    }
-    qr_line_fit_points(_l, pts, npts, _aff->res);
-    /*Make sure at least one finder center lies in the positive halfspace.*/
-    qr_line_orient(_l, _f0->c->pos[0], _f0->c->pos[1]);
-    free(pts);
-}
+  least one point on each edge using the estimated module size if it has no inliers.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_line_fit_finder_pair(qr_line *_l, const qr_aff *_aff,
+				     const qr_finder *_f0, const qr_finder *_f1,
+				     int _e);
 
 extern int qr_finder_quick_crossing_check(const unsigned char *_img, int _width,
 					  int _height, int _x0, int _y0,
