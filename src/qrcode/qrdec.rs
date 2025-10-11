@@ -2578,6 +2578,142 @@ pub unsafe extern "C" fn qr_sampling_grid_sample(
     }
 }
 
+/// Arrange sample bits into bytes and Reed-Solomon blocks
+///
+/// Takes the bit data read from the QR code and groups it into bytes,
+/// distributing those bytes across the Reed-Solomon blocks.
+/// The block pointers are advanced by this routine.
+///
+/// # Safety
+/// This function is unsafe because it dereferences and modifies raw pointers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_samples_unpack(
+    _blocks: *mut *mut c_uchar,
+    _nblocks: c_int,
+    _nshort_data: c_int,
+    mut _nshort_blocks: c_int,
+    _data_bits: *const c_uint,
+    _fp_mask: *const c_uint,
+    _dim: c_int,
+) {
+    let stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
+
+    // If _all_ the blocks are short, don't skip anything
+    if _nshort_blocks >= _nblocks {
+        _nshort_blocks = 0;
+    }
+
+    let mut bits: c_uint = 0;
+    let mut biti = 0;
+    let mut blocki = 0;
+    let mut blockj = 0;
+    let mut j = _dim - 1;
+
+    // Scan columns in pairs from right to left
+    while j > 0 {
+        // Scan up a pair of columns
+        let mut nbits = ((_dim - 1) & (QR_INT_BITS - 1)) + 1;
+        let l = (j * stride) as usize;
+        let mut i = stride;
+
+        while i > 0 {
+            i -= 1;
+            let data1 = *_data_bits.add(l + i as usize);
+            let fp_mask1 = *_fp_mask.add(l + i as usize);
+            let data2 = *_data_bits.add(l + i as usize - stride as usize);
+            let fp_mask2 = *_fp_mask.add(l + i as usize - stride as usize);
+
+            let mut nbits_inner = nbits;
+            while nbits_inner > 0 {
+                nbits_inner -= 1;
+                // Pull a bit from the right column
+                if ((fp_mask1 >> nbits_inner) & 1) == 0 {
+                    bits = (bits << 1) | ((data1 >> nbits_inner) & 1);
+                    biti += 1;
+                }
+                // Pull a bit from the left column
+                if ((fp_mask2 >> nbits_inner) & 1) == 0 {
+                    bits = (bits << 1) | ((data2 >> nbits_inner) & 1);
+                    biti += 1;
+                }
+                // If we finished a byte, drop it in a block
+                if biti >= 8 {
+                    biti -= 8;
+                    let block_ptr = *_blocks.add(blocki as usize);
+                    *block_ptr = (bits >> biti) as c_uchar;
+                    *_blocks.add(blocki as usize) = block_ptr.add(1);
+                    blocki += 1;
+
+                    if blocki >= _nblocks {
+                        blockj += 1;
+                        blocki = if blockj == _nshort_data {
+                            _nshort_blocks
+                        } else {
+                            0
+                        };
+                    }
+                }
+            }
+            nbits = QR_INT_BITS;
+        }
+
+        j -= 2;
+        // Skip the column with the vertical timing pattern
+        if j == 6 {
+            j -= 1;
+        }
+
+        // Scan down a pair of columns
+        let l = (j * stride) as usize;
+        for i in 0..stride {
+            let mut data1 = *_data_bits.add(l + i as usize);
+            let mut fp_mask1 = *_fp_mask.add(l + i as usize);
+            let mut data2 = *_data_bits.add(l + i as usize - stride as usize);
+            let mut fp_mask2 = *_fp_mask.add(l + i as usize - stride as usize);
+            let mut nbits = c_int::min(_dim - (i << QR_INT_LOGBITS), QR_INT_BITS);
+
+            while nbits > 0 {
+                nbits -= 1;
+                // Pull a bit from the right column
+                if (fp_mask1 & 1) == 0 {
+                    bits = (bits << 1) | (data1 & 1);
+                    biti += 1;
+                }
+                data1 >>= 1;
+                fp_mask1 >>= 1;
+
+                // Pull a bit from the left column
+                if (fp_mask2 & 1) == 0 {
+                    bits = (bits << 1) | (data2 & 1);
+                    biti += 1;
+                }
+                data2 >>= 1;
+                fp_mask2 >>= 1;
+
+                // If we finished a byte, drop it in a block
+                if biti >= 8 {
+                    biti -= 8;
+                    let block_ptr = *_blocks.add(blocki as usize);
+                    *block_ptr = (bits >> biti) as c_uchar;
+                    *_blocks.add(blocki as usize) = block_ptr.add(1);
+                    blocki += 1;
+
+                    if blocki >= _nblocks {
+                        blockj += 1;
+                        blocki = if blockj == _nshort_data {
+                            _nshort_blocks
+                        } else {
+                            0
+                        };
+                    }
+                }
+            }
+        }
+
+        j -= 2;
+    }
+}
+
 /// Correct a BCH(18,6,3) code word
 ///
 /// Takes a code word and attempts to correct errors using the BCH(18,6,3) code.
