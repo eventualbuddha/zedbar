@@ -2915,7 +2915,6 @@ pub unsafe extern "C" fn qr_code_data_parse(
                     let c = b'0' + (bits % 10) as u8;
                     self_parity ^= c as c_uint;
                     *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
                 }
                 // Or the last one digit encoded in 4 bits
                 else if rem != 0 {
