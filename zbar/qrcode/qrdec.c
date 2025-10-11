@@ -2206,7 +2206,8 @@ static void qr_samples_unpack(unsigned char **_blocks, int _nblocks,
 
 /*Bit reading code blatantly stolen^W^Wadapted from libogg/libtheora (because
    I've already debugged it and I know it works).
-  Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.*/
+  Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
 struct qr_pack_buf {
     const unsigned char *buf;
     int endbyte;
@@ -2214,52 +2215,16 @@ struct qr_pack_buf {
     int storage;
 };
 
-static void qr_pack_buf_init(qr_pack_buf *_b, const unsigned char *_data,
-			     int _ndata)
-{
-    _b->buf	= _data;
-    _b->storage = _ndata;
-    _b->endbyte = _b->endbit = 0;
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_pack_buf_init(qr_pack_buf *_b, const unsigned char *_data,
+			     int _ndata);
 
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
 /*Assumes 0<=_bits<=16.*/
-static int qr_pack_buf_read(qr_pack_buf *_b, int _bits)
-{
-    const unsigned char *p;
-    unsigned ret;
-    int m;
-    int d;
-    m = 16 - _bits;
-    _bits += _b->endbit;
-    d = _b->storage - _b->endbyte;
-    if (d <= 2) {
-	/*Not the main path.*/
-	if (d * 8 < _bits) {
-	    _b->endbyte += _bits >> 3;
-	    _b->endbit = _bits & 7;
-	    return -1;
-	}
-	/*Special case to avoid reading p[0] below, which might be past the end of
-   the buffer; also skips some useless accounting.*/
-	else if (!_bits)
-	    return 0;
-    }
-    p	= _b->buf + _b->endbyte;
-    ret = p[0] << (8 + _b->endbit);
-    if (_bits > 8) {
-	ret |= p[1] << _b->endbit;
-	if (_bits > 16)
-	    ret |= p[2] >> (8 - _b->endbit);
-    }
-    _b->endbyte += _bits >> 3;
-    _b->endbit = _bits & 7;
-    return (ret & 0xFFFF) >> m;
-}
+extern int qr_pack_buf_read(qr_pack_buf *_b, int _bits);
 
-static int qr_pack_buf_avail(const qr_pack_buf *_b)
-{
-    return ((_b->storage - _b->endbyte) << 3) - _b->endbit;
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_pack_buf_avail(const qr_pack_buf *_b);
 
 /*The characters available in QR_MODE_ALNUM.*/
 static const unsigned char QR_ALNUM_TABLE[45] = {

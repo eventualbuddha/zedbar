@@ -568,6 +568,74 @@ pub unsafe extern "C" fn qr_hom_unproject(
     0
 }
 
+/// Bit reading buffer for QR code data
+///
+/// Bit reading code adapted from libogg/libtheora
+/// Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.
+#[repr(C)]
+pub struct qr_pack_buf {
+    buf: *const c_uchar,
+    endbyte: c_int,
+    endbit: c_int,
+    storage: c_int,
+}
+
+/// Initialize a pack buffer for reading bits from data
+#[no_mangle]
+pub unsafe extern "C" fn qr_pack_buf_init(
+    _b: *mut qr_pack_buf,
+    _data: *const c_uchar,
+    _ndata: c_int,
+) {
+    (*_b).buf = _data;
+    (*_b).storage = _ndata;
+    (*_b).endbyte = 0;
+    (*_b).endbit = 0;
+}
+
+/// Read bits from the pack buffer
+///
+/// Assumes 0 <= _bits <= 16
+/// Returns the read value, or -1 if there aren't enough bits available
+#[no_mangle]
+pub unsafe extern "C" fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
+    let m = 16 - _bits;
+    let mut bits = _bits + (*_b).endbit;
+    let d = (*_b).storage - (*_b).endbyte;
+
+    if d <= 2 {
+        // Not the main path
+        if d * 8 < bits {
+            (*_b).endbyte += bits >> 3;
+            (*_b).endbit = bits & 7;
+            return -1;
+        }
+        // Special case to avoid reading p[0] below, which might be past the end of
+        // the buffer; also skips some useless accounting
+        else if bits == 0 {
+            return 0;
+        }
+    }
+
+    let p = (*_b).buf.add((*_b).endbyte as usize);
+    let mut ret = (c_uint::from(*p) << (8 + (*_b).endbit)) as c_uint;
+    if bits > 8 {
+        ret |= c_uint::from(*p.add(1)) << (*_b).endbit;
+        if bits > 16 {
+            ret |= c_uint::from(*p.add(2)) >> (8 - (*_b).endbit);
+        }
+    }
+    (*_b).endbyte += bits >> 3;
+    (*_b).endbit = bits & 7;
+    ((ret & 0xFFFF) >> m) as c_int
+}
+
+/// Get the number of bits available to read from the pack buffer
+#[no_mangle]
+pub unsafe extern "C" fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
+    (((*_b).storage - (*_b).endbyte) << 3) - (*_b).endbit
+}
+
 pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
     match ((c_int::from(a.edge > b.edge) - c_int::from(a.edge < b.edge)) << 1)
         + c_int::from(a.extent > b.extent)
