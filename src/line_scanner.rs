@@ -236,6 +236,9 @@ pub unsafe extern "C" fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_sy
 #[no_mangle]
 pub unsafe extern "C" fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
     let mut edge = ZBAR_NONE;
+    // Note: clippy can't detect that zbar_scanner_flush modifies (*scn).y1_sign through the pointer,
+    // but it does - this is not an infinite loop
+    #[allow(clippy::while_immutable_condition)]
     while (*scn).y1_sign != 0 {
         let tmp = zbar_scanner_flush(scn);
         if tmp < 0 || tmp > edge {

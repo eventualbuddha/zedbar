@@ -63,7 +63,7 @@ fn qr_fixmul(a: c_int, b: c_int, r: i64, s: c_int) -> c_int {
 /// Uses bitwise arithmetic to avoid branches (matching C macro QR_MINI).
 #[inline]
 fn qr_mini(a: c_int, b: c_int) -> c_int {
-    a + (((b - a) & -((b < a) as c_int)))
+    a + ((b - a) & -((b < a) as c_int))
 }
 
 /// Returns the maximum of two integers
@@ -71,7 +71,7 @@ fn qr_mini(a: c_int, b: c_int) -> c_int {
 /// Uses bitwise arithmetic to avoid branches (matching C macro QR_MAXI).
 #[inline]
 fn qr_maxi(a: c_int, b: c_int) -> c_int {
-    a - (((a - b) & -((b > a) as c_int)))
+    a - ((a - b) & -((b > a) as c_int))
 }
 
 /// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
@@ -553,9 +553,9 @@ pub unsafe extern "C" fn qr_hom_init(
 
     // Figure out if we need to downscale anything
     let b0 = qr_ilog(qr_maxi(dx10.abs(), dy10.abs()) as u32)
-        + qr_ilog((a20 + a22).abs() as u32);
+        + qr_ilog((a20 + a22).unsigned_abs());
     let b1 = qr_ilog(qr_maxi(dx20.abs(), dy20.abs()) as u32)
-        + qr_ilog((a21 + a22).abs() as u32);
+        + qr_ilog((a21 + a22).unsigned_abs());
     let b2 = qr_ilog(qr_maxi(qr_maxi(a20.abs(), a21.abs()), a22.abs()) as u32);
     let s1 = qr_maxi(0, _res + qr_maxi(qr_maxi(b0, b1), b2) - (QR_INT_BITS - 2));
     let r1 = (1i64 << s1) >> 1;
@@ -581,7 +581,7 @@ pub unsafe extern "C" fn qr_hom_init(
         + qr_ilog(qr_maxi((*_hom).fwd[0][0].abs(), (*_hom).fwd[1][0].abs()) as u32);
     let b1 = qr_ilog(qr_maxi(qr_maxi(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
         + qr_ilog(qr_maxi((*_hom).fwd[0][1].abs(), (*_hom).fwd[1][1].abs()) as u32);
-    let b2 = qr_ilog(a22.abs() as u32) - s1;
+    let b2 = qr_ilog(a22.unsigned_abs()) - s1;
     let s2 = qr_maxi(0, qr_maxi(b0, b1) + b2 - (QR_INT_BITS - 3));
     let r2 = (1i64 << s2) >> 1;
     let s1 = s1 + s2;
