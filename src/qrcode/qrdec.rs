@@ -2280,6 +2280,20 @@ pub unsafe extern "C" fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pat
     }
 }
 
+/// Clear a QR sampling grid
+///
+/// Frees the allocated memory for the function pattern mask and cell array.
+///
+/// # Safety
+/// This function is unsafe because it frees raw pointers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
+    if !_grid.is_null() {
+        free((*_grid).fpmask as *mut c_void);
+        free((*_grid).cells[0] as *mut c_void);
+    }
+}
+
 /// Correct a BCH(18,6,3) code word
 ///
 /// Takes a code word and attempts to correct errors using the BCH(18,6,3) code.

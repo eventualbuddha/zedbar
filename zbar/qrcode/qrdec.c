@@ -1102,11 +1102,9 @@ static void qr_sampling_grid_init(qr_sampling_grid *_grid, int _version,
    transitions to the ideal grid locations.*/
 }
 
-static void qr_sampling_grid_clear(qr_sampling_grid *_grid)
-{
-    free(_grid->fpmask);
-    free(_grid->cells[0]);
-}
+/*Clear a QR sampling grid.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_sampling_grid_clear(qr_sampling_grid *_grid);
 
 /*Generate the data mask corresponding to the given mask pattern.*/
 /*Fill a data mask for QR code decoding.
