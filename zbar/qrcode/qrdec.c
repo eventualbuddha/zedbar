@@ -865,65 +865,11 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
   Implemented in Rust (src/qrcode/qrdec.rs) */
 extern int bch18_6_correct(unsigned *_y);
 
-/*Reads the version bits near a finder module and decodes the version number.*/
-static int qr_finder_version_decode(qr_finder *_f, const qr_hom *_hom,
+/*Reads the version bits near a finder module and decodes the version number.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_version_decode(qr_finder *_f, const qr_hom *_hom,
 				    const unsigned char *_img, int _width,
-				    int _height, int _dir)
-{
-    qr_point q;
-    unsigned v;
-    int x0;
-    int y0;
-    int w0;
-    int dxi;
-    int dyi;
-    int dwi;
-    int dxj;
-    int dyj;
-    int dwj;
-    int ret;
-    int i;
-    int j;
-    int k;
-    v		= 0;
-    q[_dir]	= _f->o[_dir] - 7 * _f->size[_dir];
-    q[1 - _dir] = _f->o[1 - _dir] - 3 * _f->size[1 - _dir];
-    x0		= _hom->fwd[0][0] * q[0] + _hom->fwd[0][1] * q[1];
-    y0		= _hom->fwd[1][0] * q[0] + _hom->fwd[1][1] * q[1];
-    w0		= _hom->fwd[2][0] * q[0] + _hom->fwd[2][1] * q[1] + _hom->fwd22;
-    dxi		= _hom->fwd[0][1 - _dir] * _f->size[1 - _dir];
-    dyi		= _hom->fwd[1][1 - _dir] * _f->size[1 - _dir];
-    dwi		= _hom->fwd[2][1 - _dir] * _f->size[1 - _dir];
-    dxj		= _hom->fwd[0][_dir] * _f->size[_dir];
-    dyj		= _hom->fwd[1][_dir] * _f->size[_dir];
-    dwj		= _hom->fwd[2][_dir] * _f->size[_dir];
-    for (k = i = 0; i < 6; i++) {
-	int x;
-	int y;
-	int w;
-	x = x0;
-	y = y0;
-	w = w0;
-	for (j = 0; j < 3; j++, k++) {
-	    qr_point p;
-	    qr_hom_fproject(&p, _hom, x, y, w);
-	    v |= qr_img_get_bit(_img, _width, _height, p[0], p[1]) << k;
-	    x += dxj;
-	    y += dyj;
-	    w += dwj;
-	}
-	x0 += dxi;
-	y0 += dyi;
-	w0 += dwi;
-    }
-    ret = bch18_6_correct(&v);
-    /*TODO: I seem to have an image with the version bits in a different order
-   (the transpose of the standard order).
-  Even if I change the order here so I can parse the version on this image,
-   I can't decode the rest of the code.
-  If this is really needed, we should just re-order the bits.*/
-    return ret >= 0 ? (int)(v >> 12) : ret;
-}
+				    int _height, int _dir);
 
 /*Reads the format info bits near the finder modules and decodes them.*/
 static int qr_finder_fmt_info_decode(qr_finder *_ul, qr_finder *_ur,

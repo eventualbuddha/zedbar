@@ -1890,6 +1890,74 @@ const BCH18_6_CODES: [c_uint; 34] = [
     0x2542E, 0x26A64, 0x27541, 0x28C69,
 ];
 
+/// Decode the version number from a QR code's version information
+///
+/// Reads the 18-bit version information pattern (6 data bits + 12 parity bits)
+/// from the specified direction and uses BCH error correction to recover the version.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers and accesses image data.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_version_decode(
+    _f: *const qr_finder,
+    _hom: *const qr_hom,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+    _dir: c_int,
+) -> c_int {
+    let mut q: qr_point = [0, 0];
+    let mut v: c_uint = 0;
+
+    // Calculate starting point for version info block
+    q[_dir as usize] = (*_f).o[_dir as usize] - 7 * (*_f).size[_dir as usize];
+    q[(1 - _dir) as usize] = (*_f).o[(1 - _dir) as usize] - 3 * (*_f).size[(1 - _dir) as usize];
+
+    // Project the starting point through the homography
+    let mut x0 = (*_hom).fwd[0][0] * q[0] + (*_hom).fwd[0][1] * q[1];
+    let mut y0 = (*_hom).fwd[1][0] * q[0] + (*_hom).fwd[1][1] * q[1];
+    let mut w0 = (*_hom).fwd[2][0] * q[0] + (*_hom).fwd[2][1] * q[1] + (*_hom).fwd22;
+
+    // Calculate increments for stepping through version info grid
+    let dxi = (*_hom).fwd[0][(1 - _dir) as usize] * (*_f).size[(1 - _dir) as usize];
+    let dyi = (*_hom).fwd[1][(1 - _dir) as usize] * (*_f).size[(1 - _dir) as usize];
+    let dwi = (*_hom).fwd[2][(1 - _dir) as usize] * (*_f).size[(1 - _dir) as usize];
+    let dxj = (*_hom).fwd[0][_dir as usize] * (*_f).size[_dir as usize];
+    let dyj = (*_hom).fwd[1][_dir as usize] * (*_f).size[_dir as usize];
+    let dwj = (*_hom).fwd[2][_dir as usize] * (*_f).size[_dir as usize];
+
+    // Read the 6x3 = 18 bits of version information
+    let mut k = 0;
+    for _i in 0..6 {
+        let mut x = x0;
+        let mut y = y0;
+        let mut w = w0;
+        for _j in 0..3 {
+            let mut p: qr_point = [0, 0];
+            qr_hom_fproject(&mut p, _hom, x, y, w);
+            v |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+            k += 1;
+            x += dxj;
+            y += dyj;
+            w += dwj;
+        }
+        x0 += dxi;
+        y0 += dyi;
+        w0 += dwi;
+    }
+
+    // Use BCH error correction to decode the version
+    let ret = bch18_6_correct(&mut v);
+
+    // TODO: Some images may have version bits in a different order (transposed).
+    // If this is really needed, we should re-order the bits.
+    if ret >= 0 {
+        (v >> 12) as c_int
+    } else {
+        ret
+    }
+}
+
 /// Correct a BCH(18,6,3) code word
 ///
 /// Takes a code word and attempts to correct errors using the BCH(18,6,3) code.
