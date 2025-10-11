@@ -11,7 +11,11 @@ use std::{
 
 use libc::{c_int, c_uchar, c_uint, free, memcpy, realloc};
 
-use crate::{decoder_types::qr_finder_line, img_scanner::qr_reader, qrcode::util::qr_ilog};
+use crate::{
+    decoder_types::qr_finder_line,
+    img_scanner::qr_reader,
+    qrcode::util::{qr_ihypot, qr_ilog},
+};
 
 use super::{
     isaac_init,
@@ -39,7 +43,7 @@ const QR_FINDER_SUBPREC: c_int = 2;
 /// For x/y where the fractional part is exactly 0.5, rounds away from zero.
 #[inline]
 fn qr_divround(x: c_int, y: c_int) -> c_int {
-    (x + x.signum() * (y >> 1)) / y
+    x.wrapping_add(x.signum().wrapping_mul(y >> 1)) / y
 }
 
 /// Fixed-point multiply with rounding and shift
@@ -243,12 +247,18 @@ pub unsafe extern "C" fn qr_line_isect(
     _l0: *const qr_line,
     _l1: *const qr_line,
 ) -> c_int {
-    let mut d = (*_l0)[0] * (*_l1)[1] - (*_l0)[1] * (*_l1)[0];
+    let mut d = (*_l0)[0]
+        .wrapping_mul((*_l1)[1])
+        .wrapping_sub((*_l0)[1].wrapping_mul((*_l1)[0]));
     if d == 0 {
         return -1;
     }
-    let mut x = (*_l0)[1] * (*_l1)[2] - (*_l1)[1] * (*_l0)[2];
-    let mut y = (*_l1)[0] * (*_l0)[2] - (*_l0)[0] * (*_l1)[2];
+    let mut x = (*_l0)[1]
+        .wrapping_mul((*_l1)[2])
+        .wrapping_sub((*_l1)[1].wrapping_mul((*_l0)[2]));
+    let mut y = (*_l1)[0]
+        .wrapping_mul((*_l0)[2])
+        .wrapping_sub((*_l0)[0].wrapping_mul((*_l1)[2]));
     if d < 0 {
         x = -x;
         y = -y;
@@ -257,6 +267,110 @@ pub unsafe extern "C" fn qr_line_isect(
     (*_p)[0] = qr_divround(x, d);
     (*_p)[1] = qr_divround(y, d);
     0
+}
+
+/// Fit a line to covariance data using least-squares
+///
+/// # Parameters
+/// - `_l`: Output line (Ax + By + C = 0)
+/// - `_x0`, `_y0`: Centroid coordinates
+/// - `_sxx`, `_sxy`, `_syy`: Covariance matrix values
+/// - `_res`: Resolution bits for scaling
+#[no_mangle]
+pub unsafe extern "C" fn qr_line_fit(
+    _l: *mut qr_line,
+    _x0: c_int,
+    _y0: c_int,
+    _sxx: c_int,
+    _sxy: c_int,
+    _syy: c_int,
+    _res: c_int,
+) {
+    let u = (_sxx - _syy).abs();
+    let v = -_sxy << 1;
+    let w = qr_ihypot(u, v) as c_int;
+
+    // Compute shift factor to scale down into manageable range
+    // Ensure product of any two of _l[0] and _l[1] fits within _res bits
+    let dshift = 0.max(
+        qr_ilog(u.max(v.abs()) as u32) + 1 - ((_res + 1) >> 1)
+    );
+    let dround = (1 << dshift) >> 1;
+
+    if _sxx > _syy {
+        (*_l)[0] = (v + dround) >> dshift;
+        (*_l)[1] = (u + w + dround) >> dshift;
+    } else {
+        (*_l)[0] = (u + w + dround) >> dshift;
+        (*_l)[1] = (v + dround) >> dshift;
+    }
+    (*_l)[2] = -(_x0.wrapping_mul((*_l)[0]).wrapping_add(_y0.wrapping_mul((*_l)[1])));
+}
+
+/// Perform a least-squares line fit to a list of points
+///
+/// At least two points are required.
+///
+/// # Parameters
+/// - `_l`: Output line (Ax + By + C = 0)
+/// - `_p`: Array of points
+/// - `_np`: Number of points
+/// - `_res`: Resolution bits for scaling
+#[no_mangle]
+pub unsafe extern "C" fn qr_line_fit_points(
+    _l: *mut qr_line,
+    _p: *mut qr_point,
+    _np: c_int,
+    _res: c_int,
+) {
+    let mut sx: c_int = 0;
+    let mut sy: c_int = 0;
+    let mut xmin = c_int::MAX;
+    let mut xmax = c_int::MIN;
+    let mut ymin = c_int::MAX;
+    let mut ymax = c_int::MIN;
+
+    // Compute centroid and bounds
+    for i in 0.._np {
+        let px = (*_p.offset(i as isize))[0];
+        let py = (*_p.offset(i as isize))[1];
+        sx = sx.wrapping_add(px);
+        xmin = xmin.min(px);
+        xmax = xmax.max(px);
+        sy = sy.wrapping_add(py);
+        ymin = ymin.min(py);
+        ymax = ymax.max(py);
+    }
+
+    let xbar = (sx + (_np >> 1)) / _np;
+    let ybar = (sy + (_np >> 1)) / _np;
+
+    // Compute shift to prevent overflow in covariance calculation
+    let sshift = 0.max(
+        qr_ilog(
+            (_np as u32).wrapping_mul(
+                (xmax - xbar)
+                    .max(xbar - xmin)
+                    .max(ymax - ybar)
+                    .max(ybar - ymin) as u32,
+            ),
+        ) - ((QR_INT_BITS - 1) >> 1),
+    );
+    let sround = (1 << sshift) >> 1;
+
+    // Compute covariance matrix
+    let mut sxx: c_int = 0;
+    let mut sxy: c_int = 0;
+    let mut syy: c_int = 0;
+    for i in 0.._np {
+        let dx = ((*_p.offset(i as isize))[0] - xbar + sround) >> sshift;
+        let dy = ((*_p.offset(i as isize))[1] - ybar + sround) >> sshift;
+        sxx = sxx.wrapping_add(dx.wrapping_mul(dx));
+        sxy = sxy.wrapping_add(dx.wrapping_mul(dy));
+        syy = syy.wrapping_add(dy.wrapping_mul(dy));
+    }
+
+    qr_line_fit(_l, xbar, ybar, sxx, sxy, syy, _res);
 }
 
 /// An affine homography.
@@ -424,14 +538,19 @@ pub unsafe extern "C" fn qr_hom_unproject(
     mut _x: c_int,
     mut _y: c_int,
 ) -> c_int {
-    _x -= (*_hom).x0;
-    _y -= (*_hom).y0;
-    let mut x = (*_hom).inv[0][0] * _x + (*_hom).inv[0][1] * _y;
-    let mut y = (*_hom).inv[1][0] * _x + (*_hom).inv[1][1] * _y;
-    let mut w = ((*_hom).inv[2][0] * _x
-        + (*_hom).inv[2][1] * _y
-        + (*_hom).inv22
-        + (1 << ((*_hom).res - 1)))
+    _x = _x.wrapping_sub((*_hom).x0);
+    _y = _y.wrapping_sub((*_hom).y0);
+    let mut x = (*_hom).inv[0][0]
+        .wrapping_mul(_x)
+        .wrapping_add((*_hom).inv[0][1].wrapping_mul(_y));
+    let mut y = (*_hom).inv[1][0]
+        .wrapping_mul(_x)
+        .wrapping_add((*_hom).inv[1][1].wrapping_mul(_y));
+    let mut w = ((*_hom).inv[2][0]
+        .wrapping_mul(_x)
+        .wrapping_add((*_hom).inv[2][1].wrapping_mul(_y))
+        .wrapping_add((*_hom).inv22)
+        .wrapping_add(1 << ((*_hom).res - 1)))
         >> (*_hom).res;
     if w == 0 {
         (*_q)[0] = if x < 0 { c_int::MIN } else { c_int::MAX };

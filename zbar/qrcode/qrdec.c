@@ -509,82 +509,14 @@ extern int qr_line_eval(qr_line _line, int _x, int _y);
          _l[0] or _l[1].
         Smaller numbers give less angular resolution, but allow more overhead
          room for computations.*/
-static void qr_line_fit(qr_line *_l, int _x0, int _y0, int _sxx, int _sxy,
-			int _syy, int _res)
-{
-    int dshift;
-    int dround;
-    int u;
-    int v;
-    int w;
-    u = abs(_sxx - _syy);
-    v = -_sxy << 1;
-    w = qr_ihypot(u, v);
-    /*Computations in later stages can easily overflow with moderate sizes, so we
-   compute a shift factor to scale things down into a manageable range.
-  We ensure that the product of any two of _l[0] and _l[1] fits within _res
-   bits, which allows computation of line intersections without overflow.*/
-    dshift = QR_MAXI(0, QR_MAXI(qr_ilog(u), qr_ilog(abs(v))) + 1 -
-			    ((_res + 1) >> 1));
-    dround = (1 << dshift) >> 1;
-    if (_sxx > _syy) {
-	(*_l)[0] = (v + dround) >> dshift;
-	(*_l)[1] = (u + w + dround) >> dshift;
-    } else {
-	(*_l)[0] = (u + w + dround) >> dshift;
-	(*_l)[1] = (v + dround) >> dshift;
-    }
-    (*_l)[2] = -(_x0 * (*_l)[0] + _y0 * (*_l)[1]);
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_line_fit(qr_line *_l, int _x0, int _y0, int _sxx, int _sxy,
+			int _syy, int _res);
 
 /*Perform a least-squares line fit to a list of points.
   At least two points are required.*/
-static void qr_line_fit_points(qr_line *_l, qr_point *_p, int _np, int _res)
-{
-    int sx;
-    int sy;
-    int xmin;
-    int xmax;
-    int ymin;
-    int ymax;
-    int xbar;
-    int ybar;
-    int dx;
-    int dy;
-    int sxx;
-    int sxy;
-    int syy;
-    int sshift;
-    int sround;
-    int i;
-    sx = sy = 0;
-    ymax = xmax = INT_MIN;
-    ymin = xmin = INT_MAX;
-    for (i = 0; i < _np; i++) {
-	sx += _p[i][0];
-	xmin = QR_MINI(xmin, _p[i][0]);
-	xmax = QR_MAXI(xmax, _p[i][0]);
-	sy += _p[i][1];
-	ymin = QR_MINI(ymin, _p[i][1]);
-	ymax = QR_MAXI(ymax, _p[i][1]);
-    }
-    xbar = (sx + (_np >> 1)) / _np;
-    ybar = (sy + (_np >> 1)) / _np;
-    sshift =
-	QR_MAXI(0, qr_ilog(_np * QR_MAXI(QR_MAXI(xmax - xbar, xbar - xmin),
-					 QR_MAXI(ymax - ybar, ybar - ymin))) -
-		       ((QR_INT_BITS - 1) >> 1));
-    sround = (1 << sshift) >> 1;
-    sxx = sxy = syy = 0;
-    for (i = 0; i < _np; i++) {
-	dx = (_p[i][0] - xbar + sround) >> sshift;
-	dy = (_p[i][1] - ybar + sround) >> sshift;
-	sxx += dx * dx;
-	sxy += dx * dy;
-	syy += dy * dy;
-    }
-    qr_line_fit(_l, xbar, ybar, sxx, sxy, syy, _res);
-}
+/* Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_line_fit_points(qr_line *_l, qr_point *_p, int _np, int _res);
 
 extern void qr_line_orient(qr_line *_l, int _x, int _y);
 
