@@ -68,22 +68,6 @@ fn qr_fixmul(a: c_int, b: c_int, r: i64, s: c_int) -> c_int {
     ((a as i64 * b as i64 + r) >> s) as c_int
 }
 
-/// Returns the minimum of two integers
-///
-/// Uses bitwise arithmetic to avoid branches (matching C macro QR_MINI).
-#[inline]
-fn qr_mini(a: c_int, b: c_int) -> c_int {
-    a + ((b - a) & -((b < a) as c_int))
-}
-
-/// Returns the maximum of two integers
-///
-/// Uses bitwise arithmetic to avoid branches (matching C macro QR_MAXI).
-#[inline]
-fn qr_maxi(a: c_int, b: c_int) -> c_int {
-    a - ((a - b) & -((b > a) as c_int))
-}
-
 /// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
 ///
 /// This matches C macro QR_EXTMUL.
@@ -343,9 +327,7 @@ pub unsafe extern "C" fn qr_line_fit(
 
     // Compute shift factor to scale down into manageable range
     // Ensure product of any two of _l[0] and _l[1] fits within _res bits
-    let dshift = 0.max(
-        qr_ilog(u.max(v.abs()) as u32) + 1 - ((_res + 1) >> 1)
-    );
+    let dshift = 0.max(qr_ilog(u.max(v.abs()) as u32) + 1 - ((_res + 1) >> 1));
     let dround = (1 << dshift) >> 1;
 
     if _sxx > _syy {
@@ -355,7 +337,9 @@ pub unsafe extern "C" fn qr_line_fit(
         (*_l)[0] = (u + w + dround) >> dshift;
         (*_l)[1] = (v + dround) >> dshift;
     }
-    (*_l)[2] = -(_x0.wrapping_mul((*_l)[0]).wrapping_add(_y0.wrapping_mul((*_l)[1])));
+    (*_l)[2] = -(_x0
+        .wrapping_mul((*_l)[0])
+        .wrapping_add(_y0.wrapping_mul((*_l)[1])));
 }
 
 /// Perform a least-squares line fit to a list of points
@@ -563,12 +547,15 @@ pub unsafe extern "C" fn qr_hom_init(
     let a22 = dx32 * dy31 - dx31 * dy32;
 
     // Figure out if we need to downscale anything
-    let b0 = qr_ilog(qr_maxi(dx10.abs(), dy10.abs()) as u32)
-        + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 = qr_ilog(qr_maxi(dx20.abs(), dy20.abs()) as u32)
-        + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(qr_maxi(qr_maxi(a20.abs(), a21.abs()), a22.abs()) as u32);
-    let s1 = qr_maxi(0, _res + qr_maxi(qr_maxi(b0, b1), b2) - (QR_INT_BITS - 2));
+    let b0 =
+        qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
+    let b1 =
+        qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
+    let b2 = qr_ilog(c_int::max(c_int::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let s1 = c_int::max(
+        0,
+        _res + c_int::max(c_int::max(b0, b1), b2) - (QR_INT_BITS - 2),
+    );
     let r1 = (1i64 << s1) >> 1;
 
     // Compute the final coefficients of the forward transform
@@ -588,12 +575,12 @@ pub unsafe extern "C" fn qr_hom_init(
     };
 
     // Now compute the inverse transform
-    let b0 = qr_ilog(qr_maxi(qr_maxi(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
-        + qr_ilog(qr_maxi((*_hom).fwd[0][0].abs(), (*_hom).fwd[1][0].abs()) as u32);
-    let b1 = qr_ilog(qr_maxi(qr_maxi(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
-        + qr_ilog(qr_maxi((*_hom).fwd[0][1].abs(), (*_hom).fwd[1][1].abs()) as u32);
+    let b0 = qr_ilog(c_int::max(c_int::max(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
+        + qr_ilog(c_int::max((*_hom).fwd[0][0].abs(), (*_hom).fwd[1][0].abs()) as u32);
+    let b1 = qr_ilog(c_int::max(c_int::max(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
+        + qr_ilog(c_int::max((*_hom).fwd[0][1].abs(), (*_hom).fwd[1][1].abs()) as u32);
     let b2 = qr_ilog(a22.unsigned_abs()) - s1;
-    let s2 = qr_maxi(0, qr_maxi(b0, b1) + b2 - (QR_INT_BITS - 3));
+    let s2 = c_int::max(0, c_int::max(b0, b1) + b2 - (QR_INT_BITS - 3));
     let r2 = (1i64 << s2) >> 1;
     let s1 = s1 + s2;
     let r1 = r1 << s2;
@@ -857,11 +844,20 @@ pub unsafe extern "C" fn qr_finder_ransac(
             // We grossly approximate the standard deviation as 1 pixel in one
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
-            let thresh = qr_isqrt(qr_point_distance2(p0.as_ptr(), p1.as_ptr()) << (2 * QR_FINDER_SUBPREC + 1)) as c_int;
+            let thresh = qr_isqrt(
+                qr_point_distance2(p0.as_ptr(), p1.as_ptr()) << (2 * QR_FINDER_SUBPREC + 1),
+            ) as c_int;
             let mut ninliers = 0;
 
             for j in 0..n {
-                if qr_point_ccw(p0.as_ptr(), p1.as_ptr(), (*edge_pts.offset(j as isize)).pos.as_ptr()).abs() <= thresh {
+                if qr_point_ccw(
+                    p0.as_ptr(),
+                    p1.as_ptr(),
+                    (*edge_pts.offset(j as isize)).pos.as_ptr(),
+                )
+                .abs()
+                    <= thresh
+                {
                     (*edge_pts.offset(j as isize)).extent |= 1;
                     ninliers += 1;
                 } else {
@@ -1052,11 +1048,9 @@ pub unsafe extern "C" fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_voi
 pub unsafe extern "C" fn qr_finder_center_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
     let a = _a as *const qr_finder_center;
     let b = _b as *const qr_finder_center;
-    ((c_int::from((*b).nedge_pts > (*a).nedge_pts)
-        - c_int::from((*b).nedge_pts < (*a).nedge_pts))
+    ((c_int::from((*b).nedge_pts > (*a).nedge_pts) - c_int::from((*b).nedge_pts < (*a).nedge_pts))
         << 2)
-        + ((c_int::from((*a).pos[1] > (*b).pos[1]) - c_int::from((*a).pos[1] < (*b).pos[1]))
-            << 1)
+        + ((c_int::from((*a).pos[1] > (*b).pos[1]) - c_int::from((*a).pos[1] < (*b).pos[1])) << 1)
         + c_int::from((*a).pos[0] > (*b).pos[0])
         - c_int::from((*a).pos[0] < (*b).pos[0])
 }
@@ -1121,8 +1115,7 @@ pub unsafe extern "C" fn qr_finder_cluster_lines(
             }
 
             // Check if line ends are too far apart
-            if ((*a).pos[_v as usize] + (*a).len - (*b).pos[_v as usize] - (*b).len).abs()
-                > thresh
+            if ((*a).pos[_v as usize] + (*a).len - (*b).pos[_v as usize] - (*b).len).abs() > thresh
             {
                 continue;
             }
@@ -1139,7 +1132,8 @@ pub unsafe extern "C" fn qr_finder_cluster_lines(
             // Check ending offset alignment
             if (*a).eoffs > 0
                 && (*b).eoffs > 0
-                && ((*a).pos[_v as usize] + (*a).len + (*a).eoffs - (*b).pos[_v as usize]
+                && ((*a).pos[_v as usize] + (*a).len + (*a).eoffs
+                    - (*b).pos[_v as usize]
                     - (*b).len
                     - (*b).eoffs)
                     .abs()
@@ -1346,8 +1340,7 @@ pub unsafe extern "C" fn qr_finder_find_crossings(
             (*c).pos[1] = (y + nvneighbors) / (nvneighbors << 1);
             (*c).edge_pts = _edge_pts;
 
-            let mut nedge_pts =
-                qr_finder_edge_pts_fill(_edge_pts, 0, hneighbors, nhneighbors, 0);
+            let mut nedge_pts = qr_finder_edge_pts_fill(_edge_pts, 0, hneighbors, nhneighbors, 0);
             nedge_pts = qr_finder_edge_pts_fill(_edge_pts, nedge_pts, vneighbors, nvneighbors, 1);
 
             (*c).nedge_pts = nedge_pts;
@@ -1437,8 +1430,9 @@ pub unsafe extern "C" fn qr_finder_centers_locate(
 
         let edge_pts =
             malloc((nedge_pts as usize) * size_of::<qr_finder_edge_pt>()) as *mut qr_finder_edge_pt;
-        let centers = malloc((qr_mini(nhclusters, nvclusters) as usize) * size_of::<qr_finder_center>())
-            as *mut qr_finder_center;
+        let centers =
+            malloc((c_int::min(nhclusters, nvclusters) as usize) * size_of::<qr_finder_center>())
+                as *mut qr_finder_center;
 
         let ncenters = qr_finder_find_crossings(
             centers, edge_pts, hclusters, nhclusters, vclusters, nvclusters,
@@ -1475,7 +1469,9 @@ pub unsafe extern "C" fn qr_sampling_grid_fp_mask_rect(
     let stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
     for j in _u..(_u + _w) {
         for i in _v..(_v + _h) {
-            *(*_grid).fpmask.offset((j * stride + (i >> QR_INT_LOGBITS)) as isize) |=
+            *(*_grid)
+                .fpmask
+                .offset((j * stride + (i >> QR_INT_LOGBITS)) as isize) |=
                 1 << (i & (QR_INT_BITS - 1));
         }
     }
@@ -1502,8 +1498,8 @@ pub unsafe extern "C" fn qr_sampling_grid_is_in_fp(
 /// We could compact this more, but the code to access it would eliminate the gains.
 #[no_mangle]
 pub static QR_ALIGNMENT_SPACING: [c_uchar; 34] = [
-    16, 18, 20, 22, 24, 26, 28, 20, 22, 24, 24, 26, 28, 28, 22, 24, 24, 26, 26, 28, 28, 24, 24,
-    26, 26, 26, 28, 28, 24, 26, 26, 26, 28, 28,
+    16, 18, 20, 22, 24, 26, 28, 20, 22, 24, 24, 26, 28, 28, 22, 24, 24, 26, 26, 28, 28, 24, 24, 26,
+    26, 26, 28, 28, 24, 26, 26, 26, 28, 28,
 ];
 
 /// Bulk data for the number of parity bytes per Reed-Solomon block
