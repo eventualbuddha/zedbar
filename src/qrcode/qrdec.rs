@@ -2512,6 +2512,72 @@ pub unsafe extern "C" fn qr_sampling_grid_init(
     }
 }
 
+/// Sample QR code data bits from an image using the sampling grid
+///
+/// Reads bits from the image using the homography cells in the sampling grid,
+/// XORing them with the data mask pattern. Bits are stored column-wise.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers and accesses image data.
+#[no_mangle]
+pub unsafe extern "C" fn qr_sampling_grid_sample(
+    _grid: *const qr_sampling_grid,
+    _data_bits: *mut c_uint,
+    _dim: c_int,
+    _fmt_info: c_int,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+) {
+    // We initialize the buffer with the data mask and XOR bits into it as we read
+    // them out of the image instead of unmasking in a separate step
+    qr_data_mask_fill(_data_bits, _dim, _fmt_info & 7);
+    let stride = ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
+    let mut u0 = 0;
+
+    // We read data cell-by-cell to avoid having to constantly change which
+    // projection we're using as we read each bit.
+    // Note that bits are stored column-wise, since that's how we'll scan them.
+    for j in 0..(*_grid).ncells {
+        let u1 = (*_grid).cell_limits[j as usize];
+        let mut v0 = 0;
+        for i in 0..(*_grid).ncells {
+            let v1 = (*_grid).cell_limits[i as usize];
+            let cell = (*_grid).cells[i as usize].add(j as usize);
+            let du = u0 - (*cell).u0;
+            let dv = v0 - (*cell).v0;
+            let mut x0 = (*cell).fwd[0][0] * du + (*cell).fwd[0][1] * dv + (*cell).fwd[0][2];
+            let mut y0 = (*cell).fwd[1][0] * du + (*cell).fwd[1][1] * dv + (*cell).fwd[1][2];
+            let mut w0 = (*cell).fwd[2][0] * du + (*cell).fwd[2][1] * dv + (*cell).fwd[2][2];
+
+            for u in u0..u1 {
+                let mut x = x0;
+                let mut y = y0;
+                let mut w = w0;
+                for v in v0..v1 {
+                    // Skip doing all the divisions and bounds checks if the bit is in the
+                    // function pattern
+                    if qr_sampling_grid_is_in_fp(_grid, _dim, u, v) == 0 {
+                        let mut p: qr_point = [0, 0];
+                        qr_hom_cell_fproject(&mut p, cell, x, y, w);
+                        *_data_bits.add((u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)) ^=
+                            (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint)
+                                << (v & (QR_INT_BITS - 1));
+                    }
+                    x += (*cell).fwd[0][1];
+                    y += (*cell).fwd[1][1];
+                    w += (*cell).fwd[2][1];
+                }
+                x0 += (*cell).fwd[0][0];
+                y0 += (*cell).fwd[1][0];
+                w0 += (*cell).fwd[2][0];
+            }
+            v0 = v1;
+        }
+        u0 = u1;
+    }
+}
+
 /// Correct a BCH(18,6,3) code word
 ///
 /// Takes a code word and attempts to correct errors using the BCH(18,6,3) code.
