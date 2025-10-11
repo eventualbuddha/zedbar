@@ -2329,21 +2329,28 @@ pub unsafe extern "C" fn qr_sampling_grid_init(
     // Create a base cell to bootstrap the alignment pattern search
     qr_hom_cell_init(
         &mut base_cell,
-        0, 0,
-        dim - 1, 0,
-        0, dim - 1,
-        dim - 1, dim - 1,
-        (*_p.offset(0))[0], (*_p.offset(0))[1],
-        (*_p.offset(1))[0], (*_p.offset(1))[1],
-        (*_p.offset(2))[0], (*_p.offset(2))[1],
-        (*_p.offset(3))[0], (*_p.offset(3))[1],
+        0,
+        0,
+        dim - 1,
+        0,
+        0,
+        dim - 1,
+        dim - 1,
+        dim - 1,
+        (*_p.offset(0))[0],
+        (*_p.offset(0))[1],
+        (*_p.offset(1))[0],
+        (*_p.offset(1))[1],
+        (*_p.offset(2))[0],
+        (*_p.offset(2))[1],
+        (*_p.offset(3))[0],
+        (*_p.offset(3))[1],
     );
 
     // Allocate the array of cells
     (*_grid).ncells = nalign - 1;
-    (*_grid).cells[0] = malloc(
-        ((nalign - 1) * (nalign - 1)) as usize * size_of::<qr_hom_cell>()
-    ) as *mut qr_hom_cell;
+    (*_grid).cells[0] = malloc(((nalign - 1) * (nalign - 1)) as usize * size_of::<qr_hom_cell>())
+        as *mut qr_hom_cell;
     for i in 1..((*_grid).ncells as usize) {
         (*_grid).cells[i] = (*_grid).cells[i - 1].add((*_grid).ncells as usize);
     }
@@ -2428,31 +2435,69 @@ pub unsafe extern "C" fn qr_sampling_grid_init(
 
                     // Each predictor is basically a straight-line extrapolation from two
                     // neighboring alignment patterns
-                    qr_hom_cell_project(&mut p0, (*_grid).cells[(i - 2) as usize].add((j - 1) as usize), u, v, 0);
-                    qr_hom_cell_project(&mut p1, (*_grid).cells[(i - 2) as usize].add((j - 2) as usize), u, v, 0);
-                    qr_hom_cell_project(&mut p2, (*_grid).cells[(i - 1) as usize].add((j - 2) as usize), u, v, 0);
+                    qr_hom_cell_project(
+                        &mut p0,
+                        (*_grid).cells[(i - 2) as usize].add((j - 1) as usize),
+                        u,
+                        v,
+                        0,
+                    );
+                    qr_hom_cell_project(
+                        &mut p1,
+                        (*_grid).cells[(i - 2) as usize].add((j - 2) as usize),
+                        u,
+                        v,
+                        0,
+                    );
+                    qr_hom_cell_project(
+                        &mut p2,
+                        (*_grid).cells[(i - 1) as usize].add((j - 2) as usize),
+                        u,
+                        v,
+                        0,
+                    );
 
                     // Take the median of the predictions as the search center
                     // QR_SORT2I implementation using swap
-                    if p0[0] > p1[0] { swap(&mut p0[0], &mut p1[0]); }
-                    if p0[1] > p1[1] { swap(&mut p0[1], &mut p1[1]); }
-                    if p1[0] > p2[0] { swap(&mut p1[0], &mut p2[0]); }
-                    if p1[1] > p2[1] { swap(&mut p1[1], &mut p2[1]); }
-                    if p0[0] > p1[0] { swap(&mut p0[0], &mut p1[0]); }
-                    if p0[1] > p1[1] { swap(&mut p0[1], &mut p1[1]); }
+                    if p0[0] > p1[0] {
+                        swap(&mut p0[0], &mut p1[0]);
+                    }
+                    if p0[1] > p1[1] {
+                        swap(&mut p0[1], &mut p1[1]);
+                    }
+                    if p1[0] > p2[0] {
+                        swap(&mut p1[0], &mut p2[0]);
+                    }
+                    if p1[1] > p2[1] {
+                        swap(&mut p1[1], &mut p2[1]);
+                    }
+                    if p0[0] > p1[0] {
+                        swap(&mut p0[0], &mut p1[0]);
+                    }
+                    if p0[1] > p1[1] {
+                        swap(&mut p0[1], &mut p1[1]);
+                    }
 
                     // We need a cell that has the target point at a known (u,v) location
                     let cell_ptr = (*_grid).cells[(i - 1) as usize].add((j - 1) as usize);
                     qr_hom_cell_init(
                         cell_ptr,
-                        (*q.offset((k_idx - nalign - 1) as isize))[0], (*q.offset((k_idx - nalign - 1) as isize))[1],
-                        (*q.offset((k_idx - nalign) as isize))[0], (*q.offset((k_idx - nalign) as isize))[1],
-                        (*q.offset((k_idx - 1) as isize))[0], (*q.offset((k_idx - 1) as isize))[1],
-                        (*q.offset(k_idx as isize))[0], (*q.offset(k_idx as isize))[1],
-                        (*p.offset((k_idx - nalign - 1) as isize))[0], (*p.offset((k_idx - nalign - 1) as isize))[1],
-                        (*p.offset((k_idx - nalign) as isize))[0], (*p.offset((k_idx - nalign) as isize))[1],
-                        (*p.offset((k_idx - 1) as isize))[0], (*p.offset((k_idx - 1) as isize))[1],
-                        p1[0], p1[1],
+                        (*q.offset((k_idx - nalign - 1) as isize))[0],
+                        (*q.offset((k_idx - nalign - 1) as isize))[1],
+                        (*q.offset((k_idx - nalign) as isize))[0],
+                        (*q.offset((k_idx - nalign) as isize))[1],
+                        (*q.offset((k_idx - 1) as isize))[0],
+                        (*q.offset((k_idx - 1) as isize))[1],
+                        (*q.offset(k_idx as isize))[0],
+                        (*q.offset(k_idx as isize))[1],
+                        (*p.offset((k_idx - nalign - 1) as isize))[0],
+                        (*p.offset((k_idx - nalign - 1) as isize))[1],
+                        (*p.offset((k_idx - nalign) as isize))[0],
+                        (*p.offset((k_idx - nalign) as isize))[1],
+                        (*p.offset((k_idx - 1) as isize))[0],
+                        (*p.offset((k_idx - 1) as isize))[1],
+                        p1[0],
+                        p1[1],
                     );
                     cell_ptr
                 } else if i > 1 && j > 0 {
@@ -2464,19 +2509,36 @@ pub unsafe extern "C" fn qr_sampling_grid_init(
                 };
 
                 // Use a very small search radius
-                qr_alignment_pattern_search(p.add(k_idx as usize), cell, u, v, 2, _img, _width, _height);
+                qr_alignment_pattern_search(
+                    p.add(k_idx as usize),
+                    cell,
+                    u,
+                    v,
+                    2,
+                    _img,
+                    _width,
+                    _height,
+                );
 
                 if i > 0 && j > 0 {
                     qr_hom_cell_init(
                         (*_grid).cells[(i - 1) as usize].add((j - 1) as usize),
-                        (*q.offset((k_idx - nalign - 1) as isize))[0], (*q.offset((k_idx - nalign - 1) as isize))[1],
-                        (*q.offset((k_idx - nalign) as isize))[0], (*q.offset((k_idx - nalign) as isize))[1],
-                        (*q.offset((k_idx - 1) as isize))[0], (*q.offset((k_idx - 1) as isize))[1],
-                        (*q.offset(k_idx as isize))[0], (*q.offset(k_idx as isize))[1],
-                        (*p.offset((k_idx - nalign - 1) as isize))[0], (*p.offset((k_idx - nalign - 1) as isize))[1],
-                        (*p.offset((k_idx - nalign) as isize))[0], (*p.offset((k_idx - nalign) as isize))[1],
-                        (*p.offset((k_idx - 1) as isize))[0], (*p.offset((k_idx - 1) as isize))[1],
-                        (*p.offset(k_idx as isize))[0], (*p.offset(k_idx as isize))[1],
+                        (*q.offset((k_idx - nalign - 1) as isize))[0],
+                        (*q.offset((k_idx - nalign - 1) as isize))[1],
+                        (*q.offset((k_idx - nalign) as isize))[0],
+                        (*q.offset((k_idx - nalign) as isize))[1],
+                        (*q.offset((k_idx - 1) as isize))[0],
+                        (*q.offset((k_idx - 1) as isize))[1],
+                        (*q.offset(k_idx as isize))[0],
+                        (*q.offset(k_idx as isize))[1],
+                        (*p.offset((k_idx - nalign - 1) as isize))[0],
+                        (*p.offset((k_idx - nalign - 1) as isize))[1],
+                        (*p.offset((k_idx - nalign) as isize))[0],
+                        (*p.offset((k_idx - nalign) as isize))[1],
+                        (*p.offset((k_idx - 1) as isize))[0],
+                        (*p.offset((k_idx - 1) as isize))[1],
+                        (*p.offset(k_idx as isize))[0],
+                        (*p.offset(k_idx as isize))[1],
                     );
                 }
             }
@@ -2495,19 +2557,37 @@ pub unsafe extern "C" fn qr_sampling_grid_init(
 
     // Produce a bounding square for the code
     qr_hom_cell_project(_p.offset(0), (*_grid).cells[0].add(0), -1, -1, 1);
-    qr_hom_cell_project(_p.offset(1), (*_grid).cells[0].add(((*_grid).ncells - 1) as usize), (dim << 1) - 1, -1, 1);
-    qr_hom_cell_project(_p.offset(2), (*_grid).cells[((*_grid).ncells - 1) as usize].add(0), -1, (dim << 1) - 1, 1);
-    qr_hom_cell_project(_p.offset(3), (*_grid).cells[((*_grid).ncells - 1) as usize].add(((*_grid).ncells - 1) as usize), (dim << 1) - 1, (dim << 1) - 1, 1);
+    qr_hom_cell_project(
+        _p.offset(1),
+        (*_grid).cells[0].add(((*_grid).ncells - 1) as usize),
+        (dim << 1) - 1,
+        -1,
+        1,
+    );
+    qr_hom_cell_project(
+        _p.offset(2),
+        (*_grid).cells[((*_grid).ncells - 1) as usize].add(0),
+        -1,
+        (dim << 1) - 1,
+        1,
+    );
+    qr_hom_cell_project(
+        _p.offset(3),
+        (*_grid).cells[((*_grid).ncells - 1) as usize].add(((*_grid).ncells - 1) as usize),
+        (dim << 1) - 1,
+        (dim << 1) - 1,
+        1,
+    );
 
     // Clamp the points somewhere near the image
     for i in 0..4 {
         (*_p.offset(i))[0] = c_int::max(
             -(_width << QR_FINDER_SUBPREC),
-            c_int::min((*_p.offset(i))[0], (_width << QR_FINDER_SUBPREC) + 1)
+            c_int::min((*_p.offset(i))[0], (_width << QR_FINDER_SUBPREC) + 1),
         );
         (*_p.offset(i))[1] = c_int::max(
             -(_height << QR_FINDER_SUBPREC),
-            c_int::min((*_p.offset(i))[1], (_height << QR_FINDER_SUBPREC) + 1)
+            c_int::min((*_p.offset(i))[1], (_height << QR_FINDER_SUBPREC) + 1),
         );
     }
 }
@@ -2560,7 +2640,8 @@ pub unsafe extern "C" fn qr_sampling_grid_sample(
                     if qr_sampling_grid_is_in_fp(_grid, _dim, u, v) == 0 {
                         let mut p: qr_point = [0, 0];
                         qr_hom_cell_fproject(&mut p, cell, x, y, w);
-                        *_data_bits.add((u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)) ^=
+                        *_data_bits
+                            .add((u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)) ^=
                             (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint)
                                 << (v & (QR_INT_BITS - 1));
                     }
@@ -2733,9 +2814,9 @@ pub unsafe extern "C" fn qr_code_data_parse(
 ) -> c_int {
     // The number of bits used to encode the character count for each version range and data mode
     const LEN_BITS: [[c_int; 4]; 3] = [
-        [10, 9, 8, 8],      // Versions 1-9
-        [12, 11, 16, 10],   // Versions 10-26
-        [14, 13, 16, 12],   // Versions 27-40
+        [10, 9, 8, 8],    // Versions 1-9
+        [12, 11, 16, 10], // Versions 10-26
+        [14, 13, 16, 12], // Versions 27-40
     ];
 
     let mut qpb: qr_pack_buf = std::mem::zeroed();
@@ -2774,9 +2855,13 @@ pub unsafe extern "C" fn qr_code_data_parse(
         (*entry).mode = std::mem::transmute::<c_int, qr_mode>(mode);
         (*entry).payload.data.buf = null_mut();
 
+        let Ok(mode) = mode.try_into() else {
+            // Unknown mode - we can't skip it, so fail
+            return -1;
+        };
+
         match mode {
-            1 => {
-                // QR_MODE_NUM
+            qr_mode::QR_MODE_NUM => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]);
                 if len < 0 {
                     return -1;
@@ -2843,8 +2928,7 @@ pub unsafe extern "C" fn qr_code_data_parse(
                     *buf_ptr = c;
                 }
             }
-            2 => {
-                // QR_MODE_ALNUM
+            qr_mode::QR_MODE_ALNUM => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]);
                 if len < 0 {
                     return -1;
@@ -2889,8 +2973,8 @@ pub unsafe extern "C" fn qr_code_data_parse(
                     *buf_ptr = c;
                 }
             }
-            3 => {
-                // QR_MODE_STRUCT - Structured-append header
+            qr_mode::QR_MODE_STRUCT => {
+                // Structured-append header
                 let bits = qr_pack_buf_read(&mut qpb, 16);
                 if bits < 0 {
                     return -1;
@@ -2906,8 +2990,7 @@ pub unsafe extern "C" fn qr_code_data_parse(
                     (*entry).payload.sa.sa_parity = (*_qrdata).sa_parity;
                 }
             }
-            4 => {
-                // QR_MODE_BYTE
+            qr_mode::QR_MODE_BYTE => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]);
                 if len < 0 {
                     return -1;
@@ -2927,12 +3010,12 @@ pub unsafe extern "C" fn qr_code_data_parse(
                     *buf.add(i as usize) = c;
                 }
             }
-            5 => {
-                // QR_MODE_FNC1_1ST - FNC1 first position marker
+            qr_mode::QR_MODE_FNC1_1ST => {
+                // FNC1 first position marker
                 // No data to read
             }
-            7 => {
-                // QR_MODE_ECI - Extended Channel Interpretation
+            qr_mode::QR_MODE_ECI => {
+                // Extended Channel Interpretation
                 let bits = qr_pack_buf_read(&mut qpb, 8);
                 if bits < 0 {
                     return -1;
@@ -2969,8 +3052,7 @@ pub unsafe extern "C" fn qr_code_data_parse(
 
                 (*entry).payload.eci = val;
             }
-            8 => {
-                // QR_MODE_KANJI
+            qr_mode::QR_MODE_KANJI => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]);
                 if len < 0 {
                     return -1;
@@ -2996,17 +3078,16 @@ pub unsafe extern "C" fn qr_code_data_parse(
                     *buf.add((2 * i + 1) as usize) = (bits & 0xFF) as c_uchar;
                 }
             }
-            9 => {
-                // QR_MODE_FNC1_2ND - FNC1 second position marker
+            qr_mode::QR_MODE_FNC1_2ND => {
+                // FNC1 second position marker
                 let bits = qr_pack_buf_read(&mut qpb, 8);
-                if !((0..100).contains(&bits) || (165..191).contains(&bits) || (197..223).contains(&bits)) {
+                if !((0..100).contains(&bits)
+                    || (165..191).contains(&bits)
+                    || (197..223).contains(&bits))
+                {
                     return -1;
                 }
                 (*entry).payload.ai = bits;
-            }
-            _ => {
-                // Unknown mode - we can't skip it, so fail
-                return -1;
             }
         }
     }
@@ -3072,8 +3153,9 @@ pub unsafe extern "C" fn qr_code_decode(
     // Group those bits into Reed-Solomon codewords
     let ecc_level = (_fmt_info >> 3) ^ 1;
     let nblocks = QR_RS_NBLOCKS[(_version - 1) as usize][ecc_level as usize] as c_int;
-    let npar = QR_RS_NPAR_VALS[(QR_RS_NPAR_OFFS[(_version - 1) as usize] as usize)
-        + (ecc_level as usize)] as c_int;
+    let npar = QR_RS_NPAR_VALS
+        [(QR_RS_NPAR_OFFS[(_version - 1) as usize] as usize) + (ecc_level as usize)]
+        as c_int;
     let ncodewords = qr_code_ncodewords(_version as c_uint);
     let block_sz = ncodewords / nblocks;
     let nshort_blocks = nblocks - (ncodewords % nblocks);
@@ -3818,6 +3900,24 @@ pub enum qr_mode {
     QR_MODE_KANJI = 8,
     /// FNC1 marker in second position (industry application)
     QR_MODE_FNC1_2ND = 9,
+}
+
+impl TryFrom<c_int> for qr_mode {
+    type Error = ();
+
+    fn try_from(value: c_int) -> Result<Self, Self::Error> {
+        Ok(match value {
+            1 => Self::QR_MODE_NUM,
+            2 => Self::QR_MODE_ALNUM,
+            3 => Self::QR_MODE_STRUCT,
+            4 => Self::QR_MODE_BYTE,
+            5 => Self::QR_MODE_FNC1_1ST,
+            7 => Self::QR_MODE_ECI,
+            8 => Self::QR_MODE_KANJI,
+            9 => Self::QR_MODE_FNC1_2ND,
+            _ => return Err(()),
+        })
+    }
 }
 
 /// Check if a mode has a data buffer associated with it
