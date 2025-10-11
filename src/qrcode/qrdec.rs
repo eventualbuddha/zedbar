@@ -9,7 +9,7 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use libc::{c_int, c_uchar, c_uint, calloc, free, memcpy, realloc};
+use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, qsort, realloc, size_t};
 
 use crate::{
     decoder_types::qr_finder_line,
@@ -818,6 +818,194 @@ pub unsafe extern "C" fn qr_finder_cluster_lines(
 
     free(mark as *mut c_void);
     nclusters
+}
+
+/// Adds the coordinates of the edge points from the lines contained in the
+/// given list of clusters to the list of edge points for a finder center.
+///
+/// Only the edge point position is initialized.
+/// The edge label and extent are set by qr_finder_edge_pts_aff_classify()
+/// or qr_finder_edge_pts_hom_classify().
+///
+/// # Parameters
+/// - `_edge_pts`: The buffer in which to store the edge points.
+/// - `_nedge_pts`: The current number of edge points in the buffer.
+/// - `_neighbors`: The list of clusters.
+/// - `_nneighbors`: The number of clusters in the list.
+/// - `_v`: 0 for horizontal lines and 1 for vertical lines.
+///
+/// # Returns
+/// The new total number of edge points.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_edge_pts_fill(
+    _edge_pts: *mut qr_finder_edge_pt,
+    mut _nedge_pts: c_int,
+    _neighbors: *mut *mut qr_finder_cluster,
+    _nneighbors: c_int,
+    _v: c_int,
+) -> c_int {
+    for i in 0.._nneighbors {
+        let c = *_neighbors.offset(i as isize);
+        for j in 0..(*c).nlines {
+            let l = *(*c).lines.offset(j as isize);
+
+            // Add beginning offset edge point if present
+            if (*l).boffs > 0 {
+                (*_edge_pts.offset(_nedge_pts as isize)).pos[0] = (*l).pos[0];
+                (*_edge_pts.offset(_nedge_pts as isize)).pos[1] = (*l).pos[1];
+                (*_edge_pts.offset(_nedge_pts as isize)).pos[_v as usize] -= (*l).boffs;
+                _nedge_pts += 1;
+            }
+
+            // Add ending offset edge point if present
+            if (*l).eoffs > 0 {
+                (*_edge_pts.offset(_nedge_pts as isize)).pos[0] = (*l).pos[0];
+                (*_edge_pts.offset(_nedge_pts as isize)).pos[1] = (*l).pos[1];
+                (*_edge_pts.offset(_nedge_pts as isize)).pos[_v as usize] += (*l).len + (*l).eoffs;
+                _nedge_pts += 1;
+            }
+        }
+    }
+    _nedge_pts
+}
+
+/// Finds horizontal clusters that cross corresponding vertical clusters,
+/// presumably corresponding to a finder center.
+///
+/// # Parameters
+/// - `_centers`: The buffer in which to store putative finder centers.
+/// - `_edge_pts`: The buffer to use for the edge point lists for each finder center.
+/// - `_hclusters`: The clusters of horizontal lines crossing finder patterns.
+/// - `_nhclusters`: The number of horizontal line clusters.
+/// - `_vclusters`: The clusters of vertical lines crossing finder patterns.
+/// - `_nvclusters`: The number of vertical line clusters.
+///
+/// # Returns
+/// The number of putative finder centers.
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_find_crossings(
+    _centers: *mut qr_finder_center,
+    mut _edge_pts: *mut qr_finder_edge_pt,
+    _hclusters: *mut qr_finder_cluster,
+    _nhclusters: c_int,
+    _vclusters: *mut qr_finder_cluster,
+    _nvclusters: c_int,
+) -> c_int {
+    let hneighbors = malloc((_nhclusters as usize) * size_of::<*mut qr_finder_cluster>())
+        as *mut *mut qr_finder_cluster;
+    let vneighbors = malloc((_nvclusters as usize) * size_of::<*mut qr_finder_cluster>())
+        as *mut *mut qr_finder_cluster;
+    let hmark = calloc(_nhclusters as usize, 1) as *mut c_uchar;
+    let vmark = calloc(_nvclusters as usize, 1) as *mut c_uchar;
+    let mut ncenters = 0;
+
+    // TODO: This may need some re-working.
+    // We should be finding groups of clusters such that _all_ horizontal lines in
+    // _all_ horizontal clusters in the group cross _all_ vertical lines in _all_
+    // vertical clusters in the group.
+    // This is equivalent to finding the maximum bipartite clique in the
+    // connectivity graph, which requires linear programming to solve efficiently.
+    // In principle, that is easy to do, but a realistic implementation without
+    // floating point is a lot of work (and computationally expensive).
+    // Right now we are relying on a sufficient border around the finder patterns
+    // to prevent false positives.
+
+    for i in 0.._nhclusters {
+        if *hmark.offset(i as isize) != 0 {
+            continue;
+        }
+
+        let a = *(*_hclusters.offset(i as isize))
+            .lines
+            .offset(((*_hclusters.offset(i as isize)).nlines >> 1) as isize);
+        let mut y = 0;
+        let mut nvneighbors = 0;
+
+        // Find vertical clusters that cross this horizontal cluster
+        for j in 0.._nvclusters {
+            if *vmark.offset(j as isize) != 0 {
+                continue;
+            }
+
+            let b = *(*_vclusters.offset(j as isize))
+                .lines
+                .offset(((*_vclusters.offset(j as isize)).nlines >> 1) as isize);
+
+            if qr_finder_lines_are_crossing(a, b) != 0 {
+                *vmark.offset(j as isize) = 1;
+                y += ((*b).pos[1] << 1) + (*b).len;
+                if (*b).boffs > 0 && (*b).eoffs > 0 {
+                    y += (*b).eoffs - (*b).boffs;
+                }
+                *vneighbors.offset(nvneighbors as isize) = _vclusters.offset(j as isize);
+                nvneighbors += 1;
+            }
+        }
+
+        if nvneighbors > 0 {
+            let mut x = ((*a).pos[0] << 1) + (*a).len;
+            if (*a).boffs > 0 && (*a).eoffs > 0 {
+                x += (*a).eoffs - (*a).boffs;
+            }
+            *hneighbors.offset(0) = _hclusters.offset(i as isize);
+            let mut nhneighbors = 1;
+
+            let j_mid = nvneighbors >> 1;
+            let b = *(*(*vneighbors.offset(j_mid as isize)))
+                .lines
+                .offset(((*(*vneighbors.offset(j_mid as isize))).nlines >> 1) as isize);
+
+            // Find additional horizontal clusters that cross the vertical clusters
+            for j in (i + 1).._nhclusters {
+                if *hmark.offset(j as isize) != 0 {
+                    continue;
+                }
+
+                let a = *(*_hclusters.offset(j as isize))
+                    .lines
+                    .offset(((*_hclusters.offset(j as isize)).nlines >> 1) as isize);
+
+                if qr_finder_lines_are_crossing(a, b) != 0 {
+                    *hmark.offset(j as isize) = 1;
+                    x += ((*a).pos[0] << 1) + (*a).len;
+                    if (*a).boffs > 0 && (*a).eoffs > 0 {
+                        x += (*a).eoffs - (*a).boffs;
+                    }
+                    *hneighbors.offset(nhneighbors as isize) = _hclusters.offset(j as isize);
+                    nhneighbors += 1;
+                }
+            }
+
+            let c = _centers.offset(ncenters as isize);
+            ncenters += 1;
+
+            (*c).pos[0] = (x + nhneighbors) / (nhneighbors << 1);
+            (*c).pos[1] = (y + nvneighbors) / (nvneighbors << 1);
+            (*c).edge_pts = _edge_pts;
+
+            let mut nedge_pts =
+                qr_finder_edge_pts_fill(_edge_pts, 0, hneighbors, nhneighbors, 0);
+            nedge_pts = qr_finder_edge_pts_fill(_edge_pts, nedge_pts, vneighbors, nvneighbors, 1);
+
+            (*c).nedge_pts = nedge_pts;
+            _edge_pts = _edge_pts.offset(nedge_pts as isize);
+        }
+    }
+
+    free(vmark as *mut c_void);
+    free(hmark as *mut c_void);
+    free(vneighbors as *mut c_void);
+    free(hneighbors as *mut c_void);
+
+    // Sort the centers by decreasing numbers of edge points
+    qsort(
+        _centers as *mut c_void,
+        ncenters as size_t,
+        size_of::<qr_finder_center>(),
+        Some(qr_finder_center_cmp),
+    );
+
+    ncenters
 }
 
 /// Mark a given rectangular region as belonging to the function pattern

@@ -148,35 +148,11 @@ extern int qr_finder_cluster_lines(qr_finder_cluster *_clusters,
   _neighbors:  The list of lines in the cluster.
   _nneighbors: The number of lines in the list of lines in the cluster.
   _v:          0 for horizontal lines and 1 for vertical lines.
-  Return: The new total number of edge points.*/
-static int qr_finder_edge_pts_fill(qr_finder_edge_pt *_edge_pts, int _nedge_pts,
+  Return: The new total number of edge points.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_edge_pts_fill(qr_finder_edge_pt *_edge_pts, int _nedge_pts,
 				   qr_finder_cluster **_neighbors,
-				   int _nneighbors, int _v)
-{
-    int i;
-    for (i = 0; i < _nneighbors; i++) {
-	qr_finder_cluster *c;
-	int j;
-	c = _neighbors[i];
-	for (j = 0; j < c->nlines; j++) {
-	    qr_finder_line *l;
-	    l = c->lines[j];
-	    if (l->boffs > 0) {
-		_edge_pts[_nedge_pts].pos[0] = l->pos[0];
-		_edge_pts[_nedge_pts].pos[1] = l->pos[1];
-		_edge_pts[_nedge_pts].pos[_v] -= l->boffs;
-		_nedge_pts++;
-	    }
-	    if (l->eoffs > 0) {
-		_edge_pts[_nedge_pts].pos[0] = l->pos[0];
-		_edge_pts[_nedge_pts].pos[1] = l->pos[1];
-		_edge_pts[_nedge_pts].pos[_v] += l->len + l->eoffs;
-		_nedge_pts++;
-	    }
-	}
-    }
-    return _nedge_pts;
-}
+				   int _nneighbors, int _v);
 
 /* Implemented in Rust (src/qrcode/qrdec.rs) */
 extern int qr_finder_center_cmp(const void *_a, const void *_b);
@@ -197,100 +173,14 @@ extern int qr_finder_lines_are_crossing(const qr_finder_line *_hline,
   _nhclusters: The number of horizontal line clusters.
   _vclusters:  The clusters of vertical lines crossing finder patterns.
   _nvclusters: The number of vertical line clusters.
-  Return: The number of putative finder centers.*/
-static int qr_finder_find_crossings(qr_finder_center *_centers,
+  Return: The number of putative finder centers.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_find_crossings(qr_finder_center *_centers,
 				    qr_finder_edge_pt *_edge_pts,
 				    qr_finder_cluster *_hclusters,
 				    int _nhclusters,
 				    qr_finder_cluster *_vclusters,
-				    int _nvclusters)
-{
-    qr_finder_cluster **hneighbors;
-    qr_finder_cluster **vneighbors;
-    unsigned char *hmark;
-    unsigned char *vmark;
-    int ncenters;
-    int i;
-    int j;
-    hneighbors =
-	(qr_finder_cluster **)malloc(_nhclusters * sizeof(*hneighbors));
-    vneighbors =
-	(qr_finder_cluster **)malloc(_nvclusters * sizeof(*vneighbors));
-    hmark    = (unsigned char *)calloc(_nhclusters, sizeof(*hmark));
-    vmark    = (unsigned char *)calloc(_nvclusters, sizeof(*vmark));
-    ncenters = 0;
-    /*TODO: This may need some re-working.
-  We should be finding groups of clusters such that _all_ horizontal lines in
-   _all_ horizontal clusters in the group cross _all_ vertical lines in _all_
-   vertical clusters in the group.
-  This is equivalent to finding the maximum bipartite clique in the
-   connectivity graph, which requires linear progamming to solve efficiently.
-  In principle, that is easy to do, but a realistic implementation without
-   floating point is a lot of work (and computationally expensive).
-  Right now we are relying on a sufficient border around the finder patterns
-   to prevent false positives.*/
-    for (i = 0; i < _nhclusters; i++)
-	if (!hmark[i]) {
-	    qr_finder_line *a;
-	    qr_finder_line *b;
-	    int nvneighbors;
-	    int nedge_pts;
-	    int y;
-	    a = _hclusters[i].lines[_hclusters[i].nlines >> 1];
-	    y = nvneighbors = 0;
-	    for (j = 0; j < _nvclusters; j++)
-		if (!vmark[j]) {
-		    b = _vclusters[j].lines[_vclusters[j].nlines >> 1];
-		    if (qr_finder_lines_are_crossing(a, b)) {
-			vmark[j] = 1;
-			y += (b->pos[1] << 1) + b->len;
-			if (b->boffs > 0 && b->eoffs > 0)
-			    y += b->eoffs - b->boffs;
-			vneighbors[nvneighbors++] = _vclusters + j;
-		    }
-		}
-	    if (nvneighbors > 0) {
-		qr_finder_center *c;
-		int nhneighbors;
-		int x;
-		x = (a->pos[0] << 1) + a->len;
-		if (a->boffs > 0 && a->eoffs > 0)
-		    x += a->eoffs - a->boffs;
-		hneighbors[0] = _hclusters + i;
-		nhneighbors   = 1;
-		j	      = nvneighbors >> 1;
-		b = vneighbors[j]->lines[vneighbors[j]->nlines >> 1];
-		for (j = i + 1; j < _nhclusters; j++)
-		    if (!hmark[j]) {
-			a = _hclusters[j].lines[_hclusters[j].nlines >> 1];
-			if (qr_finder_lines_are_crossing(a, b)) {
-			    hmark[j] = 1;
-			    x += (a->pos[0] << 1) + a->len;
-			    if (a->boffs > 0 && a->eoffs > 0)
-				x += a->eoffs - a->boffs;
-			    hneighbors[nhneighbors++] = _hclusters + j;
-			}
-		    }
-		c	     = _centers + ncenters++;
-		c->pos[0]    = (x + nhneighbors) / (nhneighbors << 1);
-		c->pos[1]    = (y + nvneighbors) / (nvneighbors << 1);
-		c->edge_pts  = _edge_pts;
-		nedge_pts    = qr_finder_edge_pts_fill(_edge_pts, 0, hneighbors,
-						       nhneighbors, 0);
-		nedge_pts    = qr_finder_edge_pts_fill(_edge_pts, nedge_pts,
-						       vneighbors, nvneighbors, 1);
-		c->nedge_pts = nedge_pts;
-		_edge_pts += nedge_pts;
-	    }
-	}
-    free(vmark);
-    free(hmark);
-    free(vneighbors);
-    free(hneighbors);
-    /*Sort the centers by decreasing numbers of edge points.*/
-    qsort(_centers, ncenters, sizeof(*_centers), qr_finder_center_cmp);
-    return ncenters;
-}
+				    int _nvclusters);
 
 /*Locates a set of putative finder centers in the image.
   First we search for horizontal and vertical lines that have
