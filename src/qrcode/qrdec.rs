@@ -58,6 +58,14 @@ fn qr_fixmul(a: c_int, b: c_int, r: i64, s: c_int) -> c_int {
     ((a as i64 * b as i64 + r) >> s) as c_int
 }
 
+/// Returns the minimum of two integers
+///
+/// Uses bitwise arithmetic to avoid branches (matching C macro QR_MINI).
+#[inline]
+fn qr_mini(a: c_int, b: c_int) -> c_int {
+    a + (((b - a) & -((b < a) as c_int)))
+}
+
 /// A cell in the sampling grid for homographic projection
 ///
 /// Represents a mapping from a unit square to a quadrilateral in the image,
@@ -1004,6 +1012,94 @@ pub unsafe extern "C" fn qr_finder_find_crossings(
         size_of::<qr_finder_center>(),
         Some(qr_finder_center_cmp),
     );
+
+    ncenters
+}
+
+/// Locate QR finder pattern centers from scanned lines
+///
+/// Clusters horizontal and vertical lines that cross finder patterns,
+/// then locates the centers where horizontal and vertical clusters intersect.
+///
+/// # Safety
+/// This function is unsafe because it:
+/// - Dereferences raw pointers
+/// - Allocates and manages memory using C allocation functions
+/// - Assumes the qr_reader structure has valid finder_lines arrays
+#[no_mangle]
+pub unsafe extern "C" fn qr_finder_centers_locate(
+    _centers: *mut *mut qr_finder_center,
+    _edge_pts: *mut *mut qr_finder_edge_pt,
+    reader: *mut qr_reader,
+    _width: c_int,
+    _height: c_int,
+) -> c_int {
+    let hlines = (*reader).finder_lines[0].lines;
+    let nhlines = (*reader).finder_lines[0].nlines;
+    let vlines = (*reader).finder_lines[1].lines;
+    let nvlines = (*reader).finder_lines[1].nlines;
+
+    // Cluster the detected lines
+    let hneighbors =
+        malloc((nhlines as usize) * size_of::<*mut qr_finder_line>()) as *mut *mut qr_finder_line;
+
+    // We require more than one line per cluster, so there are at most nhlines/2
+    let hclusters = malloc(((nhlines >> 1) as usize) * size_of::<qr_finder_cluster>())
+        as *mut qr_finder_cluster;
+
+    let nhclusters = qr_finder_cluster_lines(hclusters, hneighbors, hlines, nhlines, 0);
+
+    // We need vertical lines to be sorted by X coordinate, with ties broken by Y
+    // coordinate, for clustering purposes.
+    // We scan the image in the opposite order for cache efficiency, so sort the
+    // lines we found here.
+    qsort(
+        vlines as *mut c_void,
+        nvlines as size_t,
+        size_of::<qr_finder_line>(),
+        Some(qr_finder_vline_cmp),
+    );
+
+    let vneighbors =
+        malloc((nvlines as usize) * size_of::<*mut qr_finder_line>()) as *mut *mut qr_finder_line;
+
+    // We require more than one line per cluster, so there are at most nvlines/2
+    let vclusters = malloc(((nvlines >> 1) as usize) * size_of::<qr_finder_cluster>())
+        as *mut qr_finder_cluster;
+
+    let nvclusters = qr_finder_cluster_lines(vclusters, vneighbors, vlines, nvlines, 1);
+
+    // Find line crossings among the clusters
+    let ncenters = if nhclusters >= 3 && nvclusters >= 3 {
+        let mut nedge_pts = 0;
+        for i in 0..nhclusters {
+            nedge_pts += (*hclusters.offset(i as isize)).nlines;
+        }
+        for i in 0..nvclusters {
+            nedge_pts += (*vclusters.offset(i as isize)).nlines;
+        }
+        nedge_pts <<= 1;
+
+        let edge_pts =
+            malloc((nedge_pts as usize) * size_of::<qr_finder_edge_pt>()) as *mut qr_finder_edge_pt;
+        let centers = malloc((qr_mini(nhclusters, nvclusters) as usize) * size_of::<qr_finder_center>())
+            as *mut qr_finder_center;
+
+        let ncenters = qr_finder_find_crossings(
+            centers, edge_pts, hclusters, nhclusters, vclusters, nvclusters,
+        );
+
+        *_centers = centers;
+        *_edge_pts = edge_pts;
+        ncenters
+    } else {
+        0
+    };
+
+    free(vclusters as *mut c_void);
+    free(vneighbors as *mut c_void);
+    free(hclusters as *mut c_void);
+    free(hneighbors as *mut c_void);
 
     ncenters
 }

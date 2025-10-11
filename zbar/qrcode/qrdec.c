@@ -200,70 +200,13 @@ extern int qr_finder_find_crossings(qr_finder_center *_centers,
   _width:    The width of the image.
   _height:   The height of the image.
   Return: The number of putative finder centers located.*/
-static int qr_finder_centers_locate(qr_finder_center **_centers,
-				    qr_finder_edge_pt **_edge_pts,
-				    qr_reader *reader,
-				    int _width __attribute__((unused)),
-				    int _height __attribute__((unused)))
-{
-    qr_finder_line *hlines = reader->finder_lines[0].lines;
-    int nhlines		   = reader->finder_lines[0].nlines;
-    qr_finder_line *vlines = reader->finder_lines[1].lines;
-    int nvlines		   = reader->finder_lines[1].nlines;
-
-    qr_finder_line **hneighbors;
-    qr_finder_cluster *hclusters;
-    int nhclusters;
-    qr_finder_line **vneighbors;
-    qr_finder_cluster *vclusters;
-    int nvclusters;
-    int ncenters;
-
-    /*Cluster the detected lines.*/
-    hneighbors = (qr_finder_line **)malloc(nhlines * sizeof(*hneighbors));
-    /*We require more than one line per cluster, so there are at most nhlines/2.*/
-    hclusters =
-	(qr_finder_cluster *)malloc((nhlines >> 1) * sizeof(*hclusters));
-    nhclusters =
-	qr_finder_cluster_lines(hclusters, hneighbors, hlines, nhlines, 0);
-    /*We need vertical lines to be sorted by X coordinate, with ties broken by Y
-   coordinate, for clustering purposes.
-  We scan the image in the opposite order for cache efficiency, so sort the
-   lines we found here.*/
-    qsort(vlines, nvlines, sizeof(*vlines), qr_finder_vline_cmp);
-    vneighbors = (qr_finder_line **)malloc(nvlines * sizeof(*vneighbors));
-    /*We require more than one line per cluster, so there are at most nvlines/2.*/
-    vclusters =
-	(qr_finder_cluster *)malloc((nvlines >> 1) * sizeof(*vclusters));
-    nvclusters =
-	qr_finder_cluster_lines(vclusters, vneighbors, vlines, nvlines, 1);
-    /*Find line crossings among the clusters.*/
-    if (nhclusters >= 3 && nvclusters >= 3) {
-	qr_finder_edge_pt *edge_pts;
-	qr_finder_center *centers;
-	int nedge_pts;
-	int i;
-	nedge_pts = 0;
-	for (i = 0; i < nhclusters; i++)
-	    nedge_pts += hclusters[i].nlines;
-	for (i = 0; i < nvclusters; i++)
-	    nedge_pts += vclusters[i].nlines;
-	nedge_pts <<= 1;
-	edge_pts  = (qr_finder_edge_pt *)malloc(nedge_pts * sizeof(*edge_pts));
-	centers	  = (qr_finder_center *)malloc(QR_MINI(nhclusters, nvclusters) *
-					       sizeof(*centers));
-	ncenters  = qr_finder_find_crossings(centers, edge_pts, hclusters,
-					     nhclusters, vclusters, nvclusters);
-	*_centers = centers;
-	*_edge_pts = edge_pts;
-    } else
-	ncenters = 0;
-    free(vclusters);
-    free(vneighbors);
-    free(hclusters);
-    free(hneighbors);
-    return ncenters;
-}
+/*Locate QR finder pattern centers from scanned lines.
+  Clusters horizontal and vertical lines that cross finder patterns,
+  then locates the centers where horizontal and vertical clusters intersect.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_finder_centers_locate(qr_finder_center **_centers,
+				     qr_finder_edge_pt **_edge_pts,
+				     qr_reader *reader, int _width, int _height);
 
 /* Implemented in Rust (src/qrcode/qrdec.rs) */
 extern void qr_point_translate(qr_point _point, int _dx, int _dy);
