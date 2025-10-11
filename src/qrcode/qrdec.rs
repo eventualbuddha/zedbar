@@ -736,6 +736,15 @@ pub unsafe extern "C" fn qr_sampling_grid_is_in_fp(
         & 1) as c_int
 }
 
+/// The spacing between alignment patterns after the second for versions >= 7
+///
+/// We could compact this more, but the code to access it would eliminate the gains.
+#[no_mangle]
+pub static QR_ALIGNMENT_SPACING: [c_uchar; 34] = [
+    16, 18, 20, 22, 24, 26, 28, 20, 22, 24, 24, 26, 28, 28, 22, 24, 24, 26, 26, 28, 28, 24, 24,
+    26, 26, 26, 28, 28, 24, 26, 26, 26, 28, 28,
+];
+
 pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
     match ((c_int::from(a.edge > b.edge) - c_int::from(a.edge < b.edge)) << 1)
         + c_int::from(a.extent > b.extent)

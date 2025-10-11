@@ -1656,11 +1656,9 @@ extern int qr_sampling_grid_is_in_fp(const qr_sampling_grid *_grid, int _dim,
 
 /*The spacing between alignment patterns after the second for versions >= 7.
   We could compact this more, but the code to access it would eliminate the
-   gains.*/
-static const unsigned char QR_ALIGNMENT_SPACING[34] = {
-    16, 18, 20, 22, 24, 26, 28, 20, 22, 24, 24, 26, 28, 28, 22, 24, 24,
-    26, 26, 28, 28, 24, 24, 26, 26, 26, 28, 28, 24, 26, 26, 26, 28, 28
-};
+   gains.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern const unsigned char QR_ALIGNMENT_SPACING[34];
 
 /*Initialize the sampling grid for each region of the code.
   _version:  The (decoded) version number.
