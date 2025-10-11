@@ -6,10 +6,11 @@
 use std::{
     cmp::Ordering,
     ffi::c_void,
+    mem::size_of,
     ptr::{null, null_mut},
 };
 
-use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, qsort, realloc, size_t};
+use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, memset, qsort, realloc, size_t};
 
 use crate::{
     decoder_types::qr_finder_line,
@@ -2123,6 +2124,159 @@ pub unsafe extern "C" fn qr_finder_fmt_info_decode(
         fmt_info[besti]
     } else {
         -1
+    }
+}
+
+/// Fill a data mask for QR code decoding
+///
+/// Fills a buffer with the specified data mask pattern. The mask is stored
+/// column-wise since that's how bits are read out of the QR code grid.
+///
+/// # Safety
+/// This function is unsafe because it writes to a raw pointer buffer.
+#[no_mangle]
+pub unsafe extern "C" fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int) {
+    let stride = ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
+
+    // Note that we store bits column-wise, since that's how they're read out of the grid.
+    match _pattern {
+        // Pattern 0: 10101010 (i+j+1&1)
+        //            01010101
+        //            10101010
+        //            01010101
+        0 => {
+            let mut m: c_uint = 0x55;
+            for j in 0.._dim {
+                memset(
+                    _mask.add((j as usize) * stride) as *mut c_void,
+                    m as i32,
+                    stride * size_of::<c_uint>(),
+                );
+                m ^= 0xFF;
+            }
+        }
+        // Pattern 1: 11111111 (i+1&1)
+        //            00000000
+        //            11111111
+        //            00000000
+        1 => {
+            memset(
+                _mask as *mut c_void,
+                0x55,
+                (_dim as usize) * stride * size_of::<c_uint>(),
+            );
+        }
+        // Pattern 2: 10010010 ((j+1)%3&1)
+        //            10010010
+        //            10010010
+        //            10010010
+        2 => {
+            let mut m: c_uint = 0xFF;
+            for j in 0.._dim {
+                memset(
+                    _mask.add((j as usize) * stride) as *mut c_void,
+                    (m & 0xFF) as i32,
+                    stride * size_of::<c_uint>(),
+                );
+                m = (m << 8) | (m >> 16);
+            }
+        }
+        // Pattern 3: 10010010 ((i+j+1)%3&1)
+        //            00100100
+        //            01001001
+        //            10010010
+        3 => {
+            let mut mj: c_uint = 0;
+            for i in 0..((QR_INT_BITS + 2) / 3) {
+                mj |= 1 << (3 * i);
+            }
+            for j in 0.._dim {
+                let mut mi = mj;
+                for i in 0..stride {
+                    *_mask.add((j as usize) * stride + i) = mi;
+                    mi = (mi >> (QR_INT_BITS % 3)) | (mi << (3 - (QR_INT_BITS % 3)));
+                }
+                mj = (mj >> 1) | (mj << 2);
+            }
+        }
+        // Pattern 4: 11100011 ((i>>1)+(j/3)+1&1)
+        //            11100011
+        //            00011100
+        //            00011100
+        4 => {
+            let mut m: c_uint = 7;
+            for j in 0.._dim {
+                memset(
+                    _mask.add((j as usize) * stride) as *mut c_void,
+                    ((0xCC ^ (m & 1).wrapping_neg()) & 0xFF) as i32,
+                    stride * size_of::<c_uint>(),
+                );
+                m = (m >> 1) | (m << 5);
+            }
+        }
+        // Pattern 5: 11111111 !((i*j)%6)
+        //            10000010
+        //            10010010
+        //            10101010
+        5 => {
+            for j in 0.._dim {
+                let mut m: c_uint = 0;
+                for i in 0..6 {
+                    m |= ((((i * j) % 6) == 0) as c_uint) << i;
+                }
+                let mut i = 6;
+                while i < QR_INT_BITS {
+                    m |= m << i;
+                    i <<= 1;
+                }
+                for i in 0..stride {
+                    *_mask.add((j as usize) * stride + i) = m;
+                    m = (m >> (QR_INT_BITS % 6)) | (m << (6 - (QR_INT_BITS % 6)));
+                }
+            }
+        }
+        // Pattern 6: 11111111 ((i*j)%3+i*j+1&1)
+        //            11100011
+        //            11011011
+        //            10101010
+        6 => {
+            for j in 0.._dim {
+                let mut m: c_uint = 0;
+                for i in 0..6 {
+                    m |= ((((i * j) % 3 + i * j + 1) & 1) as c_uint) << i;
+                }
+                let mut i = 6;
+                while i < QR_INT_BITS {
+                    m |= m << i;
+                    i <<= 1;
+                }
+                for i in 0..stride {
+                    *_mask.add((j as usize) * stride + i) = m;
+                    m = (m >> (QR_INT_BITS % 6)) | (m << (6 - (QR_INT_BITS % 6)));
+                }
+            }
+        }
+        // Pattern 7 (default): 10101010 ((i*j)%3+i+j+1&1)
+        //                       00011100
+        //                       10001110
+        //                       01010101
+        _ => {
+            for j in 0.._dim {
+                let mut m: c_uint = 0;
+                for i in 0..6 {
+                    m |= ((((i * j) % 3 + i + j + 1) & 1) as c_uint) << i;
+                }
+                let mut i = 6;
+                while i < QR_INT_BITS {
+                    m |= m << i;
+                    i <<= 1;
+                }
+                for i in 0..stride {
+                    *_mask.add((j as usize) * stride + i) = m;
+                    m = (m >> (QR_INT_BITS % 6)) | (m << (6 - (QR_INT_BITS % 6)));
+                }
+            }
+        }
     }
 }
 
