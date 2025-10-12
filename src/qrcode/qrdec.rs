@@ -14,8 +14,13 @@ use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, memset, qsort, 
 
 use crate::{
     decoder_types::qr_finder_line,
-    img_scanner::qr_reader,
-    qrcode::util::{qr_ihypot, qr_ilog, qr_isqrt},
+    ffi::zbar_image_t,
+    img_scanner::{qr_reader, zbar_image_scanner_t},
+    qrcode::{
+        binarize::qr_binarize,
+        qrdectxt::qr_code_data_list_extract_text,
+        util::{qr_ihypot, qr_ilog, qr_isqrt},
+    },
 };
 
 use super::{
@@ -782,16 +787,32 @@ pub unsafe extern "C" fn qr_hom_fit(
     qr_finder_ransac(_ul, _aff, _isaac, 0);
     qr_finder_ransac(_dl, _aff, _isaac, 0);
     qr_line_fit_finder_pair(&mut l[0], _aff, _ul, _dl, 0);
-    if qr_line_eval(&l[0], (*_dl).c.as_ref().unwrap().pos[0], (*_dl).c.as_ref().unwrap().pos[1]) < 0
-        || qr_line_eval(&l[0], (*_ur).c.as_ref().unwrap().pos[0], (*_ur).c.as_ref().unwrap().pos[1]) < 0
+    if qr_line_eval(
+        &l[0],
+        (*_dl).c.as_ref().unwrap().pos[0],
+        (*_dl).c.as_ref().unwrap().pos[1],
+    ) < 0
+        || qr_line_eval(
+            &l[0],
+            (*_ur).c.as_ref().unwrap().pos[0],
+            (*_ur).c.as_ref().unwrap().pos[1],
+        ) < 0
     {
         return -1;
     }
     qr_finder_ransac(_ul, _aff, _isaac, 2);
     qr_finder_ransac(_ur, _aff, _isaac, 2);
     qr_line_fit_finder_pair(&mut l[2], _aff, _ul, _ur, 2);
-    if qr_line_eval(&l[2], (*_dl).c.as_ref().unwrap().pos[0], (*_dl).c.as_ref().unwrap().pos[1]) < 0
-        || qr_line_eval(&l[2], (*_ur).c.as_ref().unwrap().pos[0], (*_ur).c.as_ref().unwrap().pos[1]) < 0
+    if qr_line_eval(
+        &l[2],
+        (*_dl).c.as_ref().unwrap().pos[0],
+        (*_dl).c.as_ref().unwrap().pos[1],
+    ) < 0
+        || qr_line_eval(
+            &l[2],
+            (*_ur).c.as_ref().unwrap().pos[0],
+            (*_ur).c.as_ref().unwrap().pos[1],
+        ) < 0
     {
         return -1;
     }
@@ -801,8 +822,16 @@ pub unsafe extern "C" fn qr_hom_fit(
     qr_finder_ransac(_ur, _aff, _isaac, 1);
     let mut dru = 0;
     if qr_line_fit_finder_edge(&mut l[1], _ur, 1, (*_aff).res) >= 0 {
-        if qr_line_eval(&l[1], (*_ul).c.as_ref().unwrap().pos[0], (*_ul).c.as_ref().unwrap().pos[1]) < 0
-            || qr_line_eval(&l[1], (*_dl).c.as_ref().unwrap().pos[0], (*_dl).c.as_ref().unwrap().pos[1]) < 0
+        if qr_line_eval(
+            &l[1],
+            (*_ul).c.as_ref().unwrap().pos[0],
+            (*_ul).c.as_ref().unwrap().pos[1],
+        ) < 0
+            || qr_line_eval(
+                &l[1],
+                (*_dl).c.as_ref().unwrap().pos[0],
+                (*_dl).c.as_ref().unwrap().pos[1],
+            ) < 0
         {
             return -1;
         }
@@ -818,8 +847,16 @@ pub unsafe extern "C" fn qr_hom_fit(
     qr_finder_ransac(_dl, _aff, _isaac, 3);
     let mut dbv = 0;
     if qr_line_fit_finder_edge(&mut l[3], _dl, 3, (*_aff).res) >= 0 {
-        if qr_line_eval(&l[3], (*_ul).c.as_ref().unwrap().pos[0], (*_ul).c.as_ref().unwrap().pos[1]) < 0
-            || qr_line_eval(&l[3], (*_ur).c.as_ref().unwrap().pos[0], (*_ur).c.as_ref().unwrap().pos[1]) < 0
+        if qr_line_eval(
+            &l[3],
+            (*_ul).c.as_ref().unwrap().pos[0],
+            (*_ul).c.as_ref().unwrap().pos[1],
+        ) < 0
+            || qr_line_eval(
+                &l[3],
+                (*_ur).c.as_ref().unwrap().pos[0],
+                (*_ur).c.as_ref().unwrap().pos[1],
+            ) < 0
         {
             return -1;
         }
@@ -885,7 +922,17 @@ pub unsafe extern "C" fn qr_hom_fit(
             let mut ret = qr_finder_quick_crossing_check(_img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
                 r.push([0; 2]);
-                ret = qr_finder_locate_crossing(_img, _width, _height, x0, y0, x1, y1, 1, &mut r[nr as usize]);
+                ret = qr_finder_locate_crossing(
+                    _img,
+                    _width,
+                    _height,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    1,
+                    &mut r[nr as usize],
+                );
             }
 
             if ret >= 0 {
@@ -937,7 +984,17 @@ pub unsafe extern "C" fn qr_hom_fit(
             let mut ret = qr_finder_quick_crossing_check(_img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
                 b.push([0; 2]);
-                ret = qr_finder_locate_crossing(_img, _width, _height, x0, y0, x1, y1, 1, &mut b[nb as usize]);
+                ret = qr_finder_locate_crossing(
+                    _img,
+                    _width,
+                    _height,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    1,
+                    &mut b[nb as usize],
+                );
             }
 
             if ret >= 0 {
@@ -1006,21 +1063,34 @@ pub unsafe extern "C" fn qr_hom_fit(
     let mut bry = (*_p.add(3))[1];
 
     // However, if our average version estimate is greater than 1, try to search for an alignment pattern
-    let version4 = (*_ul).eversion[0] + (*_ul).eversion[1] + (*_ur).eversion[0] + (*_dl).eversion[1];
+    let version4 =
+        (*_ul).eversion[0] + (*_ul).eversion[1] + (*_ur).eversion[0] + (*_dl).eversion[1];
     if version4 > 4 {
         let mut cell: qr_hom_cell = std::mem::zeroed();
         let mut p3: qr_point = [0; 2];
         let dim = 17 + version4;
         qr_hom_cell_init(
             &mut cell,
-            0, 0, dim - 1, 0,
-            0, dim - 1, dim - 1, dim - 1,
-            (*_p.add(0))[0], (*_p.add(0))[1],
-            (*_p.add(1))[0], (*_p.add(1))[1],
-            (*_p.add(2))[0], (*_p.add(2))[1],
-            (*_p.add(3))[0], (*_p.add(3))[1],
+            0,
+            0,
+            dim - 1,
+            0,
+            0,
+            dim - 1,
+            dim - 1,
+            dim - 1,
+            (*_p.add(0))[0],
+            (*_p.add(0))[1],
+            (*_p.add(1))[0],
+            (*_p.add(1))[1],
+            (*_p.add(2))[0],
+            (*_p.add(2))[1],
+            (*_p.add(3))[0],
+            (*_p.add(3))[1],
         );
-        if qr_alignment_pattern_search(&mut p3, &cell, dim - 7, dim - 7, 4, _img, _width, _height) >= 0 {
+        if qr_alignment_pattern_search(&mut p3, &cell, dim - 7, dim - 7, 4, _img, _width, _height)
+            >= 0
+        {
             // We do need four points in a square to initialize our homography,
             // so project the point from the alignment center to the corner of the code area
             if qr_hom_project_alignment_to_corner(&mut brx, &mut bry, _p, &p3, dim) < 0 {
@@ -1032,10 +1102,14 @@ pub unsafe extern "C" fn qr_hom_fit(
     // Now we have four points that map to a square: initialize the projection
     qr_hom_init(
         _hom,
-        (*_p.add(0))[0], (*_p.add(0))[1],
-        (*_p.add(1))[0], (*_p.add(1))[1],
-        (*_p.add(2))[0], (*_p.add(2))[1],
-        brx, bry,
+        (*_p.add(0))[0],
+        (*_p.add(0))[1],
+        (*_p.add(1))[0],
+        (*_p.add(1))[1],
+        (*_p.add(2))[0],
+        (*_p.add(2))[1],
+        brx,
+        bry,
         QR_HOM_BITS,
     );
 
@@ -4498,7 +4572,11 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
     let mut i0: usize;
 
     // Sort the points in counter-clockwise order
-    ccw = qr_point_ccw((**_c.add(0)).pos.as_ptr(), (**_c.add(1)).pos.as_ptr(), (**_c.add(2)).pos.as_ptr());
+    ccw = qr_point_ccw(
+        (**_c.add(0)).pos.as_ptr(),
+        (**_c.add(1)).pos.as_ptr(),
+        (**_c.add(2)).pos.as_ptr(),
+    );
 
     // Colinear points can't be the corners of a quadrilateral
     if ccw == 0 {
@@ -4552,7 +4630,10 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
         // estimate it there.
         // Although it should be the same along both axes, we keep separate
         // estimates to account for any remaining projective distortion.
-        res = QR_INT_BITS - 2 - QR_FINDER_SUBPREC - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
+        res = QR_INT_BITS
+            - 2
+            - QR_FINDER_SUBPREC
+            - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
         qr_aff_init(&mut aff, &(*ul.c).pos, &(*ur.c).pos, &(*dl.c).pos, res);
         qr_aff_unproject(&mut ur.o, &aff, (*ur.c).pos[0], (*ur.c).pos[1]);
         qr_finder_edge_pts_aff_classify(&mut ur, &aff);
@@ -4776,4 +4857,236 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
     }
 
     -1
+}
+
+/// Add a found finder line to the reader's line list
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_qr_found_line(
+    reader: *mut qr_reader,
+    dir: c_int,
+    line: *const qr_finder_line,
+) -> c_int {
+    // Minimally intrusive brute force version
+    let lines = &mut (*reader).finder_lines[dir as usize];
+
+    if lines.nlines >= lines.clines {
+        lines.clines *= 2;
+        lines.lines = realloc(
+            lines.lines as *mut c_void,
+            (lines.clines + 1) as usize * size_of::<qr_finder_line>(),
+        ) as *mut qr_finder_line;
+        lines.clines += 1;
+    }
+
+    memcpy(
+        lines.lines.add(lines.nlines as usize) as *mut c_void,
+        line as *const c_void,
+        size_of::<qr_finder_line>(),
+    );
+    lines.nlines += 1;
+
+    0
+}
+
+/// Match finder centers and decode QR codes
+#[no_mangle]
+pub unsafe extern "C" fn qr_reader_match_centers(
+    _reader: *mut qr_reader,
+    _qrlist: *mut qr_code_data_list,
+    _centers: *mut qr_finder_center,
+    _ncenters: c_int,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+) {
+    // The number of centers should be small, so an O(n^3) exhaustive search of
+    // which ones go together should be reasonable.
+    let mark: *mut c_uchar = calloc(_ncenters as size_t, size_of::<c_uchar>()) as *mut c_uchar;
+    let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
+    let mut nfailures = 0;
+
+    for i in 0.._ncenters {
+        // TODO: We might be able to accelerate this step significantly by
+        // considering the remaining finder centers in a more intelligent order,
+        // based on the first finder center we just chose.
+        let mut j = i + 1;
+        while i < _ncenters && *mark.add(i as usize) == 0 && j < _ncenters {
+            let mut k = j + 1;
+            while j < _ncenters && *mark.add(j as usize) == 0 && k < _ncenters {
+                if *mark.add(k as usize) == 0 {
+                    let mut c: [*mut qr_finder_center; 3] = [
+                        _centers.add(i as usize),
+                        _centers.add(j as usize),
+                        _centers.add(k as usize),
+                    ];
+                    let mut qrdata: qr_code_data = std::mem::zeroed();
+                    let version = qr_reader_try_configuration(
+                        _reader,
+                        &mut qrdata,
+                        _img,
+                        _width,
+                        _height,
+                        c.as_mut_ptr(),
+                    );
+
+                    if version >= 0 {
+                        let mut ninside: c_int;
+
+                        // Add the data to the list
+                        qr_code_data_list_add(_qrlist, &qrdata);
+
+                        // Convert the bounding box we're returning to the user to normal
+                        // image coordinates
+                        for l in 0..4 {
+                            (*(*_qrlist).qrdata.add(((*_qrlist).nqrdata - 1) as usize)).bbox[l]
+                                [0] >>= QR_FINDER_SUBPREC;
+                            (*(*_qrlist).qrdata.add(((*_qrlist).nqrdata - 1) as usize)).bbox[l]
+                                [1] >>= QR_FINDER_SUBPREC;
+                        }
+
+                        // Mark these centers as used
+                        *mark.add(i as usize) = 1;
+                        *mark.add(j as usize) = 1;
+                        *mark.add(k as usize) = 1;
+
+                        // Find any other finder centers located inside this code
+                        ninside = 0;
+                        for l in 0.._ncenters {
+                            if *mark.add(l as usize) == 0 {
+                                if qr_point_ccw(
+                                    qrdata.bbox[0].as_ptr(),
+                                    qrdata.bbox[1].as_ptr(),
+                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                ) >= 0
+                                    && qr_point_ccw(
+                                        qrdata.bbox[1].as_ptr(),
+                                        qrdata.bbox[3].as_ptr(),
+                                        (*_centers.add(l as usize)).pos.as_ptr(),
+                                    ) >= 0
+                                    && qr_point_ccw(
+                                        qrdata.bbox[3].as_ptr(),
+                                        qrdata.bbox[2].as_ptr(),
+                                        (*_centers.add(l as usize)).pos.as_ptr(),
+                                    ) >= 0
+                                    && qr_point_ccw(
+                                        qrdata.bbox[2].as_ptr(),
+                                        qrdata.bbox[0].as_ptr(),
+                                        (*_centers.add(l as usize)).pos.as_ptr(),
+                                    ) >= 0
+                                {
+                                    *mark.add(l as usize) = 2;
+                                    ninside += 1;
+                                }
+                            }
+                        }
+
+                        if ninside >= 3 {
+                            // We might have a "Double QR": a code inside a code.
+                            // Copy the relevant centers to a new array and do a search confined
+                            // to that subset.
+                            let inside: *mut qr_finder_center =
+                                malloc((ninside as usize) * size_of::<qr_finder_center>())
+                                    as *mut qr_finder_center;
+                            ninside = 0;
+                            for l in 0.._ncenters {
+                                if *mark.add(l as usize) == 2 {
+                                    std::ptr::copy_nonoverlapping(
+                                        _centers.add(l as usize),
+                                        inside.add(ninside as usize),
+                                        1,
+                                    );
+                                    ninside += 1;
+                                }
+                            }
+                            qr_reader_match_centers(
+                                _reader, _qrlist, inside, ninside, _img, _width, _height,
+                            );
+                            free(inside as *mut c_void);
+                        }
+
+                        // Mark _all_ such centers used: codes cannot partially overlap
+                        for l in 0.._ncenters {
+                            if *mark.add(l as usize) == 2 {
+                                *mark.add(l as usize) = 1;
+                            }
+                        }
+
+                        nfailures = 0;
+                    } else {
+                        nfailures += 1;
+                        if nfailures > nfailures_max {
+                            // Give up.
+                            // We're unlikely to find a valid code in all this clutter, and we
+                            // could spend quite a lot of time trying.
+                            free(mark as *mut c_void);
+                            return;
+                        }
+                    }
+                }
+                k += 1;
+            }
+            j += 1;
+        }
+    }
+
+    free(mark as *mut c_void);
+}
+
+/// Decode QR codes from an image
+#[no_mangle]
+pub unsafe extern "C" fn _zbar_qr_decode(
+    reader: *mut qr_reader,
+    iscn: *mut zbar_image_scanner_t,
+    img: *mut zbar_image_t,
+) -> c_int {
+    let nqrdata: c_int;
+    let mut edge_pts: *mut qr_finder_edge_pt = null_mut();
+    let mut centers: *mut qr_finder_center = null_mut();
+
+    if (*reader).finder_lines[0].nlines < 9 || (*reader).finder_lines[1].nlines < 9 {
+        return 0;
+    }
+
+    let ncenters = qr_finder_centers_locate(&mut centers, &mut edge_pts, reader, 0, 0);
+
+    if ncenters >= 3 {
+        let bin = qr_binarize(
+            (*img).data as *const u8,
+            (*img).width as c_int,
+            (*img).height as c_int,
+        );
+
+        let mut qrlist: qr_code_data_list = std::mem::zeroed();
+        qr_code_data_list_init(&mut qrlist);
+
+        qr_reader_match_centers(
+            reader,
+            &mut qrlist,
+            centers,
+            ncenters,
+            bin,
+            (*img).width as c_int,
+            (*img).height as c_int,
+        );
+
+        nqrdata = if qrlist.nqrdata > 0 {
+            qr_code_data_list_extract_text(&qrlist as *const _ as *const _, iscn, img)
+        } else {
+            0
+        };
+
+        qr_code_data_list_clear(&mut qrlist);
+        free(bin as *mut c_void);
+    } else {
+        nqrdata = 0;
+    }
+
+    if !centers.is_null() {
+        free(centers as *mut c_void);
+    }
+    if !edge_pts.is_null() {
+        free(edge_pts as *mut c_void);
+    }
+
+    nqrdata
 }

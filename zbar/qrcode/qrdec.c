@@ -671,148 +671,17 @@ extern int qr_reader_try_configuration(qr_reader *_reader,
 				       const unsigned char *_img, int _width,
 				       int _height, qr_finder_center *_c[3]);
 
-void qr_reader_match_centers(qr_reader *_reader, qr_code_data_list *_qrlist,
-			     qr_finder_center *_centers, int _ncenters,
-			     const unsigned char *_img, int _width, int _height)
-{
-    /*The number of centers should be small, so an O(n^3) exhaustive search of
-   which ones go together should be reasonable.*/
-    unsigned char *mark;
-    int nfailures_max;
-    int nfailures;
-    int i;
-    int j;
-    int k;
-    mark	  = (unsigned char *)calloc(_ncenters, sizeof(*mark));
-    nfailures_max = QR_MAXI(8192, _width * _height >> 9);
-    nfailures	  = 0;
-    for (i = 0; i < _ncenters; i++) {
-	/*TODO: We might be able to accelerate this step significantly by
-   considering the remaining finder centers in a more intelligent order,
-   based on the first finder center we just chose.*/
-	for (j = i + 1; i < _ncenters && !mark[i] && j < _ncenters; j++) {
-	    for (k = j + 1; j < _ncenters && !mark[j] && k < _ncenters; k++)
-		if (!mark[k]) {
-		    qr_finder_center *c[3];
-		    qr_code_data qrdata;
-		    int version;
-		    c[0]    = _centers + i;
-		    c[1]    = _centers + j;
-		    c[2]    = _centers + k;
-		    version = qr_reader_try_configuration(_reader, &qrdata,
-							  _img, _width, _height,
-							  c);
-		    if (version >= 0) {
-			int ninside;
-			int l;
-			/*Add the data to the list.*/
-			qr_code_data_list_add(_qrlist, &qrdata);
-			/*Convert the bounding box we're returning to the user to normal
- image coordinates.*/
-			for (l = 0; l < 4; l++) {
-			    _qrlist->qrdata[_qrlist->nqrdata - 1].bbox[l][0] >>=
-				QR_FINDER_SUBPREC;
-			    _qrlist->qrdata[_qrlist->nqrdata - 1].bbox[l][1] >>=
-				QR_FINDER_SUBPREC;
-			}
-			/*Mark these centers as used.*/
-			mark[i] = mark[j] = mark[k] = 1;
-			/*Find any other finder centers located inside this code.*/
-			for (l = ninside = 0; l < _ncenters; l++)
-			    if (!mark[l]) {
-				if (qr_point_ccw(qrdata.bbox[0], qrdata.bbox[1],
-						 _centers[l].pos) >= 0 &&
-				    qr_point_ccw(qrdata.bbox[1], qrdata.bbox[3],
-						 _centers[l].pos) >= 0 &&
-				    qr_point_ccw(qrdata.bbox[3], qrdata.bbox[2],
-						 _centers[l].pos) >= 0 &&
-				    qr_point_ccw(qrdata.bbox[2], qrdata.bbox[0],
-						 _centers[l].pos) >= 0) {
-				    mark[l] = 2;
-				    ninside++;
-				}
-			    }
-			if (ninside >= 3) {
-			    /*We might have a "Double QR": a code inside a code.
-Copy the relevant centers to a new array and do a search confined
- to that subset.*/
-			    qr_finder_center *inside;
-			    inside = (qr_finder_center *)malloc(
-				ninside * sizeof(*inside));
-			    for (l = ninside = 0; l < _ncenters; l++) {
-				if (mark[l] == 2)
-				    *&inside[ninside++] = *&_centers[l];
-			    }
-			    qr_reader_match_centers(_reader, _qrlist, inside,
-						    ninside, _img, _width,
-						    _height);
-			    free(inside);
-			}
-			/*Mark _all_ such centers used: codes cannot partially overlap.*/
-			for (l = 0; l < _ncenters; l++)
-			    if (mark[l] == 2)
-				mark[l] = 1;
-			nfailures = 0;
-		    } else if (++nfailures > nfailures_max) {
-			/*Give up.
-We're unlikely to find a valid code in all this clutter, and we
- could spent quite a lot of time trying.*/
-			i = j = k = _ncenters;
-		    }
-		}
-	}
-    }
-    free(mark);
-}
+/* Match finder centers and decode QR codes.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_reader_match_centers(qr_reader *_reader, qr_code_data_list *_qrlist,
+				    qr_finder_center *_centers, int _ncenters,
+				    const unsigned char *_img, int _width, int _height);
 
-int _zbar_qr_found_line(qr_reader *reader, int dir, const qr_finder_line *line)
-{
-    /* minimally intrusive brute force version */
-    qr_finder_lines *lines = &reader->finder_lines[dir];
+/* Add a found finder line to the reader's line list.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int _zbar_qr_found_line(qr_reader *reader, int dir, const qr_finder_line *line);
 
-    if (lines->nlines >= lines->clines) {
-	lines->clines *= 2;
-	lines->lines =
-	    realloc(lines->lines, ++lines->clines * sizeof(*lines->lines));
-    }
-
-    memcpy(lines->lines + lines->nlines++, line, sizeof(*line));
-
-    return (0);
-}
-
-int _zbar_qr_decode(qr_reader *reader, zbar_image_scanner_t *iscn,
-		    zbar_image_t *img)
-{
-    int nqrdata			= 0, ncenters;
-    qr_finder_edge_pt *edge_pts = NULL;
-    qr_finder_center *centers	= NULL;
-
-    if (reader->finder_lines[0].nlines < 9 ||
-	reader->finder_lines[1].nlines < 9)
-	return (0);
-
-    ncenters = qr_finder_centers_locate(&centers, &edge_pts, reader, 0, 0);
-
-    if (ncenters >= 3) {
-	void *bin = qr_binarize(img->data, img->width, img->height);
-
-	qr_code_data_list qrlist;
-	qr_code_data_list_init(&qrlist);
-
-	qr_reader_match_centers(reader, &qrlist, centers, ncenters, bin,
-				img->width, img->height);
-
-	if (qrlist.nqrdata > 0)
-	    nqrdata = qr_code_data_list_extract_text(&qrlist, iscn, img);
-
-	qr_code_data_list_clear(&qrlist);
-	free(bin);
-    }
-
-    if (centers)
-	free(centers);
-    if (edge_pts)
-	free(edge_pts);
-    return (nqrdata);
-}
+/* Decode QR codes from an image.
+   Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int _zbar_qr_decode(qr_reader *reader, zbar_image_scanner_t *iscn,
+			   zbar_image_t *img);
