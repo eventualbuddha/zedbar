@@ -185,6 +185,91 @@ mod tests {
     }
 
     #[test]
+    fn test_qr_decode_inverted() {
+        // Load the test QR code image and convert to grayscale
+        let img = ::image::ImageReader::open("examples/test-qr.png")
+            .expect("Failed to open image")
+            .decode()
+            .expect("Failed to decode image");
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let original_raw = gray.as_raw();
+
+        // Invert the grayscale pixels (swap black/white)
+        let mut inverted = Vec::with_capacity(original_raw.len());
+        inverted.extend(original_raw.iter().map(|&v| 255u8.saturating_sub(v)));
+
+        // Build a ZBar image from the inverted data
+        let mut zbar_img =
+            Image::from_gray(&inverted, width, height).expect("Failed to create ZBar image");
+
+        // Configure scanner for QR codes
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+        scanner
+            .set_config(SymbolType::None, scanner::Config::TestInverted, 1)
+            .expect("Failed to enable inverted testing");
+
+        // Scan the inverted image
+        let num_symbols = scanner
+            .scan(&mut zbar_img)
+            .expect("Failed to scan inverted image");
+        println!("Found {num_symbols} symbols in inverted image with zbar");
+
+        // Gather decoded symbols
+        let symbols = zbar_img.symbols();
+        assert!(
+            !symbols.is_empty(),
+            "Expected to find at least one QR code in inverted image"
+        );
+
+        let mut zbar_results = Vec::new();
+        for symbol in symbols {
+            let symbol_type = symbol.symbol_type();
+            let data = symbol.data();
+            println!("Decoded {symbol_type:?} (inverted): {} bytes", data.len());
+
+            assert_eq!(symbol_type, SymbolType::QrCode);
+            assert!(!data.is_empty(), "QR code data should not be empty");
+            zbar_results.push(data.to_vec());
+        }
+
+        // Use rqrr on the original (non-inverted) grayscale image for the ground truth
+        let width_usize = width as usize;
+        let height_usize = height as usize;
+        let mut prepared_img =
+            rqrr::PreparedImage::prepare_from_greyscale(width_usize, height_usize, |x, y| {
+                original_raw[y * width_usize + x]
+            });
+        let grids = prepared_img.detect_grids();
+        assert!(
+            !grids.is_empty(),
+            "rqrr: Expected to find at least one grid in original image"
+        );
+
+        let mut rqrr_results = Vec::new();
+        for grid in grids {
+            let (_meta, content) = grid.decode().expect("rqrr: Failed to decode grid");
+            rqrr_results.push(content.into_bytes());
+        }
+
+        // Sort and compare results
+        zbar_results.sort();
+        rqrr_results.sort();
+
+        assert_eq!(
+            zbar_results, rqrr_results,
+            "zbar and rqrr produced different results for inverted image"
+        );
+        println!(
+            "✓ zbar and rqrr agree on {} symbols for inverted image",
+            zbar_results.len()
+        );
+    }
+
+    #[test]
     fn test_ean13_decode() {
         // EAN-13 test (13 digits, common retail barcode)
         let img = ::image::ImageReader::open("examples/test-ean13.png")
