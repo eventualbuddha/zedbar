@@ -9,9 +9,47 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use libc::c_int;
+use libc::{c_char, c_int, c_uint, c_ulong};
 
-use crate::{refcnt, symbol::zbar_symbol_set_ref, zbar_image_t, zbar_symbol_t};
+use crate::{ffi::refcnt, img_scanner::zbar_symbol_set_t, symbol::zbar_symbol_set_ref};
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct zbar_image_t {
+    pub format: u32,
+    pub width: c_uint,
+    pub height: c_uint,
+    pub data: *mut c_void,
+    pub datalen: c_ulong,
+    pub userdata: *mut c_void,
+    pub cleanup: *mut c_void,
+    pub refcnt: c_int,
+    pub srcidx: c_int,
+    pub next: *mut zbar_image_t,
+    pub seq: c_uint,
+    pub syms: *mut zbar_symbol_set_t,
+}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct zbar_symbol_t {
+    pub symbol_type: c_int,
+    pub configs: c_uint,
+    pub modifiers: c_uint,
+    pub data_alloc: c_uint,
+    pub datalen: c_uint,
+    pub data: *mut c_char,
+    pub pts_alloc: c_uint,
+    pub npts: c_uint,
+    pub pts: *mut c_void,
+    pub orient: c_int,
+    pub refcnt: c_int,
+    pub next: *mut zbar_symbol_t,
+    pub syms: *mut zbar_symbol_set_t,
+    pub time: c_ulong,
+    pub cache_count: c_int,
+    pub quality: c_int,
+}
 
 pub unsafe fn zbar_image_create() -> *mut zbar_image_t {
     let img = libc::calloc(1, std::mem::size_of::<zbar_image_t>()) as *mut zbar_image_t;
@@ -28,8 +66,7 @@ pub unsafe fn _zbar_image_free(img: *mut zbar_image_t) {
     libc::free(img as *mut c_void);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_destroy(img: *mut zbar_image_t) {
+pub unsafe fn zbar_image_destroy(img: *mut zbar_image_t) {
     if refcnt(&mut (*img).refcnt, -1) != 0 {
         if !(*img).cleanup.is_null() {
             let cleanup = transmute::<*mut c_void, fn(*mut zbar_image_t)>((*img).cleanup);
@@ -67,16 +104,11 @@ pub unsafe fn zbar_image_first_symbol(img: *const zbar_image_t) -> *const zbar_s
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {
+pub unsafe fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {
     std::mem::swap(&mut (*a).syms, &mut (*b).syms);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_copy(
-    src: *const zbar_image_t,
-    inverted: c_int,
-) -> *mut zbar_image_t {
+pub unsafe fn _zbar_image_copy(src: *const zbar_image_t, inverted: c_int) -> *mut zbar_image_t {
     const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
     const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
 

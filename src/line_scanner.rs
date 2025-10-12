@@ -26,8 +26,7 @@ const THRESH_INIT: c_uint = 14;
 ///
 /// Implements adaptive threshold calculation that slowly fades back to minimum.
 /// This helps with noise rejection while maintaining sensitivity.
-#[no_mangle]
-pub unsafe extern "C" fn calc_thresh(scn: *mut zbar_scanner_t) -> c_uint {
+pub unsafe fn calc_thresh(scn: *mut zbar_scanner_t) -> c_uint {
     // threshold 1st to improve noise rejection
     let thresh = (*scn).y1_thresh;
 
@@ -80,8 +79,7 @@ pub struct zbar_scanner_t {
 ///
 /// This function returns the width of the last decoded element (bar or space)
 /// in the barcode scan line.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_get_width(scn: *const zbar_scanner_t) -> c_uint {
+pub unsafe fn zbar_scanner_get_width(scn: *const zbar_scanner_t) -> c_uint {
     if scn.is_null() {
         return 0;
     }
@@ -93,8 +91,7 @@ pub unsafe extern "C" fn zbar_scanner_get_width(scn: *const zbar_scanner_t) -> c
 ///
 /// Returns the interpolated position of the last processed edge, adjusted by
 /// the specified offset and precision.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_get_edge(
+pub unsafe fn zbar_scanner_get_edge(
     scn: *const zbar_scanner_t,
     offset: c_uint,
     prec: c_int,
@@ -121,8 +118,7 @@ pub unsafe extern "C" fn zbar_scanner_get_edge(
 ///
 /// Returns ZBAR_SPACE or ZBAR_BAR depending on whether the scanner is
 /// currently processing a space (light area) or bar (dark area).
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_get_color(scn: *const zbar_scanner_t) -> zbar_color_t {
+pub unsafe fn zbar_scanner_get_color(scn: *const zbar_scanner_t) -> zbar_color_t {
     if scn.is_null() {
         return zbar_color_t::ZBAR_SPACE;
     }
@@ -137,8 +133,7 @@ pub unsafe extern "C" fn zbar_scanner_get_color(scn: *const zbar_scanner_t) -> z
 /// Destroy a scanner instance
 ///
 /// Frees all resources associated with the scanner.
-#[no_mangle]
-pub extern "C" fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
+pub fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
     if !scn.is_null() {
         unsafe {
             free(scn as *mut c_void);
@@ -149,8 +144,7 @@ pub extern "C" fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
 /// Create a new scanner instance
 ///
 /// Allocates and initializes a new scanner with the specified decoder.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
+pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
     let scn = malloc(std::mem::size_of::<zbar_scanner_t>()) as *mut zbar_scanner_t;
     if scn.is_null() {
         return ptr::null_mut();
@@ -165,8 +159,7 @@ pub unsafe extern "C" fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut
 /// Reset scanner to initial state
 ///
 /// Clears the scanner state while retaining configuration.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_reset(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
+pub unsafe fn zbar_scanner_reset(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
     // Zero out from x to the end of the structure
     let start_ptr = ptr::addr_of_mut!((*scn).x) as *mut u8;
     let scn_end = (scn as *mut u8).add(std::mem::size_of::<zbar_scanner_t>());
@@ -206,8 +199,7 @@ unsafe fn process_edge(scn: *mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t
 /// Flush the scanner state
 ///
 /// Forces completion of any pending scan line.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
+pub unsafe fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
     if (*scn).y1_sign == 0 {
         return ZBAR_NONE;
     }
@@ -233,8 +225,7 @@ pub unsafe extern "C" fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_sy
 /// Start a new scan
 ///
 /// Flushes any pending data and resets the scanner for a new scan.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
+pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
     let mut edge = ZBAR_NONE;
     // Note: clippy can't detect that zbar_scanner_flush modifies (*scn).y1_sign through the pointer,
     // but it does - this is not an infinite loop
@@ -264,8 +255,7 @@ pub unsafe extern "C" fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar
 ///
 /// This is the main scanning function that processes each pixel's intensity
 /// value and detects bar/space transitions.
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
+pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
     // retrieve short value history
     let x = (*scn).x;
     let mut y0_1 = (*scn).y0[((x.wrapping_sub(1)) & 3) as usize];

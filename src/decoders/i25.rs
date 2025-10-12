@@ -294,8 +294,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 }
 
 /// Main I25 decode function
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dcode = &mut *dcode;
 
     // Update latest character width

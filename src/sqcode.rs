@@ -3,10 +3,12 @@
 //! Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Rust port based on the C implementation
 
-use crate::ffi::zbar_image_t;
-use crate::img_scanner::{
-    _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
-    zbar_image_scanner_t,
+use crate::{
+    image_ffi::zbar_image_t,
+    img_scanner::{
+        _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym,
+        _zbar_image_scanner_recycle_syms, zbar_image_scanner_t,
+    },
 };
 use libc::{c_char, c_int, c_uint, size_t};
 use std::io::Write;
@@ -654,8 +656,7 @@ pub unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
 /// # Safety
 ///
 /// The `reader` pointer must be valid and point to an initialized `SqReader`.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_sq_reset(reader: *mut SqReader) {
+pub unsafe fn _zbar_sq_reset(reader: *mut SqReader) {
     if !reader.is_null() {
         (*reader).enabled = true;
     }
@@ -666,8 +667,7 @@ pub unsafe extern "C" fn _zbar_sq_reset(reader: *mut SqReader) {
 /// # Safety
 ///
 /// The `reader` pointer must be valid and point to an initialized `SqReader`.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_sq_new_config(reader: *mut SqReader, config: c_uint) -> c_int {
+pub unsafe fn _zbar_sq_new_config(reader: *mut SqReader, config: c_uint) -> c_int {
     if reader.is_null() {
         return -1;
     }
@@ -683,8 +683,7 @@ pub unsafe extern "C" fn _zbar_sq_new_config(reader: *mut SqReader, config: c_ui
 /// - `reader` must point to a valid `SqReader`
 /// - `iscn` must point to a valid `zbar_image_scanner_t`
 /// - `img` must point to a valid `zbar_image_t` with initialized image data
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_sq_decode(
+pub unsafe fn _zbar_sq_decode(
     reader: *mut SqReader,
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,

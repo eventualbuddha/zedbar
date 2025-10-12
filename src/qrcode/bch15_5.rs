@@ -144,8 +144,7 @@ fn bch15_5_calc_epos(epos: &mut [u32; 3], s: &[u32; 3]) -> i32 {
 /// # Safety
 ///
 /// `y` must be a valid pointer to a u32
-#[no_mangle]
-pub unsafe extern "C" fn bch15_5_correct(y: *mut u32) -> i32 {
+pub unsafe fn bch15_5_correct(y: *mut u32) -> i32 {
     let mut s = [0u32; 3];
     let mut epos = [0u32; 3];
     let mut y_val = y.read();
@@ -180,8 +179,7 @@ pub unsafe extern "C" fn bch15_5_correct(y: *mut u32) -> i32 {
 ///
 /// This is capable of correcting up to 3 bit errors, and detecting as many as
 /// 5 bit errors in some cases.
-#[no_mangle]
-pub extern "C" fn bch15_5_encode(x: u32) -> u32 {
+pub fn bch15_5_encode(x: u32) -> u32 {
     (u32::wrapping_neg(x & 1) & 0x0537)
         ^ (u32::wrapping_neg((x >> 1) & 1) & 0x0A6E)
         ^ (u32::wrapping_neg((x >> 2) & 1) & 0x11EB)

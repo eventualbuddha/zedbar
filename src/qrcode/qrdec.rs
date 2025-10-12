@@ -10,11 +10,11 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, memset, qsort, realloc, size_t};
+use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, memset, realloc, size_t};
 
 use crate::{
     decoder_types::qr_finder_line,
-    ffi::zbar_image_t,
+    image_ffi::zbar_image_t,
     img_scanner::{qr_reader, zbar_image_scanner_t},
     qrcode::{
         binarize::qr_binarize,
@@ -99,8 +99,7 @@ fn qr_signmask(x: i64) -> i64 {
 ///
 /// Given three corners and an alignment pattern center, compute the fourth corner
 /// by geometric projection. Returns 0 on success, -1 if projection fails.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_project_alignment_to_corner(
+pub unsafe fn qr_hom_project_alignment_to_corner(
     brx: *mut c_int,
     bry: *mut c_int,
     p: *const qr_point,
@@ -167,8 +166,7 @@ pub unsafe extern "C" fn qr_hom_project_alignment_to_corner(
 /// This is used for edges that have only one finder pattern, where we walk along the edge
 /// collecting sample points. If we don't get enough points (> 1), we fall back to an
 /// axis-aligned line in the affine coordinate system.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_fit_edge_line(
+pub unsafe fn qr_hom_fit_edge_line(
     line: *mut qr_line,
     pts: *mut qr_point,
     npts: c_int,
@@ -263,23 +261,20 @@ pub struct qr_finder_lines {
 }
 
 /// Initializes a client reader handle.
-#[no_mangle]
-pub unsafe extern "C" fn qr_reader_init(reader: *mut qr_reader) {
+pub unsafe fn qr_reader_init(reader: *mut qr_reader) {
     isaac_init((&mut (*reader).isaac) as *mut _, null(), 0);
     rs_gf256_init((&mut (*reader).gf) as *mut _, QR_PPOLY);
 }
 
 /// Allocates a client reader handle.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_qr_create() -> *mut qr_reader {
+pub unsafe fn _zbar_qr_create() -> *mut qr_reader {
     let reader = libc::calloc(1, size_of::<qr_reader>()) as *mut _;
     qr_reader_init(reader);
     reader
 }
 
 /// Frees a client reader handle.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_qr_destroy(reader: *mut qr_reader) {
+pub unsafe fn _zbar_qr_destroy(reader: *mut qr_reader) {
     if !(*reader).finder_lines[0].lines.is_null() {
         libc::free((*reader).finder_lines[0].lines as *mut _);
     }
@@ -292,8 +287,7 @@ pub unsafe extern "C" fn _zbar_qr_destroy(reader: *mut qr_reader) {
 }
 
 /// reset finder state between scans
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_qr_reset(reader: *mut qr_reader) {
+pub unsafe fn _zbar_qr_reset(reader: *mut qr_reader) {
     (*reader).finder_lines[0].nlines = 0;
     (*reader).finder_lines[1].nlines = 0;
 }
@@ -348,8 +342,7 @@ pub struct qr_finder_center {
 _hline: The horizontal line.
 _vline: The vertical line.
 Return: A non-zero value if the lines cross, or zero if they do not.*/
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_lines_are_crossing(
+pub unsafe fn qr_finder_lines_are_crossing(
     _hline: *const qr_finder_line,
     _vline: *const qr_finder_line,
 ) -> c_int {
@@ -364,8 +357,7 @@ pub unsafe extern "C" fn qr_finder_lines_are_crossing(
 /// Translate a point by the given offsets
 ///
 /// Adds dx to the x coordinate and dy to the y coordinate.
-#[no_mangle]
-pub unsafe extern "C" fn qr_point_translate(point: *mut c_int, dx: c_int, dy: c_int) {
+pub unsafe fn qr_point_translate(point: *mut c_int, dx: c_int, dy: c_int) {
     if !point.is_null() {
         *point.offset(0) += dx;
         *point.offset(1) += dy;
@@ -376,8 +368,7 @@ pub unsafe extern "C" fn qr_point_translate(point: *mut c_int, dx: c_int, dy: c_
 ///
 /// Returns the squared Euclidean distance, which avoids the need for
 /// expensive square root calculations when only relative distances matter.
-#[no_mangle]
-pub unsafe extern "C" fn qr_point_distance2(p1: *const c_int, p2: *const c_int) -> c_uint {
+pub unsafe fn qr_point_distance2(p1: *const c_int, p2: *const c_int) -> c_uint {
     let dx = *p1.offset(0) - *p2.offset(0);
     let dy = *p1.offset(1) - *p2.offset(1);
     (dx * dx + dy * dy) as c_uint
@@ -389,12 +380,7 @@ pub unsafe extern "C" fn qr_point_distance2(p1: *const c_int, p2: *const c_int) 
 /// - Positive: points are in CCW order (in right-handed coordinate system)
 /// - Zero: points are collinear
 /// - Negative: points are in CW order
-#[no_mangle]
-pub unsafe extern "C" fn qr_point_ccw(
-    p0: *const c_int,
-    p1: *const c_int,
-    p2: *const c_int,
-) -> c_int {
+pub unsafe fn qr_point_ccw(p0: *const c_int, p1: *const c_int, p2: *const c_int) -> c_int {
     let p0x = *p0.offset(0);
     let p0y = *p0.offset(1);
     let p1x = *p1.offset(0);
@@ -409,13 +395,11 @@ pub unsafe extern "C" fn qr_point_ccw(
 ///
 /// Given a line defined by the equation A*x + B*y + C = 0,
 /// this returns the value A*x + B*y + C for the given coordinates.
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_eval(line: *const qr_line, x: c_int, y: c_int) -> c_int {
+pub unsafe fn qr_line_eval(line: *const qr_line, x: c_int, y: c_int) -> c_int {
     (*line)[0] * x + (*line)[1] * y + (*line)[2]
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
+pub unsafe fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
     if qr_line_eval(_l, _x, _y) < 0 {
         (*_l)[0] = -(*_l)[0];
         (*_l)[1] = -(*_l)[1];
@@ -423,12 +407,7 @@ pub unsafe extern "C" fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) 
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_isect(
-    _p: *mut qr_point,
-    _l0: *const qr_line,
-    _l1: *const qr_line,
-) -> c_int {
+pub unsafe fn qr_line_isect(_p: *mut qr_point, _l0: *const qr_line, _l1: *const qr_line) -> c_int {
     let mut d = (*_l0)[0]
         .wrapping_mul((*_l1)[1])
         .wrapping_sub((*_l0)[1].wrapping_mul((*_l1)[0]));
@@ -458,8 +437,7 @@ pub unsafe extern "C" fn qr_line_isect(
 /// - `_x0`, `_y0`: Centroid coordinates
 /// - `_sxx`, `_sxy`, `_syy`: Covariance matrix values
 /// - `_res`: Resolution bits for scaling
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_fit(
+pub unsafe fn qr_line_fit(
     _l: *mut qr_line,
     _x0: c_int,
     _y0: c_int,
@@ -498,13 +476,7 @@ pub unsafe extern "C" fn qr_line_fit(
 /// - `_p`: Array of points
 /// - `_np`: Number of points
 /// - `_res`: Resolution bits for scaling
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_fit_points(
-    _l: *mut qr_line,
-    _p: *mut qr_point,
-    _np: c_int,
-    _res: c_int,
-) {
+pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int, _res: c_int) {
     let mut sx: c_int = 0;
     let mut sy: c_int = 0;
     let mut xmin = c_int::MAX;
@@ -574,8 +546,7 @@ pub struct qr_aff {
     pub ires: c_int,
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn qr_aff_init(
+pub unsafe fn qr_aff_init(
     _aff: *mut qr_aff,
     _p0: *const qr_point,
     _p1: *const qr_point,
@@ -604,13 +575,7 @@ pub unsafe extern "C" fn qr_aff_init(
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
-#[no_mangle]
-pub unsafe extern "C" fn qr_aff_unproject(
-    _q: *mut qr_point,
-    _aff: *const qr_aff,
-    _x: c_int,
-    _y: c_int,
-) {
+pub unsafe fn qr_aff_unproject(_q: *mut qr_point, _aff: *const qr_aff, _x: c_int, _y: c_int) {
     (*_q)[0] = ((*_aff).inv[0][0]
         .wrapping_mul(_x.wrapping_sub((*_aff).x0))
         .wrapping_add((*_aff).inv[0][1].wrapping_mul(_y.wrapping_sub((*_aff).y0)))
@@ -624,13 +589,7 @@ pub unsafe extern "C" fn qr_aff_unproject(
 }
 
 /// Map from the square domain into the image (at subpel resolution).
-#[no_mangle]
-pub unsafe extern "C" fn qr_aff_project(
-    _p: *mut qr_point,
-    _aff: *const qr_aff,
-    _u: c_int,
-    _v: c_int,
-) {
+pub unsafe fn qr_aff_project(_p: *mut qr_point, _aff: *const qr_aff, _u: c_int, _v: c_int) {
     (*_p)[0] = (((*_aff).fwd[0][0]
         .wrapping_mul(_u)
         .wrapping_add((*_aff).fwd[0][1].wrapping_mul(_v))
@@ -666,8 +625,8 @@ pub struct qr_hom {
 ///
 /// # Safety
 /// This function is unsafe because it dereferences the raw _hom pointer.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_init(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_hom_init(
     _hom: *mut qr_hom,
     _x0: c_int,
     _y0: c_int,
@@ -762,8 +721,8 @@ pub unsafe extern "C" fn qr_hom_init(
 ///
 /// This function attempts to correct perspective distortion by fitting lines
 /// to the edges of the QR code area and then building a homography transformation.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_fit(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_hom_fit(
     _hom: *mut qr_hom,
     _ul: *mut qr_finder,
     _ur: *mut qr_finder,
@@ -1120,8 +1079,7 @@ pub unsafe extern "C" fn qr_hom_fit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_fproject(
+pub unsafe fn qr_hom_fproject(
     _p: *mut qr_point,
     _hom: *const qr_hom,
     mut _x: c_int,
@@ -1177,8 +1135,7 @@ pub struct qr_finder {
 ///
 /// # Safety
 /// This function is unsafe because it dereferences the raw _f pointer.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
+pub unsafe fn qr_finder_estimate_module_size_and_version(
     _f: *mut qr_finder,
     _width: c_int,
     _height: c_int,
@@ -1294,8 +1251,7 @@ pub unsafe extern "C" fn qr_finder_estimate_module_size_and_version(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_ransac(
+pub unsafe fn qr_finder_ransac(
     _f: *mut qr_finder,
     _hom: *const qr_aff,
     _isaac: *mut IsaacCtx,
@@ -1413,8 +1369,7 @@ pub unsafe extern "C" fn qr_finder_ransac(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_fit_finder_edge(
+pub unsafe fn qr_line_fit_finder_edge(
     _l: *mut qr_line,
     _f: *const qr_finder,
     _e: c_int,
@@ -1451,8 +1406,7 @@ pub unsafe extern "C" fn qr_line_fit_finder_edge(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_line_fit_finder_pair(
+pub unsafe fn qr_line_fit_finder_pair(
     _l: *mut qr_line,
     _aff: *const qr_aff,
     _f0: *const qr_finder,
@@ -1502,8 +1456,7 @@ pub unsafe extern "C" fn qr_line_fit_finder_pair(
 
 /// Map from the image (at subpel resolution) into the square domain.
 /// Returns a negative value if the point went to infinity.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_unproject(
+pub unsafe fn qr_hom_unproject(
     _q: *mut qr_point,
     _hom: *const qr_hom,
     mut _x: c_int,
@@ -1552,12 +1505,7 @@ pub struct qr_pack_buf {
 }
 
 /// Initialize a pack buffer for reading bits from data
-#[no_mangle]
-pub unsafe extern "C" fn qr_pack_buf_init(
-    _b: *mut qr_pack_buf,
-    _data: *const c_uchar,
-    _ndata: c_int,
-) {
+pub unsafe fn qr_pack_buf_init(_b: *mut qr_pack_buf, _data: *const c_uchar, _ndata: c_int) {
     (*_b).buf = _data;
     (*_b).storage = _ndata;
     (*_b).endbyte = 0;
@@ -1568,8 +1516,7 @@ pub unsafe extern "C" fn qr_pack_buf_init(
 ///
 /// Assumes 0 <= _bits <= 16
 /// Returns the read value, or -1 if there aren't enough bits available
-#[no_mangle]
-pub unsafe extern "C" fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
+pub unsafe fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
     let m = 16 - _bits;
     let bits = _bits + (*_b).endbit;
     let d = (*_b).storage - (*_b).endbyte;
@@ -1602,8 +1549,7 @@ pub unsafe extern "C" fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) ->
 }
 
 /// Get the number of bits available to read from the pack buffer
-#[no_mangle]
-pub unsafe extern "C" fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
+pub unsafe fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
     (((*_b).storage - (*_b).endbyte) << 3) - (*_b).endbit
 }
 
@@ -1611,8 +1557,7 @@ pub unsafe extern "C" fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
 ///
 /// This is a compact calculation that avoids a lookup table.
 /// Returns the total number of data and error correction codewords.
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_ncodewords(_version: c_uint) -> c_int {
+pub unsafe fn qr_code_ncodewords(_version: c_uint) -> c_int {
     if _version == 1 {
         return 26;
     }
@@ -1625,30 +1570,13 @@ pub unsafe extern "C" fn qr_code_ncodewords(_version: c_uint) -> c_int {
 
 /// Comparison function for sorting vertical finder lines
 ///
-/// Used by qsort to sort vertical lines in ascending order by X coordinate,
-/// with ties broken by Y coordinate.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
+/// Comparison helper used to order vertical lines in ascending X, breaking ties by Y.
+pub unsafe fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
     let a = _a as *const qr_finder_line;
     let b = _b as *const qr_finder_line;
     ((c_int::from((*a).pos[0] > (*b).pos[0]) - c_int::from((*a).pos[0] < (*b).pos[0])) << 1)
         + c_int::from((*a).pos[1] > (*b).pos[1])
         - c_int::from((*a).pos[1] < (*b).pos[1])
-}
-
-/// Comparison function for sorting finder centers
-///
-/// Sorts primarily by number of edge points (descending), then by Y coordinate
-/// (ascending), then by X coordinate (ascending).
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_center_cmp(_a: *const c_void, _b: *const c_void) -> c_int {
-    let a = _a as *const qr_finder_center;
-    let b = _b as *const qr_finder_center;
-    ((c_int::from((*b).nedge_pts > (*a).nedge_pts) - c_int::from((*b).nedge_pts < (*a).nedge_pts))
-        << 2)
-        + ((c_int::from((*a).pos[1] > (*b).pos[1]) - c_int::from((*a).pos[1] < (*b).pos[1])) << 1)
-        + c_int::from((*a).pos[0] > (*b).pos[0])
-        - c_int::from((*a).pos[0] < (*b).pos[0])
 }
 
 /// Clusters adjacent lines into groups that are large enough to be crossing a
@@ -1665,8 +1593,7 @@ pub unsafe extern "C" fn qr_finder_center_cmp(_a: *const c_void, _b: *const c_vo
 ///
 /// # Returns
 /// The number of clusters found.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_cluster_lines(
+pub unsafe fn qr_finder_cluster_lines(
     _clusters: *mut qr_finder_cluster,
     _neighbors: *mut *mut qr_finder_line,
     _lines: *mut qr_finder_line,
@@ -1789,8 +1716,7 @@ pub unsafe extern "C" fn qr_finder_cluster_lines(
 ///
 /// # Returns
 /// The new total number of edge points.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_edge_pts_fill(
+pub unsafe fn qr_finder_edge_pts_fill(
     _edge_pts: *mut qr_finder_edge_pt,
     mut _nedge_pts: c_int,
     _neighbors: *mut *mut qr_finder_cluster,
@@ -1835,8 +1761,7 @@ pub unsafe extern "C" fn qr_finder_edge_pts_fill(
 ///
 /// # Returns
 /// The number of putative finder centers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_find_crossings(
+pub unsafe fn qr_finder_find_crossings(
     _centers: *mut qr_finder_center,
     mut _edge_pts: *mut qr_finder_edge_pt,
     _hclusters: *mut qr_finder_cluster,
@@ -1850,7 +1775,7 @@ pub unsafe extern "C" fn qr_finder_find_crossings(
         as *mut *mut qr_finder_cluster;
     let hmark = calloc(_nhclusters as usize, 1) as *mut c_uchar;
     let vmark = calloc(_nvclusters as usize, 1) as *mut c_uchar;
-    let mut ncenters = 0;
+    let mut ncenters: usize = 0;
 
     // TODO: This may need some re-working.
     // We should be finding groups of clusters such that _all_ horizontal lines in
@@ -1929,7 +1854,7 @@ pub unsafe extern "C" fn qr_finder_find_crossings(
                 }
             }
 
-            let c = _centers.offset(ncenters as isize);
+            let c = _centers.add(ncenters);
             ncenters += 1;
 
             (*c).pos[0] = (x + nhneighbors) / (nhneighbors << 1);
@@ -1949,15 +1874,18 @@ pub unsafe extern "C" fn qr_finder_find_crossings(
     free(vneighbors as *mut c_void);
     free(hneighbors as *mut c_void);
 
-    // Sort the centers by decreasing numbers of edge points
-    qsort(
-        _centers as *mut c_void,
-        ncenters as size_t,
-        size_of::<qr_finder_center>(),
-        Some(qr_finder_center_cmp),
-    );
+    // Sort the centers by decreasing numbers of edge points using Rust slices
+    if ncenters > 1 && !_centers.is_null() {
+        let centers_slice = std::slice::from_raw_parts_mut(_centers, ncenters);
+        centers_slice.sort_by(|a, b| {
+            b.nedge_pts
+                .cmp(&a.nedge_pts)
+                .then_with(|| a.pos[1].cmp(&b.pos[1]))
+                .then_with(|| a.pos[0].cmp(&b.pos[0]))
+        });
+    }
 
-    ncenters
+    ncenters as i32
 }
 
 /// Locate QR finder pattern centers from scanned lines
@@ -1970,8 +1898,7 @@ pub unsafe extern "C" fn qr_finder_find_crossings(
 /// - Dereferences raw pointers
 /// - Allocates and manages memory using C allocation functions
 /// - Assumes the qr_reader structure has valid finder_lines arrays
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_centers_locate(
+pub unsafe fn qr_finder_centers_locate(
     _centers: *mut *mut qr_finder_center,
     _edge_pts: *mut *mut qr_finder_edge_pt,
     reader: *mut qr_reader,
@@ -1997,12 +1924,15 @@ pub unsafe extern "C" fn qr_finder_centers_locate(
     // coordinate, for clustering purposes.
     // We scan the image in the opposite order for cache efficiency, so sort the
     // lines we found here.
-    qsort(
-        vlines as *mut c_void,
-        nvlines as size_t,
-        size_of::<qr_finder_line>(),
-        Some(qr_finder_vline_cmp),
-    );
+    let vline_count = nvlines.max(0) as usize;
+    if vline_count > 1 && !vlines.is_null() {
+        let vlines_slice = std::slice::from_raw_parts_mut(vlines, vline_count);
+        vlines_slice.sort_by(|a, b| {
+            a.pos[0]
+                .cmp(&b.pos[0])
+                .then_with(|| a.pos[1].cmp(&b.pos[1]))
+        });
+    }
 
     let vneighbors =
         malloc((nvlines as usize) * size_of::<*mut qr_finder_line>()) as *mut *mut qr_finder_line;
@@ -2053,8 +1983,7 @@ pub unsafe extern "C" fn qr_finder_centers_locate(
 ///
 /// Function patterns include finder patterns, timing patterns, and alignment patterns.
 /// We store bits column-wise, since that's how they're read out of the grid.
-#[no_mangle]
-pub unsafe extern "C" fn qr_sampling_grid_fp_mask_rect(
+pub unsafe fn qr_sampling_grid_fp_mask_rect(
     _grid: *mut qr_sampling_grid,
     _dim: c_int,
     _u: c_int,
@@ -2076,8 +2005,7 @@ pub unsafe extern "C" fn qr_sampling_grid_fp_mask_rect(
 /// Determine if a given grid location is inside a function pattern
 ///
 /// Returns 1 if the location (_u, _v) is part of a function pattern, 0 otherwise.
-#[no_mangle]
-pub unsafe extern "C" fn qr_sampling_grid_is_in_fp(
+pub unsafe fn qr_sampling_grid_is_in_fp(
     _grid: *const qr_sampling_grid,
     _dim: c_int,
     _u: c_int,
@@ -2092,14 +2020,12 @@ pub unsafe extern "C" fn qr_sampling_grid_is_in_fp(
 /// The spacing between alignment patterns after the second for versions >= 7
 ///
 /// We could compact this more, but the code to access it would eliminate the gains.
-#[no_mangle]
 pub static QR_ALIGNMENT_SPACING: [c_uchar; 34] = [
     16, 18, 20, 22, 24, 26, 28, 20, 22, 24, 24, 26, 28, 28, 22, 24, 24, 26, 26, 28, 28, 24, 24, 26,
     26, 26, 28, 28, 24, 26, 26, 26, 28, 28,
 ];
 
 /// Bulk data for the number of parity bytes per Reed-Solomon block
-#[no_mangle]
 pub static QR_RS_NPAR_VALS: [c_uchar; 71] = [
     // [ 0]
     7, 10, 13, 17, // [ 4]
@@ -2113,14 +2039,12 @@ pub static QR_RS_NPAR_VALS: [c_uchar; 71] = [
 
 /// An offset into QR_RS_NPAR_VALS for each version that gives the number of
 /// parity bytes per Reed-Solomon block for each error correction level
-#[no_mangle]
 pub static QR_RS_NPAR_OFFS: [c_uchar; 40] = [
     0, 4, 19, 55, 15, 28, 37, 12, 51, 39, 59, 62, 10, 24, 22, 41, 31, 44, 7, 65, 47, 33, 67, 67,
     48, 32, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67,
 ];
 
 /// The number of Reed-Solomon blocks for each version and error correction level
-#[no_mangle]
 pub static QR_RS_NBLOCKS: [[c_uchar; 4]; 40] = [
     [1, 1, 1, 1],
     [1, 1, 1, 1],
@@ -2180,8 +2104,7 @@ pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering 
 /// (in the square domain).
 /// The resulting list of edge points is sorted by edge index, with ties broken
 /// by extent.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _aff: *const qr_aff) {
+pub unsafe fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _aff: *const qr_aff) {
     let c = (*_f).c;
     for item in (*_f).nedge_pts.iter_mut() {
         *item = 0;
@@ -2221,8 +2144,7 @@ pub unsafe extern "C" fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _af
 ///
 /// The resulting list of edge points is sorted by edge index, with ties broken
 /// by extent.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _hom: *const qr_hom) {
+pub unsafe fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _hom: *const qr_hom) {
     let c = (*_f).c;
     for item in (*_f).nedge_pts.iter_mut() {
         *item = 0;
@@ -2260,8 +2182,8 @@ pub unsafe extern "C" fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _ho
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_quick_crossing_check(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_finder_quick_crossing_check(
     _img: *const c_uchar,
     _width: c_int,
     _height: c_int,
@@ -2318,8 +2240,7 @@ pub unsafe extern "C" fn qr_finder_quick_crossing_check(
 /// # Returns
 /// - 0 on success
 /// - -1 if the line is too steep (>45 degrees from horizontal/vertical)
-#[no_mangle]
-pub unsafe extern "C" fn qr_aff_line_step(
+pub unsafe fn qr_aff_line_step(
     aff: *const qr_aff,
     line: *const c_int,
     v: c_int,
@@ -2371,8 +2292,7 @@ pub unsafe extern "C" fn qr_aff_line_step(
 ///
 /// Counts the number of bit positions where the values differ,
 /// up to a maximum of maxdiff.
-#[no_mangle]
-pub extern "C" fn qr_hamming_dist(y1: c_uint, y2: c_uint, maxdiff: c_int) -> c_int {
+pub fn qr_hamming_dist(y1: c_uint, y2: c_uint, maxdiff: c_int) -> c_int {
     let mut y = y1 ^ y2;
     let mut ret = 0;
 
@@ -2402,8 +2322,7 @@ const BCH18_6_CODES: [c_uint; 34] = [
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_version_decode(
+pub unsafe fn qr_finder_version_decode(
     _f: *const qr_finder,
     _hom: *const qr_hom,
     _img: *const c_uchar,
@@ -2472,8 +2391,7 @@ pub unsafe extern "C" fn qr_finder_version_decode(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_fmt_info_decode(
+pub unsafe fn qr_finder_fmt_info_decode(
     _ul: *const qr_finder,
     _ur: *const qr_finder,
     _dl: *const qr_finder,
@@ -2637,8 +2555,7 @@ pub unsafe extern "C" fn qr_finder_fmt_info_decode(
 ///
 /// # Safety
 /// This function is unsafe because it writes to a raw pointer buffer.
-#[no_mangle]
-pub unsafe extern "C" fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int) {
+pub unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int) {
     let stride = ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
 
     // Note that we store bits column-wise, since that's how they're read out of the grid.
@@ -2789,8 +2706,7 @@ pub unsafe extern "C" fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pat
 ///
 /// # Safety
 /// This function is unsafe because it frees raw pointers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
+pub unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
     if !_grid.is_null() {
         free((*_grid).fpmask as *mut c_void);
         free((*_grid).cells[0] as *mut c_void);
@@ -2805,8 +2721,8 @@ pub unsafe extern "C" fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
 ///
 /// # Safety
 /// This function is unsafe because it allocates memory and dereferences raw pointers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_sampling_grid_init(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_sampling_grid_init(
     _grid: *mut qr_sampling_grid,
     _version: c_int,
     _ul_pos: *const qr_point,
@@ -3102,8 +3018,7 @@ pub unsafe extern "C" fn qr_sampling_grid_init(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-#[no_mangle]
-pub unsafe extern "C" fn qr_sampling_grid_sample(
+pub unsafe fn qr_sampling_grid_sample(
     _grid: *const qr_sampling_grid,
     _data_bits: *mut c_uint,
     _dim: c_int,
@@ -3170,8 +3085,7 @@ pub unsafe extern "C" fn qr_sampling_grid_sample(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences and modifies raw pointers.
-#[no_mangle]
-pub unsafe extern "C" fn qr_samples_unpack(
+pub unsafe fn qr_samples_unpack(
     _blocks: *mut *mut c_uchar,
     _nblocks: c_int,
     _nshort_data: c_int,
@@ -3308,8 +3222,7 @@ const QR_ALNUM_TABLE: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_data_parse(
+pub unsafe fn qr_code_data_parse(
     _qrdata: *mut qr_code_data,
     _version: c_int,
     _data: *const c_uchar,
@@ -3617,8 +3530,8 @@ pub unsafe extern "C" fn qr_code_data_parse(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_decode(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_code_decode(
     _qrdata: *mut qr_code_data,
     _gf: *const rs_gf256,
     _ul_pos: *const qr_point,
@@ -3744,8 +3657,7 @@ pub unsafe extern "C" fn qr_code_decode(
 /// Returns:
 /// - The number of errors corrected (0-3)
 /// - A negative value if more than 3 errors were detected (no correction performed)
-#[no_mangle]
-pub unsafe extern "C" fn bch18_6_correct(y: *mut c_uint) -> c_int {
+pub unsafe fn bch18_6_correct(y: *mut c_uint) -> c_int {
     let y_val = *y;
 
     // Check the easy case first: see if the data bits were uncorrupted
@@ -3780,8 +3692,8 @@ pub unsafe extern "C" fn bch18_6_correct(y: *mut c_uint) -> c_int {
 ///
 /// The transformation handles both affine and projective distortion, with careful
 /// attention to numerical stability through dynamic range scaling.
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_cell_init(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_hom_cell_init(
     cell: *mut qr_hom_cell,
     u0: c_int,
     v0: c_int,
@@ -3986,8 +3898,7 @@ pub unsafe extern "C" fn qr_hom_cell_init(
 ///
 /// Samples a pixel from the binarized image, with coordinates in QR_FINDER_SUBPREC
 /// subpixel units. Clamps coordinates to valid image bounds.
-#[no_mangle]
-pub unsafe extern "C" fn qr_img_get_bit(
+pub unsafe fn qr_img_get_bit(
     img: *const u8,
     width: c_int,
     height: c_int,
@@ -4010,8 +3921,7 @@ pub unsafe extern "C" fn qr_img_get_bit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.*/
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_cell_fproject(
+pub unsafe fn qr_hom_cell_fproject(
     _p: *mut qr_point,
     _cell: *const qr_hom_cell,
     mut _x: c_int,
@@ -4032,8 +3942,7 @@ pub unsafe extern "C" fn qr_hom_cell_fproject(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn qr_hom_cell_project(
+pub unsafe fn qr_hom_cell_project(
     _p: *mut qr_point,
     _cell: *const qr_hom_cell,
     mut _u: c_int,
@@ -4057,8 +3966,8 @@ pub unsafe extern "C" fn qr_hom_cell_project(
 /// transitions from !_v to _v and back. Returns the midpoint of the segment.
 ///
 /// Returns 0 on success, -1 if no crossing found.
-#[no_mangle]
-pub unsafe extern "C" fn qr_finder_locate_crossing(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_finder_locate_crossing(
     img: *const u8,
     width: c_int,
     _height: c_int,
@@ -4148,8 +4057,8 @@ unsafe fn qr_alignment_pattern_fetch(
 ///
 /// Searches for an alignment pattern around the specified grid coordinates (u, v)
 /// within a radius of r modules. Returns 0 on success, -1 if the best match is too poor.
-#[no_mangle]
-pub unsafe extern "C" fn qr_alignment_pattern_search(
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn qr_alignment_pattern_search(
     p: *mut qr_point,
     cell: *const qr_hom_cell,
     _u: c_int,
@@ -4500,8 +4409,7 @@ pub struct qr_code_data_list {
 }
 
 /// Clear a QR code data structure, freeing all allocated memory
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_data_clear(qrdata: *mut qr_code_data) {
+pub unsafe fn qr_code_data_clear(qrdata: *mut qr_code_data) {
     for i in 0..(*qrdata).nentries {
         let entry = (*qrdata).entries.offset(i as isize);
         if qr_mode_has_data((*entry).mode) {
@@ -4512,16 +4420,14 @@ pub unsafe extern "C" fn qr_code_data_clear(qrdata: *mut qr_code_data) {
 }
 
 /// Initialize a QR code data list
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_data_list_init(qrlist: *mut qr_code_data_list) {
+pub unsafe fn qr_code_data_list_init(qrlist: *mut qr_code_data_list) {
     (*qrlist).qrdata = null_mut();
     (*qrlist).nqrdata = 0;
     (*qrlist).cqrdata = 0;
 }
 
 /// Clear a QR code data list, freeing all allocated memory
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_data_list_clear(qrlist: *mut qr_code_data_list) {
+pub unsafe fn qr_code_data_list_clear(qrlist: *mut qr_code_data_list) {
     for i in 0..(*qrlist).nqrdata {
         qr_code_data_clear((*qrlist).qrdata.offset(i as isize));
     }
@@ -4530,11 +4436,7 @@ pub unsafe extern "C" fn qr_code_data_list_clear(qrlist: *mut qr_code_data_list)
 }
 
 /// Add a QR code data to the list
-#[no_mangle]
-pub unsafe extern "C" fn qr_code_data_list_add(
-    qrlist: *mut qr_code_data_list,
-    qrdata: *const qr_code_data,
-) {
+pub unsafe fn qr_code_data_list_add(qrlist: *mut qr_code_data_list, qrdata: *const qr_code_data) {
     if (*qrlist).nqrdata >= (*qrlist).cqrdata {
         (*qrlist).cqrdata = ((*qrlist).cqrdata << 1) | 1;
         (*qrlist).qrdata = realloc(
@@ -4557,8 +4459,7 @@ pub unsafe extern "C" fn qr_code_data_list_add(
 /// fits a homography transformation, and attempts to decode the QR code.
 ///
 /// Returns the version number if successful, -1 otherwise.
-#[no_mangle]
-pub unsafe extern "C" fn qr_reader_try_configuration(
+pub unsafe fn qr_reader_try_configuration(
     _reader: *mut qr_reader,
     _qrdata: *mut qr_code_data,
     _img: *const c_uchar,
@@ -4568,11 +4469,11 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
 ) -> c_int {
     let mut ci: [usize; 7] = [0; 7];
     let mut maxd: c_uint;
-    let ccw: c_int;
+
     let mut i0: usize;
 
     // Sort the points in counter-clockwise order
-    ccw = qr_point_ccw(
+    let ccw: c_int = qr_point_ccw(
         (**_c.add(0)).pos.as_ptr(),
         (**_c.add(1)).pos.as_ptr(),
         (**_c.add(2)).pos.as_ptr(),
@@ -4616,7 +4517,7 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
         let mut ur: qr_finder = std::mem::zeroed();
         let mut dl: qr_finder = std::mem::zeroed();
         let mut bbox: [qr_point; 4] = [[0; 2]; 4];
-        let res: c_int;
+
         let ur_version: c_int;
         let mut fmt_info: c_int;
 
@@ -4630,7 +4531,7 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
         // estimate it there.
         // Although it should be the same along both axes, we keep separate
         // estimates to account for any remaining projective distortion.
-        res = QR_INT_BITS
+        let res: c_int = QR_INT_BITS
             - 2
             - QR_FINDER_SUBPREC
             - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
@@ -4791,33 +4692,15 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
             let t = hom.inv[0][1];
             hom.inv[0][1] = hom.inv[1][1];
             hom.inv[1][1] = t;
-            let t = hom.fwd[0][0];
-            hom.fwd[0][0] = hom.fwd[0][1];
-            hom.fwd[0][1] = t;
-            let t = hom.fwd[1][0];
-            hom.fwd[1][0] = hom.fwd[1][1];
-            hom.fwd[1][1] = t;
-            let t = hom.fwd[2][0];
-            hom.fwd[2][0] = hom.fwd[2][1];
-            hom.fwd[2][1] = t;
-            let t = ul.o[0];
-            ul.o[0] = ul.o[1];
-            ul.o[1] = t;
-            let t = ul.size[0];
-            ul.size[0] = ul.size[1];
-            ul.size[1] = t;
-            let t = ur.o[0];
-            ur.o[0] = ur.o[1];
-            ur.o[1] = t;
-            let t = ur.size[0];
-            ur.size[0] = ur.size[1];
-            ur.size[1] = t;
-            let t = dl.o[0];
-            dl.o[0] = dl.o[1];
-            dl.o[1] = t;
-            let t = dl.size[0];
-            dl.size[0] = dl.size[1];
-            dl.size[1] = t;
+            hom.fwd[0].swap(0, 1);
+            hom.fwd[1].swap(0, 1);
+            hom.fwd[2].swap(0, 1);
+            ul.o.swap(0, 1);
+            ul.size.swap(0, 1);
+            ur.o.swap(0, 1);
+            ur.size.swap(0, 1);
+            dl.o.swap(0, 1);
+            dl.size.swap(0, 1);
 
             fmt_info = qr_finder_fmt_info_decode(&ul, &dl, &ur, &hom, _img, _width, _height);
             if fmt_info < 0 {
@@ -4860,8 +4743,7 @@ pub unsafe extern "C" fn qr_reader_try_configuration(
 }
 
 /// Add a found finder line to the reader's line list
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_qr_found_line(
+pub unsafe fn _zbar_qr_found_line(
     reader: *mut qr_reader,
     dir: c_int,
     line: *const qr_finder_line,
@@ -4889,8 +4771,7 @@ pub unsafe extern "C" fn _zbar_qr_found_line(
 }
 
 /// Match finder centers and decode QR codes
-#[no_mangle]
-pub unsafe extern "C" fn qr_reader_match_centers(
+pub unsafe fn qr_reader_match_centers(
     _reader: *mut qr_reader,
     _qrlist: *mut qr_code_data_list,
     _centers: *mut qr_finder_center,
@@ -4952,31 +4833,30 @@ pub unsafe extern "C" fn qr_reader_match_centers(
                         // Find any other finder centers located inside this code
                         ninside = 0;
                         for l in 0.._ncenters {
-                            if *mark.add(l as usize) == 0 {
-                                if qr_point_ccw(
+                            if *mark.add(l as usize) == 0
+                                && qr_point_ccw(
                                     qrdata.bbox[0].as_ptr(),
                                     qrdata.bbox[1].as_ptr(),
                                     (*_centers.add(l as usize)).pos.as_ptr(),
                                 ) >= 0
-                                    && qr_point_ccw(
-                                        qrdata.bbox[1].as_ptr(),
-                                        qrdata.bbox[3].as_ptr(),
-                                        (*_centers.add(l as usize)).pos.as_ptr(),
-                                    ) >= 0
-                                    && qr_point_ccw(
-                                        qrdata.bbox[3].as_ptr(),
-                                        qrdata.bbox[2].as_ptr(),
-                                        (*_centers.add(l as usize)).pos.as_ptr(),
-                                    ) >= 0
-                                    && qr_point_ccw(
-                                        qrdata.bbox[2].as_ptr(),
-                                        qrdata.bbox[0].as_ptr(),
-                                        (*_centers.add(l as usize)).pos.as_ptr(),
-                                    ) >= 0
-                                {
-                                    *mark.add(l as usize) = 2;
-                                    ninside += 1;
-                                }
+                                && qr_point_ccw(
+                                    qrdata.bbox[1].as_ptr(),
+                                    qrdata.bbox[3].as_ptr(),
+                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                ) >= 0
+                                && qr_point_ccw(
+                                    qrdata.bbox[3].as_ptr(),
+                                    qrdata.bbox[2].as_ptr(),
+                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                ) >= 0
+                                && qr_point_ccw(
+                                    qrdata.bbox[2].as_ptr(),
+                                    qrdata.bbox[0].as_ptr(),
+                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                ) >= 0
+                            {
+                                *mark.add(l as usize) = 2;
+                                ninside += 1;
                             }
                         }
 
@@ -5033,8 +4913,7 @@ pub unsafe extern "C" fn qr_reader_match_centers(
 }
 
 /// Decode QR codes from an image
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_qr_decode(
+pub unsafe fn _zbar_qr_decode(
     reader: *mut qr_reader,
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,

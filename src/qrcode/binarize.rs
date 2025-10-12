@@ -121,8 +121,7 @@ pub fn binarize(img: &[u8], width: i32, height: i32) -> Vec<u8> {
 /// - `img` must point to a valid buffer of at least `width * height` bytes
 /// - The returned pointer must be freed by the caller using `free()`
 /// - Returns NULL if width or height is <= 0
-#[no_mangle]
-pub unsafe extern "C" fn qr_binarize(img: *const u8, width: i32, height: i32) -> *mut u8 {
+pub unsafe fn qr_binarize(img: *const u8, width: i32, height: i32) -> *mut u8 {
     if img.is_null() || width <= 0 || height <= 0 {
         return std::ptr::null_mut();
     }

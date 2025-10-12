@@ -9,11 +9,7 @@ pub const ZBAR_VERSION_MINOR: c_uint = 23;
 pub const ZBAR_VERSION_PATCH: c_uint = 93;
 
 /// Global verbosity level
-///
-/// This is accessed by C macros in error.h for conditional debug output.
-/// Must be pub and no_mangle so C code can link to it.
-#[no_mangle]
-pub static mut _zbar_verbosity: c_int = 0;
+pub static mut ZBAR_VERBOSITY: c_int = 0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
@@ -78,7 +74,7 @@ impl From<i32> for Error {
 /// Sets the global verbosity level used by debug macros in error.h.
 pub fn zbar_set_verbosity(level: c_int) {
     unsafe {
-        _zbar_verbosity = level;
+        ZBAR_VERBOSITY = level;
     }
 }
 
@@ -221,11 +217,7 @@ pub unsafe fn _zbar_error_string(err: *mut ErrInfo, _verbosity: c_int) -> String
 const ERRINFO_MAGIC: u32 = 0x5252457a; // "zERR" (LE)
 const ZBAR_ERR_SYSTEM: c_int = 2; // from zbar.h
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_copy(
-    dst_c: *mut libc::c_void,
-    src_c: *mut libc::c_void,
-) -> c_int {
+pub unsafe fn _zbar_err_copy(dst_c: *mut libc::c_void, src_c: *mut libc::c_void) -> c_int {
     let dst = dst_c as *mut ErrInfo;
     let src = src_c as *mut ErrInfo;
     debug_assert!((*dst).magic == ERRINFO_MAGIC);
@@ -242,8 +234,7 @@ pub unsafe extern "C" fn _zbar_err_copy(
     -1
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_capture(
+pub unsafe fn _zbar_err_capture(
     err: *mut ErrInfo,
     sev: c_int,
     type_: c_int,
@@ -258,14 +249,13 @@ pub unsafe extern "C" fn _zbar_err_capture(
     (*err).type_ = type_;
     (*err).func = func;
     (*err).detail = detail;
-    if _zbar_verbosity >= 1 {
+    if ZBAR_VERBOSITY >= 1 {
         _zbar_error_spew(err, 0);
     }
     -1
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_capture_str(
+pub unsafe fn _zbar_err_capture_str(
     err: *mut ErrInfo,
     sev: c_int,
     type_: c_int,
@@ -281,8 +271,7 @@ pub unsafe extern "C" fn _zbar_err_capture_str(
     _zbar_err_capture(err, sev, type_, func, detail)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_capture_int(
+pub unsafe fn _zbar_err_capture_int(
     err: *mut ErrInfo,
     sev: c_int,
     type_: c_int,
@@ -295,8 +284,7 @@ pub unsafe extern "C" fn _zbar_err_capture_int(
     _zbar_err_capture(err, sev, type_, func, detail)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_capture_num(
+pub unsafe fn _zbar_err_capture_num(
     err: *mut ErrInfo,
     sev: c_int,
     type_: c_int,
@@ -309,14 +297,12 @@ pub unsafe extern "C" fn _zbar_err_capture_num(
     _zbar_err_capture(err, sev, type_, func, detail)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_init(err: *mut ErrInfo, module: c_int) {
+pub unsafe fn _zbar_err_init(err: *mut ErrInfo, module: c_int) {
     (*err).magic = ERRINFO_MAGIC;
     (*err).module = module;
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_err_cleanup(err: *mut ErrInfo) {
+pub unsafe fn _zbar_err_cleanup(err: *mut ErrInfo) {
     debug_assert!((*err).magic == ERRINFO_MAGIC);
     if !(*err).arg_str.is_null() {
         libc::free((*err).arg_str as *mut libc::c_void);

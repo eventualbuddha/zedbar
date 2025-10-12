@@ -2,9 +2,9 @@
 
 use crate::image_ffi::{
     zbar_image_create, zbar_image_destroy, zbar_image_first_symbol, zbar_image_free_data,
+    zbar_image_t,
 };
 use crate::symbol::{Symbol, SymbolSet};
-use crate::zbar_image_t;
 use crate::{Error, Result};
 use std::ptr;
 

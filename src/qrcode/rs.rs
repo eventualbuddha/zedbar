@@ -55,8 +55,7 @@ pub struct rs_gf256 {
 
 /// Initialize discrete logarithm tables for GF(2**8) using a given primitive
 /// irreducible polynomial.
-#[no_mangle]
-pub unsafe extern "C" fn rs_gf256_init(gf: *mut rs_gf256, ppoly: c_uint) {
+pub unsafe fn rs_gf256_init(gf: *mut rs_gf256, ppoly: c_uint) {
     let gf = &mut *gf;
     let mut p: c_uint = 1;
 
@@ -525,8 +524,7 @@ fn rs_find_roots(
 ///
 /// Returns the number of errors corrected if successful, or a negative number if
 /// the message could not be corrected because too many errors were detected.
-#[no_mangle]
-pub unsafe extern "C" fn rs_correct(
+pub unsafe fn rs_correct(
     gf: *const rs_gf256,
     m0: c_int,
     data: *mut u8,

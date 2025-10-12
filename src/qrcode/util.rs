@@ -11,8 +11,7 @@
 /// Uses the method from http://www.azillionmonkeys.com/qed/sqroot.html
 /// The main idea is to search for the largest binary digit b such that
 /// (g+b)*(g+b) <= val, and add it to the solution g.
-#[no_mangle]
-pub extern "C" fn qr_isqrt(mut val: u32) -> u32 {
+pub fn qr_isqrt(mut val: u32) -> u32 {
     let mut g = 0u32;
     let mut b = 0x8000u32;
 
@@ -41,8 +40,7 @@ pub extern "C" fn qr_isqrt(mut val: u32) -> u32 {
 /// All Pythagorean triples with a hypotenuse of less than ((1<<27)-1) evaluate
 /// correctly, and the total bias over all Pythagorean triples is -0.04579, with
 /// a relative RMS error of 7.2864E-10 and a relative peak error of 7.4387E-9.
-#[no_mangle]
-pub extern "C" fn qr_ihypot(x_arg: i32, y_arg: i32) -> u32 {
+pub fn qr_ihypot(x_arg: i32, y_arg: i32) -> u32 {
     let mut x = x_arg.unsigned_abs();
     let x_signed = x_arg.abs();
     let mut y = y_arg.unsigned_abs();
@@ -86,8 +84,7 @@ pub extern "C" fn qr_ihypot(x_arg: i32, y_arg: i32) -> u32 {
 /// Computes the integer logarithm base 2 of a value
 ///
 /// Returns floor(log2(v)) for v > 0, and 0 for v == 0.
-#[no_mangle]
-pub extern "C" fn qr_ilog(mut v: u32) -> i32 {
+pub fn qr_ilog(mut v: u32) -> i32 {
     let m = (((v & 0xFFFF0000) != 0) as i32) << 4;
     v >>= m;
     let mut ret = m;
@@ -107,9 +104,6 @@ pub extern "C" fn qr_ilog(mut v: u32) -> i32 {
     ret |= ((v & 0x2) != 0) as i32;
     ret + (v != 0) as i32
 }
-
-// C FFI exports - these are already the main public functions,
-// so we just add the #[no_mangle] attribute to make them available to C
 
 #[cfg(test)]
 mod tests {

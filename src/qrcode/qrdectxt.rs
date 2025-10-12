@@ -13,11 +13,12 @@ use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use crate::decoder_types::{
     ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_PARTIAL, ZBAR_QRCODE,
 };
-use crate::ffi::{_zbar_symbol_set_create, zbar_image_t, zbar_symbol_t};
+use crate::image_ffi::{zbar_image_t, zbar_symbol_t};
 use crate::img_scanner::{
     _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
     zbar_image_scanner_get_config, zbar_image_scanner_t,
 };
+use crate::symbol::{_zbar_symbol_add_point, _zbar_symbol_set_create};
 
 use super::qr_point;
 use super::qrdec::qr_mode;
@@ -115,21 +116,16 @@ fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encodi
     }
 }
 
-extern "C" {
-    fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int);
-}
-
 unsafe fn sym_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
     _zbar_symbol_add_point(sym, x, y);
 }
 
-#[no_mangle]
 /// # Safety
 ///
 /// This function is unsafe because it dereferences raw pointers passed from C.
 /// The caller must ensure that the pointers are valid and that the data they
 /// point to has the expected layout.
-pub unsafe extern "C" fn qr_code_data_list_extract_text(
+pub unsafe fn qr_code_data_list_extract_text(
     _qrlist: *const qr_code_data_list,
     iscn: *mut zbar_image_scanner_t,
     _img: *mut zbar_image_t,

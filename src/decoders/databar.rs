@@ -189,8 +189,7 @@ static GROUPS: [GroupS; 14] = [
 ///
 /// # Safety
 /// Buffer must contain at least 14 bytes, with first 13 being ASCII digits '0'-'9'
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_databar_append_check14(buf: *mut u8) {
+pub unsafe fn _zbar_databar_append_check14(buf: *mut u8) {
     if buf.is_null() {
         return;
     }
@@ -226,8 +225,7 @@ pub unsafe extern "C" fn _zbar_databar_append_check14(buf: *mut u8) {
 ///
 /// # Safety
 /// Buffer must have at least `i` bytes available
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_databar_decode10(buf: *mut u8, mut n: u64, i: c_int) {
+pub unsafe fn _zbar_databar_decode10(buf: *mut u8, mut n: u64, i: c_int) {
     if buf.is_null() || i <= 0 {
         return;
     }
@@ -678,8 +676,7 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
 ///
 /// # Returns
 /// 1 if widths match within tolerance, 0 otherwise
-#[no_mangle]
-pub extern "C" fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
+pub fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
     let dwf = wf * 3;
     let wd = wd * 14;
     let wf = wf * n;
@@ -871,8 +868,7 @@ pub unsafe fn match_segment(
 
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
-#[no_mangle]
-pub unsafe extern "C" fn lookup_sequence(
+pub unsafe fn lookup_sequence(
     seg: *mut crate::decoder_types::databar_segment_t,
     fixed: i32,
     seq: *mut i32,
@@ -947,6 +943,7 @@ pub unsafe fn match_segment_exp(
     bestsegs[0] = -1;
     width_stack[0] = (*seg).width as u32;
 
+    #[allow(clippy::needless_range_loop)]
     for j in 0..csegs {
         let s = db.segs.add(j);
         iseg[j] =
@@ -1068,9 +1065,7 @@ pub unsafe fn match_segment_exp(
 
         maxcnt = cnt as i32;
         maxage = age;
-        for j in 0..pos {
-            bestsegs[j] = segs_idx[j];
-        }
+        bestsegs[..pos].copy_from_slice(&segs_idx[..pos]);
         bestsegs[pos] = -1;
         i -= 1;
     }
@@ -1097,11 +1092,10 @@ pub unsafe fn match_segment_exp(
         return ZBAR_PARTIAL;
     }
 
-    for j in 0..count {
-        let sidx = bestsegs[j] as usize;
-        let s = db.segs.add(sidx);
+    for sidx in bestsegs {
+        let s = db.segs.add(sidx as usize);
         seg_ptr = s;
-        if sidx != ifixed {
+        if sidx as usize != ifixed {
             let mut cnt = (*s).count();
             if cnt > 0 {
                 cnt -= 1;

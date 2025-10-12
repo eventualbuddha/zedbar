@@ -411,8 +411,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 93 decode function
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dcode = &mut *dcode;
 
     if dcode.code93.character() < 0 {

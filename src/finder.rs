@@ -53,8 +53,7 @@ fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
 // SQ Finder functions
 // ============================================================================
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decoder_get_sq_finder_config(dcode: *mut zbar_decoder_t) -> c_uint {
+pub unsafe fn _zbar_decoder_get_sq_finder_config(dcode: *mut zbar_decoder_t) -> c_uint {
     (*dcode).sqf.config
 }
 
@@ -66,18 +65,14 @@ pub unsafe extern "C" fn _zbar_decoder_get_sq_finder_config(dcode: *mut zbar_dec
 ///
 /// At this point lengths are all decode unit offsets from the decode edge.
 /// Note: owned by finder
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decoder_get_qr_finder_line(
-    dcode: *mut zbar_decoder_t,
-) -> *mut qr_finder_line {
+pub unsafe fn _zbar_decoder_get_qr_finder_line(dcode: *mut zbar_decoder_t) -> *mut qr_finder_line {
     &mut (*dcode).qrf.line
 }
 
 /// Find QR code finder pattern
 ///
 /// Searches for the 1:1:3:1:1 ratio pattern characteristic of QR code finders.
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dcode_ref = &mut *dcode;
     let qrf: *mut qr_finder_t = &mut dcode_ref.qrf;
 

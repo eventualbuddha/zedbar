@@ -592,7 +592,7 @@ pub struct qr_finder_t {
 
 /// Decoder handler callback
 #[allow(non_camel_case_types)]
-pub type zbar_decoder_handler_t = unsafe extern "C" fn(*mut zbar_decoder_t);
+pub type zbar_decoder_handler_t = unsafe fn(*mut zbar_decoder_t);
 
 /// Main barcode decoder state
 #[repr(C)]

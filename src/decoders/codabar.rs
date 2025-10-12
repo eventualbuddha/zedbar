@@ -412,8 +412,7 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
 }
 
 /// Main Codabar decode function
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dcode = &mut *dcode;
 
     // Update latest character width

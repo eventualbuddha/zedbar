@@ -27,10 +27,7 @@ pub use image::Image;
 pub use scanner::Scanner;
 pub use symbol::{Symbol, SymbolSet, SymbolType};
 
-// For now, we'll use FFI bindings to the C library
-// These will be replaced as modules are converted
 mod ffi;
-pub use ffi::*;
 
 #[cfg(test)]
 mod proptest_qr;

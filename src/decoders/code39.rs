@@ -519,8 +519,7 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 }
 
 /// Main Code 39 decode function
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dcode = &mut *dcode;
 
     // Update latest character width

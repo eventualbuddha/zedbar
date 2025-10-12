@@ -1,8 +1,10 @@
 //! Image scanner for finding barcodes in 2D images
 
-use crate::ffi;
 use crate::image::Image;
-use crate::img_scanner::zbar_image_scanner_t;
+use crate::img_scanner::{
+    zbar_image_scanner_create, zbar_image_scanner_destroy, zbar_image_scanner_set_config,
+    zbar_image_scanner_t, zbar_scan_image,
+};
 use crate::{Error, Result};
 
 /// Configuration options for barcode scanning
@@ -30,15 +32,14 @@ pub struct Scanner {
 impl Scanner {
     /// Create a new image scanner
     pub fn new() -> Self {
-        let ptr = unsafe { ffi::zbar_image_scanner_create() };
+        let ptr = unsafe { zbar_image_scanner_create() };
         Scanner { ptr }
     }
 
     /// Configure the scanner for a specific symbology
     pub fn set_config(&mut self, symbology: i32, config: Config, value: i32) -> Result<()> {
-        let result = unsafe {
-            ffi::zbar_image_scanner_set_config(self.ptr, symbology, config as i32, value)
-        };
+        let result =
+            unsafe { zbar_image_scanner_set_config(self.ptr, symbology, config as i32, value) };
 
         if result == 0 {
             Ok(())
@@ -49,7 +50,7 @@ impl Scanner {
 
     /// Scan an image for barcodes
     pub fn scan(&mut self, image: &mut Image) -> Result<i32> {
-        let result = unsafe { ffi::zbar_scan_image(self.ptr, image.as_ptr()) };
+        let result = unsafe { zbar_scan_image(self.ptr, image.as_ptr()) };
 
         if result >= 0 {
             Ok(result)
@@ -63,7 +64,7 @@ impl Drop for Scanner {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             unsafe {
-                ffi::zbar_image_scanner_destroy(self.ptr);
+                zbar_image_scanner_destroy(self.ptr);
             }
         }
     }

@@ -7,17 +7,24 @@ use std::{
 use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, memcmp, size_t};
 
 use crate::{
+    decoder::zbar_decoder_get_config,
     decoder_types::{
         zbar_decoder_t, ZBAR_CFG_BINARY, ZBAR_CFG_ENABLE, ZBAR_CFG_POSITION,
         ZBAR_CFG_TEST_INVERTED, ZBAR_CFG_UNCERTAINTY, ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY,
         ZBAR_CODABAR, ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR,
         ZBAR_DATABAR_EXP, ZBAR_EAN5, ZBAR_ISBN10, ZBAR_ORIENT_UNKNOWN, ZBAR_PARTIAL, ZBAR_QRCODE,
     },
-    finder::_zbar_decoder_get_sq_finder_config,
-    line_scanner::zbar_scanner_t,
+    finder::{_zbar_decoder_get_qr_finder_line, _zbar_decoder_get_sq_finder_config},
+    image_ffi::{zbar_image_t, zbar_symbol_t},
+    line_scanner::{
+        zbar_scanner_create, zbar_scanner_flush, zbar_scanner_new_scan, zbar_scanner_t,
+    },
     qrcode::{
         qr_point,
-        qrdec::{_zbar_qr_reset, qr_finder_lines},
+        qrdec::{
+            _zbar_qr_create, _zbar_qr_decode, _zbar_qr_destroy, _zbar_qr_found_line,
+            _zbar_qr_reset, qr_finder_lines,
+        },
         rs::rs_gf256,
         IsaacCtx,
     },
@@ -26,7 +33,6 @@ use crate::{
         _zbar_sq_reset,
     },
     symbol::{_zbar_symbol_set_create, symbol_free, symbol_set_free},
-    zbar_scanner_create,
 };
 
 const RECYCLE_BUCKETS: usize = 5;
@@ -48,7 +54,7 @@ fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
 }
 
 // Import types and functions from ffi module
-use crate::ffi::{refcnt, zbar_image_t, zbar_symbol_t};
+use crate::ffi::refcnt;
 
 // Import functions and constants from symbol module
 use crate::symbol::_zbar_get_symbol_hash;
@@ -83,31 +89,6 @@ macro_rules! c_assert {
             }
         }
     };
-}
-
-// External C functions
-extern "C" {
-    fn zbar_decoder_get_config(
-        dcode: *mut zbar_decoder_t,
-        sym: c_int,
-        cfg: c_int,
-        val: *mut c_int,
-    ) -> c_int;
-    fn zbar_scanner_flush(scn: *mut zbar_scanner_t);
-    fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t);
-    fn _zbar_decoder_get_qr_finder_line(dcode: *mut zbar_decoder_t) -> *mut qr_finder_line;
-    fn _zbar_qr_found_line(
-        qr: *mut qr_reader,
-        direction: c_int,
-        line: *const qr_finder_line,
-    ) -> c_int;
-    fn _zbar_qr_create() -> *mut qr_reader;
-    fn _zbar_qr_destroy(qr: *mut qr_reader);
-    fn _zbar_qr_decode(
-        reader: *mut qr_reader,
-        iscn: *mut zbar_image_scanner_t,
-        img: *mut zbar_image_t,
-    ) -> c_int;
 }
 
 // Import from line_scanner, decoder, and symbol modules
@@ -163,8 +144,7 @@ pub struct zbar_symbol_set_t {
 }
 
 // Function pointer type for image data handler callbacks
-pub type zbar_image_data_handler_t =
-    unsafe extern "C" fn(img: *mut zbar_image_t, userdata: *const c_void);
+pub type zbar_image_data_handler_t = unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -232,8 +212,7 @@ pub struct zbar_image_scanner_t {
 /// * `iscn` - The image scanner instance
 /// * `handler` - The new callback handler (or NULL to disable)
 /// * `userdata` - User data pointer to pass to the handler
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_set_data_handler(
+pub unsafe fn zbar_image_scanner_set_data_handler(
     iscn: *mut zbar_image_scanner_t,
     handler: Option<zbar_image_data_handler_t>,
     userdata: *const c_void,
@@ -257,11 +236,7 @@ pub unsafe extern "C" fn zbar_image_scanner_set_data_handler(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `enable` - Non-zero to enable caching, 0 to disable
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_enable_cache(
-    iscn: *mut zbar_image_scanner_t,
-    enable: c_int,
-) {
+pub unsafe fn zbar_image_scanner_enable_cache(iscn: *mut zbar_image_scanner_t, enable: c_int) {
     if iscn.is_null() {
         return;
     }
@@ -347,8 +322,7 @@ pub unsafe fn zbar_image_scanner_get_config(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - Head of the symbol list to recycle
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
+pub unsafe fn _zbar_image_scanner_recycle_syms(
     iscn: *mut zbar_image_scanner_t,
     mut sym: *mut zbar_symbol_t,
 ) {
@@ -415,8 +389,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_recycle_syms(
 ///
 /// # Arguments
 /// * `iscn` - The image scanner instance
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_scanner_t) {
+pub unsafe fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_scanner_t) {
     let scn = (*iscn).scn;
 
     // Flush scanner pipeline twice
@@ -460,10 +433,9 @@ pub unsafe fn _zbar_image_scanner_recycle_symbol_set(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `img` - The image whose symbols should be recycled
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
+pub unsafe fn zbar_image_scanner_recycle_image(
     iscn: *mut zbar_image_scanner_t,
-    img: *mut crate::ffi::zbar_image_t,
+    img: *mut zbar_image_t,
 ) {
     let mut syms = (*iscn).syms;
     if !syms.is_null()
@@ -502,8 +474,7 @@ pub unsafe extern "C" fn zbar_image_scanner_recycle_image(
 ///
 /// # Returns
 /// Pointer to the allocated symbol
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_alloc_sym(
+pub unsafe fn _zbar_image_scanner_alloc_sym(
     iscn: *mut zbar_image_scanner_t,
     sym_type: c_int,
     datalen: c_int,
@@ -579,8 +550,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_alloc_sym(
 ///
 /// # Arguments
 /// * `iscn` - The image scanner instance
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanner_t) {
+pub unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanner_t) {
     let line = _zbar_decoder_get_qr_finder_line((*iscn).dcode);
     c_assert!(!line.is_null());
 
@@ -617,8 +587,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_sc
 ///
 /// # Returns
 /// Pointer to the matching cache entry, or NULL if not found
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_cache_lookup(
+pub unsafe fn _zbar_image_scanner_cache_lookup(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) -> *mut zbar_symbol_t {
@@ -717,8 +686,7 @@ pub unsafe fn _zbar_image_scanner_cache_sym(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - The symbol to add
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_add_sym(
+pub unsafe fn _zbar_image_scanner_add_sym(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) {
@@ -755,8 +723,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_add_sym(
 ///
 /// # Safety
 /// `iscn` must be a valid pointer to a zbar_image_scanner_t
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
+pub unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
     // Cast pointers to the correct types expected by the functions
     let dcode = (*iscn).dcode;
     let sq = (*iscn).sq;
@@ -771,8 +738,7 @@ pub unsafe extern "C" fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_sc
 ///
 /// # Returns
 /// Pointer to new scanner or null on allocation failure
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
+pub unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
     let iscn = calloc(1, size_of::<zbar_image_scanner_t>()) as *mut zbar_image_scanner_t;
     if iscn.is_null() {
         return null_mut();
@@ -816,8 +782,7 @@ pub unsafe extern "C" fn zbar_image_scanner_create() -> *mut zbar_image_scanner_
 ///
 /// # Parameters
 /// - `iscn`: Scanner to destroy (null-safe)
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
+pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
     if iscn.is_null() {
         return;
     }
@@ -874,8 +839,7 @@ pub unsafe extern "C" fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanne
 ///
 /// # Arguments
 /// * `dcode` - The decoder that found the symbol
-#[no_mangle]
-pub unsafe extern "C" fn symbol_handler(dcode: *mut zbar_decoder_t) {
+pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     let iscn = zbar_decoder_get_userdata(dcode) as *mut zbar_image_scanner_t;
     let type_ = zbar_decoder_get_type(dcode);
     let mut x = 0;
@@ -971,8 +935,7 @@ pub unsafe extern "C" fn symbol_handler(dcode: *mut zbar_decoder_t) {
 ///
 /// # Returns
 /// 0 on success, 1 on error
-#[no_mangle]
-pub unsafe extern "C" fn zbar_image_scanner_set_config(
+pub unsafe fn zbar_image_scanner_set_config(
     iscn: *mut zbar_image_scanner_t,
     sym: c_int,
     cfg: c_int,
@@ -1043,8 +1006,7 @@ pub unsafe extern "C" fn zbar_image_scanner_set_config(
 ///
 /// # Returns
 /// Pointer to symbol set on success, null on error
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_scan_image(
+pub unsafe fn _zbar_scan_image(
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) -> *mut zbar_symbol_set_t {
@@ -1321,11 +1283,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
 ///
 /// # Returns
 /// Number of symbols found, -1 on error
-#[no_mangle]
-pub unsafe extern "C" fn zbar_scan_image(
-    iscn: *mut zbar_image_scanner_t,
-    img: *mut zbar_image_t,
-) -> c_int {
+pub unsafe fn zbar_scan_image(iscn: *mut zbar_image_scanner_t, img: *mut zbar_image_t) -> c_int {
     let mut syms = _zbar_scan_image(iscn, img);
     if syms.is_null() {
         return -1;

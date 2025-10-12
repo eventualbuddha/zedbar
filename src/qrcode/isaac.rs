@@ -250,8 +250,7 @@ impl IsaacCtx {
 ///
 /// `ctx` must be a valid pointer to an `IsaacCtx` structure
 /// `seed` must be a valid pointer to at least `nseed` bytes
-#[no_mangle]
-pub unsafe extern "C" fn isaac_init(ctx: *mut IsaacCtx, seed: *const u8, nseed: i32) {
+pub unsafe fn isaac_init(ctx: *mut IsaacCtx, seed: *const u8, nseed: i32) {
     let ctx = &mut *ctx;
 
     let seed_slice = if seed.is_null() || nseed <= 0 {
@@ -268,8 +267,7 @@ pub unsafe extern "C" fn isaac_init(ctx: *mut IsaacCtx, seed: *const u8, nseed: 
 /// # Safety
 ///
 /// `ctx` must be a valid pointer to an initialized `IsaacCtx` structure
-#[no_mangle]
-pub unsafe extern "C" fn isaac_next_uint32(ctx: *mut IsaacCtx) -> u32 {
+pub unsafe fn isaac_next_uint32(ctx: *mut IsaacCtx) -> u32 {
     (*ctx).next_u32()
 }
 
@@ -278,8 +276,7 @@ pub unsafe extern "C" fn isaac_next_uint32(ctx: *mut IsaacCtx) -> u32 {
 /// # Safety
 ///
 /// `ctx` must be a valid pointer to an initialized `IsaacCtx` structure
-#[no_mangle]
-pub unsafe extern "C" fn isaac_next_uint(ctx: *mut IsaacCtx, n: u32) -> u32 {
+pub unsafe fn isaac_next_uint(ctx: *mut IsaacCtx, n: u32) -> u32 {
     (*ctx).next_uint(n)
 }
 

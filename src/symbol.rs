@@ -15,9 +15,9 @@ use crate::{
         ZBAR_ORIENT_DOWN, ZBAR_ORIENT_LEFT, ZBAR_ORIENT_RIGHT, ZBAR_ORIENT_UP, ZBAR_PARTIAL,
         ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
     },
-    ffi::zbar_symbol_t,
+    ffi::refcnt,
+    image_ffi::zbar_symbol_t,
     img_scanner::zbar_symbol_set_t,
-    refcnt,
 };
 use libc::{c_char, c_int, c_void};
 use std::ptr;
@@ -179,13 +179,11 @@ pub unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
 
 // C FFI exports
 
-#[no_mangle]
-pub unsafe extern "C" fn zbar_get_symbol_name(sym: c_int) -> *const c_char {
+pub unsafe fn zbar_get_symbol_name(sym: c_int) -> *const c_char {
     get_symbol_name(sym).as_ptr() as *const c_char
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_get_symbol_hash(sym: c_int) -> c_int {
+pub unsafe fn _zbar_get_symbol_hash(sym: c_int) -> c_int {
     get_symbol_hash(sym)
 }
 
@@ -197,13 +195,11 @@ pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_set_create() -> *mut zbar_symbol_set_t {
+pub unsafe fn _zbar_symbol_set_create() -> *mut zbar_symbol_set_t {
     symbol_set_create()
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
+pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     if refcnt(&mut (*syms).refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms);
     }
@@ -216,8 +212,7 @@ struct Point {
     y: c_int,
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
+pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
     let i = (*sym).npts as usize;
     (*sym).npts += 1;
 
