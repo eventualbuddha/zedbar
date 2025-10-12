@@ -5,7 +5,7 @@
 
 use std::{
     ffi::c_void,
-    ptr::{null, null_mut},
+    ptr::{null, null_mut, NonNull},
 };
 
 use libc::{c_char, c_int, c_uint, c_ulong};
@@ -33,7 +33,29 @@ pub struct zbar_image_t {
     pub refcnt: c_int,
     pub srcidx: c_int,
     pub seq: c_uint,
-    pub syms: *mut zbar_symbol_set_t,
+    pub syms: Option<NonNull<zbar_symbol_set_t>>,
+}
+
+impl zbar_image_t {
+    #[inline]
+    pub fn syms_ptr(&self) -> *mut zbar_symbol_set_t {
+        self.syms.map_or(null_mut(), NonNull::as_ptr)
+    }
+
+    #[inline]
+    pub fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
+        self.syms = NonNull::new(ptr);
+    }
+
+    #[inline]
+    pub fn clear_syms(&mut self) {
+        self.syms = None;
+    }
+
+    #[inline]
+    pub fn take_syms_ptr(&mut self) -> *mut zbar_symbol_set_t {
+        self.syms.take().map_or(null_mut(), NonNull::as_ptr)
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -67,9 +89,9 @@ pub unsafe fn zbar_image_create() -> *mut zbar_image_t {
 }
 
 pub unsafe fn _zbar_image_free(img: *mut zbar_image_t) {
-    if !(*img).syms.is_null() {
-        zbar_symbol_set_ref((*img).syms, -1);
-        (*img).syms = null_mut();
+    let image = &mut *img;
+    if let Some(syms) = image.syms.take() {
+        zbar_symbol_set_ref(syms.as_ptr(), -1);
     }
     image_free_struct(img);
 }
@@ -81,11 +103,9 @@ pub unsafe fn zbar_image_destroy(img: *mut zbar_image_t) {
 }
 
 pub unsafe fn zbar_image_first_symbol(img: *const zbar_image_t) -> *const zbar_symbol_t {
-    if (*img).syms.is_null() {
-        null()
-    } else {
-        (*(*img).syms).head
-    }
+    (*img)
+        .syms
+        .map_or(null(), |syms| unsafe { (*syms.as_ptr()).head })
 }
 
 pub unsafe fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {

@@ -1,7 +1,7 @@
 use std::{
     ffi::c_void,
     mem::size_of,
-    ptr::{copy_nonoverlapping, null_mut},
+    ptr::{copy_nonoverlapping, null_mut, NonNull},
 };
 
 use libc::{c_int, c_uint, c_ulong, memcmp, size_t};
@@ -177,7 +177,7 @@ pub struct zbar_image_scanner_t {
     v: c_int,
 
     /// previous decode results
-    syms: *mut zbar_symbol_set_t,
+    syms: Option<NonNull<zbar_symbol_set_t>>,
     /// recycled symbols in 4^n size buckets
     recycle: [recycle_bucket_t; RECYCLE_BUCKETS],
 
@@ -194,6 +194,28 @@ pub struct zbar_image_scanner_t {
     configs: [c_int; NUM_SCN_CFGS],
     /// per-symbology configurations
     sym_configs: [[c_int; NUM_SYMS]; 1],
+}
+
+impl zbar_image_scanner_t {
+    #[inline]
+    pub fn syms_ptr(&self) -> *mut zbar_symbol_set_t {
+        self.syms.map_or(null_mut(), NonNull::as_ptr)
+    }
+
+    #[inline]
+    pub fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
+        self.syms = NonNull::new(ptr);
+    }
+
+    #[inline]
+    pub fn clear_syms(&mut self) {
+        self.syms = None;
+    }
+
+    #[inline]
+    pub fn take_syms(&mut self) -> Option<NonNull<zbar_symbol_set_t>> {
+        self.syms.take()
+    }
 }
 
 /// Set the data handler callback for the image scanner
@@ -427,27 +449,27 @@ pub unsafe fn zbar_image_scanner_recycle_image(
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) {
-    let mut syms = (*iscn).syms;
-    if !syms.is_null()
-        && (*syms).refcnt != 0
-        && _zbar_image_scanner_recycle_symbol_set(iscn, syms) != 0
+    let scanner = &mut *iscn;
+    let image = &mut *img;
+
+    let current_syms = scanner.syms_ptr();
+    if !current_syms.is_null()
+        && (*current_syms).refcnt != 0
+        && _zbar_image_scanner_recycle_symbol_set(iscn, current_syms) != 0
     {
-        (*iscn).syms = null_mut();
+        scanner.clear_syms();
     }
 
-    syms = (*img).syms;
-    (*img).syms = null_mut();
+    let syms = image.take_syms_ptr();
 
     if !syms.is_null() && _zbar_image_scanner_recycle_symbol_set(iscn, syms) != 0 {
-        // Symbol set is still referenced
+        // Symbol set is still referenced; restore it back to the image.
+        image.set_syms_ptr(syms);
     } else if !syms.is_null() {
-        // Select one set to resurrect, destroy the other
-        if !(*iscn).syms.is_null() {
-            {
-                symbol_set_free(syms);
-            };
+        if !scanner.syms_ptr().is_null() {
+            symbol_set_free(syms);
         } else {
-            (*iscn).syms = syms;
+            scanner.set_syms_ptr(syms);
         }
     }
 }
@@ -674,7 +696,8 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
 ) {
     _zbar_image_scanner_cache_sym(iscn, sym);
 
-    let syms = (*iscn).syms;
+    let syms = (*iscn).syms_ptr();
+    debug_assert!(!syms.is_null());
 
     if (*sym).cache_count != 0 || (*syms).tail.is_null() {
         (*sym).next = (*syms).head;
@@ -779,16 +802,14 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         return;
     }
 
-    if !(*iscn).syms.is_null() {
-        if (*(*iscn).syms).refcnt != 0 {
-            zbar_symbol_set_ref((*iscn).syms, -1);
+    let scanner = &mut *iscn;
+    if let Some(syms_handle) = scanner.take_syms() {
+        let syms_ptr = syms_handle.as_ptr();
+        if (*syms_ptr).refcnt != 0 {
+            zbar_symbol_set_ref(syms_ptr, -1);
         } else {
-            {
-                let syms = (*iscn).syms;
-                symbol_set_free(syms);
-            };
+            symbol_set_free(syms_ptr);
         }
-        (*iscn).syms = null_mut();
     }
 
     if !(*iscn).scn.is_null() {
@@ -865,7 +886,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     let datalen = zbar_decoder_get_data_length(dcode);
 
     // Check for duplicate symbols
-    let syms = (*iscn).syms;
+    let syms = (*iscn).syms_ptr();
     let mut sym = if !syms.is_null() {
         (*syms).head
     } else {
@@ -1021,15 +1042,16 @@ pub unsafe fn _zbar_scan_image(
 
     // Recycle previous scanner and image results
     zbar_image_scanner_recycle_image(iscn, img);
-    let mut syms = (*iscn).syms;
+    let scanner = &mut *iscn;
+    let mut syms = scanner.syms_ptr();
     if syms.is_null() {
         syms = symbol_set_create();
-        (*iscn).syms = syms;
+        scanner.set_syms_ptr(syms);
         zbar_symbol_set_ref(syms, 1);
     } else {
         zbar_symbol_set_ref(syms, 2);
     }
-    (*img).syms = syms;
+    (*img).set_syms_ptr(syms);
 
     let w = (*img).width;
     let h = (*img).height;
