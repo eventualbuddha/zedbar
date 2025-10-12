@@ -29,7 +29,7 @@ fn main() {
             // "zbar/qrcode/bch15_5.c", // Converted to Rust
             // "zbar/qrcode/binarize.c", // Converted to Rust
             // "zbar/qrcode/isaac.c", // Converted to Rust
-            "zbar/qrcode/qrdec.c",
+            // "zbar/qrcode/qrdec.c", // Converted to Rust
             // "zbar/qrcode/qrdectxt.c", // Converted to Rust
             // "zbar/qrcode/rs.c", // Converted to Rust
             // "zbar/qrcode/util.c", // Converted to Rust
