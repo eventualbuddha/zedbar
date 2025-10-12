@@ -2,9 +2,12 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::decoder_types::{
-    code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
-    ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
+use crate::{
+    decoder::_zbar_decoder_size_buf,
+    decoder_types::{
+        code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
+        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
+    },
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -77,38 +80,6 @@ fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
 fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
     zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
     dcode.lock = 0;
-    0
-}
-
-/// Ensure output buffer has sufficient allocation for request
-#[inline]
-unsafe fn size_buf(dcode: &mut zbar_decoder_t, len: c_uint) -> i8 {
-    const BUFFER_MIN: c_uint = 0x20;
-    const BUFFER_MAX: c_uint = 0x100;
-    const BUFFER_INCR: c_uint = 0x10;
-
-    if len <= BUFFER_MIN {
-        return 0;
-    }
-    if len < dcode.buf_alloc {
-        return 0;
-    }
-    if len > BUFFER_MAX {
-        return 1;
-    }
-    let mut new_len = len;
-    if new_len < dcode.buf_alloc + BUFFER_INCR {
-        new_len = dcode.buf_alloc + BUFFER_INCR;
-        if new_len > BUFFER_MAX {
-            new_len = BUFFER_MAX;
-        }
-    }
-    let new_buf = libc::realloc(dcode.buf as *mut libc::c_void, new_len as usize) as *mut c_char;
-    if new_buf.is_null() {
-        return 1;
-    }
-    dcode.buf = new_buf;
-    dcode.buf_alloc = new_len;
     0
 }
 
@@ -456,7 +427,7 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     }
 
     let character = dcode.code93.character();
-    if size_buf(dcode, (character + 1) as c_uint) != 0 {
+    if _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, (character + 1) as c_uint) != 0 {
         return decode_abort(dcode);
     }
 

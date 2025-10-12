@@ -2,10 +2,13 @@
 //!
 //! This module implements decoding for Code 128 barcodes.
 
-use crate::decoder_types::{
-    code128_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN,
-    DECODE_WINDOW, ZBAR_BAR, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE128, ZBAR_MOD_AIM,
-    ZBAR_MOD_GS1, ZBAR_NONE, ZBAR_SPACE,
+use crate::{
+    decoder::_zbar_decoder_size_buf,
+    decoder_types::{
+        code128_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
+        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE128, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_NONE,
+        ZBAR_SPACE,
+    },
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -137,33 +140,6 @@ fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
 fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
     zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
     dcode.lock = 0;
-    0
-}
-
-/// Ensure output buffer has sufficient allocation for request
-#[inline]
-unsafe fn size_buf(dcode: &mut zbar_decoder_t, mut len: c_uint) -> i8 {
-    if len <= BUFFER_MIN {
-        return 0;
-    }
-    if len < dcode.buf_alloc {
-        return 0;
-    }
-    if len > BUFFER_MAX {
-        return 1;
-    }
-    if len < dcode.buf_alloc + BUFFER_INCR {
-        len = dcode.buf_alloc + BUFFER_INCR;
-        if len > BUFFER_MAX {
-            len = BUFFER_MAX;
-        }
-    }
-    let new_buf = libc::realloc(dcode.buf as *mut libc::c_void, len as usize) as *mut c_char;
-    if new_buf.is_null() {
-        return 1;
-    }
-    dcode.buf = new_buf;
-    dcode.buf_alloc = len;
     0
 }
 
@@ -402,7 +378,7 @@ unsafe fn postprocess_c(
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
     let newlen = dcode.code128.character() as usize + delta;
-    if size_buf(dcode, newlen as c_uint) != 0 {
+    if _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, newlen as c_uint) != 0 {
         return ZBAR_NONE as c_uint;
     }
 
@@ -657,7 +633,12 @@ pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
         dcode.code128.set_start(c as u8);
         dcode.code128.width = dcode.code128.s6;
         return 0;
-    } else if c < 0 || size_buf(dcode, (dcode.code128.character() + 1) as c_uint) != 0 {
+    } else if c < 0
+        || _zbar_decoder_size_buf(
+            dcode as *mut zbar_decoder_t,
+            (dcode.code128.character() + 1) as c_uint,
+        ) != 0
+    {
         if dcode.code128.character() > 1 {
             release_lock(dcode, ZBAR_CODE128);
         }

@@ -2,10 +2,12 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::decoder_types::{
-    code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN,
-    DECODE_WINDOW, ZBAR_BAR, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE,
-    ZBAR_PARTIAL,
+use crate::{
+    decoder::_zbar_decoder_size_buf,
+    decoder_types::{
+        code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
+        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE, ZBAR_PARTIAL,
+    },
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -336,33 +338,6 @@ fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
     0
 }
 
-/// Ensure output buffer has sufficient allocation for request
-#[inline]
-unsafe fn size_buf(dcode: &mut zbar_decoder_t, mut len: c_uint) -> i8 {
-    if len <= BUFFER_MIN {
-        return 0;
-    }
-    if len < dcode.buf_alloc {
-        return 0;
-    }
-    if len > BUFFER_MAX {
-        return 1;
-    }
-    if len < dcode.buf_alloc + BUFFER_INCR {
-        len = dcode.buf_alloc + BUFFER_INCR;
-        if len > BUFFER_MAX {
-            len = BUFFER_MAX;
-        }
-    }
-    let new_buf = libc::realloc(dcode.buf as *mut libc::c_void, len as usize) as *mut c_char;
-    if new_buf.is_null() {
-        return 1;
-    }
-    dcode.buf = new_buf;
-    dcode.buf_alloc = len;
-    0
-}
-
 /// Access config value by index
 #[inline]
 fn cfg(decoder: &code39_decoder_t, cfg: c_int) -> c_int {
@@ -604,7 +579,8 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
         return ZBAR_PARTIAL;
     }
 
-    if c < 0 || size_buf(dcode, (character + 1) as c_uint) != 0 {
+    if c < 0 || _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, (character + 1) as c_uint) != 0
+    {
         release_lock(dcode, ZBAR_CODE39);
         dcode.code39.set_character(-1);
         return ZBAR_NONE;
