@@ -468,6 +468,95 @@ extern int qr_alignment_pattern_search(qr_point _p, const qr_hom_cell *_cell,
 				       const unsigned char *_img, int _width,
 				       int _height);
 
+/*Project alignment pattern center to corner of QR code.
+  Given three corners and an alignment pattern center, compute the fourth corner
+  by geometric projection. Returns 0 on success, -1 if projection fails.*/
+static int qr_hom_project_alignment_to_corner(int *brx, int *bry,
+					       const qr_point *p,
+					       const qr_point p3, int dim)
+{
+    long long w;
+    long long mask;
+    int c21;
+    int dx21;
+    int dy21;
+
+    c21	 = p[2][0] * p[1][1] - p[2][1] * p[1][0];
+    dx21 = p[2][0] - p[1][0];
+    dy21 = p[2][1] - p[1][1];
+    w	 = QR_EXTMUL(dim - 7, c21,
+		     QR_EXTMUL(dim - 13, p[0][0] * dy21 - p[0][1] * dx21,
+			       QR_EXTMUL(6, p3[0] * dy21 - p3[1] * dx21, 0)));
+    /*The projection failed: invalid geometry.*/
+    if (w == 0)
+	return -1;
+    mask = QR_SIGNMASK(w);
+    w	 = (w + mask) ^ mask;
+    *brx = (int)QR_DIVROUND(
+	     (QR_EXTMUL((dim - 7) * p[0][0], p3[0] * dy21,
+			QR_EXTMUL((dim - 13) * p3[0], c21 - p[0][1] * dx21,
+				  QR_EXTMUL(6 * p[0][0], c21 - p3[1] * dx21,
+					    0))) +
+	      mask) ^
+		 mask,
+	     w);
+    *bry = (int)QR_DIVROUND(
+	    (QR_EXTMUL((dim - 7) * p[0][1], -p3[1] * dx21,
+		       QR_EXTMUL((dim - 13) * p3[1], c21 + p[0][0] * dy21,
+				 QR_EXTMUL(6 * p[0][1], c21 + p3[0] * dy21,
+					   0))) +
+	     mask) ^
+		mask,
+	    w);
+    return 0;
+}
+
+/*Fit a line to collected edge points, or use axis-aligned fallback if insufficient points.
+  This is used for edges that have only one finder pattern, where we walk along the edge
+  collecting sample points. If we don't get enough points (> 1), we fall back to an
+  axis-aligned line in the affine coordinate system.*/
+static void qr_hom_fit_edge_line(qr_line *line, qr_point *pts, int npts,
+				  const qr_finder *finder, const qr_aff *aff,
+				  int edge_axis)
+{
+    if (npts > 1) {
+	qr_line_fit_points(line, pts, npts, aff->res);
+    } else {
+	qr_point p;
+	int shift, round;
+
+	/* Project reference point from the finder pattern */
+	if (edge_axis == 1) {
+	    /* Right edge: project from UR finder, extending 3 modules to the right */
+	    qr_aff_project(&p, aff, finder->o[0] + 3 * finder->size[0],
+			   finder->o[1]);
+	} else {
+	    /* Bottom edge (axis 3): project from DL finder, extending 3 modules down */
+	    qr_aff_project(&p, aff, finder->o[0],
+			   finder->o[1] + 3 * finder->size[1]);
+	}
+
+	/* Calculate normalization shift (always uses column 1 of affine matrix) */
+	shift = QR_MAXI(0, qr_ilog(QR_MAXI(abs(aff->fwd[0][1]),
+					    abs(aff->fwd[1][1]))) -
+			((aff->res + 1) >> 1));
+	round = (1 << shift) >> 1;
+
+	/* Compute line coefficients using appropriate matrix column */
+	if (edge_axis == 1) {
+	    /* Right edge uses column 1 (vertical direction in affine space) */
+	    (*line)[0] = (aff->fwd[1][1] + round) >> shift;
+	    (*line)[1] = (-aff->fwd[0][1] + round) >> shift;
+	} else {
+	    /* Bottom edge uses column 0 (horizontal direction in affine space) */
+	    (*line)[0] = (aff->fwd[1][0] + round) >> shift;
+	    (*line)[1] = (-aff->fwd[0][0] + round) >> shift;
+	}
+	/* Compute line constant term */
+	(*line)[2] = -((*line)[0] * p[0] + (*line)[1] * p[1]);
+    }
+}
+
 static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 		      qr_finder *_dl, qr_point _p[4], const qr_aff *_aff,
 		      isaac_ctx *_isaac, const unsigned char *_img, int _width,
@@ -481,7 +570,6 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
     int cr;
     qr_line l[4];
     qr_point q;
-    qr_point p;
     int ox;
     int oy;
     int ru;
@@ -510,8 +598,6 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
     int bdone;
     int nbempty;
     int blastfit;
-    int shift;
-    int round;
     int version4;
     int brx;
     int bry;
@@ -735,31 +821,9 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
   If we _still_ don't have enough sample points, then just use an
    axis-aligned line from the affine coordinate system (e.g., one parallel
    to the opposite edge in the image).*/
-    if (nr > 1)
-	qr_line_fit_points(&l[1], r, nr, _aff->res);
-    else {
-	qr_aff_project(&p, _aff, _ur->o[0] + 3 * _ur->size[0], _ur->o[1]);
-	shift	= QR_MAXI(0, qr_ilog(QR_MAXI(abs(_aff->fwd[0][1]),
-					     abs(_aff->fwd[1][1]))) -
-				 ((_aff->res + 1) >> 1));
-	round	= (1 << shift) >> 1;
-	l[1][0] = (_aff->fwd[1][1] + round) >> shift;
-	l[1][1] = (-_aff->fwd[0][1] + round) >> shift;
-	l[1][2] = -(l[1][0] * p[0] + l[1][1] * p[1]);
-    }
+    qr_hom_fit_edge_line(&l[1], r, nr, _ur, _aff, 1);
     free(r);
-    if (nb > 1)
-	qr_line_fit_points(&l[3], b, nb, _aff->res);
-    else {
-	qr_aff_project(&p, _aff, _dl->o[0], _dl->o[1] + 3 * _dl->size[1]);
-	shift	= QR_MAXI(0, qr_ilog(QR_MAXI(abs(_aff->fwd[0][1]),
-					     abs(_aff->fwd[1][1]))) -
-				 ((_aff->res + 1) >> 1));
-	round	= (1 << shift) >> 1;
-	l[3][0] = (_aff->fwd[1][0] + round) >> shift;
-	l[3][1] = (-_aff->fwd[0][0] + round) >> shift;
-	l[3][2] = -(l[1][0] * p[0] + l[1][1] * p[1]);
-    }
+    qr_hom_fit_edge_line(&l[3], b, nb, _dl, _aff, 3);
     free(b);
     for (i = 0; i < 4; i++) {
 	if (qr_line_isect(&_p[i], &l[i & 1], &l[2 + (i >> 1)]) < 0)
@@ -800,11 +864,6 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 			 _p[2][1], _p[3][0], _p[3][1]);
 	if (qr_alignment_pattern_search(p3, &cell, dim - 7, dim - 7, 4, _img,
 					_width, _height) >= 0) {
-	    long long w;
-	    long long mask;
-	    int c21;
-	    int dx21;
-	    int dy21;
 	    /*There's no real need to update the bounding box corner, and in fact we
    actively perform worse if we do.
   Clearly it was good enough for us to find this alignment pattern, so
@@ -817,34 +876,8 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 	    /*We do, however, need four points in a square to initialize our
    homography, so project the point from the alignment center to the
    corner of the code area.*/
-	    c21	 = _p[2][0] * _p[1][1] - _p[2][1] * _p[1][0];
-	    dx21 = _p[2][0] - _p[1][0];
-	    dy21 = _p[2][1] - _p[1][1];
-	    w	 = QR_EXTMUL(dim - 7, c21,
-			     QR_EXTMUL(dim - 13, _p[0][0] * dy21 - _p[0][1] * dx21,
-				       QR_EXTMUL(6, p3[0] * dy21 - p3[1] * dx21,
-						 0)));
-	    /*The projection failed: invalid geometry.*/
-	    if (w == 0)
+	    if (qr_hom_project_alignment_to_corner(&brx, &bry, _p, p3, dim) < 0)
 		return -1;
-	    mask = QR_SIGNMASK(w);
-	    w	 = (w + mask) ^ mask;
-	    brx	 = (int)QR_DIVROUND(
-		 (QR_EXTMUL((dim - 7) * _p[0][0], p3[0] * dy21,
-			    QR_EXTMUL((dim - 13) * p3[0], c21 - _p[0][1] * dx21,
-				      QR_EXTMUL(6 * _p[0][0], c21 - p3[1] * dx21,
-						0))) +
-		  mask) ^
-		     mask,
-		 w);
-	    bry = (int)QR_DIVROUND(
-		(QR_EXTMUL((dim - 7) * _p[0][1], -p3[1] * dx21,
-			   QR_EXTMUL((dim - 13) * p3[1], c21 + _p[0][0] * dy21,
-				     QR_EXTMUL(6 * _p[0][1], c21 + p3[0] * dy21,
-					       0))) +
-		 mask) ^
-		    mask,
-		w);
 	}
     }
     /*Now we have four points that map to a square: initialize the projection.*/
