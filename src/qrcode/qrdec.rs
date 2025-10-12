@@ -43,6 +43,10 @@ const QR_ALIGN_SUBPREC: c_int = 2;
 /// Number of bits of sub-module precision for finder pattern coordinates
 const QR_FINDER_SUBPREC: c_int = 2;
 
+/// A 14 bit resolution for a homography ensures that the ideal module size for a
+/// version 40 code differs from that of a version 39 code by at least 2.
+const QR_HOM_BITS: c_int = 14;
+
 /// The amount that the estimated version numbers are allowed to differ from the
 /// real version number and still be considered valid.
 #[allow(dead_code)] // Used in functions not yet ported to Rust
@@ -747,6 +751,295 @@ pub unsafe extern "C" fn qr_hom_init(
         s2,
     );
     (*_hom).res = _res;
+}
+
+/// Fit a homography to correct large-scale perspective distortion
+///
+/// This function attempts to correct perspective distortion by fitting lines
+/// to the edges of the QR code area and then building a homography transformation.
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_fit(
+    _hom: *mut qr_hom,
+    _ul: *mut qr_finder,
+    _ur: *mut qr_finder,
+    _dl: *mut qr_finder,
+    _p: *mut qr_point,
+    _aff: *const qr_aff,
+    _isaac: *mut IsaacCtx,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+) -> c_int {
+    let mut l: [qr_line; 4] = [[0; 3]; 4];
+    let mut q: qr_point = [0; 2];
+
+    // We attempt to correct large-scale perspective distortion by fitting lines
+    // to the edge of the code area.
+
+    // Fitting lines is easy for the edges on which we have two finder patterns.
+    // After the fit, UL is guaranteed to be on the proper side, but if either of
+    // the other two finder patterns aren't, something is wrong.
+    qr_finder_ransac(_ul, _aff, _isaac, 0);
+    qr_finder_ransac(_dl, _aff, _isaac, 0);
+    qr_line_fit_finder_pair(&mut l[0], _aff, _ul, _dl, 0);
+    if qr_line_eval(&l[0], (*_dl).c.as_ref().unwrap().pos[0], (*_dl).c.as_ref().unwrap().pos[1]) < 0
+        || qr_line_eval(&l[0], (*_ur).c.as_ref().unwrap().pos[0], (*_ur).c.as_ref().unwrap().pos[1]) < 0
+    {
+        return -1;
+    }
+    qr_finder_ransac(_ul, _aff, _isaac, 2);
+    qr_finder_ransac(_ur, _aff, _isaac, 2);
+    qr_line_fit_finder_pair(&mut l[2], _aff, _ul, _ur, 2);
+    if qr_line_eval(&l[2], (*_dl).c.as_ref().unwrap().pos[0], (*_dl).c.as_ref().unwrap().pos[1]) < 0
+        || qr_line_eval(&l[2], (*_ur).c.as_ref().unwrap().pos[0], (*_ur).c.as_ref().unwrap().pos[1]) < 0
+    {
+        return -1;
+    }
+
+    // The edges which only have one finder pattern are more difficult.
+    let drv = (*_ur).size[1] >> 1;
+    qr_finder_ransac(_ur, _aff, _isaac, 1);
+    let mut dru = 0;
+    if qr_line_fit_finder_edge(&mut l[1], _ur, 1, (*_aff).res) >= 0 {
+        if qr_line_eval(&l[1], (*_ul).c.as_ref().unwrap().pos[0], (*_ul).c.as_ref().unwrap().pos[1]) < 0
+            || qr_line_eval(&l[1], (*_dl).c.as_ref().unwrap().pos[0], (*_dl).c.as_ref().unwrap().pos[1]) < 0
+        {
+            return -1;
+        }
+        // Figure out the change in ru for a given change in rv when stepping along the fitted line
+        if qr_aff_line_step(_aff, l[1].as_ptr(), 1, drv, &mut dru) < 0 {
+            return -1;
+        }
+    }
+    let mut ru = (*_ur).o[0] + 3 * (*_ur).size[0] - 2 * dru;
+    let mut rv = (*_ur).o[1] - 2 * drv;
+
+    let dbu = (*_dl).size[0] >> 1;
+    qr_finder_ransac(_dl, _aff, _isaac, 3);
+    let mut dbv = 0;
+    if qr_line_fit_finder_edge(&mut l[3], _dl, 3, (*_aff).res) >= 0 {
+        if qr_line_eval(&l[3], (*_ul).c.as_ref().unwrap().pos[0], (*_ul).c.as_ref().unwrap().pos[1]) < 0
+            || qr_line_eval(&l[3], (*_ur).c.as_ref().unwrap().pos[0], (*_ur).c.as_ref().unwrap().pos[1]) < 0
+        {
+            return -1;
+        }
+        // Figure out the change in bv for a given change in bu when stepping along the fitted line
+        if qr_aff_line_step(_aff, l[3].as_ptr(), 0, dbu, &mut dbv) < 0 {
+            return -1;
+        }
+    }
+    let mut bu = (*_dl).o[0] - 2 * dbu;
+    let mut bv = (*_dl).o[1] + 3 * (*_dl).size[1] - 2 * dbv;
+
+    // Set up the initial point lists
+    let mut nr = (*_ur).ninliers[1];
+    let mut rlastfit = nr;
+    let mut cr = nr + ((*_dl).o[1] - rv + drv - 1) / drv;
+    let mut r: Vec<qr_point> = Vec::with_capacity(cr as usize);
+    for i in 0..(*_ur).ninliers[1] {
+        r.push((*(*_ur).edge_pts[1].add(i as usize)).pos);
+    }
+
+    let mut nb = (*_dl).ninliers[3];
+    let mut blastfit = nb;
+    let mut cb = nb + ((*_ur).o[0] - bu + dbu - 1) / dbu;
+    let mut b: Vec<qr_point> = Vec::with_capacity(cb as usize);
+    for i in 0..(*_dl).ninliers[3] {
+        b.push((*(*_dl).edge_pts[3].add(i as usize)).pos);
+    }
+
+    // Set up the step parameters for the affine projection
+    let ox = ((*_aff).x0 << (*_aff).res) + (1 << ((*_aff).res - 1));
+    let oy = ((*_aff).y0 << (*_aff).res) + (1 << ((*_aff).res - 1));
+    let mut rx = (*_aff).fwd[0][0] * ru + (*_aff).fwd[0][1] * rv + ox;
+    let mut ry = (*_aff).fwd[1][0] * ru + (*_aff).fwd[1][1] * rv + oy;
+    let mut drxi = (*_aff).fwd[0][0] * dru + (*_aff).fwd[0][1] * drv;
+    let mut dryi = (*_aff).fwd[1][0] * dru + (*_aff).fwd[1][1] * drv;
+    let drxj = (*_aff).fwd[0][0] * (*_ur).size[0];
+    let dryj = (*_aff).fwd[1][0] * (*_ur).size[0];
+    let mut bx = (*_aff).fwd[0][0] * bu + (*_aff).fwd[0][1] * bv + ox;
+    let mut by = (*_aff).fwd[1][0] * bu + (*_aff).fwd[1][1] * bv + oy;
+    let mut dbxi = (*_aff).fwd[0][0] * dbu + (*_aff).fwd[0][1] * dbv;
+    let mut dbyi = (*_aff).fwd[1][0] * dbu + (*_aff).fwd[1][1] * dbv;
+    let dbxj = (*_aff).fwd[0][1] * (*_dl).size[1];
+    let dbyj = (*_aff).fwd[1][1] * (*_dl).size[1];
+
+    // Now step along the lines, looking for new sample points
+    let mut nrempty = 0;
+    let mut nbempty = 0;
+    loop {
+        let rdone = rv >= bv.min(((*_dl).o[1] + bv) >> 1) || nrempty > 14;
+        let bdone = bu >= ru.min(((*_ur).o[0] + ru) >> 1) || nbempty > 14;
+
+        if !rdone && (bdone || rv < bu) {
+            let x0 = (rx + drxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let y0 = (ry + dryj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let x1 = (rx - drxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let y1 = (ry - dryj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+
+            if nr >= cr {
+                cr = (cr << 1) | 1;
+                r.reserve((cr - nr) as usize);
+            }
+
+            let mut ret = qr_finder_quick_crossing_check(_img, _width, _height, x0, y0, x1, y1, 1);
+            if ret == 0 {
+                r.push([0; 2]);
+                ret = qr_finder_locate_crossing(_img, _width, _height, x0, y0, x1, y1, 1, &mut r[nr as usize]);
+            }
+
+            if ret >= 0 {
+                if ret == 0 {
+                    qr_aff_unproject(&mut q, _aff, r[nr as usize][0], r[nr as usize][1]);
+                    // Move the current point halfway towards the crossing
+                    ru = (ru + q[0]) >> 1;
+                    // But ensure that rv monotonically increases
+                    if q[1] + drv > rv {
+                        rv = (rv + q[1]) >> 1;
+                    }
+                    rx = (*_aff).fwd[0][0] * ru + (*_aff).fwd[0][1] * rv + ox;
+                    ry = (*_aff).fwd[1][0] * ru + (*_aff).fwd[1][1] * rv + oy;
+                    nr += 1;
+                    // Re-fit the line to update the step direction periodically
+                    if nr > 1.max(rlastfit + (rlastfit >> 2)) {
+                        qr_line_fit_points(&mut l[1], r.as_mut_ptr(), nr, (*_aff).res);
+                        if qr_aff_line_step(_aff, l[1].as_ptr(), 1, drv, &mut dru) >= 0 {
+                            drxi = (*_aff).fwd[0][0] * dru + (*_aff).fwd[0][1] * drv;
+                            dryi = (*_aff).fwd[1][0] * dru + (*_aff).fwd[1][1] * drv;
+                        }
+                        rlastfit = nr;
+                    }
+                }
+                nrempty = 0;
+            } else {
+                nrempty += 1;
+            }
+            ru += dru;
+            // Our final defense: if we overflow, stop
+            if rv + drv > rv {
+                rv += drv;
+            } else {
+                nrempty = c_int::MAX;
+            }
+            rx += drxi;
+            ry += dryi;
+        } else if !bdone {
+            let x0 = (bx + dbxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let y0 = (by + dbyj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let x1 = (bx - dbxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let y1 = (by - dbyj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+
+            if nb >= cb {
+                cb = (cb << 1) | 1;
+                b.reserve((cb - nb) as usize);
+            }
+
+            let mut ret = qr_finder_quick_crossing_check(_img, _width, _height, x0, y0, x1, y1, 1);
+            if ret == 0 {
+                b.push([0; 2]);
+                ret = qr_finder_locate_crossing(_img, _width, _height, x0, y0, x1, y1, 1, &mut b[nb as usize]);
+            }
+
+            if ret >= 0 {
+                if ret == 0 {
+                    qr_aff_unproject(&mut q, _aff, b[nb as usize][0], b[nb as usize][1]);
+                    // Move the current point halfway towards the crossing
+                    // But ensure that bu monotonically increases
+                    if q[0] + dbu > bu {
+                        bu = (bu + q[0]) >> 1;
+                    }
+                    bv = (bv + q[1]) >> 1;
+                    bx = (*_aff).fwd[0][0] * bu + (*_aff).fwd[0][1] * bv + ox;
+                    by = (*_aff).fwd[1][0] * bu + (*_aff).fwd[1][1] * bv + oy;
+                    nb += 1;
+                    // Re-fit the line to update the step direction periodically
+                    if nb > 1.max(blastfit + (blastfit >> 2)) {
+                        qr_line_fit_points(&mut l[3], b.as_mut_ptr(), nb, (*_aff).res);
+                        if qr_aff_line_step(_aff, l[3].as_ptr(), 0, dbu, &mut dbv) >= 0 {
+                            dbxi = (*_aff).fwd[0][0] * dbu + (*_aff).fwd[0][1] * dbv;
+                            dbyi = (*_aff).fwd[1][0] * dbu + (*_aff).fwd[1][1] * dbv;
+                        }
+                        blastfit = nb;
+                    }
+                }
+                nbempty = 0;
+            } else {
+                nbempty += 1;
+            }
+            // Our final defense: if we overflow, stop
+            if bu + dbu > bu {
+                bu += dbu;
+            } else {
+                nbempty = c_int::MAX;
+            }
+            bv += dbv;
+            bx += dbxi;
+            by += dbyi;
+        } else {
+            break;
+        }
+    }
+
+    // Fit the new lines
+    qr_hom_fit_edge_line(&mut l[1], r.as_mut_ptr(), nr, _ur, _aff, 1);
+    qr_hom_fit_edge_line(&mut l[3], b.as_mut_ptr(), nb, _dl, _aff, 3);
+
+    // Compute line intersections
+    for i in 0..4 {
+        if qr_line_isect(_p.add(i), &l[i & 1], &l[2 + (i >> 1)]) < 0 {
+            return -1;
+        }
+        // It's plausible for points to be somewhat outside the image, but too far
+        // and too much of the pattern will be gone for it to be decodable
+        let p_i = &*_p.add(i);
+        if p_i[0] < (-_width << QR_FINDER_SUBPREC)
+            || p_i[0] >= ((_width << QR_FINDER_SUBPREC) + 1)
+            || p_i[1] < (-_height << QR_FINDER_SUBPREC)
+            || p_i[1] >= ((_height << QR_FINDER_SUBPREC) + 1)
+        {
+            return -1;
+        }
+    }
+
+    // By default, use the edge intersection point for the bottom-right corner
+    let mut brx = (*_p.add(3))[0];
+    let mut bry = (*_p.add(3))[1];
+
+    // However, if our average version estimate is greater than 1, try to search for an alignment pattern
+    let version4 = (*_ul).eversion[0] + (*_ul).eversion[1] + (*_ur).eversion[0] + (*_dl).eversion[1];
+    if version4 > 4 {
+        let mut cell: qr_hom_cell = std::mem::zeroed();
+        let mut p3: qr_point = [0; 2];
+        let dim = 17 + version4;
+        qr_hom_cell_init(
+            &mut cell,
+            0, 0, dim - 1, 0,
+            0, dim - 1, dim - 1, dim - 1,
+            (*_p.add(0))[0], (*_p.add(0))[1],
+            (*_p.add(1))[0], (*_p.add(1))[1],
+            (*_p.add(2))[0], (*_p.add(2))[1],
+            (*_p.add(3))[0], (*_p.add(3))[1],
+        );
+        if qr_alignment_pattern_search(&mut p3, &cell, dim - 7, dim - 7, 4, _img, _width, _height) >= 0 {
+            // We do need four points in a square to initialize our homography,
+            // so project the point from the alignment center to the corner of the code area
+            if qr_hom_project_alignment_to_corner(&mut brx, &mut bry, _p, &p3, dim) < 0 {
+                return -1;
+            }
+        }
+    }
+
+    // Now we have four points that map to a square: initialize the projection
+    qr_hom_init(
+        _hom,
+        (*_p.add(0))[0], (*_p.add(0))[1],
+        (*_p.add(1))[0], (*_p.add(1))[1],
+        (*_p.add(2))[0], (*_p.add(2))[1],
+        brx, bry,
+        QR_HOM_BITS,
+    );
+
+    0
 }
 
 /// Finish a partial projection, converting from homogeneous coordinates to the
