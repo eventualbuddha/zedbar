@@ -205,12 +205,8 @@ pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     }
 }
 
-// Point structure for location data
-#[repr(C)]
-struct Point {
-    x: c_int,
-    y: c_int,
-}
+// Point storage for location data (two consecutive c_int values)
+type Point = [c_int; 2];
 
 pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
     let i = (*sym).npts as usize;
@@ -223,8 +219,8 @@ pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int
     }
 
     let pts = (*sym).pts as *mut Point;
-    (*pts.add(i)).x = x;
-    (*pts.add(i)).y = y;
+    (*pts.add(i))[0] = x;
+    (*pts.add(i))[1] = y;
 }
 
 // High-level Rust API types

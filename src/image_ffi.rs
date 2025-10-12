@@ -13,7 +13,6 @@ use libc::{c_char, c_int, c_uint, c_ulong};
 
 use crate::{ffi::refcnt, img_scanner::zbar_symbol_set_t, symbol::zbar_symbol_set_ref};
 
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_image_t {
     pub format: u32,
@@ -30,7 +29,6 @@ pub struct zbar_image_t {
     pub syms: *mut zbar_symbol_set_t,
 }
 
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_symbol_t {
     pub symbol_type: c_int,

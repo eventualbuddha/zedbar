@@ -333,9 +333,14 @@ pub unsafe fn zbar_decoder_destroy(dcode: *mut zbar_decoder_t) {
 
 /// Reset decoder to initial state
 pub unsafe fn zbar_decoder_reset(dcode: *mut zbar_decoder_t) {
-    // Calculate the offset to buf_alloc field
-    let reset_size = &(*dcode).buf_alloc as *const _ as usize - dcode as usize;
-    std::ptr::write_bytes(dcode as *mut u8, 0, reset_size);
+    (*dcode).idx = 0;
+    (*dcode).w.fill(0);
+    (*dcode).type_ = ZBAR_NONE;
+    (*dcode).lock = ZBAR_NONE;
+    (*dcode).modifiers = 0;
+    (*dcode).direction = 0;
+    (*dcode).s6 = 0;
+    (*dcode).buflen = 0;
 
     _zbar_ean_reset(&mut (*dcode).ean);
     _zbar_i25_reset(&mut (*dcode).i25);
@@ -353,8 +358,8 @@ pub unsafe fn zbar_decoder_reset(dcode: *mut zbar_decoder_t) {
 /// Any partially decoded symbol state is retained.
 pub unsafe fn zbar_decoder_new_scan(dcode: *mut zbar_decoder_t) {
     // Soft reset decoder
-    std::ptr::write_bytes((*dcode).w.as_mut_ptr(), 0, (*dcode).w.len());
-    (*dcode).lock = 0;
+    (*dcode).w.fill(0);
+    (*dcode).lock = ZBAR_NONE;
     (*dcode).idx = 0;
     (*dcode).s6 = 0;
 

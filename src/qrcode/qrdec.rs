@@ -225,7 +225,6 @@ pub unsafe fn qr_hom_fit_edge_line(
 ///
 /// Represents a mapping from a unit square to a quadrilateral in the image,
 /// used for extracting QR code modules with perspective correction.
-#[repr(C)]
 pub struct qr_hom_cell {
     /// Forward transformation matrix [3][3]
     pub fwd: [[c_int; 3]; 3],
@@ -240,7 +239,6 @@ pub struct qr_hom_cell {
 }
 
 /// Sampling grid for QR code module extraction
-#[repr(C)]
 pub struct qr_sampling_grid {
     /// Array of homography cells for mapping between code and image space
     pub cells: [*mut qr_hom_cell; 6],
@@ -253,7 +251,6 @@ pub struct qr_sampling_grid {
 }
 
 /// collection of finder lines
-#[repr(C)]
 pub struct qr_finder_lines {
     lines: *mut qr_finder_line,
     nlines: c_int,
@@ -293,7 +290,6 @@ pub unsafe fn _zbar_qr_reset(reader: *mut qr_reader) {
 }
 
 /// A cluster of lines crossing a finder pattern (all in the same direction).
-#[repr(C)]
 pub struct qr_finder_cluster {
     /// Pointers to the lines crossing the pattern.
     lines: *mut *mut qr_finder_line,
@@ -304,7 +300,6 @@ pub struct qr_finder_cluster {
 
 /// A point on the edge of a finder pattern. These are obtained from the
 /// endpoints of the lines crossing this particular pattern.
-#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct qr_finder_edge_pt {
     /// The location of the edge point.
@@ -326,7 +321,6 @@ pub struct qr_finder_edge_pt {
 /// The center of a finder pattern obtained from the crossing of one or more
 /// clusters of horizontal finder lines with one or more clusters of vertical
 /// finder lines.
-#[repr(C)]
 pub struct qr_finder_center {
     /// The estimated location of the finder center.
     pos: qr_point,
@@ -530,7 +524,6 @@ pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int
 /// An affine homography.
 /// This maps from the image (at subpel resolution) to a square domain with
 /// power-of-two sides (of res bits) and back.
-#[repr(C)]
 pub struct qr_aff {
     /// Forward transformation matrix [2][2]
     pub fwd: [[c_int; 2]; 2],
@@ -607,7 +600,6 @@ pub unsafe fn qr_aff_project(_p: *mut qr_point, _aff: *const qr_aff, _u: c_int, 
 /// A full homography.
 /// Like the affine homography, this maps from the image (at subpel resolution)
 /// to a square domain with power-of-two sides (of res bits) and back.
-#[repr(C)]
 pub struct qr_hom {
     fwd: [[c_int; 2]; 3],
     inv: [[c_int; 2]; 3],
@@ -1102,7 +1094,6 @@ pub unsafe fn qr_hom_fproject(
 
 /// All the information we've collected about a finder pattern in the current
 /// configuration.
-#[repr(C)]
 pub struct qr_finder {
     /// The module size along each axis (in the square domain).
     size: [c_int; 2],
@@ -1496,7 +1487,6 @@ pub unsafe fn qr_hom_unproject(
 ///
 /// Bit reading code adapted from libogg/libtheora
 /// Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.
-#[repr(C)]
 pub struct qr_pack_buf {
     buf: *const c_uchar,
     endbyte: c_int,
@@ -3268,13 +3258,14 @@ pub unsafe fn qr_code_data_parse(
 
         let entry = (*_qrdata).entries.add((*_qrdata).nentries as usize);
         (*_qrdata).nentries += 1;
-        (*entry).mode = std::mem::transmute::<c_int, qr_mode>(mode);
         (*entry).payload.data.buf = null_mut();
 
-        let Ok(mode) = mode.try_into() else {
+        let Ok(mode) = qr_mode::try_from(mode) else {
             // Unknown mode - we can't skip it, so fail
             return -1;
         };
+
+        (*entry).mode = mode;
 
         match mode {
             qr_mode::QR_MODE_NUM => {
@@ -4291,7 +4282,6 @@ pub unsafe fn qr_alignment_pattern_search(
 // QR Code data structures and functions
 
 /// QR code data mode
-#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum qr_mode {
@@ -4339,7 +4329,6 @@ fn qr_mode_has_data(mode: qr_mode) -> bool {
 }
 
 /// Data payload for a QR code data entry
-#[repr(C)]
 #[derive(Copy, Clone)]
 pub union qr_code_data_payload {
     /// Data buffer for modes that have one
@@ -4353,7 +4342,6 @@ pub union qr_code_data_payload {
 }
 
 /// Data buffer
-#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct qr_code_data_buffer {
     pub buf: *mut c_uchar,
@@ -4361,7 +4349,6 @@ pub struct qr_code_data_buffer {
 }
 
 /// Structured-append data
-#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct qr_code_data_sa {
     pub sa_index: c_uchar,
@@ -4370,7 +4357,6 @@ pub struct qr_code_data_sa {
 }
 
 /// A single QR code data entry
-#[repr(C)]
 pub struct qr_code_data_entry {
     /// The mode of this data block
     pub mode: qr_mode,
@@ -4379,7 +4365,6 @@ pub struct qr_code_data_entry {
 }
 
 /// Low-level QR code data
-#[repr(C)]
 pub struct qr_code_data {
     /// The decoded data entries
     pub entries: *mut qr_code_data_entry,
@@ -4401,7 +4386,6 @@ pub struct qr_code_data {
 }
 
 /// List of QR code data
-#[repr(C)]
 pub struct qr_code_data_list {
     pub qrdata: *mut qr_code_data,
     pub nqrdata: c_int,

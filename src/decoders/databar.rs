@@ -81,7 +81,6 @@ static EXP_SEQUENCES: [u8; 30] = [
 
 static EXP_CHECKSUMS: [u8; 12] = [1, 189, 62, 113, 46, 43, 109, 134, 6, 79, 161, 45];
 
-#[repr(C)]
 struct GroupS {
     sum: u16,
     wmax: u8,

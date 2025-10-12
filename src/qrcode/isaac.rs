@@ -19,7 +19,6 @@ const ISAAC_SEED_SZ_MAX: usize = ISAAC_SZ << 2; // 1024
 const ISAAC_MASK: u32 = 0xFFFFFFFF;
 
 /// ISAAC random number generator context
-#[repr(C)]
 pub struct IsaacCtx {
     /// Number of values remaining in r before needing to generate more
     n: u32,

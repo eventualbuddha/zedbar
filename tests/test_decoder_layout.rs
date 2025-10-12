@@ -1,5 +1,8 @@
-use std::mem::{offset_of, size_of};
-use zbar::decoder_types::*;
+use std::mem::size_of;
+use zbar::{
+    decoder::{zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_reset},
+    decoder_types::*,
+};
 
 #[test]
 fn test_decoder_struct_sizes() {
@@ -49,27 +52,26 @@ fn test_decoder_struct_sizes() {
 }
 
 #[test]
-fn test_decoder_field_offsets() {
-    // Verify field offsets match C
-    assert_eq!(offset_of!(zbar_decoder_t, idx), 0);
-    assert_eq!(offset_of!(zbar_decoder_t, w), 4);
-    assert_eq!(offset_of!(zbar_decoder_t, type_), 68);
-    assert_eq!(offset_of!(zbar_decoder_t, lock), 72);
-    assert_eq!(offset_of!(zbar_decoder_t, modifiers), 76);
-    assert_eq!(offset_of!(zbar_decoder_t, direction), 80);
-    assert_eq!(offset_of!(zbar_decoder_t, s6), 84);
-    assert_eq!(offset_of!(zbar_decoder_t, buf_alloc), 88);
-    assert_eq!(offset_of!(zbar_decoder_t, buflen), 92);
-    assert_eq!(offset_of!(zbar_decoder_t, buf), 96);
-    assert_eq!(offset_of!(zbar_decoder_t, userdata), 104);
-    assert_eq!(offset_of!(zbar_decoder_t, handler), 112);
-    assert_eq!(offset_of!(zbar_decoder_t, ean), 120);
-    assert_eq!(offset_of!(zbar_decoder_t, i25), 256);
-    assert_eq!(offset_of!(zbar_decoder_t, databar), 288);
-    assert_eq!(offset_of!(zbar_decoder_t, codabar), 328);
-    assert_eq!(offset_of!(zbar_decoder_t, code39), 360);
-    assert_eq!(offset_of!(zbar_decoder_t, code93), 384);
-    assert_eq!(offset_of!(zbar_decoder_t, code128), 408);
-    assert_eq!(offset_of!(zbar_decoder_t, qrf), 432);
-    assert_eq!(offset_of!(zbar_decoder_t, sqf), 460);
+fn test_decoder_reset_preserves_heap_allocations() {
+    unsafe {
+        let decoder = zbar_decoder_create();
+        assert!(!decoder.is_null(), "decoder allocation failed");
+
+        let buf_ptr = (*decoder).buf;
+        let segs_ptr = (*decoder).databar.segs;
+
+        assert!(!buf_ptr.is_null(), "decoder buffer not allocated");
+        assert!(!segs_ptr.is_null(), "databar segment array not allocated");
+
+        zbar_decoder_reset(decoder);
+
+        assert_eq!((*decoder).buf, buf_ptr, "reset should not free buffer");
+        assert_eq!(
+            (*decoder).databar.segs,
+            segs_ptr,
+            "reset should not free databar segments"
+        );
+
+        zbar_decoder_destroy(decoder);
+    }
 }

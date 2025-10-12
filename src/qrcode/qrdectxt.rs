@@ -33,7 +33,6 @@ fn qr_mode_has_data(_mode: qr_mode) -> bool {
     )
 }
 
-#[repr(C)]
 pub union qr_code_data_entry_payload {
     pub data: qr_code_data_entry_data,
     pub eci: c_uint,
@@ -41,14 +40,12 @@ pub union qr_code_data_entry_payload {
     pub sa: qr_code_data_entry_sa,
 }
 
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct qr_code_data_entry_data {
     pub buf: *mut c_uchar,
     pub len: c_int,
 }
 
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct qr_code_data_entry_sa {
     pub sa_index: c_uchar,
@@ -56,13 +53,11 @@ pub struct qr_code_data_entry_sa {
     pub sa_parity: c_uchar,
 }
 
-#[repr(C)]
 pub struct qr_code_data_entry {
     pub mode: qr_mode,
     pub payload: qr_code_data_entry_payload,
 }
 
-#[repr(C)]
 pub struct qr_code_data {
     pub entries: *mut qr_code_data_entry,
     pub nentries: c_int,
@@ -75,7 +70,6 @@ pub struct qr_code_data {
     pub bbox: [qr_point; 4],
 }
 
-#[repr(C)]
 pub struct qr_code_data_list {
     pub qrdata: *mut qr_code_data,
     pub nqrdata: c_int,

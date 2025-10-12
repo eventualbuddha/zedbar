@@ -52,7 +52,6 @@ pub unsafe fn calc_thresh(scn: *mut zbar_scanner_t) -> c_uint {
 }
 
 /// Color of element: bar or space
-#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum zbar_color_t {
@@ -61,7 +60,6 @@ pub enum zbar_color_t {
 }
 
 /// Scanner state structure - must match the C layout exactly
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_scanner_t {
     decoder: *mut zbar_decoder_t,

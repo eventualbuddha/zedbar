@@ -15,7 +15,6 @@ use std::io::Write;
 
 const ZBAR_SQCODE: i32 = 0x80; // SQCODE symbol type
 
-#[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Shape {
     Dot,
@@ -25,14 +24,12 @@ enum Shape {
     Void,
 }
 
-#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Point {
     x: f32,
     y: f32,
 }
 
-#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Dot {
     shape_type: Shape,
@@ -43,7 +40,6 @@ struct Dot {
     center: Point,
 }
 
-#[repr(C)]
 pub struct SqReader {
     enabled: bool,
 }

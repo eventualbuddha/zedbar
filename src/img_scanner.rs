@@ -60,7 +60,6 @@ use crate::ffi::refcnt;
 use crate::symbol::_zbar_get_symbol_hash;
 
 // qr_finder_line structure from qrcode.h
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct qr_finder_line {
     pub pos: qr_point,
@@ -123,7 +122,6 @@ const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
     (a as u32) | ((b as u32) << 8) | ((c as u32) << 16) | ((d as u32) << 24)
 }
 
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct qr_reader {
     /// The GF(256) representation used in Reed-Solomon decoding.
@@ -134,7 +132,6 @@ pub struct qr_reader {
     pub finder_lines: [qr_finder_lines; 2],
 }
 
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_symbol_set_t {
     pub refcnt: c_int,
@@ -146,7 +143,6 @@ pub struct zbar_symbol_set_t {
 // Function pointer type for image data handler callbacks
 pub type zbar_image_data_handler_t = unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
 
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct recycle_bucket_t {
     nsyms: c_int,
@@ -154,7 +150,6 @@ pub struct recycle_bucket_t {
 }
 
 /// image scanner state
-#[repr(C)]
 #[allow(non_camel_case_types)]
 pub struct zbar_image_scanner_t {
     /// associated linear intensity scanner

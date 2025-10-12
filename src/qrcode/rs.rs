@@ -38,7 +38,6 @@ use libc::{c_int, c_uint};
 pub const QR_PPOLY: c_uint = 0x1D;
 
 /// Galois Field GF(2**8) for Reed-Solomon operations
-#[repr(C)]
 pub struct rs_gf256 {
     /// Logarithm table in GF(2**8)
     pub log: [u8; 256],

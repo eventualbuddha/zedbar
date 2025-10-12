@@ -60,7 +60,6 @@ static CODE39_HI: [u8; 32] = [
     0xff,
 ];
 
-#[repr(C)]
 struct Char39 {
     chk: u8,
     rev: u8,
