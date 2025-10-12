@@ -135,7 +135,7 @@ unsafe fn is_black(img: *const zbar_image_t, x: i32, y: i32) -> bool {
     if x < 0 || x >= (*img).width as i32 || y < 0 || y >= (*img).height as i32 {
         return false;
     }
-    let data = (*img).data as *const u8;
+    let data = (*img).data.as_ptr();
     let idx = y as usize * (*img).width as usize + x as usize;
     is_black_color(*data.add(idx))
 }
@@ -235,7 +235,7 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
     }
 
     // Calculate weighted center for dot
-    let data = (*img).data as *const u8;
+    let data = (*img).data.as_ptr();
     let mut x_sum = 0u32;
     let mut y_sum = 0u32;
     let mut total_weight = 0u32;
@@ -601,7 +601,7 @@ pub unsafe fn sq_decode(
             let bottom_right_source_y =
                 bottom_border[x].y + right_border[y].y - right_border[border_len - 1].y;
 
-            let data = (*img).data as *const u8;
+            let data = (*img).data.as_ptr();
             let sample_x = top_left_source_x as usize;
             let sample_y = top_left_source_y as usize;
             let top_left_color = *data.add(sample_y * (*img).width as usize + sample_x);

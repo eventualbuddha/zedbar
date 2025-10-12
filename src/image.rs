@@ -1,12 +1,10 @@
 //! Image handling and format support
 
 use crate::image_ffi::{
-    zbar_image_create, zbar_image_destroy, zbar_image_first_symbol, zbar_image_free_data,
-    zbar_image_t,
+    zbar_image_create, zbar_image_destroy, zbar_image_first_symbol, zbar_image_t,
 };
 use crate::symbol::{Symbol, SymbolSet};
 use crate::{Error, Result};
-use std::ptr;
 
 /// Image formats supported by ZBar
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,10 +51,7 @@ impl Image {
             (*image.ptr).format = ImageFormat::Gray.to_fourcc();
             (*image.ptr).width = width;
             (*image.ptr).height = height;
-            zbar_image_free_data(image.ptr);
-            (*image.ptr).data = data.as_ptr() as *mut std::ffi::c_void;
-            (*image.ptr).datalen = data.len() as u64;
-            (*image.ptr).cleanup = ptr::null_mut();
+            (*image.ptr).data.extend_from_slice(data);
         }
         Ok(image)
     }
@@ -78,15 +73,7 @@ impl Image {
 
     /// Get access to the raw image data
     pub fn data(&self) -> &[u8] {
-        unsafe {
-            let data_ptr = (*self.ptr).data;
-            if data_ptr.is_null() {
-                &[]
-            } else {
-                let len = (self.width() * self.height()) as usize;
-                std::slice::from_raw_parts(data_ptr as *const u8, len)
-            }
-        }
+        unsafe { &(*self.ptr).data }
     }
 
     /// Get the symbols found in this image (if it has been scanned)

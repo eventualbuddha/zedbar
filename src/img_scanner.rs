@@ -1033,7 +1033,7 @@ pub unsafe fn _zbar_scan_image(
 
     let w = (*img).width;
     let h = (*img).height;
-    let data = (*img).data as *const u8;
+    let data = (*img).data.as_ptr();
 
     let scn = (*iscn).scn;
     zbar_scanner_new_scan(scn);

@@ -4996,7 +4996,7 @@ pub unsafe fn _zbar_qr_decode(
 
     if ncenters >= 3 {
         let bin = qr_binarize(
-            (*img).data as *const u8,
+            (*img).data.as_ptr(),
             (*img).width as c_int,
             (*img).height as c_int,
         );
