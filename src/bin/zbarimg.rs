@@ -2,6 +2,7 @@
 
 use std::env;
 use std::process;
+use zbar::SymbolType;
 use zbar::{Image, Scanner};
 
 fn main() {
@@ -47,7 +48,7 @@ fn main() {
     let mut scanner = Scanner::new();
 
     // Enable QR codes
-    if let Err(e) = scanner.set_config(0, zbar::scanner::Config::Enable, 1) {
+    if let Err(e) = scanner.set_config(SymbolType::None, zbar::scanner::Config::Enable, 1) {
         eprintln!("Failed to configure scanner: {}", e);
         process::exit(1);
     }

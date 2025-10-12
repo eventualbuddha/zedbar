@@ -195,10 +195,6 @@ pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_
     }
 }
 
-pub unsafe fn _zbar_symbol_set_create() -> *mut zbar_symbol_set_t {
-    symbol_set_create()
-}
-
 pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     if refcnt(&mut (*syms).refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms);
@@ -320,6 +316,12 @@ impl Symbol {
         let next_ptr = unsafe { zbar_symbol_next(self.ptr) };
         unsafe { Symbol::from_ptr(next_ptr) }
     }
+
+    pub fn add_point(&mut self, x: c_int, y: c_int) {
+        unsafe {
+            _zbar_symbol_add_point(self.ptr as *mut _, x, y);
+        }
+    }
 }
 
 /// Iterator over symbols
@@ -353,7 +355,7 @@ pub struct SymbolSet {
 
 impl SymbolSet {
     pub(crate) fn new(first_symbol: Option<Symbol>) -> Self {
-        SymbolSet {
+        Self {
             symbols: first_symbol,
         }
     }

@@ -56,7 +56,7 @@ mod tests {
         // Create scanner and configure for QR codes
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::QrCode as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         // Scan the image
@@ -130,7 +130,7 @@ mod tests {
         // Create scanner and configure for QR codes
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::QrCode as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         // Scan the image
@@ -201,7 +201,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Ean13 as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Ean13, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -235,7 +235,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Ean8 as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Ean8, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -279,7 +279,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Upca as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Upca, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -312,7 +312,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Code128 as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Code128, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -345,7 +345,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Code39 as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Code39, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -378,7 +378,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Code93 as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Code93, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -411,7 +411,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::Codabar as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::Codabar, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -444,7 +444,7 @@ mod tests {
 
         let mut scanner = Scanner::new();
         scanner
-            .set_config(SymbolType::I25 as i32, scanner::Config::Enable, 1)
+            .set_config(SymbolType::I25, scanner::Config::Enable, 1)
             .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");

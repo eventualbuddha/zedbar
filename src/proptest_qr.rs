@@ -59,7 +59,7 @@ fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     // Create scanner and configure for QR codes
     let mut scanner = Scanner::new();
     scanner
-        .set_config(SymbolType::QrCode as i32, scanner::Config::Enable, 1)
+        .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
         .map_err(|e| format!("Failed to configure scanner: {e:?}"))?;
 
     // Scan the image

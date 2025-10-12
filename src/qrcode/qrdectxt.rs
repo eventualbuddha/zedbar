@@ -18,7 +18,7 @@ use crate::img_scanner::{
     _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
     zbar_image_scanner_get_config, zbar_image_scanner_t,
 };
-use crate::symbol::{_zbar_symbol_add_point, _zbar_symbol_set_create};
+use crate::symbol::{_zbar_symbol_add_point, symbol_set_create};
 
 use super::qr_point;
 use super::qrdec::qr_mode;
@@ -405,7 +405,7 @@ pub unsafe fn qr_code_data_list_extract_text(
                     _zbar_image_scanner_add_sym(iscn, sym);
                 } else {
                     let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
-                    (*sa_sym).syms = _zbar_symbol_set_create();
+                    (*sa_sym).syms = symbol_set_create();
                     // This part is complex, involving restructuring the symbol set.
                     // For now, we just add the combined text to a single symbol.
                     // A full port would need to replicate the logic from the C code.

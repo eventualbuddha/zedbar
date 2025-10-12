@@ -32,7 +32,7 @@ use crate::{
         SqReader, _zbar_sq_create, _zbar_sq_decode, _zbar_sq_destroy, _zbar_sq_new_config,
         _zbar_sq_reset,
     },
-    symbol::{_zbar_symbol_set_create, symbol_free, symbol_set_free},
+    symbol::{symbol_free, symbol_set_create, symbol_set_free},
 };
 
 const RECYCLE_BUCKETS: usize = 5;
@@ -469,7 +469,7 @@ pub unsafe fn zbar_image_scanner_recycle_image(
 ///
 /// # Returns
 /// Pointer to the allocated symbol
-pub unsafe fn _zbar_image_scanner_alloc_sym(
+pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     iscn: *mut zbar_image_scanner_t,
     sym_type: c_int,
     datalen: c_int,
@@ -545,7 +545,7 @@ pub unsafe fn _zbar_image_scanner_alloc_sym(
 ///
 /// # Arguments
 /// * `iscn` - The image scanner instance
-pub unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanner_t) {
+pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanner_t) {
     let line = _zbar_decoder_get_qr_finder_line((*iscn).dcode);
     c_assert!(!line.is_null());
 
@@ -582,7 +582,7 @@ pub unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanner_t) {
 ///
 /// # Returns
 /// Pointer to the matching cache entry, or NULL if not found
-pub unsafe fn _zbar_image_scanner_cache_lookup(
+pub(crate) unsafe fn _zbar_image_scanner_cache_lookup(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) -> *mut zbar_symbol_t {
@@ -624,7 +624,7 @@ pub unsafe fn _zbar_image_scanner_cache_lookup(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - The symbol to cache
-pub unsafe fn _zbar_image_scanner_cache_sym(
+pub(crate) unsafe fn _zbar_image_scanner_cache_sym(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) {
@@ -681,7 +681,7 @@ pub unsafe fn _zbar_image_scanner_cache_sym(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - The symbol to add
-pub unsafe fn _zbar_image_scanner_add_sym(
+pub(crate) unsafe fn _zbar_image_scanner_add_sym(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) {
@@ -718,7 +718,7 @@ pub unsafe fn _zbar_image_scanner_add_sym(
 ///
 /// # Safety
 /// `iscn` must be a valid pointer to a zbar_image_scanner_t
-pub unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
+pub(crate) unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
     // Cast pointers to the correct types expected by the functions
     let dcode = (*iscn).dcode;
     let sq = (*iscn).sq;
@@ -733,7 +733,7 @@ pub unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
 ///
 /// # Returns
 /// Pointer to new scanner or null on allocation failure
-pub unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
+pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
     let iscn = calloc(1, size_of::<zbar_image_scanner_t>()) as *mut zbar_image_scanner_t;
     if iscn.is_null() {
         return null_mut();
@@ -930,7 +930,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
 ///
 /// # Returns
 /// 0 on success, 1 on error
-pub unsafe fn zbar_image_scanner_set_config(
+pub(crate) unsafe fn zbar_image_scanner_set_config(
     iscn: *mut zbar_image_scanner_t,
     sym: c_int,
     cfg: c_int,
@@ -1026,7 +1026,7 @@ pub unsafe fn _zbar_scan_image(
     zbar_image_scanner_recycle_image(iscn, img);
     let mut syms = (*iscn).syms;
     if syms.is_null() {
-        syms = _zbar_symbol_set_create();
+        syms = symbol_set_create();
         (*iscn).syms = syms;
         zbar_symbol_set_ref(syms, 1);
     } else {
@@ -1242,7 +1242,7 @@ pub unsafe fn _zbar_scan_image(
             let datalen = (*ean).datalen + (*addon).datalen + 1;
             let ean_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_COMPOSITE, datalen as c_int);
             (*ean_sym).orient = (*ean).orient;
-            (*ean_sym).syms = _zbar_symbol_set_create();
+            (*ean_sym).syms = symbol_set_create();
 
             // Copy data
             copy_nonoverlapping(

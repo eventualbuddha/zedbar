@@ -5,7 +5,7 @@ use crate::img_scanner::{
     zbar_image_scanner_create, zbar_image_scanner_destroy, zbar_image_scanner_set_config,
     zbar_image_scanner_t, zbar_scan_image,
 };
-use crate::{Error, Result};
+use crate::{Error, Result, SymbolType};
 
 /// Configuration options for barcode scanning
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,9 +37,10 @@ impl Scanner {
     }
 
     /// Configure the scanner for a specific symbology
-    pub fn set_config(&mut self, symbology: i32, config: Config, value: i32) -> Result<()> {
-        let result =
-            unsafe { zbar_image_scanner_set_config(self.ptr, symbology, config as i32, value) };
+    pub fn set_config(&mut self, symbology: SymbolType, config: Config, value: i32) -> Result<()> {
+        let result = unsafe {
+            zbar_image_scanner_set_config(self.ptr, symbology as i32, config as i32, value)
+        };
 
         if result == 0 {
             Ok(())
