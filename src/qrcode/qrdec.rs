@@ -78,6 +78,81 @@ fn qr_extmul(a: c_int, b: c_int, r: i64) -> i64 {
     a as i64 * b as i64 + r
 }
 
+/// Sign mask: returns -1 if x < 0, else 0
+///
+/// This matches C macro QR_SIGNMASK.
+#[inline]
+fn qr_signmask(x: i64) -> i64 {
+    -((x < 0) as i64)
+}
+
+/// Project alignment pattern center to corner of QR code
+///
+/// Given three corners and an alignment pattern center, compute the fourth corner
+/// by geometric projection. Returns 0 on success, -1 if projection fails.
+#[no_mangle]
+pub unsafe extern "C" fn qr_hom_project_alignment_to_corner(
+    brx: *mut c_int,
+    bry: *mut c_int,
+    p: *const qr_point,
+    p3: *const qr_point,
+    dim: c_int,
+) -> c_int {
+    let p0 = &*p.offset(0);
+    let p1 = &*p.offset(1);
+    let p2 = &*p.offset(2);
+    let p3 = &*p3;
+
+    let c21 = p2[0] * p1[1] - p2[1] * p1[0];
+    let dx21 = p2[0] - p1[0];
+    let dy21 = p2[1] - p1[1];
+
+    let mut w = qr_extmul(
+        dim - 7,
+        c21,
+        qr_extmul(
+            dim - 13,
+            p0[0] * dy21 - p0[1] * dx21,
+            qr_extmul(6, p3[0] * dy21 - p3[1] * dx21, 0),
+        ),
+    );
+
+    // The projection failed: invalid geometry
+    if w == 0 {
+        return -1;
+    }
+
+    let mask = qr_signmask(w);
+    w = (w + mask) ^ mask;
+
+    // Inline division with rounding for i64 precision
+    let brx_num = (qr_extmul(
+        (dim - 7) * p0[0],
+        p3[0] * dy21,
+        qr_extmul(
+            (dim - 13) * p3[0],
+            c21 - p0[1] * dx21,
+            qr_extmul(6 * p0[0], c21 - p3[1] * dx21, 0),
+        ),
+    ) + mask)
+        ^ mask;
+    *brx = ((brx_num + brx_num.signum() * (w >> 1)) / w) as c_int;
+
+    let bry_num = (qr_extmul(
+        (dim - 7) * p0[1],
+        -p3[1] * dx21,
+        qr_extmul(
+            (dim - 13) * p3[1],
+            c21 + p0[0] * dy21,
+            qr_extmul(6 * p0[1], c21 + p3[0] * dy21, 0),
+        ),
+    ) + mask)
+        ^ mask;
+    *bry = ((bry_num + bry_num.signum() * (w >> 1)) / w) as c_int;
+
+    0
+}
+
 /// A cell in the sampling grid for homographic projection
 ///
 /// Represents a mapping from a unit square to a quadrilateral in the image,

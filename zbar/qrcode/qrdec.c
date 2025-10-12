@@ -470,46 +470,11 @@ extern int qr_alignment_pattern_search(qr_point _p, const qr_hom_cell *_cell,
 
 /*Project alignment pattern center to corner of QR code.
   Given three corners and an alignment pattern center, compute the fourth corner
-  by geometric projection. Returns 0 on success, -1 if projection fails.*/
-static int qr_hom_project_alignment_to_corner(int *brx, int *bry,
+  by geometric projection. Returns 0 on success, -1 if projection fails.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern int qr_hom_project_alignment_to_corner(int *brx, int *bry,
 					       const qr_point *p,
-					       const qr_point p3, int dim)
-{
-    long long w;
-    long long mask;
-    int c21;
-    int dx21;
-    int dy21;
-
-    c21	 = p[2][0] * p[1][1] - p[2][1] * p[1][0];
-    dx21 = p[2][0] - p[1][0];
-    dy21 = p[2][1] - p[1][1];
-    w	 = QR_EXTMUL(dim - 7, c21,
-		     QR_EXTMUL(dim - 13, p[0][0] * dy21 - p[0][1] * dx21,
-			       QR_EXTMUL(6, p3[0] * dy21 - p3[1] * dx21, 0)));
-    /*The projection failed: invalid geometry.*/
-    if (w == 0)
-	return -1;
-    mask = QR_SIGNMASK(w);
-    w	 = (w + mask) ^ mask;
-    *brx = (int)QR_DIVROUND(
-	     (QR_EXTMUL((dim - 7) * p[0][0], p3[0] * dy21,
-			QR_EXTMUL((dim - 13) * p3[0], c21 - p[0][1] * dx21,
-				  QR_EXTMUL(6 * p[0][0], c21 - p3[1] * dx21,
-					    0))) +
-	      mask) ^
-		 mask,
-	     w);
-    *bry = (int)QR_DIVROUND(
-	    (QR_EXTMUL((dim - 7) * p[0][1], -p3[1] * dx21,
-		       QR_EXTMUL((dim - 13) * p3[1], c21 + p[0][0] * dy21,
-				 QR_EXTMUL(6 * p[0][1], c21 + p3[0] * dy21,
-					   0))) +
-	     mask) ^
-		mask,
-	    w);
-    return 0;
-}
+					       const qr_point *p3, int dim);
 
 /*Fit a line to collected edge points, or use axis-aligned fallback if insufficient points.
   This is used for edges that have only one finder pattern, where we walk along the edge
@@ -876,7 +841,7 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 	    /*We do, however, need four points in a square to initialize our
    homography, so project the point from the alignment center to the
    corner of the code area.*/
-	    if (qr_hom_project_alignment_to_corner(&brx, &bry, _p, p3, dim) < 0)
+	    if (qr_hom_project_alignment_to_corner(&brx, &bry, _p, &p3, dim) < 0)
 		return -1;
 	}
     }
