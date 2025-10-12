@@ -4,7 +4,7 @@ use std::{
     ptr::{copy_nonoverlapping, null_mut},
 };
 
-use libc::{c_int, c_uint, c_ulong, calloc, free, malloc, memcmp, size_t};
+use libc::{c_int, c_uint, c_ulong, memcmp, size_t};
 
 use crate::{
     decoder::zbar_decoder_get_config,
@@ -32,7 +32,10 @@ use crate::{
         SqReader, _zbar_sq_create, _zbar_sq_decode, _zbar_sq_destroy, _zbar_sq_new_config,
         _zbar_sq_reset,
     },
-    symbol::{symbol_free, symbol_set_create, symbol_set_free},
+    symbol::{
+        _zbar_get_symbol_hash, _zbar_symbol_add_point, symbol_alloc_zeroed, symbol_clear_data,
+        symbol_free, symbol_reserve_data, symbol_set_create, symbol_set_free, zbar_symbol_set_ref,
+    },
 };
 
 const RECYCLE_BUCKETS: usize = 5;
@@ -57,10 +60,6 @@ fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
 use crate::ffi::refcnt;
 
 // Import functions and constants from symbol module
-use crate::symbol::_zbar_get_symbol_hash;
-
-// qr_finder_line structure from qrcode.h
-#[allow(non_camel_case_types)]
 pub struct qr_finder_line {
     pub pos: qr_point,
     pub len: c_int,
@@ -101,7 +100,6 @@ use crate::image_ffi::{_zbar_image_copy, _zbar_image_swap_symbols, zbar_image_de
 use crate::line_scanner::{
     zbar_scan_y, zbar_scanner_destroy, zbar_scanner_get_edge, zbar_scanner_get_width,
 };
-use crate::symbol::{_zbar_symbol_add_point, zbar_symbol_set_ref};
 
 // Helper macros for configuration access
 macro_rules! CFG {
@@ -332,8 +330,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
         } else {
             // Recycle unreferenced symbol
             if (*sym).data_alloc == 0 {
-                (*sym).data = null_mut();
-                (*sym).datalen = 0;
+                symbol_clear_data(sym);
             }
 
             if !(*sym).syms.is_null() {
@@ -360,9 +357,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
 
             if i == RECYCLE_BUCKETS {
                 c_assert!(!(*sym).data.is_null());
-                free((*sym).data as *mut c_void);
-                (*sym).data = null_mut();
-                (*sym).data_alloc = 0;
+                symbol_clear_data(sym);
                 i = 0;
             }
 
@@ -505,7 +500,7 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
         (*iscn).recycle[idx].nsyms -= 1;
     } else {
         // Allocate a new symbol
-        sym = calloc(1, size_of::<zbar_symbol_t>()) as *mut zbar_symbol_t;
+        sym = symbol_alloc_zeroed();
     }
 
     // Initialize the symbol
@@ -518,21 +513,13 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     c_assert!((*sym).syms.is_null());
 
     if datalen > 0 {
-        (*sym).datalen = (datalen - 1) as c_uint;
-        if (*sym).data_alloc < datalen as c_uint {
-            if !(*sym).data.is_null() {
-                free((*sym).data as *mut c_void);
-            }
-            (*sym).data_alloc = datalen as c_uint;
-            (*sym).data = malloc(datalen as size_t) as *mut i8;
+        if symbol_reserve_data(sym, datalen as usize) {
+            (*sym).datalen = (datalen - 1) as c_uint;
+        } else {
+            symbol_clear_data(sym);
         }
     } else {
-        if !(*sym).data.is_null() {
-            free((*sym).data as *mut c_void);
-        }
-        (*sym).data = null_mut();
-        (*sym).datalen = 0;
-        (*sym).data_alloc = 0;
+        symbol_clear_data(sym);
     }
 
     sym
@@ -727,6 +714,16 @@ pub(crate) unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanne
     _zbar_sq_new_config(sq, config);
 }
 
+#[inline]
+unsafe fn image_scanner_alloc_zeroed() -> *mut zbar_image_scanner_t {
+    libc::calloc(1, size_of::<zbar_image_scanner_t>()) as *mut _
+}
+
+#[inline]
+unsafe fn image_scanner_free(iscn: *mut zbar_image_scanner_t) {
+    libc::free(iscn as *mut c_void);
+}
+
 /// Create a new image scanner
 ///
 /// Allocates and initializes a new image scanner instance with default configuration.
@@ -734,7 +731,7 @@ pub(crate) unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanne
 /// # Returns
 /// Pointer to new scanner or null on allocation failure
 pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
-    let iscn = calloc(1, size_of::<zbar_image_scanner_t>()) as *mut zbar_image_scanner_t;
+    let iscn = image_scanner_alloc_zeroed();
     if iscn.is_null() {
         return null_mut();
     }
@@ -824,7 +821,7 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         (*iscn).sq = null_mut();
     }
 
-    free(iscn as *mut c_void);
+    image_scanner_free(iscn);
 }
 
 /// Symbol handler callback for 1D barcode decoding

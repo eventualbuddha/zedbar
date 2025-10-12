@@ -3,8 +3,8 @@
 use crate::{
     decoder_types::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-        databar_decoder_t, ean_decoder_t, i25_decoder_t, qr_finder_t, zbar_decoder_t,
-        zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN, DECODE_WINDOW,
+        databar_decoder_t, databar_segment_t, ean_decoder_t, i25_decoder_t, qr_finder_t,
+        zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN, DECODE_WINDOW,
         ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
         ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP,
         ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE,
@@ -18,6 +18,7 @@ use crate::{
     finder::_zbar_find_qr,
 };
 use libc::{c_char, c_int, c_uint, c_void};
+use std::mem::size_of;
 
 // Config constant not in decoder_types
 const ZBAR_CFG_NUM: c_int = 5;
@@ -31,6 +32,50 @@ unsafe fn cfg_set(configs: &mut [c_int; 2], cfg: c_int, val: c_int) {
 #[inline]
 fn test_cfg(config: c_uint, cfg: c_int) -> bool {
     ((config >> cfg) & 1) != 0
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_alloc_zeroed() -> *mut zbar_decoder_t {
+    libc::calloc(1, size_of::<zbar_decoder_t>()) as *mut _
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_free_struct(dcode: *mut zbar_decoder_t) {
+    libc::free(dcode as *mut c_void);
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_alloc_buffer(size: usize) -> *mut c_char {
+    libc::malloc(size) as *mut c_char
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_free_buffer(buf: *mut c_char) {
+    libc::free(buf as *mut c_void);
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_realloc_buffer(buf: *mut c_char, new_len: usize) -> *mut c_char {
+    libc::realloc(buf as *mut c_void, new_len) as *mut c_char
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_alloc_databar_segments(count: usize) -> *mut databar_segment_t {
+    libc::calloc(count, size_of::<databar_segment_t>()) as *mut databar_segment_t
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_free_databar_segments(ptr: *mut databar_segment_t) {
+    libc::free(ptr as *mut c_void);
+}
+
+#[inline]
+pub(crate) unsafe fn decoder_realloc_databar_segments(
+    ptr: *mut databar_segment_t,
+    count: usize,
+) -> *mut databar_segment_t {
+    libc::realloc(ptr as *mut c_void, count * size_of::<databar_segment_t>())
+        as *mut databar_segment_t
 }
 
 /// Get the color (bar/space) of the current element
@@ -176,7 +221,7 @@ pub unsafe fn _zbar_decoder_size_buf(dcode: *mut zbar_decoder_t, len: c_uint) ->
         }
     }
 
-    let buf = libc::realloc((*dcode).buf as *mut libc::c_void, new_len as usize) as *mut c_char;
+    let buf = decoder_realloc_buffer((*dcode).buf, new_len as usize);
     if buf.is_null() {
         return 1;
     }
@@ -279,10 +324,17 @@ pub unsafe fn _zbar_ean_reset(ean: *mut ean_decoder_t) {
 
 /// Create a new decoder instance
 pub unsafe fn zbar_decoder_create() -> *mut zbar_decoder_t {
-    let dcode = libc::calloc(1, std::mem::size_of::<zbar_decoder_t>()) as *mut zbar_decoder_t;
+    let dcode = decoder_alloc_zeroed();
+    if dcode.is_null() {
+        return std::ptr::null_mut();
+    }
 
     (*dcode).buf_alloc = BUFFER_MIN;
-    (*dcode).buf = libc::malloc((*dcode).buf_alloc as usize) as *mut c_char;
+    (*dcode).buf = decoder_alloc_buffer((*dcode).buf_alloc as usize);
+    if (*dcode).buf.is_null() {
+        decoder_free_struct(dcode);
+        return std::ptr::null_mut();
+    }
 
     // Initialize default configs
     (*dcode).ean.enable = 1;
@@ -300,10 +352,12 @@ pub unsafe fn zbar_decoder_create() -> *mut zbar_decoder_t {
     (*dcode).databar.config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
     (*dcode).databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
     (*dcode).databar.set_csegs(4);
-    (*dcode).databar.segs = libc::calloc(
-        4,
-        std::mem::size_of::<crate::decoder_types::databar_segment_t>(),
-    ) as *mut crate::decoder_types::databar_segment_t;
+    (*dcode).databar.segs = decoder_alloc_databar_segments(4);
+    if (*dcode).databar.segs.is_null() {
+        decoder_free_buffer((*dcode).buf);
+        decoder_free_struct(dcode);
+        return std::ptr::null_mut();
+    }
 
     (*dcode).codabar.config = 1 << ZBAR_CFG_ENABLE;
     cfg_set(&mut (*dcode).codabar.configs, ZBAR_CFG_MIN_LEN, 4);
@@ -323,12 +377,12 @@ pub unsafe fn zbar_decoder_create() -> *mut zbar_decoder_t {
 /// Destroy a decoder instance
 pub unsafe fn zbar_decoder_destroy(dcode: *mut zbar_decoder_t) {
     if !(*dcode).databar.segs.is_null() {
-        libc::free((*dcode).databar.segs as *mut c_void);
+        decoder_free_databar_segments((*dcode).databar.segs);
     }
     if !(*dcode).buf.is_null() {
-        libc::free((*dcode).buf as *mut c_void);
+        decoder_free_buffer((*dcode).buf);
     }
-    libc::free(dcode as *mut c_void);
+    decoder_free_struct(dcode);
 }
 
 /// Reset decoder to initial state

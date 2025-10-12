@@ -19,8 +19,8 @@ use crate::{
     image_ffi::zbar_symbol_t,
     img_scanner::zbar_symbol_set_t,
 };
-use libc::{c_char, c_int, c_void};
-use std::ptr;
+use libc::{c_char, c_int, c_uint, c_void};
+use std::{mem::size_of, ptr};
 
 const NUM_SYMS: usize = 20;
 
@@ -177,6 +177,68 @@ pub unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
     libc::free(syms as *mut c_void);
 }
 
+/// Allocate a zeroed symbol instance suitable for initialization.
+pub unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
+    libc::calloc(1, size_of::<zbar_symbol_t>()) as *mut zbar_symbol_t
+}
+
+/// Release any allocated symbol data buffer and reset metadata.
+pub unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
+    if !(*sym).data.is_null() {
+        libc::free((*sym).data as *mut c_void);
+    }
+    (*sym).data = ptr::null_mut();
+    (*sym).datalen = 0;
+    (*sym).data_alloc = 0;
+}
+
+/// Ensure the symbol data buffer can hold at least `capacity` bytes (including null terminator).
+/// Returns `true` on success and leaves the buffer unchanged on failure.
+pub unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> bool {
+    if capacity == 0 {
+        symbol_clear_data(sym);
+        return true;
+    }
+    if (*sym).data_alloc as usize >= capacity {
+        return true;
+    }
+
+    let new_ptr = libc::realloc((*sym).data as *mut c_void, capacity) as *mut c_char;
+    if new_ptr.is_null() {
+        return false;
+    }
+
+    (*sym).data = new_ptr;
+    (*sym).data_alloc = capacity as c_uint;
+    true
+}
+
+/// Ensure the symbol point array can store at least `capacity` points.
+/// Returns `true` on success and leaves the buffer unchanged on failure.
+pub unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> bool {
+    if capacity == 0 {
+        if !(*sym).pts.is_null() {
+            libc::free((*sym).pts);
+            (*sym).pts = ptr::null_mut();
+        }
+        (*sym).pts_alloc = 0;
+        return true;
+    }
+    if (*sym).pts_alloc >= capacity {
+        return true;
+    }
+
+    let new_size = capacity as usize * size_of::<Point>();
+    let new_ptr = libc::realloc((*sym).pts, new_size);
+    if new_ptr.is_null() {
+        return false;
+    }
+
+    (*sym).pts = new_ptr;
+    (*sym).pts_alloc = capacity;
+    true
+}
+
 // C FFI exports
 
 pub unsafe fn zbar_get_symbol_name(sym: c_int) -> *const c_char {
@@ -209,9 +271,11 @@ pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int
     (*sym).npts += 1;
 
     if (*sym).npts >= (*sym).pts_alloc {
-        (*sym).pts_alloc += 1;
-        let new_size = (*sym).pts_alloc as usize * std::mem::size_of::<Point>();
-        (*sym).pts = libc::realloc((*sym).pts, new_size);
+        let new_capacity = (*sym).pts_alloc + 1;
+        if !symbol_reserve_points(sym, new_capacity) {
+            (*sym).npts -= 1;
+            return;
+        }
     }
 
     let pts = (*sym).pts as *mut Point;

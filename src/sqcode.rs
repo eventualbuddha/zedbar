@@ -13,6 +13,11 @@ use crate::{
 use libc::{c_char, c_int, c_uint, size_t};
 use std::io::Write;
 
+#[inline]
+unsafe fn sq_alloc_c_string(len: usize) -> *mut c_char {
+    libc::malloc(len) as *mut c_char
+}
+
 const ZBAR_SQCODE: i32 = 0x80; // SQCODE symbol type
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -105,7 +110,7 @@ unsafe fn sq_extract_text(iscn: *mut zbar_image_scanner_t, buf: &[u8], len: size
     };
 
     // Allocate C string
-    let data_ptr = libc::malloc(encoded.len()) as *mut c_char;
+    let data_ptr = sq_alloc_c_string(encoded.len());
     if data_ptr.is_null() {
         _zbar_image_scanner_recycle_syms(iscn, sym);
         return true;

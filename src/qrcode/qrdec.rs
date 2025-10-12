@@ -10,7 +10,7 @@ use std::{
     ptr::{null, null_mut},
 };
 
-use libc::{c_int, c_uchar, c_uint, calloc, free, malloc, memcpy, memset, realloc, size_t};
+use libc::{c_int, c_uchar, c_uint, memcpy, memset, size_t};
 
 use crate::{
     decoder_types::qr_finder_line,
@@ -257,6 +257,71 @@ pub struct qr_finder_lines {
     clines: c_int,
 }
 
+#[inline]
+unsafe fn qr_reader_alloc_zeroed() -> *mut qr_reader {
+    libc::calloc(1, size_of::<qr_reader>()) as *mut qr_reader
+}
+
+#[inline]
+unsafe fn qr_reader_free(reader: *mut qr_reader) {
+    libc::free(reader as *mut c_void);
+}
+
+#[inline]
+unsafe fn qr_finder_lines_release(lines: &mut qr_finder_lines) {
+    if !lines.lines.is_null() {
+        libc::free(lines.lines as *mut c_void);
+        lines.lines = null_mut();
+    }
+    lines.nlines = 0;
+    lines.clines = 0;
+}
+
+#[inline]
+unsafe fn qr_finder_lines_grow(lines: &mut qr_finder_lines) -> bool {
+    let previous = lines.clines;
+    lines.clines *= 2;
+    let new_size = (lines.clines + 1) as usize * size_of::<qr_finder_line>();
+    let new_ptr = libc::realloc(lines.lines as *mut c_void, new_size) as *mut qr_finder_line;
+    if new_ptr.is_null() {
+        lines.clines = previous;
+        return false;
+    }
+    lines.lines = new_ptr;
+    lines.clines += 1;
+    true
+}
+
+#[inline]
+unsafe fn qr_alloc_array<T>(count: usize) -> *mut T {
+    libc::malloc(count * size_of::<T>()) as *mut T
+}
+
+#[inline]
+unsafe fn qr_calloc_array<T>(count: usize) -> *mut T {
+    libc::calloc(count, size_of::<T>()) as *mut T
+}
+
+#[inline]
+unsafe fn qr_realloc_array<T>(ptr: *mut T, count: usize) -> *mut T {
+    libc::realloc(ptr as *mut c_void, count * size_of::<T>()) as *mut T
+}
+
+#[inline]
+unsafe fn qr_free_array<T>(ptr: *mut T) {
+    libc::free(ptr as *mut c_void);
+}
+
+#[inline]
+unsafe fn qr_alloc_bytes(len: usize) -> *mut c_uchar {
+    libc::malloc(len) as *mut c_uchar
+}
+
+#[inline]
+unsafe fn qr_free_bytes(ptr: *mut c_uchar) {
+    libc::free(ptr as *mut c_void);
+}
+
 /// Initializes a client reader handle.
 pub unsafe fn qr_reader_init(reader: *mut qr_reader) {
     isaac_init((&mut (*reader).isaac) as *mut _, null(), 0);
@@ -265,22 +330,17 @@ pub unsafe fn qr_reader_init(reader: *mut qr_reader) {
 
 /// Allocates a client reader handle.
 pub unsafe fn _zbar_qr_create() -> *mut qr_reader {
-    let reader = libc::calloc(1, size_of::<qr_reader>()) as *mut _;
+    let reader = qr_reader_alloc_zeroed();
     qr_reader_init(reader);
     reader
 }
 
 /// Frees a client reader handle.
 pub unsafe fn _zbar_qr_destroy(reader: *mut qr_reader) {
-    if !(*reader).finder_lines[0].lines.is_null() {
-        libc::free((*reader).finder_lines[0].lines as *mut _);
-    }
+    qr_finder_lines_release(&mut (*reader).finder_lines[0]);
+    qr_finder_lines_release(&mut (*reader).finder_lines[1]);
 
-    if !(*reader).finder_lines[1].lines.is_null() {
-        libc::free((*reader).finder_lines[1].lines as *mut _);
-    }
-
-    libc::free(reader as *mut _);
+    qr_reader_free(reader);
 }
 
 /// reset finder state between scans
@@ -1373,7 +1433,10 @@ pub unsafe fn qr_line_fit_finder_edge(
 
     // We could write a custom version of qr_line_fit_points that accesses
     // edge_pts directly, but this saves on code size and doesn't measurably slow things down.
-    let pts = malloc((npts as usize) * size_of::<qr_point>()) as *mut qr_point;
+    let pts = qr_alloc_array::<qr_point>(npts as usize);
+    if pts.is_null() {
+        return -1;
+    }
     let edge_pts = (*_f).edge_pts[_e as usize];
 
     for i in 0..npts {
@@ -1386,7 +1449,7 @@ pub unsafe fn qr_line_fit_finder_edge(
     // Make sure the center of the finder pattern lies in the positive halfspace of the line.
     qr_line_orient(_l, (*(*_f).c).pos[0], (*(*_f).c).pos[1]);
 
-    free(pts as *mut c_void);
+    qr_free_array(pts);
     0
 }
 
@@ -1410,7 +1473,10 @@ pub unsafe fn qr_line_fit_finder_pair(
     // We could write a custom version of qr_line_fit_points that accesses
     // edge_pts directly, but this saves on code size and doesn't measurably slow things down.
     let npts = c_int::max(n0, 1) + c_int::max(n1, 1);
-    let pts = malloc((npts as usize) * size_of::<qr_point>()) as *mut qr_point;
+    let pts = qr_alloc_array::<qr_point>(npts as usize);
+    if pts.is_null() {
+        return;
+    }
 
     if n0 > 0 {
         let edge_pts = (*_f0).edge_pts[_e as usize];
@@ -1442,7 +1508,7 @@ pub unsafe fn qr_line_fit_finder_pair(
     // Make sure at least one finder center lies in the positive halfspace.
     qr_line_orient(_l, (*(*_f0).c).pos[0], (*(*_f0).c).pos[1]);
 
-    free(pts as *mut c_void);
+    qr_free_array(pts);
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
@@ -1591,7 +1657,7 @@ pub unsafe fn qr_finder_cluster_lines(
     _v: c_int,
 ) -> c_int {
     // Allocate mark array to track which lines have been clustered
-    let mark = calloc(_nlines as usize, 1) as *mut c_uchar;
+    let mark = qr_calloc_array::<c_uchar>(_nlines as usize);
     let mut neighbors = _neighbors;
     let mut nclusters = 0;
 
@@ -1686,7 +1752,7 @@ pub unsafe fn qr_finder_cluster_lines(
         }
     }
 
-    free(mark as *mut c_void);
+    qr_free_bytes(mark);
     nclusters
 }
 
@@ -1759,12 +1825,17 @@ pub unsafe fn qr_finder_find_crossings(
     _vclusters: *mut qr_finder_cluster,
     _nvclusters: c_int,
 ) -> c_int {
-    let hneighbors = malloc((_nhclusters as usize) * size_of::<*mut qr_finder_cluster>())
-        as *mut *mut qr_finder_cluster;
-    let vneighbors = malloc((_nvclusters as usize) * size_of::<*mut qr_finder_cluster>())
-        as *mut *mut qr_finder_cluster;
-    let hmark = calloc(_nhclusters as usize, 1) as *mut c_uchar;
-    let vmark = calloc(_nvclusters as usize, 1) as *mut c_uchar;
+    let hneighbors = qr_alloc_array::<*mut qr_finder_cluster>(_nhclusters as usize);
+    let vneighbors = qr_alloc_array::<*mut qr_finder_cluster>(_nvclusters as usize);
+    let hmark = qr_calloc_array::<c_uchar>(_nhclusters as usize);
+    let vmark = qr_calloc_array::<c_uchar>(_nvclusters as usize);
+    if hneighbors.is_null() || vneighbors.is_null() || hmark.is_null() || vmark.is_null() {
+        qr_free_array(hneighbors);
+        qr_free_array(vneighbors);
+        qr_free_bytes(hmark);
+        qr_free_bytes(vmark);
+        return 0;
+    }
     let mut ncenters: usize = 0;
 
     // TODO: This may need some re-working.
@@ -1858,13 +1929,10 @@ pub unsafe fn qr_finder_find_crossings(
             _edge_pts = _edge_pts.offset(nedge_pts as isize);
         }
     }
-
-    free(vmark as *mut c_void);
-    free(hmark as *mut c_void);
-    free(vneighbors as *mut c_void);
-    free(hneighbors as *mut c_void);
-
-    // Sort the centers by decreasing numbers of edge points using Rust slices
+    qr_free_array(hneighbors);
+    qr_free_array(vneighbors);
+    qr_free_bytes(hmark);
+    qr_free_bytes(vmark);
     if ncenters > 1 && !_centers.is_null() {
         let centers_slice = std::slice::from_raw_parts_mut(_centers, ncenters);
         centers_slice.sort_by(|a, b| {
@@ -1895,18 +1963,24 @@ pub unsafe fn qr_finder_centers_locate(
     _width: c_int,
     _height: c_int,
 ) -> c_int {
+    *_centers = null_mut();
+    *_edge_pts = null_mut();
     let hlines = (*reader).finder_lines[0].lines;
     let nhlines = (*reader).finder_lines[0].nlines;
     let vlines = (*reader).finder_lines[1].lines;
     let nvlines = (*reader).finder_lines[1].nlines;
 
     // Cluster the detected lines
-    let hneighbors =
-        malloc((nhlines as usize) * size_of::<*mut qr_finder_line>()) as *mut *mut qr_finder_line;
+    let hneighbors = qr_alloc_array::<*mut qr_finder_line>(nhlines.max(0) as usize);
 
     // We require more than one line per cluster, so there are at most nhlines/2
-    let hclusters = malloc(((nhlines >> 1) as usize) * size_of::<qr_finder_cluster>())
-        as *mut qr_finder_cluster;
+    let hclusters = qr_alloc_array::<qr_finder_cluster>((nhlines >> 1).max(0) as usize);
+
+    if hneighbors.is_null() || hclusters.is_null() {
+        qr_free_array(hneighbors);
+        qr_free_array(hclusters);
+        return 0;
+    }
 
     let nhclusters = qr_finder_cluster_lines(hclusters, hneighbors, hlines, nhlines, 0);
 
@@ -1924,12 +1998,18 @@ pub unsafe fn qr_finder_centers_locate(
         });
     }
 
-    let vneighbors =
-        malloc((nvlines as usize) * size_of::<*mut qr_finder_line>()) as *mut *mut qr_finder_line;
+    let vneighbors = qr_alloc_array::<*mut qr_finder_line>(nvlines.max(0) as usize);
 
     // We require more than one line per cluster, so there are at most nvlines/2
-    let vclusters = malloc(((nvlines >> 1) as usize) * size_of::<qr_finder_cluster>())
-        as *mut qr_finder_cluster;
+    let vclusters = qr_alloc_array::<qr_finder_cluster>((nvlines >> 1).max(0) as usize);
+
+    if vneighbors.is_null() || vclusters.is_null() {
+        qr_free_array(vneighbors);
+        qr_free_array(vclusters);
+        qr_free_array(hneighbors);
+        qr_free_array(hclusters);
+        return 0;
+    }
 
     let nvclusters = qr_finder_cluster_lines(vclusters, vneighbors, vlines, nvlines, 1);
 
@@ -1944,11 +2024,19 @@ pub unsafe fn qr_finder_centers_locate(
         }
         nedge_pts <<= 1;
 
-        let edge_pts =
-            malloc((nedge_pts as usize) * size_of::<qr_finder_edge_pt>()) as *mut qr_finder_edge_pt;
+        let edge_pts = qr_alloc_array::<qr_finder_edge_pt>(nedge_pts as usize);
         let centers =
-            malloc((c_int::min(nhclusters, nvclusters) as usize) * size_of::<qr_finder_center>())
-                as *mut qr_finder_center;
+            qr_alloc_array::<qr_finder_center>(c_int::min(nhclusters, nvclusters) as usize);
+
+        if edge_pts.is_null() || centers.is_null() {
+            qr_free_array(edge_pts);
+            qr_free_array(centers);
+            qr_free_array(vclusters);
+            qr_free_array(vneighbors);
+            qr_free_array(hclusters);
+            qr_free_array(hneighbors);
+            return 0;
+        }
 
         let ncenters = qr_finder_find_crossings(
             centers, edge_pts, hclusters, nhclusters, vclusters, nvclusters,
@@ -1961,10 +2049,10 @@ pub unsafe fn qr_finder_centers_locate(
         0
     };
 
-    free(vclusters as *mut c_void);
-    free(vneighbors as *mut c_void);
-    free(hclusters as *mut c_void);
-    free(hneighbors as *mut c_void);
+    qr_free_array(vclusters);
+    qr_free_array(vneighbors);
+    qr_free_array(hclusters);
+    qr_free_array(hneighbors);
 
     ncenters
 }
@@ -2698,8 +2786,8 @@ pub unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int
 /// This function is unsafe because it frees raw pointers.
 pub unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
     if !_grid.is_null() {
-        free((*_grid).fpmask as *mut c_void);
-        free((*_grid).cells[0] as *mut c_void);
+        qr_free_array((*_grid).fpmask);
+        qr_free_array((*_grid).cells[0]);
     }
 }
 
@@ -2758,17 +2846,15 @@ pub unsafe fn qr_sampling_grid_init(
 
     // Allocate the array of cells
     (*_grid).ncells = nalign - 1;
-    (*_grid).cells[0] = malloc(((nalign - 1) * (nalign - 1)) as usize * size_of::<qr_hom_cell>())
-        as *mut qr_hom_cell;
+    let cell_count = ((nalign - 1) * (nalign - 1)) as usize;
+    (*_grid).cells[0] = qr_alloc_array::<qr_hom_cell>(cell_count);
     for i in 1..((*_grid).ncells as usize) {
         (*_grid).cells[i] = (*_grid).cells[i - 1].add((*_grid).ncells as usize);
     }
 
     // Initialize the function pattern mask
-    (*_grid).fpmask = calloc(
-        dim as size_t,
-        (((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) * size_of::<c_uint>() as c_int) as size_t,
-    ) as *mut c_uint;
+    let stride = ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
+    (*_grid).fpmask = qr_calloc_array::<c_uint>(dim as usize * stride);
 
     // Mask out the finder patterns (and separators and format info bits)
     qr_sampling_grid_fp_mask_rect(_grid, dim, 0, 0, 9, 9);
@@ -2794,8 +2880,13 @@ pub unsafe fn qr_sampling_grid_init(
             size_of::<qr_hom_cell>(),
         );
     } else {
-        let q = malloc((nalign * nalign) as usize * size_of::<qr_point>()) as *mut qr_point;
-        let p = malloc((nalign * nalign) as usize * size_of::<qr_point>()) as *mut qr_point;
+        let q = qr_alloc_array::<qr_point>((nalign * nalign) as usize);
+        let p = qr_alloc_array::<qr_point>((nalign * nalign) as usize);
+        if q.is_null() || p.is_null() {
+            qr_free_array(q);
+            qr_free_array(p);
+            return;
+        }
 
         // Initialize the alignment pattern position list
         align_pos[0] = 6;
@@ -2952,8 +3043,8 @@ pub unsafe fn qr_sampling_grid_init(
                 }
             }
         }
-        free(q as *mut c_void);
-        free(p as *mut c_void);
+        qr_free_array(q);
+        qr_free_array(p);
     }
 
     // Set the limits over which each cell is used
@@ -3250,10 +3341,7 @@ pub unsafe fn qr_code_data_parse(
 
         if (*_qrdata).nentries >= centries {
             centries = (centries << 1) | 1;
-            (*_qrdata).entries = libc::realloc(
-                (*_qrdata).entries as *mut c_void,
-                (centries as usize) * size_of::<qr_code_data_entry>(),
-            ) as *mut qr_code_data_entry;
+            (*_qrdata).entries = qr_realloc_array((*_qrdata).entries, centries as usize);
         }
 
         let entry = (*_qrdata).entries.add((*_qrdata).nentries as usize);
@@ -3280,7 +3368,7 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = libc::malloc(len as usize) as *mut c_uchar;
+                let buf = qr_alloc_bytes(len as usize);
                 (*entry).payload.data.buf = buf;
                 (*entry).payload.data.len = len;
 
@@ -3346,7 +3434,7 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = libc::malloc(len as usize) as *mut c_uchar;
+                let buf = qr_alloc_bytes(len as usize);
                 (*entry).payload.data.buf = buf;
                 (*entry).payload.data.len = len;
 
@@ -3406,7 +3494,7 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = libc::malloc(len as usize) as *mut c_uchar;
+                let buf = qr_alloc_bytes(len as usize);
                 (*entry).payload.data.buf = buf;
                 (*entry).payload.data.len = len;
 
@@ -3468,7 +3556,7 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = libc::malloc((2 * len) as usize) as *mut c_uchar;
+                let buf = qr_alloc_bytes((2 * len) as usize);
                 (*entry).payload.data.buf = buf;
                 (*entry).payload.data.len = 2 * len;
 
@@ -3502,10 +3590,7 @@ pub unsafe fn qr_code_data_parse(
     (*_qrdata).self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
 
     // Shrink entries array to actual size
-    (*_qrdata).entries = libc::realloc(
-        (*_qrdata).entries as *mut c_void,
-        ((*_qrdata).nentries as usize) * size_of::<qr_code_data_entry>(),
-    ) as *mut qr_code_data_entry;
+    (*_qrdata).entries = qr_realloc_array((*_qrdata).entries, (*_qrdata).nentries as usize);
 
     0
 }
@@ -3550,9 +3635,8 @@ pub unsafe fn qr_code_decode(
     );
 
     let dim = 17 + (_version << 2);
-    let data_bits = libc::malloc(
-        (dim * ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS)) as usize * size_of::<c_uint>(),
-    ) as *mut c_uint;
+    let data_word_count = (dim * ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS)) as usize;
+    let data_bits = qr_alloc_array::<c_uint>(data_word_count);
 
     qr_sampling_grid_sample(&grid, data_bits, dim, _fmt_info, _img, _width, _height);
 
@@ -3566,8 +3650,8 @@ pub unsafe fn qr_code_decode(
     let block_sz = ncodewords / nblocks;
     let nshort_blocks = nblocks - (ncodewords % nblocks);
 
-    let blocks = libc::malloc((nblocks as usize) * size_of::<*mut c_uchar>()) as *mut *mut c_uchar;
-    let block_data = libc::malloc(ncodewords as usize) as *mut c_uchar;
+    let blocks = qr_alloc_array::<*mut c_uchar>(nblocks as usize);
+    let block_data = qr_alloc_bytes(ncodewords as usize);
     *blocks = block_data;
     for i in 1..nblocks {
         *blocks.add(i as usize) =
@@ -3585,8 +3669,8 @@ pub unsafe fn qr_code_decode(
     );
 
     qr_sampling_grid_clear(&mut grid);
-    libc::free(blocks as *mut c_void);
-    libc::free(data_bits as *mut c_void);
+    qr_free_array(blocks);
+    qr_free_array(data_bits);
 
     // Perform the error correction
     let mut ndata = 0;
@@ -3636,7 +3720,7 @@ pub unsafe fn qr_code_decode(
         (*_qrdata).ecc_level = ecc_level as c_uchar;
     }
 
-    libc::free(block_data as *mut c_void);
+    qr_free_bytes(block_data);
     ret
 }
 
@@ -4397,10 +4481,10 @@ pub unsafe fn qr_code_data_clear(qrdata: *mut qr_code_data) {
     for i in 0..(*qrdata).nentries {
         let entry = (*qrdata).entries.offset(i as isize);
         if qr_mode_has_data((*entry).mode) {
-            free((*entry).payload.data.buf as *mut c_void);
+            qr_free_bytes((*entry).payload.data.buf);
         }
     }
-    free((*qrdata).entries as *mut c_void);
+    qr_free_array((*qrdata).entries);
 }
 
 /// Initialize a QR code data list
@@ -4415,18 +4499,22 @@ pub unsafe fn qr_code_data_list_clear(qrlist: *mut qr_code_data_list) {
     for i in 0..(*qrlist).nqrdata {
         qr_code_data_clear((*qrlist).qrdata.offset(i as isize));
     }
-    free((*qrlist).qrdata as *mut c_void);
+    qr_free_array((*qrlist).qrdata);
     qr_code_data_list_init(qrlist);
 }
 
 /// Add a QR code data to the list
 pub unsafe fn qr_code_data_list_add(qrlist: *mut qr_code_data_list, qrdata: *const qr_code_data) {
     if (*qrlist).nqrdata >= (*qrlist).cqrdata {
+        let previous_capacity = (*qrlist).cqrdata;
         (*qrlist).cqrdata = ((*qrlist).cqrdata << 1) | 1;
-        (*qrlist).qrdata = realloc(
-            (*qrlist).qrdata as *mut c_void,
-            ((*qrlist).cqrdata as usize) * std::mem::size_of::<qr_code_data>(),
-        ) as *mut qr_code_data;
+        let new_qrdata =
+            qr_realloc_array::<qr_code_data>((*qrlist).qrdata, (*qrlist).cqrdata as usize);
+        if new_qrdata.is_null() {
+            (*qrlist).cqrdata = previous_capacity;
+            return;
+        }
+        (*qrlist).qrdata = new_qrdata;
     }
     memcpy(
         (*qrlist).qrdata.offset((*qrlist).nqrdata as isize) as *mut c_void,
@@ -4735,13 +4823,8 @@ pub unsafe fn _zbar_qr_found_line(
     // Minimally intrusive brute force version
     let lines = &mut (*reader).finder_lines[dir as usize];
 
-    if lines.nlines >= lines.clines {
-        lines.clines *= 2;
-        lines.lines = realloc(
-            lines.lines as *mut c_void,
-            (lines.clines + 1) as usize * size_of::<qr_finder_line>(),
-        ) as *mut qr_finder_line;
-        lines.clines += 1;
+    if lines.nlines >= lines.clines && !qr_finder_lines_grow(lines) {
+        return -1;
     }
 
     memcpy(
@@ -4766,7 +4849,7 @@ pub unsafe fn qr_reader_match_centers(
 ) {
     // The number of centers should be small, so an O(n^3) exhaustive search of
     // which ones go together should be reasonable.
-    let mark: *mut c_uchar = calloc(_ncenters as size_t, size_of::<c_uchar>()) as *mut c_uchar;
+    let mark = qr_calloc_array::<c_uchar>(_ncenters as usize);
     let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
     let mut nfailures = 0;
 
@@ -4849,8 +4932,7 @@ pub unsafe fn qr_reader_match_centers(
                             // Copy the relevant centers to a new array and do a search confined
                             // to that subset.
                             let inside: *mut qr_finder_center =
-                                malloc((ninside as usize) * size_of::<qr_finder_center>())
-                                    as *mut qr_finder_center;
+                                qr_alloc_array::<qr_finder_center>(ninside as usize);
                             ninside = 0;
                             for l in 0.._ncenters {
                                 if *mark.add(l as usize) == 2 {
@@ -4865,7 +4947,7 @@ pub unsafe fn qr_reader_match_centers(
                             qr_reader_match_centers(
                                 _reader, _qrlist, inside, ninside, _img, _width, _height,
                             );
-                            free(inside as *mut c_void);
+                            qr_free_array(inside);
                         }
 
                         // Mark _all_ such centers used: codes cannot partially overlap
@@ -4882,7 +4964,7 @@ pub unsafe fn qr_reader_match_centers(
                             // Give up.
                             // We're unlikely to find a valid code in all this clutter, and we
                             // could spend quite a lot of time trying.
-                            free(mark as *mut c_void);
+                            qr_free_bytes(mark);
                             return;
                         }
                     }
@@ -4893,7 +4975,7 @@ pub unsafe fn qr_reader_match_centers(
         }
     }
 
-    free(mark as *mut c_void);
+    qr_free_bytes(mark);
 }
 
 /// Decode QR codes from an image
@@ -4939,16 +5021,16 @@ pub unsafe fn _zbar_qr_decode(
         };
 
         qr_code_data_list_clear(&mut qrlist);
-        free(bin as *mut c_void);
+        qr_free_bytes(bin);
     } else {
         nqrdata = 0;
     }
 
     if !centers.is_null() {
-        free(centers as *mut c_void);
+        qr_free_array(centers);
     }
     if !edge_pts.is_null() {
-        free(edge_pts as *mut c_void);
+        qr_free_array(edge_pts);
     }
 
     nqrdata

@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr::null_mut};
+use std::ptr::null_mut;
 
 use libc::{c_char, c_int, c_uint};
 
@@ -6,7 +6,7 @@ use crate::{
     decoder::{
         _zbar_decoder_acquire_lock, _zbar_decoder_calc_s, _zbar_decoder_decode_e,
         _zbar_decoder_get_color, _zbar_decoder_pair_width, _zbar_decoder_release_lock,
-        _zbar_decoder_size_buf,
+        _zbar_decoder_size_buf, decoder_realloc_databar_segments,
     },
     decoder_types::{
         databar_decoder_t, databar_segment_t, zbar_decoder_t, zbar_symbol_type_t,
@@ -1449,9 +1449,6 @@ pub unsafe fn decode_char(
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
 pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
-    use crate::decoder_types::databar_segment_t;
-    use std::mem::size_of;
-
     let mut maxage = 0u32;
     let csegs = (*db).csegs() as usize;
     let mut old: c_int = -1;
@@ -1493,10 +1490,7 @@ pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
 
         if new_csegs != csegs {
             // Reallocate segment array
-            let new_ptr = libc::realloc(
-                (*db).segs as *mut c_void,
-                new_csegs * size_of::<databar_segment_t>(),
-            ) as *mut databar_segment_t;
+            let new_ptr = decoder_realloc_databar_segments((*db).segs, new_csegs);
 
             if new_ptr.is_null() {
                 // Allocation failed, fall through to reuse old segment

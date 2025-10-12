@@ -5,13 +5,33 @@
 
 use std::{
     ffi::c_void,
-    mem::transmute,
+    mem::{size_of, transmute},
     ptr::{null, null_mut},
 };
 
 use libc::{c_char, c_int, c_uint, c_ulong};
 
 use crate::{ffi::refcnt, img_scanner::zbar_symbol_set_t, symbol::zbar_symbol_set_ref};
+
+#[inline]
+unsafe fn image_alloc_zeroed() -> *mut zbar_image_t {
+    libc::calloc(1, size_of::<zbar_image_t>()) as *mut zbar_image_t
+}
+
+#[inline]
+unsafe fn image_free_struct(img: *mut zbar_image_t) {
+    libc::free(img as *mut c_void);
+}
+
+#[inline]
+unsafe fn image_alloc_data(size: usize) -> *mut c_void {
+    libc::malloc(size)
+}
+
+#[inline]
+unsafe fn image_free_data_ptr(ptr: *mut c_void) {
+    libc::free(ptr);
+}
 
 #[allow(non_camel_case_types)]
 pub struct zbar_image_t {
@@ -50,7 +70,10 @@ pub struct zbar_symbol_t {
 }
 
 pub unsafe fn zbar_image_create() -> *mut zbar_image_t {
-    let img = libc::calloc(1, std::mem::size_of::<zbar_image_t>()) as *mut zbar_image_t;
+    let img = image_alloc_zeroed();
+    if img.is_null() {
+        return null_mut();
+    }
     refcnt(&mut (*img).refcnt, 1);
     (*img).srcidx = -1;
     img
@@ -61,7 +84,7 @@ pub unsafe fn _zbar_image_free(img: *mut zbar_image_t) {
         zbar_symbol_set_ref((*img).syms, -1);
         (*img).syms = null_mut();
     }
-    libc::free(img as *mut c_void);
+    image_free_struct(img);
 }
 
 pub unsafe fn zbar_image_destroy(img: *mut zbar_image_t) {
@@ -88,7 +111,7 @@ pub unsafe fn zbar_image_free_data(img: *mut zbar_image_t) {
             (*img).cleanup = zbar_image_free_data as *mut c_void;
             cleanup(img);
         } else {
-            libc::free((*img).data);
+            image_free_data_ptr((*img).data);
         }
     }
     (*img).data = null_mut();
@@ -119,7 +142,7 @@ pub unsafe fn _zbar_image_copy(src: *const zbar_image_t, inverted: c_int) -> *mu
     (*dst).width = (*src).width;
     (*dst).height = (*src).height;
     (*dst).datalen = (*src).datalen;
-    (*dst).data = libc::malloc((*src).datalen as usize);
+    (*dst).data = image_alloc_data((*src).datalen as usize);
     assert!(!(*dst).data.is_null());
 
     if inverted == 0 {
