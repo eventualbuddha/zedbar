@@ -4475,3 +4475,305 @@ pub unsafe extern "C" fn qr_code_data_list_add(
     );
     (*qrlist).nqrdata += 1;
 }
+
+/// Try to decode a QR code with the given configuration of three finder patterns.
+///
+/// This function tries different orderings of the three finder pattern centers
+/// to find a valid QR code configuration, estimates module size and version,
+/// fits a homography transformation, and attempts to decode the QR code.
+///
+/// Returns the version number if successful, -1 otherwise.
+#[no_mangle]
+pub unsafe extern "C" fn qr_reader_try_configuration(
+    _reader: *mut qr_reader,
+    _qrdata: *mut qr_code_data,
+    _img: *const c_uchar,
+    _width: c_int,
+    _height: c_int,
+    _c: *mut *mut qr_finder_center,
+) -> c_int {
+    let mut ci: [usize; 7] = [0; 7];
+    let mut maxd: c_uint;
+    let ccw: c_int;
+    let mut i0: usize;
+
+    // Sort the points in counter-clockwise order
+    ccw = qr_point_ccw((**_c.add(0)).pos.as_ptr(), (**_c.add(1)).pos.as_ptr(), (**_c.add(2)).pos.as_ptr());
+
+    // Colinear points can't be the corners of a quadrilateral
+    if ccw == 0 {
+        return -1;
+    }
+
+    // Include a few extra copies of the cyclical list to avoid mods
+    ci[6] = 0;
+    ci[3] = 0;
+    ci[0] = 0;
+    ci[4] = if ccw < 0 { 2 } else { 1 };
+    ci[1] = ci[4];
+    ci[5] = if ccw < 0 { 1 } else { 2 };
+    ci[2] = ci[5];
+
+    // Assume the points farthest from each other are the opposite corners,
+    // and find the top-left point
+    maxd = qr_point_distance2((**_c.add(1)).pos.as_ptr(), (**_c.add(2)).pos.as_ptr());
+    i0 = 0;
+    for i in 1..3 {
+        let d = qr_point_distance2(
+            (**_c.add(ci[i + 1])).pos.as_ptr(),
+            (**_c.add(ci[i + 2])).pos.as_ptr(),
+        );
+        if d > maxd {
+            i0 = i;
+            maxd = d;
+        }
+    }
+
+    // However, try all three possible orderings, just to be sure (a severely
+    // skewed projection could move opposite corners closer than adjacent)
+    for i in i0..i0 + 3 {
+        let mut aff: qr_aff = std::mem::zeroed();
+        let mut hom: qr_hom = std::mem::zeroed();
+        let mut ul: qr_finder = std::mem::zeroed();
+        let mut ur: qr_finder = std::mem::zeroed();
+        let mut dl: qr_finder = std::mem::zeroed();
+        let mut bbox: [qr_point; 4] = [[0; 2]; 4];
+        let res: c_int;
+        let ur_version: c_int;
+        let mut fmt_info: c_int;
+
+        ul.c = *_c.add(ci[i]);
+        ur.c = *_c.add(ci[i + 1]);
+        dl.c = *_c.add(ci[i + 2]);
+
+        // Estimate the module size and version number from the two opposite corners.
+        // The module size is not constant in the image, so we compute an affine
+        // projection from the three points we have to a square domain, and
+        // estimate it there.
+        // Although it should be the same along both axes, we keep separate
+        // estimates to account for any remaining projective distortion.
+        res = QR_INT_BITS - 2 - QR_FINDER_SUBPREC - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
+        qr_aff_init(&mut aff, &(*ul.c).pos, &(*ur.c).pos, &(*dl.c).pos, res);
+        qr_aff_unproject(&mut ur.o, &aff, (*ur.c).pos[0], (*ur.c).pos[1]);
+        qr_finder_edge_pts_aff_classify(&mut ur, &aff);
+        if qr_finder_estimate_module_size_and_version(&mut ur, 1 << res, 1 << res) < 0 {
+            continue;
+        }
+        qr_aff_unproject(&mut dl.o, &aff, (*dl.c).pos[0], (*dl.c).pos[1]);
+        qr_finder_edge_pts_aff_classify(&mut dl, &aff);
+        if qr_finder_estimate_module_size_and_version(&mut dl, 1 << res, 1 << res) < 0 {
+            continue;
+        }
+
+        // If the estimated versions are significantly different, reject the
+        // configuration
+        if (ur.eversion[1] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
+            continue;
+        }
+
+        qr_aff_unproject(&mut ul.o, &aff, (*ul.c).pos[0], (*ul.c).pos[1]);
+        qr_finder_edge_pts_aff_classify(&mut ul, &aff);
+        if qr_finder_estimate_module_size_and_version(&mut ul, 1 << res, 1 << res) < 0
+            || (ul.eversion[1] - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK
+            || (ul.eversion[0] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK
+        {
+            continue;
+        }
+
+        // If we made it this far, upgrade the affine homography to a full
+        // homography
+        if qr_hom_fit(
+            &mut hom,
+            &mut ul,
+            &mut ur,
+            &mut dl,
+            bbox.as_mut_ptr(),
+            &aff,
+            &mut (*_reader).isaac,
+            _img,
+            _width,
+            _height,
+        ) < 0
+        {
+            continue;
+        }
+
+        memcpy(
+            (*_qrdata).bbox.as_mut_ptr() as *mut c_void,
+            bbox.as_ptr() as *const c_void,
+            size_of::<[qr_point; 4]>(),
+        );
+
+        qr_hom_unproject(&mut ul.o, &hom, (*ul.c).pos[0], (*ul.c).pos[1]);
+        qr_hom_unproject(&mut ur.o, &hom, (*ur.c).pos[0], (*ur.c).pos[1]);
+        qr_hom_unproject(&mut dl.o, &hom, (*dl.c).pos[0], (*dl.c).pos[1]);
+        qr_finder_edge_pts_hom_classify(&mut ur, &hom);
+        if qr_finder_estimate_module_size_and_version(&mut ur, ur.o[0] - ul.o[0], ur.o[0] - ul.o[0])
+            < 0
+        {
+            continue;
+        }
+        qr_finder_edge_pts_hom_classify(&mut dl, &hom);
+        if qr_finder_estimate_module_size_and_version(&mut dl, dl.o[1] - ul.o[1], dl.o[1] - ul.o[1])
+            < 0
+        {
+            continue;
+        }
+
+        // If we have a small version (less than 7), there's no encoded version
+        // information. If the estimated version on the two corners matches and is
+        // sufficiently small, we assume this is the case.
+        if ur.eversion[1] == dl.eversion[0] && ur.eversion[1] < 7 {
+            ur_version = ur.eversion[1];
+        } else {
+            // If the estimated versions are significantly different, reject the
+            // configuration
+            if (ur.eversion[1] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
+                continue;
+            }
+
+            // Otherwise we try to read the actual version data from the image.
+            // If the real version is not sufficiently close to our estimated version,
+            // then we assume there was an unrecoverable decoding error (so many bit
+            // errors we were within 3 errors of another valid code), and throw that
+            // value away.
+            // If no decoded version could be sufficiently close, we don't even try.
+            let ur_version_tmp = if ur.eversion[1] >= 7 - QR_LARGE_VERSION_SLACK {
+                let ver = qr_finder_version_decode(&ur, &hom, _img, _width, _height, 0);
+                if (ver - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK {
+                    -1
+                } else {
+                    ver
+                }
+            } else {
+                -1
+            };
+
+            let dl_version_tmp = if dl.eversion[0] >= 7 - QR_LARGE_VERSION_SLACK {
+                let ver = qr_finder_version_decode(&dl, &hom, _img, _width, _height, 1);
+                if (ver - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
+                    -1
+                } else {
+                    ver
+                }
+            } else {
+                -1
+            };
+
+            // If we got at least one valid version, or we got two and they match,
+            // then we found a valid configuration
+            if ur_version_tmp >= 0 {
+                if dl_version_tmp >= 0 && dl_version_tmp != ur_version_tmp {
+                    continue;
+                }
+                ur_version = ur_version_tmp;
+            } else if dl_version_tmp < 0 {
+                continue;
+            } else {
+                ur_version = dl_version_tmp;
+            }
+        }
+
+        qr_finder_edge_pts_hom_classify(&mut ul, &hom);
+        if qr_finder_estimate_module_size_and_version(&mut ul, ur.o[0] - dl.o[0], dl.o[1] - ul.o[1])
+            < 0
+            || (ul.eversion[1] - ur.eversion[1]).abs() > QR_SMALL_VERSION_SLACK
+            || (ul.eversion[0] - dl.eversion[0]).abs() > QR_SMALL_VERSION_SLACK
+        {
+            continue;
+        }
+
+        fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, _img, _width, _height);
+        if fmt_info < 0
+            || qr_code_decode(
+                _qrdata,
+                &(*_reader).gf,
+                &(*ul.c).pos,
+                &(*ur.c).pos,
+                &(*dl.c).pos,
+                ur_version,
+                fmt_info,
+                _img,
+                _width,
+                _height,
+            ) < 0
+        {
+            // The code may be flipped.
+            // Try again, swapping the UR and DL centers.
+            // We should get a valid version either way, so it's relatively cheap to
+            // check this, as we've already filtered out a lot of invalid
+            // configurations.
+            // Swap using temporary variables to avoid borrow checker issues
+            let t = hom.inv[0][0];
+            hom.inv[0][0] = hom.inv[1][0];
+            hom.inv[1][0] = t;
+            let t = hom.inv[0][1];
+            hom.inv[0][1] = hom.inv[1][1];
+            hom.inv[1][1] = t;
+            let t = hom.fwd[0][0];
+            hom.fwd[0][0] = hom.fwd[0][1];
+            hom.fwd[0][1] = t;
+            let t = hom.fwd[1][0];
+            hom.fwd[1][0] = hom.fwd[1][1];
+            hom.fwd[1][1] = t;
+            let t = hom.fwd[2][0];
+            hom.fwd[2][0] = hom.fwd[2][1];
+            hom.fwd[2][1] = t;
+            let t = ul.o[0];
+            ul.o[0] = ul.o[1];
+            ul.o[1] = t;
+            let t = ul.size[0];
+            ul.size[0] = ul.size[1];
+            ul.size[1] = t;
+            let t = ur.o[0];
+            ur.o[0] = ur.o[1];
+            ur.o[1] = t;
+            let t = ur.size[0];
+            ur.size[0] = ur.size[1];
+            ur.size[1] = t;
+            let t = dl.o[0];
+            dl.o[0] = dl.o[1];
+            dl.o[1] = t;
+            let t = dl.size[0];
+            dl.size[0] = dl.size[1];
+            dl.size[1] = t;
+
+            fmt_info = qr_finder_fmt_info_decode(&ul, &dl, &ur, &hom, _img, _width, _height);
+            if fmt_info < 0 {
+                continue;
+            }
+
+            let t = bbox[1][0];
+            bbox[1][0] = bbox[2][0];
+            bbox[2][0] = t;
+            let t = bbox[1][1];
+            bbox[1][1] = bbox[2][1];
+            bbox[2][1] = t;
+            memcpy(
+                (*_qrdata).bbox.as_mut_ptr() as *mut c_void,
+                bbox.as_ptr() as *const c_void,
+                size_of::<[qr_point; 4]>(),
+            );
+
+            if qr_code_decode(
+                _qrdata,
+                &(*_reader).gf,
+                &(*ul.c).pos,
+                &(*dl.c).pos,
+                &(*ur.c).pos,
+                ur_version,
+                fmt_info,
+                _img,
+                _width,
+                _height,
+            ) < 0
+            {
+                continue;
+            }
+        }
+
+        return ur_version;
+    }
+
+    -1
+}
