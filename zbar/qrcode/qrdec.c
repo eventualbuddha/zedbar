@@ -479,48 +479,11 @@ extern int qr_hom_project_alignment_to_corner(int *brx, int *bry,
 /*Fit a line to collected edge points, or use axis-aligned fallback if insufficient points.
   This is used for edges that have only one finder pattern, where we walk along the edge
   collecting sample points. If we don't get enough points (> 1), we fall back to an
-  axis-aligned line in the affine coordinate system.*/
-static void qr_hom_fit_edge_line(qr_line *line, qr_point *pts, int npts,
+  axis-aligned line in the affine coordinate system.
+  Implemented in Rust (src/qrcode/qrdec.rs) */
+extern void qr_hom_fit_edge_line(qr_line *line, qr_point *pts, int npts,
 				  const qr_finder *finder, const qr_aff *aff,
-				  int edge_axis)
-{
-    if (npts > 1) {
-	qr_line_fit_points(line, pts, npts, aff->res);
-    } else {
-	qr_point p;
-	int shift, round;
-
-	/* Project reference point from the finder pattern */
-	if (edge_axis == 1) {
-	    /* Right edge: project from UR finder, extending 3 modules to the right */
-	    qr_aff_project(&p, aff, finder->o[0] + 3 * finder->size[0],
-			   finder->o[1]);
-	} else {
-	    /* Bottom edge (axis 3): project from DL finder, extending 3 modules down */
-	    qr_aff_project(&p, aff, finder->o[0],
-			   finder->o[1] + 3 * finder->size[1]);
-	}
-
-	/* Calculate normalization shift (always uses column 1 of affine matrix) */
-	shift = QR_MAXI(0, qr_ilog(QR_MAXI(abs(aff->fwd[0][1]),
-					    abs(aff->fwd[1][1]))) -
-			((aff->res + 1) >> 1));
-	round = (1 << shift) >> 1;
-
-	/* Compute line coefficients using appropriate matrix column */
-	if (edge_axis == 1) {
-	    /* Right edge uses column 1 (vertical direction in affine space) */
-	    (*line)[0] = (aff->fwd[1][1] + round) >> shift;
-	    (*line)[1] = (-aff->fwd[0][1] + round) >> shift;
-	} else {
-	    /* Bottom edge uses column 0 (horizontal direction in affine space) */
-	    (*line)[0] = (aff->fwd[1][0] + round) >> shift;
-	    (*line)[1] = (-aff->fwd[0][0] + round) >> shift;
-	}
-	/* Compute line constant term */
-	(*line)[2] = -((*line)[0] * p[0] + (*line)[1] * p[1]);
-    }
-}
+				  int edge_axis);
 
 static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 		      qr_finder *_dl, qr_point _p[4], const qr_aff *_aff,
