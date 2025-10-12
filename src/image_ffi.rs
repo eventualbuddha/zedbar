@@ -31,7 +31,6 @@ pub struct zbar_image_t {
     pub height: c_uint,
     pub data: Vec<u8>,
     pub refcnt: c_int,
-    pub srcidx: c_int,
     pub seq: c_uint,
     pub syms: Option<NonNull<zbar_symbol_set_t>>,
 }
@@ -45,11 +44,6 @@ impl zbar_image_t {
     #[inline]
     pub fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
         self.syms = NonNull::new(ptr);
-    }
-
-    #[inline]
-    pub fn clear_syms(&mut self) {
-        self.syms = None;
     }
 
     #[inline]
@@ -84,7 +78,6 @@ pub unsafe fn zbar_image_create() -> *mut zbar_image_t {
         return null_mut();
     }
     refcnt(&mut (*img).refcnt, 1);
-    (*img).srcidx = -1;
     img
 }
 
