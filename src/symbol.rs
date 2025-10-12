@@ -154,10 +154,10 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
 /// # Safety
 ///
 /// Allocates memory that must be freed with `symbol_set_free`.
-pub unsafe fn symbol_set_create() -> *mut c_void {
+pub unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
     let syms = libc::calloc(1, std::mem::size_of::<zbar_symbol_set_t>()) as *mut zbar_symbol_set_t;
     refcnt(&mut (*syms).refcnt, 1);
-    syms as *mut c_void
+    syms
 }
 
 /// Free a symbol set
@@ -198,7 +198,7 @@ pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _zbar_symbol_set_create() -> *mut c_void {
+pub unsafe extern "C" fn _zbar_symbol_set_create() -> *mut zbar_symbol_set_t {
     symbol_set_create()
 }
 

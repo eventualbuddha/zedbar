@@ -1069,7 +1069,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
     zbar_image_scanner_recycle_image(iscn, img);
     let mut syms = (*iscn).syms;
     if syms.is_null() {
-        syms = _zbar_symbol_set_create() as *mut zbar_symbol_set_t;
+        syms = _zbar_symbol_set_create();
         (*iscn).syms = syms;
         zbar_symbol_set_ref(syms, 1);
     } else {
@@ -1285,7 +1285,7 @@ pub unsafe extern "C" fn _zbar_scan_image(
             let datalen = (*ean).datalen + (*addon).datalen + 1;
             let ean_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_COMPOSITE, datalen as c_int);
             (*ean_sym).orient = (*ean).orient;
-            (*ean_sym).syms = _zbar_symbol_set_create() as *mut zbar_symbol_set_t;
+            (*ean_sym).syms = _zbar_symbol_set_create();
 
             // Copy data
             copy_nonoverlapping(

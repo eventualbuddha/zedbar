@@ -5,16 +5,64 @@ use libc::{c_char, c_int, c_uint};
 use crate::{
     decoder::{
         _zbar_decoder_acquire_lock, _zbar_decoder_calc_s, _zbar_decoder_decode_e,
-        _zbar_decoder_get_color, _zbar_decoder_pair_width, _zbar_decoder_size_buf,
+        _zbar_decoder_get_color, _zbar_decoder_pair_width, _zbar_decoder_release_lock,
+        _zbar_decoder_size_buf,
     },
     decoder_types::{
-        databar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, ZBAR_CFG_EMIT_CHECK,
-        ZBAR_CFG_ENABLE, ZBAR_DATABAR, ZBAR_MOD_GS1, ZBAR_NONE, ZBAR_PARTIAL,
+        databar_decoder_t, databar_segment_t, zbar_decoder_t, zbar_symbol_type_t,
+        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_MOD_GS1,
+        ZBAR_NONE, ZBAR_PARTIAL,
     },
 };
 
-// DataBar constants
 const DATABAR_MAX_SEGMENTS: usize = 32;
+const GS: u8 = 0x1d;
+const SCH_NUM: i32 = 0;
+const SCH_ALNUM: i32 = 1;
+const SCH_ISO646: i32 = 2;
+
+#[inline]
+fn var_max(len: i32, offset: i32) -> i32 {
+    (((len * 12 + offset) * 2) + 6) / 7
+}
+
+#[inline]
+unsafe fn push_char(buf: &mut *mut u8, ch: u8) {
+    **buf = ch;
+    *buf = (*buf).add(1);
+}
+
+#[inline]
+unsafe fn push_char4(buf: &mut *mut u8, c0: u8, c1: u8, c2: u8, c3: u8) {
+    push_char(buf, c0);
+    push_char(buf, c1);
+    push_char(buf, c2);
+    push_char(buf, c3);
+}
+
+#[inline]
+unsafe fn feed_bits(
+    d: &mut u64,
+    bit_count: &mut i32,
+    len: &mut i32,
+    data_ptr: &mut *mut i32,
+    required: i32,
+) {
+    while *bit_count < required && *len > 0 {
+        let next = (**data_ptr as u32 & 0x0fff) as u64;
+        *data_ptr = (*data_ptr).add(1);
+        *d = (*d << 12) | next;
+        *bit_count += 12;
+        *len -= 1;
+    }
+}
+
+#[inline]
+unsafe fn segment_index(seg: *mut crate::decoder_types::databar_segment_t) -> i32 {
+    (((*seg).finder() as i32) << 2)
+        | (((*seg).color() as i32) << 1)
+        | ((((*seg).color() ^ (*seg).side()) as i32) & 1)
+}
 
 /// DataBar finder pattern hash table
 static FINDER_HASH: [i8; 0x20] = [
@@ -131,15 +179,6 @@ static GROUPS: [GroupS; 14] = [
     },
 ];
 
-// Forward declarations for complex C functions not yet ported
-extern "C" {
-    pub fn match_segment_exp(
-        dcode: *mut zbar_decoder_t,
-        seg: *mut crate::decoder_types::databar_segment_t,
-        dir: c_int,
-    ) -> zbar_symbol_type_t;
-}
-
 /// Append checksum digit to 13-digit buffer
 ///
 /// Calculates and appends a check digit to a 13-digit numeric string
@@ -205,7 +244,331 @@ pub unsafe extern "C" fn _zbar_databar_decode10(buf: *mut u8, mut n: u64, i: c_i
     }
 }
 
-// TODO: Port `databar_postprocess_exp`
+unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) -> c_int {
+    if dcode.is_null() || data.is_null() {
+        return -1;
+    }
+
+    let mut data_ptr = data;
+    let first = *data_ptr as u64;
+    data_ptr = data_ptr.add(1);
+    let mut len = (first / 211 + 4) as i32;
+
+    let mut d = *data_ptr as u64;
+    data_ptr = data_ptr.add(1);
+
+    let mut i_bits: i32;
+    let enc: i32;
+    let buflen: i32;
+
+    let mut n = ((d >> 4) & 0x7f) as u32;
+    if n >= 0x40 {
+        i_bits = 10;
+        enc = 1;
+        buflen = 2 + 14 + var_max(len, 10 - 2 - 44 + 6) + 2;
+    } else if n >= 0x38 {
+        i_bits = 4;
+        enc = 6 + (n as i32 & 7);
+        buflen = 2 + 14 + 4 + 6 + 2 + 6 + 2;
+    } else if n >= 0x30 {
+        i_bits = 6;
+        enc = 2 + (((n >> 2) & 1) as i32);
+        buflen = 2 + 14 + 4 + 3 + var_max(len, 6 - 2 - 44 - 2 - 10) + 2;
+    } else if n >= 0x20 {
+        i_bits = 7;
+        enc = 4 + (((n >> 3) & 1) as i32);
+        buflen = 2 + 14 + 4 + 6;
+    } else {
+        i_bits = 9;
+        enc = 0;
+        buflen = var_max(len, 9 - 2) + 2;
+    }
+
+    if buflen <= 2 {
+        return -1;
+    }
+
+    if enc < 4 {
+        i_bits -= 1;
+        let parity_bit = ((d >> i_bits) & 1) as i32;
+        if ((len ^ parity_bit) & 1) != 0 {
+            return -1;
+        }
+
+        i_bits -= 1;
+        let size_group = ((d >> i_bits) & 1) as i32;
+        if size_group != (len > 14) as i32 {
+            return -1;
+        }
+    }
+
+    len -= 2;
+
+    if _zbar_decoder_size_buf(dcode, buflen as c_uint) != 0 {
+        return -1;
+    }
+
+    let mut buf = (*dcode).buf as *mut u8;
+
+    if enc != 0 {
+        push_char(&mut buf, b'0');
+        push_char(&mut buf, b'1');
+    }
+
+    if enc == 1 {
+        i_bits -= 4;
+        if i_bits >= 10 {
+            return -1;
+        }
+        let digit = ((d >> i_bits) & 0xf) as u8;
+        push_char(&mut buf, b'0' + digit);
+    } else if enc != 0 {
+        push_char(&mut buf, b'9');
+    }
+
+    if enc != 0 {
+        for _ in 0..4 {
+            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 10);
+            i_bits -= 10;
+            if i_bits < 0 {
+                return -1;
+            }
+            n = ((d >> i_bits) & 0x3ff) as u32;
+            if n >= 1000 {
+                return -1;
+            }
+            _zbar_databar_decode10(buf, n as u64, 3);
+            buf = buf.add(3);
+        }
+        _zbar_databar_append_check14(buf.sub(13));
+        buf = buf.add(1);
+    }
+
+    match enc {
+        2 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 2);
+            i_bits -= 2;
+            let val = ((d >> i_bits) & 0x3) as u8;
+            push_char4(&mut buf, b'3', b'9', b'2', b'0' + val);
+        }
+        3 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 12);
+            i_bits -= 2;
+            let val = ((d >> i_bits) & 0x3) as u8;
+            push_char4(&mut buf, b'3', b'9', b'3', b'0' + val);
+            i_bits -= 10;
+            if i_bits < 0 {
+                return -1;
+            }
+            n = ((d >> i_bits) & 0x3ff) as u32;
+            if n >= 1000 {
+                return -1;
+            }
+            _zbar_databar_decode10(buf, n as u64, 3);
+            buf = buf.add(3);
+        }
+        4 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 15);
+            i_bits -= 15;
+            if i_bits < 0 {
+                return -1;
+            }
+            n = ((d >> i_bits) & 0x7fff) as u32;
+            push_char4(&mut buf, b'3', b'1', b'0', b'3');
+            _zbar_databar_decode10(buf, n as u64, 6);
+            buf = buf.add(6);
+        }
+        5 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 15);
+            i_bits -= 15;
+            if i_bits < 0 {
+                return -1;
+            }
+            n = ((d >> i_bits) & 0x7fff) as u32;
+            let mut prefix = b'2';
+            if n >= 10000 {
+                prefix = b'3';
+            }
+            push_char4(&mut buf, b'3', b'2', b'0', prefix);
+            if n >= 10000 {
+                n -= 10000;
+            }
+            _zbar_databar_decode10(buf, n as u64, 6);
+            buf = buf.add(6);
+        }
+        _ => {}
+    }
+
+    if enc >= 6 {
+        let mut temp_enc = enc & 1;
+        push_char4(&mut buf, b'3', b'1' + temp_enc as u8, b'0', b'x');
+
+        feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 20);
+        i_bits -= 20;
+        if i_bits < 0 {
+            return -1;
+        }
+        n = ((d >> i_bits) & 0xfffff) as u32;
+        if n >= 1_000_000 {
+            return -1;
+        }
+        let buf_start = buf;
+        _zbar_databar_decode10(buf_start, n as u64, 6);
+        *buf_start.offset(-1) = *buf_start;
+        *buf_start = b'0';
+        buf = buf_start.add(6);
+
+        feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 16);
+        i_bits -= 16;
+        if i_bits < 0 {
+            return -1;
+        }
+        n = ((d >> i_bits) & 0xffff) as u32;
+        if n < 38400 {
+            let dd = n % 32;
+            let rem = n / 32;
+            let mm = rem % 12 + 1;
+            let yy = rem / 12;
+
+            push_char(&mut buf, b'1');
+            temp_enc = enc - 6;
+            push_char(&mut buf, b'0' + ((temp_enc | 1) as u8));
+            _zbar_databar_decode10(buf, yy as u64, 2);
+            buf = buf.add(2);
+            _zbar_databar_decode10(buf, mm as u64, 2);
+            buf = buf.add(2);
+            _zbar_databar_decode10(buf, dd as u64, 2);
+            buf = buf.add(2);
+        } else if n > 38400 {
+            return -1;
+        }
+    }
+
+    if enc < 4 {
+        let mut scheme = SCH_NUM;
+        while i_bits > 0 || len > 0 {
+            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 8);
+
+            if scheme == SCH_NUM {
+                i_bits -= 4;
+                if i_bits < 0 {
+                    break;
+                }
+                if ((d >> i_bits) & 0xf) == 0 {
+                    scheme = SCH_ALNUM;
+                    continue;
+                }
+
+                if len == 0 && i_bits < 3 {
+                    let digit = ((d >> i_bits) & 0xf) as i32 - 1;
+                    if digit > 9 {
+                        return -1;
+                    }
+                    push_char(&mut buf, b'0' + digit as u8);
+                    break;
+                }
+
+                i_bits -= 3;
+                if i_bits < 0 {
+                    break;
+                }
+                let mut val = ((d >> i_bits) & 0x7f) as i32 - 8;
+                let n1 = val % 11;
+                val /= 11;
+                push_char(&mut buf, if val < 10 { b'0' + val as u8 } else { GS });
+                push_char(&mut buf, if n1 < 10 { b'0' + n1 as u8 } else { GS });
+            } else {
+                let mut ch: u8 = 0;
+                i_bits -= 3;
+                if i_bits < 0 {
+                    break;
+                }
+                if ((d >> i_bits) & 0x7) == 0 {
+                    scheme = SCH_NUM;
+                    continue;
+                }
+
+                i_bits -= 2;
+                if i_bits < 0 {
+                    break;
+                }
+                let mut val = ((d >> i_bits) & 0x1f) as u32;
+                if val == 0x04 {
+                    scheme ^= 0x3;
+                } else if val == 0x0f {
+                    ch = GS;
+                } else if val < 0x0f {
+                    ch = 43 + val as u8;
+                } else if scheme == SCH_ALNUM {
+                    i_bits -= 1;
+                    if i_bits < 0 {
+                        return -1;
+                    }
+                    val = ((d >> i_bits) & 0x1f) as u32;
+                    ch = if val < 0x1a {
+                        b'A' + val as u8
+                    } else if val == 0x1a {
+                        b'*'
+                    } else if val < 0x1f {
+                        b',' + (val as u8) - 0x1b
+                    } else {
+                        return -1;
+                    };
+                } else if scheme == SCH_ISO646 && val < 0x1d {
+                    i_bits -= 2;
+                    if i_bits < 0 {
+                        return -1;
+                    }
+                    val = ((d >> i_bits) & 0x3f) as u32;
+                    ch = if val < 0x1a {
+                        b'A' + val as u8
+                    } else if val < 0x34 {
+                        b'a' + (val as u8) - 0x1a
+                    } else {
+                        return -1;
+                    };
+                } else if scheme == SCH_ISO646 {
+                    i_bits -= 3;
+                    if i_bits < 0 {
+                        return -1;
+                    }
+                    val = ((d >> i_bits) & 0x1f) as u32;
+                    ch = match val {
+                        0x00..=0x09 => b'!' + val as u8 - 8,
+                        0x0a..=0x14 => b'%' + val as u8 - 0x0a,
+                        0x15..=0x1a => b':' + val as u8 - 0x15,
+                        0x1b => b'_',
+                        0x1c => b' ',
+                        _ => return -1,
+                    };
+                } else {
+                    return -1;
+                }
+
+                if ch != 0 {
+                    push_char(&mut buf, ch);
+                }
+            }
+        }
+    }
+
+    let total_len = buf.offset_from((*dcode).buf as *mut u8) as c_int;
+    if total_len < 0 || total_len as u32 >= (*dcode).buf_alloc {
+        return -1;
+    }
+
+    *buf = 0;
+    (*dcode).buflen = total_len as c_uint;
+    if total_len > 0 {
+        let last = buf.sub(1);
+        if *last == GS {
+            *last = 0;
+            (*dcode).buflen -= 1;
+        }
+    }
+
+    0
+}
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
 pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_uint) {
@@ -559,7 +922,201 @@ pub unsafe extern "C" fn lookup_sequence(
     }
 }
 
-// TODO: Port `match_segment_exp`.
+pub unsafe fn match_segment_exp(
+    dcode: *mut zbar_decoder_t,
+    seg: *mut databar_segment_t,
+    dir: c_int,
+) -> zbar_symbol_type_t {
+    let db = &mut (*dcode).databar;
+    let csegs = db.csegs() as usize;
+    if csegs == 0 {
+        return ZBAR_PARTIAL;
+    }
+
+    let ifixed = seg.offset_from(db.segs) as usize;
+    let fixed = segment_index(seg);
+    let mut bestsegs = [-1i32; 22];
+    let mut segs_idx = [-1i32; 22];
+    let mut seq = [-1i32; 22];
+    let mut iseg = [-1i32; DATABAR_MAX_SEGMENTS];
+    let mut width_stack = [0u32; 22];
+
+    seq[0] = 0;
+    seq[1] = -1;
+    segs_idx[0] = -1;
+    bestsegs[0] = -1;
+    width_stack[0] = (*seg).width as u32;
+
+    for j in 0..csegs {
+        let s = db.segs.add(j);
+        iseg[j] =
+            if (*s).exp() && (*s).finder() >= 0 && (!(*s).partial() || (*s).count() as i32 >= 4) {
+                segment_index(s)
+            } else {
+                -1
+            };
+    }
+
+    let mut maxcnt = 0i32;
+    let mut maxage = 0x7fff_u32;
+    let mut i: i32 = 0;
+    let mut seg_ptr = seg;
+
+    loop {
+        while i >= 0 && seq[i as usize] >= 0 {
+            let idx = i as usize;
+            let target = seq[idx];
+            let mut found: Option<usize> = None;
+            let mut candidate: *mut databar_segment_t = std::ptr::null_mut();
+            let current_width = width_stack[idx];
+
+            if target == fixed {
+                candidate = db.segs.add(ifixed);
+                if segs_idx[idx] < 0
+                    && _zbar_databar_check_width(current_width, (*candidate).width as u32, 14) != 0
+                {
+                    found = Some(ifixed);
+                }
+            } else {
+                let mut start = if segs_idx[idx] >= 0 {
+                    (segs_idx[idx] + 1) as usize
+                } else {
+                    0
+                };
+                while start < csegs {
+                    if iseg[start] == target {
+                        let cand = db.segs.add(start);
+                        if idx == 0
+                            || _zbar_databar_check_width(current_width, (*cand).width as u32, 14)
+                                != 0
+                        {
+                            found = Some(start);
+                            candidate = cand;
+                            break;
+                        }
+                    }
+                    start += 1;
+                }
+            }
+
+            if let Some(jidx) = found {
+                if candidate.is_null() {
+                    candidate = db.segs.add(jidx);
+                }
+
+                if idx == 0 {
+                    let lu = lookup_sequence(candidate, fixed, seq.as_mut_ptr(), seq.len());
+                    if lu == 0 {
+                        i -= 1;
+                        continue;
+                    }
+                    if lu < 0 {
+                        return ZBAR_NONE;
+                    }
+                }
+
+                let next_width = if idx == 0 {
+                    (*candidate).width as u32
+                } else {
+                    (current_width + (*candidate).width as u32) / 2
+                };
+                width_stack[idx + 1] = next_width;
+                segs_idx[idx] = jidx as i32;
+                segs_idx[idx + 1] = -1;
+                seg_ptr = candidate;
+                i = idx as i32 + 1;
+            } else {
+                i -= 1;
+            }
+        }
+
+        if i < 0 {
+            break;
+        }
+
+        let mut cnt = 0u32;
+        let mut chk = 0u32;
+        let mut age: u32;
+
+        let first_idx = segs_idx[0] as usize;
+        let mut seg_eval = db.segs.add(first_idx);
+        age = ((*db).epoch().wrapping_sub((*seg_eval).epoch())) as u32 & 0xff;
+
+        let mut pos = 1usize;
+        while pos < segs_idx.len() && segs_idx[pos] >= 0 {
+            let sidx = segs_idx[pos] as usize;
+            seg_eval = db.segs.add(sidx);
+            chk += (*seg_eval).check() as u32;
+            cnt += (*seg_eval).count() as u32;
+            age += ((*db).epoch().wrapping_sub((*seg_eval).epoch())) as u32 & 0xff;
+            pos += 1;
+        }
+
+        let mut chk0 = (*db.segs.add(first_idx)).data as i32 % 211;
+        if chk0 < 0 {
+            chk0 += 211;
+        }
+        chk %= 211;
+        if chk != chk0 as u32 {
+            i -= 1;
+            continue;
+        }
+        if maxcnt > cnt as i32 || (maxcnt == cnt as i32 && maxage <= age) {
+            i -= 1;
+            continue;
+        }
+
+        maxcnt = cnt as i32;
+        maxage = age;
+        for j in 0..pos {
+            bestsegs[j] = segs_idx[j];
+        }
+        bestsegs[pos] = -1;
+        i -= 1;
+    }
+
+    if bestsegs[0] < 0 {
+        return ZBAR_PARTIAL;
+    }
+
+    if _zbar_decoder_acquire_lock(dcode, ZBAR_DATABAR_EXP) != 0 {
+        return ZBAR_PARTIAL;
+    }
+
+    let mut data_vals = [0i32; 22];
+    let mut count = 0usize;
+    while count < bestsegs.len() && bestsegs[count] >= 0 {
+        let sidx = bestsegs[count] as usize;
+        let s = db.segs.add(sidx);
+        data_vals[count] = (*s).data as i32;
+        count += 1;
+    }
+
+    if databar_postprocess_exp(dcode, data_vals.as_mut_ptr()) != 0 {
+        _zbar_decoder_release_lock(dcode, ZBAR_DATABAR_EXP);
+        return ZBAR_PARTIAL;
+    }
+
+    for j in 0..count {
+        let sidx = bestsegs[j] as usize;
+        let s = db.segs.add(sidx);
+        seg_ptr = s;
+        if sidx != ifixed {
+            let mut cnt = (*s).count();
+            if cnt > 0 {
+                cnt -= 1;
+                (*s).set_count(cnt);
+                if cnt == 0 {
+                    (*s).set_finder(-1);
+                }
+            }
+        }
+    }
+
+    (*dcode).direction = (1 - 2 * (((*seg_ptr).side() ^ (*seg_ptr).color()) as i32)) * dir;
+    (*dcode).modifiers = 1 << ZBAR_MOD_GS1;
+    ZBAR_DATABAR_EXP
+}
 
 /// Calculate DataBar checksum
 ///

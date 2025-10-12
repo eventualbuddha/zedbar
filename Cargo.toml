@@ -16,9 +16,6 @@ image = "0.25"
 encoding_rs = "0.8.33"
 
 # For incremental migration - keep C dependencies during transition
-[build-dependencies]
-cc = "1.0"
-
 [[bin]]
 name = "zbarimg"
 path = "src/bin/zbarimg.rs"

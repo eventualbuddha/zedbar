@@ -5,11 +5,7 @@
 
 use libc::{c_char, c_int, c_uint, c_ulong, c_void};
 
-use crate::{
-    decoder_types::zbar_decoder_t,
-    img_scanner::{zbar_image_scanner_t, zbar_symbol_set_t},
-    line_scanner::zbar_scanner_t,
-};
+use crate::img_scanner::zbar_symbol_set_t;
 
 #[repr(C)]
 #[allow(non_camel_case_types)]
@@ -57,20 +53,9 @@ pub(crate) unsafe fn refcnt(cnt: *mut c_int, delta: c_int) -> c_int {
     rc
 }
 
-#[link(name = "zbar_c", kind = "static")]
-extern "C" {
-    // Scanner functions
-    pub fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t;
-    pub fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t;
-    pub fn zbar_image_scanner_destroy(scanner: *mut zbar_image_scanner_t);
-    pub fn zbar_image_scanner_set_config(
-        scanner: *mut zbar_image_scanner_t,
-        symbology: c_int,
-        config: c_int,
-        value: c_int,
-    ) -> c_int;
-    pub fn zbar_scan_image(scanner: *mut zbar_image_scanner_t, image: *mut zbar_image_t) -> c_int;
-
-    // From symbol.h
-    pub fn _zbar_symbol_set_create() -> *mut zbar_symbol_set_t;
-}
+pub use crate::img_scanner::{
+    zbar_image_scanner_create, zbar_image_scanner_destroy, zbar_image_scanner_set_config,
+    zbar_scan_image,
+};
+pub use crate::line_scanner::zbar_scanner_create;
+pub use crate::symbol::_zbar_symbol_set_create;
