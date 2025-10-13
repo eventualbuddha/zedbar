@@ -1986,8 +1986,7 @@ pub unsafe fn qr_finder_centers_locate(
 
     // We need vertical lines to be sorted by X coordinate, with ties broken by Y
     // coordinate, for clustering purposes.
-    // We scan the image in the opposite order for cache efficiency, so sort the
-    // lines we found here.
+    // We scan the image in the opposite order, so sort the lines we found here.
     let vline_count = nvlines.max(0) as usize;
     if vline_count > 1 && !vlines.is_null() {
         let vlines_slice = std::slice::from_raw_parts_mut(vlines, vline_count);

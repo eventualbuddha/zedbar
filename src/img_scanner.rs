@@ -42,11 +42,6 @@ const RECYCLE_BUCKETS: usize = 5;
 const NUM_SCN_CFGS: usize = 2; // ZBAR_CFG_Y_DENSITY - ZBAR_CFG_X_DENSITY + 1
 const NUM_SYMS: usize = 25; // Number of symbol types
 
-// Cache timing constants (in milliseconds)
-const CACHE_PROXIMITY: c_ulong = 1000;
-const CACHE_HYSTERESIS: c_ulong = 2000;
-const CACHE_TIMEOUT: c_ulong = CACHE_HYSTERESIS * 2;
-
 // QR Code finder precision constant
 const QR_FINDER_SUBPREC: c_int = 2;
 
@@ -181,11 +176,6 @@ pub struct zbar_image_scanner_t {
     /// recycled symbols in 4^n size buckets
     recycle: [recycle_bucket_t; RECYCLE_BUCKETS],
 
-    /// current result cache state
-    enable_cache: c_int,
-    /// inter-image result cache entries
-    cache: *mut zbar_symbol_t,
-
     // configuration settings
     /// config flags
     config: c_uint,
@@ -240,28 +230,6 @@ pub unsafe fn zbar_image_scanner_set_data_handler(
     (*iscn).handler = handler;
     (*iscn).userdata = userdata;
     result
-}
-
-/// Enable or disable result caching for the image scanner
-///
-/// When enabled, the scanner caches decoded results to suppress duplicates
-/// across consecutive frames. When disabled or when this function is called,
-/// all cached symbols are recycled.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `enable` - Non-zero to enable caching, 0 to disable
-pub unsafe fn zbar_image_scanner_enable_cache(iscn: *mut zbar_image_scanner_t, enable: c_int) {
-    if iscn.is_null() {
-        return;
-    }
-
-    if !(*iscn).cache.is_null() {
-        // Recycle all cached symbols
-        _zbar_image_scanner_recycle_syms(iscn, (*iscn).cache);
-        (*iscn).cache = null_mut();
-    }
-    (*iscn).enable_cache = if enable != 0 { 1 } else { 0 };
 }
 
 /// Get configuration value for a specific symbology
@@ -412,68 +380,6 @@ pub unsafe fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_scanner_t) 
     zbar_scanner_new_scan(scn);
 }
 
-/// Recycle a symbol set
-///
-/// Decrements the reference count and recycles the symbols if the count reaches zero.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `syms` - The symbol set to recycle
-///
-/// # Returns
-/// 1 if the symbol set is still referenced, 0 if it was recycled
-pub unsafe fn _zbar_image_scanner_recycle_symbol_set(
-    iscn: *mut zbar_image_scanner_t,
-    syms: *mut zbar_symbol_set_t,
-) -> c_int {
-    if refcnt(&mut (*syms).refcnt, -1) != 0 {
-        return 1;
-    }
-
-    _zbar_image_scanner_recycle_syms(iscn, (*syms).head);
-    (*syms).head = null_mut();
-    (*syms).tail = null_mut();
-    (*syms).nsyms = 0;
-    0
-}
-
-/// Recycle image symbols
-///
-/// This function recycles symbols from both the scanner's current symbol set
-/// and the image's symbol set, managing their lifecycle appropriately.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `img` - The image whose symbols should be recycled
-pub unsafe fn zbar_image_scanner_recycle_image(
-    iscn: *mut zbar_image_scanner_t,
-    img: *mut zbar_image_t,
-) {
-    let scanner = &mut *iscn;
-    let image = &mut *img;
-
-    let current_syms = scanner.syms_ptr();
-    if !current_syms.is_null()
-        && (*current_syms).refcnt != 0
-        && _zbar_image_scanner_recycle_symbol_set(iscn, current_syms) != 0
-    {
-        scanner.clear_syms();
-    }
-
-    let syms = image.take_syms_ptr();
-
-    if !syms.is_null() && _zbar_image_scanner_recycle_symbol_set(iscn, syms) != 0 {
-        // Symbol set is still referenced; restore it back to the image.
-        image.set_syms_ptr(syms);
-    } else if !syms.is_null() {
-        if !scanner.syms_ptr().is_null() {
-            symbol_set_free(syms);
-        } else {
-            scanner.set_syms_ptr(syms);
-        }
-    }
-}
-
 /// Allocate a symbol from the recycling pool or allocate a new one
 ///
 /// Attempts to recycle a symbol from the appropriate size bucket,
@@ -530,7 +436,6 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     (*sym).quality = 1;
     (*sym).npts = 0;
     (*sym).orient = ZBAR_ORIENT_UNKNOWN;
-    (*sym).cache_count = 0;
     (*sym).time = (*iscn).time;
     c_assert!((*sym).syms.is_null());
 
@@ -581,111 +486,7 @@ pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanne
     _zbar_qr_found_line((*iscn).qr, vert, line);
 }
 
-/// Look up a symbol in the cache
-///
-/// Searches for a matching symbol in the cache and recycles stale entries.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `sym` - The symbol to look up
-///
-/// # Returns
-/// Pointer to the matching cache entry, or NULL if not found
-pub(crate) unsafe fn _zbar_image_scanner_cache_lookup(
-    iscn: *mut zbar_image_scanner_t,
-    sym: *mut zbar_symbol_t,
-) -> *mut zbar_symbol_t {
-    let mut entry = &mut (*iscn).cache as *mut *mut zbar_symbol_t;
-
-    while !(*entry).is_null() {
-        // Check if this entry matches
-        if (*(*entry)).symbol_type == (*sym).symbol_type && (*(*entry)).datalen == (*sym).datalen {
-            // Compare data
-            let entry_data =
-                std::slice::from_raw_parts((*(*entry)).data as *const u8, (*sym).datalen as usize);
-            let sym_data =
-                std::slice::from_raw_parts((*sym).data as *const u8, (*sym).datalen as usize);
-
-            if entry_data == sym_data {
-                break;
-            }
-        }
-
-        // Check if entry is stale
-        if (*sym).time - (*(*entry)).time > CACHE_TIMEOUT {
-            // Recycle stale cache entry
-            let next = (*(*entry)).next;
-            (*(*entry)).next = null_mut();
-            _zbar_image_scanner_recycle_syms(iscn, *entry);
-            *entry = next;
-        } else {
-            entry = &mut (*(*entry)).next as *mut *mut zbar_symbol_t;
-        }
-    }
-
-    *entry
-}
-
-/// Cache a symbol
-///
-/// Updates or creates a cache entry for the symbol and sets its cache count.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `sym` - The symbol to cache
-pub(crate) unsafe fn _zbar_image_scanner_cache_sym(
-    iscn: *mut zbar_image_scanner_t,
-    sym: *mut zbar_symbol_t,
-) {
-    if (*iscn).enable_cache != 0 {
-        let mut entry = _zbar_image_scanner_cache_lookup(iscn, sym);
-
-        if entry.is_null() {
-            // FIXME reuse sym
-            entry = _zbar_image_scanner_alloc_sym(
-                iscn,
-                (*sym).symbol_type,
-                ((*sym).datalen + 1) as c_int,
-            );
-            (*entry).configs = (*sym).configs;
-            (*entry).modifiers = (*sym).modifiers;
-            copy_nonoverlapping(
-                (*sym).data as *const u8,
-                (*entry).data as *mut u8,
-                (*sym).datalen as usize,
-            );
-            (*entry).time = (*sym).time - CACHE_HYSTERESIS;
-            (*entry).cache_count = 0;
-
-            // Add to cache
-            (*entry).next = (*iscn).cache;
-            (*iscn).cache = entry;
-        }
-
-        // Consistency check and hysteresis
-        let age = (*sym).time - (*entry).time;
-        (*entry).time = (*sym).time;
-        let near_thresh = age < CACHE_PROXIMITY;
-        let far_thresh = age >= CACHE_HYSTERESIS;
-        let dup = (*entry).cache_count >= 0;
-
-        if (!dup && !near_thresh) || far_thresh {
-            let sym_type = (*sym).symbol_type;
-            let h = _zbar_get_symbol_hash(sym_type);
-            (*entry).cache_count = -(*iscn).sym_configs[0][h as usize];
-        } else if dup || near_thresh {
-            (*entry).cache_count += 1;
-        }
-
-        (*sym).cache_count = (*entry).cache_count;
-    } else {
-        (*sym).cache_count = 0;
-    }
-}
-
 /// Add a symbol to the scanner's symbol set
-///
-/// Caches the symbol and adds it to the current symbol set.
 ///
 /// # Arguments
 /// * `iscn` - The image scanner instance
@@ -694,12 +495,10 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) {
-    _zbar_image_scanner_cache_sym(iscn, sym);
-
     let syms = (*iscn).syms_ptr();
     debug_assert!(!syms.is_null());
 
-    if (*sym).cache_count != 0 || (*syms).tail.is_null() {
+    if (*syms).tail.is_null() {
         (*sym).next = (*syms).head;
         (*syms).head = sym;
     } else {
@@ -707,11 +506,7 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
         (*(*syms).tail).next = sym;
     }
 
-    if (*sym).cache_count == 0 {
-        (*syms).nsyms += 1;
-    } else if (*syms).tail.is_null() {
-        (*syms).tail = sym;
-    }
+    (*syms).nsyms += 1;
 
     // Increment reference count
     // Note: The condition `&& 1 <= 0` in the original C code is always false,
@@ -1041,7 +836,6 @@ pub unsafe fn _zbar_scan_image(
     (*iscn).img = img;
 
     // Recycle previous scanner and image results
-    zbar_image_scanner_recycle_image(iscn, img);
     let scanner = &mut *iscn;
     let mut syms = scanner.syms_ptr();
     if syms.is_null() {
@@ -1186,7 +980,7 @@ pub unsafe fn _zbar_scan_image(
     _zbar_sq_decode((*iscn).sq, iscn, img);
 
     // Filter and merge EAN composite results
-    let filter = (*iscn).enable_cache == 0 && (density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1);
+    let filter = density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1;
     let mut nean = 0;
     let mut naddon = 0;
 
@@ -1196,23 +990,12 @@ pub unsafe fn _zbar_scan_image(
             let sym = *symp;
             let sym_type = (*sym).symbol_type as c_int;
 
-            if (*sym).cache_count <= 0
-                && ((sym_type < ZBAR_COMPOSITE && sym_type > ZBAR_PARTIAL)
-                    || sym_type == ZBAR_DATABAR
-                    || sym_type == ZBAR_DATABAR_EXP
-                    || sym_type == ZBAR_CODABAR)
+            if (sym_type < ZBAR_COMPOSITE && sym_type > ZBAR_PARTIAL)
+                || sym_type == ZBAR_DATABAR
+                || sym_type == ZBAR_DATABAR_EXP
+                || sym_type == ZBAR_CODABAR
             {
                 if (sym_type == ZBAR_CODABAR || filter) && (*sym).quality < 4 {
-                    if (*iscn).enable_cache != 0 {
-                        // Revert cache update
-                        let entry = _zbar_image_scanner_cache_lookup(iscn, sym);
-                        if !entry.is_null() {
-                            (*entry).cache_count -= 1;
-                        } else {
-                            c_assert!(false);
-                        }
-                    }
-
                     // Recycle symbol
                     *symp = (*sym).next;
                     (*syms).nsyms -= 1;
@@ -1309,11 +1092,6 @@ pub unsafe fn zbar_scan_image(iscn: *mut zbar_image_scanner_t, img: *mut zbar_im
     if (*syms).nsyms == 0 && TEST_CFG!(iscn, ZBAR_CFG_TEST_INVERTED) {
         inv = _zbar_image_copy(img, 1);
         if !inv.is_null() {
-            if !(*iscn).cache.is_null() {
-                // Recycle all cached syms
-                _zbar_image_scanner_recycle_syms(iscn, (*iscn).cache);
-                (*iscn).cache = null_mut();
-            }
             syms = _zbar_scan_image(iscn, inv);
             _zbar_image_swap_symbols(img, inv);
         }

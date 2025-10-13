@@ -68,7 +68,6 @@ pub struct zbar_symbol_t {
     pub next: *mut zbar_symbol_t,
     pub syms: *mut zbar_symbol_set_t,
     pub time: c_ulong,
-    pub cache_count: c_int,
     pub quality: c_int,
 }
 
