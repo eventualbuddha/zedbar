@@ -303,6 +303,56 @@ unsafe fn qr_free_bytes(ptr: *mut c_uchar) {
     libc::free(ptr as *mut c_void);
 }
 
+/// RAII wrapper for temporary arrays allocated with qr_alloc_array or qr_calloc_array
+#[allow(dead_code)]
+struct TempArray<T> {
+    ptr: *mut T,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> TempArray<T> {
+    /// Allocate an uninitialized array
+    unsafe fn new(count: usize) -> Self {
+        Self {
+            ptr: qr_alloc_array::<T>(count),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Allocate a zero-initialized array
+    unsafe fn new_zeroed(count: usize) -> Self {
+        Self {
+            ptr: qr_calloc_array::<T>(count),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Get the raw pointer (for passing to C functions)
+    fn as_ptr(&self) -> *const T {
+        self.ptr
+    }
+
+    /// Get the mutable raw pointer (for passing to C functions)
+    fn as_mut_ptr(&mut self) -> *mut T {
+        self.ptr
+    }
+
+    /// Check if allocation failed
+    fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
+impl<T> Drop for TempArray<T> {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                qr_free_array(self.ptr);
+            }
+        }
+    }
+}
+
 /// Initializes a client reader handle.
 pub unsafe fn qr_reader_init(reader: *mut qr_reader) {
     isaac_init((&mut (*reader).isaac) as *mut _, null(), 0);
@@ -4827,19 +4877,21 @@ pub unsafe fn qr_reader_match_centers(
 ) {
     // The number of centers should be small, so an O(n^3) exhaustive search of
     // which ones go together should be reasonable.
-    let mark = qr_calloc_array::<c_uchar>(_ncenters as usize);
+    let mut mark = TempArray::<c_uchar>::new_zeroed(_ncenters as usize);
     let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
     let mut nfailures = 0;
+
+    let mark_ptr = mark.as_mut_ptr();
 
     for i in 0.._ncenters {
         // TODO: We might be able to accelerate this step significantly by
         // considering the remaining finder centers in a more intelligent order,
         // based on the first finder center we just chose.
         let mut j = i + 1;
-        while i < _ncenters && *mark.add(i as usize) == 0 && j < _ncenters {
+        while i < _ncenters && *mark_ptr.add(i as usize) == 0 && j < _ncenters {
             let mut k = j + 1;
-            while j < _ncenters && *mark.add(j as usize) == 0 && k < _ncenters {
-                if *mark.add(k as usize) == 0 {
+            while j < _ncenters && *mark_ptr.add(j as usize) == 0 && k < _ncenters {
+                if *mark_ptr.add(k as usize) == 0 {
                     let mut c: [*mut qr_finder_center; 3] = [
                         _centers.add(i as usize),
                         _centers.add(j as usize),
@@ -4871,14 +4923,14 @@ pub unsafe fn qr_reader_match_centers(
                         }
 
                         // Mark these centers as used
-                        *mark.add(i as usize) = 1;
-                        *mark.add(j as usize) = 1;
-                        *mark.add(k as usize) = 1;
+                        *mark_ptr.add(i as usize) = 1;
+                        *mark_ptr.add(j as usize) = 1;
+                        *mark_ptr.add(k as usize) = 1;
 
                         // Find any other finder centers located inside this code
                         ninside = 0;
                         for l in 0.._ncenters {
-                            if *mark.add(l as usize) == 0
+                            if *mark_ptr.add(l as usize) == 0
                                 && qr_point_ccw(
                                     qrdata.bbox[0].as_ptr(),
                                     qrdata.bbox[1].as_ptr(),
@@ -4900,7 +4952,7 @@ pub unsafe fn qr_reader_match_centers(
                                     (*_centers.add(l as usize)).pos.as_ptr(),
                                 ) >= 0
                             {
-                                *mark.add(l as usize) = 2;
+                                *mark_ptr.add(l as usize) = 2;
                                 ninside += 1;
                             }
                         }
@@ -4913,7 +4965,7 @@ pub unsafe fn qr_reader_match_centers(
                                 qr_alloc_array::<qr_finder_center>(ninside as usize);
                             ninside = 0;
                             for l in 0.._ncenters {
-                                if *mark.add(l as usize) == 2 {
+                                if *mark_ptr.add(l as usize) == 2 {
                                     std::ptr::copy_nonoverlapping(
                                         _centers.add(l as usize),
                                         inside.add(ninside as usize),
@@ -4930,8 +4982,8 @@ pub unsafe fn qr_reader_match_centers(
 
                         // Mark _all_ such centers used: codes cannot partially overlap
                         for l in 0.._ncenters {
-                            if *mark.add(l as usize) == 2 {
-                                *mark.add(l as usize) = 1;
+                            if *mark_ptr.add(l as usize) == 2 {
+                                *mark_ptr.add(l as usize) = 1;
                             }
                         }
 
@@ -4942,7 +4994,7 @@ pub unsafe fn qr_reader_match_centers(
                             // Give up.
                             // We're unlikely to find a valid code in all this clutter, and we
                             // could spend quite a lot of time trying.
-                            qr_free_bytes(mark);
+                            // mark will be automatically freed by Drop
                             return;
                         }
                     }
@@ -4952,8 +5004,7 @@ pub unsafe fn qr_reader_match_centers(
             j += 1;
         }
     }
-
-    qr_free_bytes(mark);
+    // mark will be automatically freed by Drop when function returns
 }
 
 /// Decode QR codes from an image
