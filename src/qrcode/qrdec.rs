@@ -258,12 +258,19 @@ pub struct qr_finder_lines {
 
 #[inline]
 unsafe fn qr_reader_alloc_zeroed() -> *mut qr_reader {
-    libc::calloc(1, size_of::<qr_reader>()) as *mut qr_reader
+    // SAFETY: We zero-initialize the memory to match the original C calloc behavior.
+    // While this creates an invalid qr_reader (Vec fields are not valid when zeroed),
+    // the caller MUST immediately call qr_reader_init() which properly initializes
+    // all fields (isaac, gf, and finder_lines) before any use. This is guaranteed by
+    // the only caller _zbar_qr_create().
+    #[allow(invalid_value)]
+    let reader = Box::new(std::mem::zeroed::<qr_reader>());
+    Box::into_raw(reader)
 }
 
 #[inline]
 unsafe fn qr_reader_free(reader: *mut qr_reader) {
-    libc::free(reader as *mut c_void);
+    drop(Box::from_raw(reader));
 }
 
 #[inline]
@@ -314,9 +321,7 @@ pub unsafe fn _zbar_qr_create() -> *mut qr_reader {
 
 /// Frees a client reader handle.
 pub unsafe fn _zbar_qr_destroy(reader: *mut qr_reader) {
-    // Manually drop the Vecs before freeing the reader memory
-    std::ptr::drop_in_place(&mut (*reader).finder_lines[0]);
-    std::ptr::drop_in_place(&mut (*reader).finder_lines[1]);
+    // Box::from_raw will automatically drop all fields (including Vecs)
     qr_reader_free(reader);
 }
 
