@@ -225,6 +225,7 @@ pub unsafe fn qr_hom_fit_edge_line(
 ///
 /// Represents a mapping from a unit square to a quadrilateral in the image,
 /// used for extracting QR code modules with perspective correction.
+#[derive(Copy, Clone)]
 pub struct qr_hom_cell {
     /// Forward transformation matrix [3][3]
     pub fwd: [[c_int; 3]; 3],
@@ -616,6 +617,7 @@ pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int
 /// An affine homography.
 /// This maps from the image (at subpel resolution) to a square domain with
 /// power-of-two sides (of res bits) and back.
+#[derive(Copy, Clone)]
 pub struct qr_aff {
     /// Forward transformation matrix [2][2]
     pub fwd: [[c_int; 2]; 2],
@@ -692,6 +694,7 @@ pub unsafe fn qr_aff_project(_p: *mut qr_point, _aff: *const qr_aff, _u: c_int, 
 /// A full homography.
 /// Like the affine homography, this maps from the image (at subpel resolution)
 /// to a square domain with power-of-two sides (of res bits) and back.
+#[derive(Copy, Clone)]
 pub struct qr_hom {
     fwd: [[c_int; 2]; 3],
     inv: [[c_int; 2]; 3],
