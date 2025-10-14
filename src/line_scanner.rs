@@ -5,7 +5,7 @@
 
 use std::ptr;
 
-use libc::{c_int, c_uint, c_void, free, malloc};
+use libc::{c_int, c_uint};
 
 use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan, zbar_decoder_reset};
 use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, ZBAR_NONE, ZBAR_PARTIAL};
@@ -134,7 +134,7 @@ pub unsafe fn zbar_scanner_get_color(scn: *const zbar_scanner_t) -> zbar_color_t
 pub fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
     if !scn.is_null() {
         unsafe {
-            free(scn as *mut c_void);
+            drop(Box::from_raw(scn));
         }
     }
 }
@@ -143,10 +143,8 @@ pub fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
 ///
 /// Allocates and initializes a new scanner with the specified decoder.
 pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
-    let scn = malloc(std::mem::size_of::<zbar_scanner_t>()) as *mut zbar_scanner_t;
-    if scn.is_null() {
-        return ptr::null_mut();
-    }
+    let scn = Box::new(std::mem::zeroed::<zbar_scanner_t>());
+    let scn = Box::into_raw(scn);
 
     (*scn).decoder = dcode;
     (*scn).y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
