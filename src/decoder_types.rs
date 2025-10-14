@@ -97,6 +97,7 @@ pub const BUFFER_INCR: c_uint = 0x10;
 // ============================================================================
 
 /// Interleaved 2 of 5 decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct i25_decoder_t {
     // Bitfields packed into first 32 bits:
@@ -150,6 +151,7 @@ impl i25_decoder_t {
 }
 
 /// Code 39 decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct code39_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
@@ -200,6 +202,7 @@ impl code39_decoder_t {
 }
 
 /// Code 93 decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct code93_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12
@@ -251,6 +254,7 @@ impl code93_decoder_t {
 }
 
 /// Codabar decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct codabar_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
@@ -303,6 +307,7 @@ impl codabar_decoder_t {
 }
 
 /// Code 128 decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct code128_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12 (16 bits)
@@ -368,6 +373,7 @@ impl code128_decoder_t {
 }
 
 /// SQ Code finder state (already defined but include here for completeness)
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct sq_finder_t {
     pub config: c_uint,
@@ -493,6 +499,7 @@ impl databar_segment_t {
 }
 
 /// DataBar decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct databar_decoder_t {
     pub config: c_uint,
@@ -526,6 +533,7 @@ impl databar_decoder_t {
 }
 
 /// EAN pass state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct ean_pass_t {
     pub state: c_char,
@@ -536,6 +544,7 @@ pub struct ean_pass_t {
 }
 
 /// EAN/UPC decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct ean_decoder_t {
     pub pass: [ean_pass_t; 4],
@@ -558,6 +567,7 @@ pub struct ean_decoder_t {
 }
 
 /// QR finder line (from qrcode.h)
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct qr_finder_line {
     pub pos: [c_int; 2], // qr_point
@@ -567,6 +577,7 @@ pub struct qr_finder_line {
 }
 
 /// QR Code finder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct qr_finder_t {
     pub s5: c_uint,
@@ -583,11 +594,11 @@ pub struct qr_finder_t {
 pub type zbar_decoder_handler_t = unsafe fn(*mut zbar_decoder_t);
 
 /// Main barcode decoder state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct zbar_decoder_t {
     // Basic decoder state
     pub idx: u8,
-    _padding1: [u8; 3], // Align to 4 bytes
     pub w: [c_uint; DECODE_WINDOW],
     pub type_: zbar_symbol_type_t,
     pub lock: zbar_symbol_type_t,

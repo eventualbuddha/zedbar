@@ -13,12 +13,12 @@ use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use crate::decoder_types::{
     ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_PARTIAL, ZBAR_QRCODE,
 };
-use crate::image_ffi::{zbar_image_t, zbar_symbol_t};
+use crate::image_ffi::zbar_image_t;
 use crate::img_scanner::{
     _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
     zbar_image_scanner_get_config, zbar_image_scanner_t,
 };
-use crate::symbol::{_zbar_symbol_add_point, symbol_set_create};
+use crate::symbol::{_zbar_symbol_add_point, symbol_set_create, zbar_symbol_t};
 
 use super::qr_point;
 use super::qrdec::qr_mode;

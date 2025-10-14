@@ -3,14 +3,15 @@
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
 //! The conversion to Rust is being done incrementally.
 
-use std::{
-    ffi::c_void,
-    ptr::{null, null_mut, NonNull},
+use std::ptr::{null, null_mut, NonNull};
+
+use libc::{c_int, c_uint};
+
+use crate::{
+    ffi::refcnt,
+    img_scanner::zbar_symbol_set_t,
+    symbol::{zbar_symbol_set_ref, zbar_symbol_t},
 };
-
-use libc::{c_char, c_int, c_uint, c_ulong};
-
-use crate::{ffi::refcnt, img_scanner::zbar_symbol_set_t, symbol::zbar_symbol_set_ref};
 
 #[inline]
 unsafe fn image_alloc_zeroed() -> *mut zbar_image_t {
@@ -50,25 +51,6 @@ impl zbar_image_t {
     pub fn take_syms_ptr(&mut self) -> *mut zbar_symbol_set_t {
         self.syms.take().map_or(null_mut(), NonNull::as_ptr)
     }
-}
-
-#[allow(non_camel_case_types)]
-pub struct zbar_symbol_t {
-    pub symbol_type: c_int,
-    pub configs: c_uint,
-    pub modifiers: c_uint,
-    pub data_alloc: c_uint,
-    pub datalen: c_uint,
-    pub data: *mut c_char,
-    pub pts_alloc: c_uint,
-    pub npts: c_uint,
-    pub pts: *mut c_void,
-    pub orient: c_int,
-    pub refcnt: c_int,
-    pub next: *mut zbar_symbol_t,
-    pub syms: *mut zbar_symbol_set_t,
-    pub time: c_ulong,
-    pub quality: c_int,
 }
 
 pub unsafe fn zbar_image_create() -> *mut zbar_image_t {

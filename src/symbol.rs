@@ -16,10 +16,9 @@ use crate::{
         ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
     },
     ffi::refcnt,
-    image_ffi::zbar_symbol_t,
     img_scanner::zbar_symbol_set_t,
 };
-use libc::{c_char, c_int, c_uint, c_void};
+use libc::{c_char, c_int, c_uint, c_ulong, c_void};
 use std::{mem::size_of, ptr};
 
 const NUM_SYMS: usize = 20;
@@ -119,23 +118,54 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
     h as i32
 }
 
+#[derive(Default)]
+#[allow(non_camel_case_types)]
+pub struct zbar_symbol_t {
+    pub symbol_type: c_int,
+    pub configs: c_uint,
+    pub modifiers: c_uint,
+    pub data_alloc: c_uint,
+    pub datalen: c_uint,
+    pub data: *mut c_char,
+    pub pts_alloc: c_uint,
+    pub npts: c_uint,
+    pub pts: *mut c_void,
+    pub orient: c_int,
+    pub refcnt: c_int,
+    pub next: *mut zbar_symbol_t,
+    pub syms: *mut zbar_symbol_set_t,
+    pub time: c_ulong,
+    pub quality: c_int,
+}
+
+impl Drop for zbar_symbol_t {
+    fn drop(&mut self) {
+        if !self.syms.is_null() {
+            unsafe {
+                zbar_symbol_set_ref(self.syms, -1);
+            }
+            self.syms = ptr::null_mut();
+        }
+        if !self.pts.is_null() {
+            unsafe {
+                libc::free(self.pts);
+            }
+        }
+        if self.data_alloc != 0 && !self.data.is_null() {
+            unsafe {
+                libc::free(self.data as *mut c_void);
+            }
+        }
+    }
+}
+
 /// Free a symbol
 ///
 /// # Safety
 ///
 /// The symbol pointer must be valid and not previously freed.
 pub unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
-    if !(*sym).syms.is_null() {
-        zbar_symbol_set_ref((*sym).syms, -1);
-        (*sym).syms = ptr::null_mut();
-    }
-    if !(*sym).pts.is_null() {
-        libc::free((*sym).pts);
-    }
-    if (*sym).data_alloc != 0 && !(*sym).data.is_null() {
-        libc::free((*sym).data as *mut c_void);
-    }
-    libc::free(sym as *mut c_void);
+    drop(Box::from_raw(sym));
 }
 
 /// Adjust symbol reference count
@@ -155,9 +185,9 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
 ///
 /// Allocates memory that must be freed with `symbol_set_free`.
 pub unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
-    let syms = libc::calloc(1, std::mem::size_of::<zbar_symbol_set_t>()) as *mut zbar_symbol_set_t;
-    refcnt(&mut (*syms).refcnt, 1);
-    syms
+    let mut symbol_set = Box::new(zbar_symbol_set_t::default());
+    refcnt(&mut symbol_set.refcnt, 1);
+    Box::into_raw(symbol_set)
 }
 
 /// Free a symbol set
@@ -179,7 +209,8 @@ pub unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
 
 /// Allocate a zeroed symbol instance suitable for initialization.
 pub unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
-    libc::calloc(1, size_of::<zbar_symbol_t>()) as *mut zbar_symbol_t
+    let symbol = Box::new(zbar_symbol_t::default());
+    Box::into_raw(symbol)
 }
 
 /// Release any allocated symbol data buffer and reset metadata.

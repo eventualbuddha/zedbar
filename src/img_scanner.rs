@@ -1,10 +1,9 @@
 use std::{
     ffi::c_void,
-    mem::size_of,
     ptr::{copy_nonoverlapping, null_mut, NonNull},
 };
 
-use libc::{c_int, c_uint, c_ulong, memcmp, size_t};
+use libc::{c_int, c_uint, memcmp, size_t};
 
 use crate::{
     decoder::zbar_decoder_get_config,
@@ -15,7 +14,7 @@ use crate::{
         ZBAR_DATABAR_EXP, ZBAR_EAN5, ZBAR_ISBN10, ZBAR_ORIENT_UNKNOWN, ZBAR_PARTIAL, ZBAR_QRCODE,
     },
     finder::{_zbar_decoder_get_qr_finder_line, _zbar_decoder_get_sq_finder_config},
-    image_ffi::{zbar_image_t, zbar_symbol_t},
+    image_ffi::zbar_image_t,
     line_scanner::{
         zbar_scanner_create, zbar_scanner_flush, zbar_scanner_new_scan, zbar_scanner_t,
     },
@@ -34,7 +33,8 @@ use crate::{
     },
     symbol::{
         _zbar_get_symbol_hash, _zbar_symbol_add_point, symbol_alloc_zeroed, symbol_clear_data,
-        symbol_free, symbol_reserve_data, symbol_set_create, symbol_set_free, zbar_symbol_set_ref,
+        symbol_free, symbol_refcnt, symbol_reserve_data, symbol_set_create, symbol_set_free,
+        zbar_symbol_set_ref, zbar_symbol_t,
     },
 };
 
@@ -125,6 +125,7 @@ pub struct qr_reader {
     pub finder_lines: [qr_finder_lines; 2],
 }
 
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct zbar_symbol_set_t {
     pub refcnt: c_int,
@@ -133,9 +134,27 @@ pub struct zbar_symbol_set_t {
     pub tail: *mut zbar_symbol_t,
 }
 
+impl Drop for zbar_symbol_set_t {
+    fn drop(&mut self) {
+        let mut sym = self.head;
+        while !sym.is_null() {
+            let next = unsafe { (*sym).next };
+            unsafe {
+                (*sym).next = std::ptr::null_mut();
+            }
+            unsafe {
+                symbol_refcnt(sym, -1);
+            }
+            sym = next;
+        }
+        self.head = std::ptr::null_mut();
+    }
+}
+
 // Function pointer type for image data handler callbacks
 pub type zbar_image_data_handler_t = unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
 
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct recycle_bucket_t {
     nsyms: c_int,
@@ -143,6 +162,7 @@ pub struct recycle_bucket_t {
 }
 
 /// image scanner state
+#[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct zbar_image_scanner_t {
     /// associated linear intensity scanner
@@ -160,8 +180,6 @@ pub struct zbar_image_scanner_t {
     /// user result callback
     handler: Option<zbar_image_data_handler_t>,
 
-    /// scan start time
-    time: c_ulong,
     /// currently scanning image *root*
     img: *mut zbar_image_t,
     /// current scan direction
@@ -436,7 +454,6 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     (*sym).quality = 1;
     (*sym).npts = 0;
     (*sym).orient = ZBAR_ORIENT_UNKNOWN;
-    (*sym).time = (*iscn).time;
     c_assert!((*sym).syms.is_null());
 
     if datalen > 0 {
@@ -507,13 +524,6 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
     }
 
     (*syms).nsyms += 1;
-
-    // Increment reference count
-    // Note: The condition `&& 1 <= 0` in the original C code is always false,
-    // so symbol_free is never called
-    if refcnt(&mut (*sym).refcnt, 1) == 0 && 1 <= 0 {
-        symbol_free(sym);
-    }
 }
 
 /// SQ code handler - updates SQ reader configuration
@@ -534,12 +544,13 @@ pub(crate) unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanne
 
 #[inline]
 unsafe fn image_scanner_alloc_zeroed() -> *mut zbar_image_scanner_t {
-    libc::calloc(1, size_of::<zbar_image_scanner_t>()) as *mut _
+    let scanner = Box::new(zbar_image_scanner_t::default());
+    Box::into_raw(scanner)
 }
 
 #[inline]
 unsafe fn image_scanner_free(iscn: *mut zbar_image_scanner_t) {
-    libc::free(iscn as *mut c_void);
+    drop(Box::from_raw(iscn))
 }
 
 /// Create a new image scanner
@@ -818,11 +829,6 @@ pub unsafe fn _zbar_scan_image(
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) -> *mut zbar_symbol_set_t {
-    // Static counter for timestamping
-    static mut SCAN_COUNTER: c_uint = 0;
-    SCAN_COUNTER = SCAN_COUNTER.wrapping_add(1);
-    (*iscn).time = SCAN_COUNTER as c_ulong;
-
     // Reset QR and SQ decoders
     _zbar_qr_reset((*iscn).qr);
     _zbar_sq_reset((*iscn).sq);

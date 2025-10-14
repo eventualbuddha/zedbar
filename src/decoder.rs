@@ -36,12 +36,13 @@ fn test_cfg(config: c_uint, cfg: c_int) -> bool {
 
 #[inline]
 pub(crate) unsafe fn decoder_alloc_zeroed() -> *mut zbar_decoder_t {
-    libc::calloc(1, size_of::<zbar_decoder_t>()) as *mut _
+    let decoder = Box::new(zbar_decoder_t::default());
+    Box::into_raw(decoder)
 }
 
 #[inline]
 pub(crate) unsafe fn decoder_free_struct(dcode: *mut zbar_decoder_t) {
-    libc::free(dcode as *mut c_void);
+    drop(Box::from_raw(dcode))
 }
 
 #[inline]
