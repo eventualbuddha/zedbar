@@ -18,7 +18,7 @@ use crate::{
     finder::_zbar_find_qr,
 };
 use libc::{c_char, c_int, c_uint, c_void};
-use std::mem::size_of;
+use std::{mem::size_of, ptr};
 
 // Config constant not in decoder_types
 const ZBAR_CFG_NUM: c_int = 5;
@@ -42,7 +42,7 @@ pub(crate) unsafe fn decoder_alloc_zeroed() -> *mut zbar_decoder_t {
 
 #[inline]
 pub(crate) unsafe fn decoder_free_struct(dcode: *mut zbar_decoder_t) {
-    drop(Box::from_raw(dcode))
+    ptr::drop_in_place(dcode);
 }
 
 #[inline]

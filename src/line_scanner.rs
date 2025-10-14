@@ -7,7 +7,7 @@ use std::ptr;
 
 use libc::{c_int, c_uint};
 
-use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan, zbar_decoder_reset};
+use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan};
 use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, ZBAR_NONE, ZBAR_PARTIAL};
 
 // Constants from scanner.c
@@ -53,14 +53,13 @@ pub unsafe fn calc_thresh(scn: *mut zbar_scanner_t) -> c_uint {
 
 /// Color of element: bar or space
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum zbar_color_t {
     ZBAR_SPACE = 0, // light area or space between bars
     ZBAR_BAR = 1,   // dark area or colored bar segment
 }
 
 /// Scanner state structure - must match the C layout exactly
-#[allow(non_camel_case_types)]
+#[derive(Default)]
 pub struct zbar_scanner_t {
     decoder: *mut zbar_decoder_t,
     y1_min_thresh: c_uint,
@@ -131,11 +130,9 @@ pub unsafe fn zbar_scanner_get_color(scn: *const zbar_scanner_t) -> zbar_color_t
 /// Destroy a scanner instance
 ///
 /// Frees all resources associated with the scanner.
-pub fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
+pub unsafe fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
     if !scn.is_null() {
-        unsafe {
-            drop(Box::from_raw(scn));
-        }
+        ptr::drop_in_place(scn);
     }
 }
 
@@ -143,30 +140,12 @@ pub fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
 ///
 /// Allocates and initializes a new scanner with the specified decoder.
 pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
-    let scn = Box::new(std::mem::zeroed::<zbar_scanner_t>());
+    let scn = Box::new(zbar_scanner_t::default());
     let scn = Box::into_raw(scn);
 
     (*scn).decoder = dcode;
     (*scn).y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
-    zbar_scanner_reset(scn);
     scn
-}
-
-/// Reset scanner to initial state
-///
-/// Clears the scanner state while retaining configuration.
-pub unsafe fn zbar_scanner_reset(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
-    // Zero out from x to the end of the structure
-    let start_ptr = ptr::addr_of_mut!((*scn).x) as *mut u8;
-    let scn_end = (scn as *mut u8).add(std::mem::size_of::<zbar_scanner_t>());
-    let size = scn_end as usize - start_ptr as usize;
-    ptr::write_bytes(start_ptr, 0, size);
-
-    (*scn).y1_thresh = (*scn).y1_min_thresh;
-    if !(*scn).decoder.is_null() {
-        zbar_decoder_reset((*scn).decoder);
-    }
-    ZBAR_NONE
 }
 
 /// Process an edge and pass the width to the decoder

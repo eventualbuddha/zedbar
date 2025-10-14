@@ -305,21 +305,12 @@ unsafe fn qr_free_bytes(ptr: *mut c_uchar) {
 }
 
 /// RAII wrapper for temporary arrays allocated with qr_alloc_array or qr_calloc_array
-#[allow(dead_code)]
 struct TempArray<T> {
     ptr: *mut T,
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> TempArray<T> {
-    /// Allocate an uninitialized array
-    unsafe fn new(count: usize) -> Self {
-        Self {
-            ptr: qr_alloc_array::<T>(count),
-            _marker: std::marker::PhantomData,
-        }
-    }
-
     /// Allocate a zero-initialized array
     unsafe fn new_zeroed(count: usize) -> Self {
         Self {
@@ -328,19 +319,9 @@ impl<T> TempArray<T> {
         }
     }
 
-    /// Get the raw pointer (for passing to C functions)
-    fn as_ptr(&self) -> *const T {
-        self.ptr
-    }
-
     /// Get the mutable raw pointer (for passing to C functions)
     fn as_mut_ptr(&mut self) -> *mut T {
         self.ptr
-    }
-
-    /// Check if allocation failed
-    fn is_null(&self) -> bool {
-        self.ptr.is_null()
     }
 }
 
