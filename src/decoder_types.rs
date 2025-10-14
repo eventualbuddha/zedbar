@@ -567,7 +567,7 @@ pub struct ean_decoder_t {
 }
 
 /// QR finder line (from qrcode.h)
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub struct qr_finder_line {
     pub pos: [c_int; 2], // qr_point
