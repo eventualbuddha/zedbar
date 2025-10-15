@@ -751,42 +751,6 @@ pub unsafe fn zbar_decoder_set_config(
 // Debug helper
 // ============================================================================
 
-use std::sync::Mutex;
-
-static DECODER_DUMP: Mutex<Option<Vec<u8>>> = Mutex::new(None);
-
-/// Format decoder buffer as hex string (for debugging)
-pub unsafe fn _zbar_decoder_buf_dump(buf: *mut u8, buflen: c_uint) -> *const c_char {
-    let dumplen = (buflen * 3) + 12;
-    let mut dump = DECODER_DUMP.lock().unwrap();
-
-    // Allocate or reallocate buffer
-    if dump.is_none() || dump.as_ref().unwrap().len() < dumplen as usize {
-        *dump = Some(Vec::with_capacity(dumplen as usize));
-    }
-
-    let dump_vec = dump.as_mut().unwrap();
-    dump_vec.clear();
-
-    // Format header
-    let len_display = if buflen > 0xffff { 0xffff } else { buflen };
-    let header = format!("buf[{:04x}]=", len_display);
-    dump_vec.extend_from_slice(header.as_bytes());
-
-    // Format buffer contents as hex
-    let slice = std::slice::from_raw_parts(buf, buflen as usize);
-    for (i, &byte) in slice.iter().enumerate() {
-        if i > 0 {
-            dump_vec.push(b' ');
-        }
-        let hex = format!("{:02x}", byte);
-        dump_vec.extend_from_slice(hex.as_bytes());
-    }
-
-    dump_vec.push(0); // Null terminator
-    dump_vec.as_ptr() as *const c_char
-}
-
 /// Low-level decoder for processing bar/space width streams
 pub struct Decoder {
     _ptr: *mut std::ffi::c_void,
