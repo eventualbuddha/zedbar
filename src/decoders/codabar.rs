@@ -325,7 +325,7 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 #[inline]
 unsafe fn codabar_checksum(dcode: &zbar_decoder_t, n: usize) -> bool {
     let mut chk: c_uint = 0;
-    let buf = dcode.buf;
+    let buf = dcode.buffer_ptr();
     for i in 0..n {
         chk += *buf.add(i) as c_uint;
     }
@@ -338,19 +338,20 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
     let dir = dcode.codabar.direction();
     dcode.direction = 1 - 2 * (dir as c_int);
     let mut n = dcode.codabar.character() as usize;
+    let buf = dcode.buffer_mut_ptr();
 
     // Copy from holding buffer to main buffer
     for i in 0..NIBUF {
-        *dcode.buf.add(i) = dcode.codabar.buf[i] as c_char;
+        *buf.add(i) = dcode.codabar.buf[i] as c_char;
     }
 
     if dir {
         // Reverse buffer
         for i in 0..(n / 2) {
             let j = n - 1 - i;
-            let code = *dcode.buf.add(i);
-            *dcode.buf.add(i) = *dcode.buf.add(j);
-            *dcode.buf.add(j) = code;
+            let code = *buf.add(i);
+            *buf.add(i) = *buf.add(j);
+            *buf.add(j) = code;
         }
     }
 
@@ -360,21 +361,21 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
             return ZBAR_NONE;
         }
         if !test_cfg(dcode.codabar.config, ZBAR_CFG_EMIT_CHECK) {
-            *dcode.buf.add(n - 2) = *dcode.buf.add(n - 1);
+            *buf.add(n - 2) = *buf.add(n - 1);
             n -= 1;
         }
     }
 
     for i in 0..n {
-        let c = *dcode.buf.add(i) as u8;
-        *dcode.buf.add(i) = if (c as usize) < 0x14 {
+        let c = *buf.add(i) as u8;
+        *buf.add(i) = if (c as usize) < 0x14 {
             CODABAR_CHARACTERS[c as usize] as c_char
         } else {
             b'?' as c_char
         };
     }
-    dcode.buflen = n as c_uint;
-    *dcode.buf.add(n) = 0;
+    dcode.set_buffer_len(n as c_uint);
+    *buf.add(n) = 0;
     dcode.modifiers = 0;
 
     dcode.codabar.set_character(-1);
@@ -425,14 +426,17 @@ pub unsafe fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
         dcode.codabar.buf[character as usize] = c as u8;
     } else {
         if character >= BUFFER_MIN as i16
-            && dcode.set_buffer_size((character + 1) as c_uint).is_err()
+            && dcode
+                .set_buffer_capacity((character + 1) as c_uint)
+                .is_err()
         {
             // goto reset
             release_lock(dcode, ZBAR_CODABAR);
             dcode.codabar.set_character(-1);
             return ZBAR_NONE;
         }
-        *dcode.buf.offset(character as isize) = c as c_char;
+        let buf_ptr = dcode.buffer_mut_ptr();
+        *buf_ptr.offset(character as isize) = c as c_char;
     }
     dcode.codabar.set_character(character + 1);
 

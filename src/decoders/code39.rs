@@ -446,33 +446,34 @@ fn code39_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 unsafe fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
     let character = dcode.code39.character();
     let direction = dcode.code39.direction();
+    let buf = dcode.buffer_mut_ptr();
 
     dcode.direction = 1 - 2 * (direction as c_int);
     if direction {
         // Reverse buffer
         for i in 0..(character / 2) {
             let j = character - 1 - i;
-            let c = *dcode.buf.offset(i as isize);
-            *dcode.buf.offset(i as isize) = *dcode.buf.offset(j as isize);
-            *dcode.buf.offset(j as isize) = c;
+            let c = *buf.add(i as usize);
+            *buf.add(i as usize) = *buf.add(j as usize);
+            *buf.add(j as usize) = c;
         }
     }
     for i in 0..character {
-        let val = *dcode.buf.offset(i as isize) as u8;
-        *dcode.buf.offset(i as isize) = if (val as usize) < 0x2b {
+        let val = *buf.add(i as usize) as u8;
+        *buf.add(i as usize) = if (val as usize) < 0x2b {
             CODE39_CHARACTERS[val as usize] as c_char
         } else {
             b'?' as c_char
         };
     }
     zassert!(
-        (character as c_uint) < dcode.buf_alloc,
+        (character as c_uint) < dcode.buffer_capacity(),
         -1,
         "i={:02x}\n",
         character
     );
-    dcode.buflen = character as c_uint;
-    *dcode.buf.offset(character as isize) = 0;
+    dcode.set_buffer_len(character as c_uint);
+    *buf.add(character as usize) = 0;
     dcode.modifiers = 0;
     0
 }
@@ -512,8 +513,9 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     if dcode.code39.element() == 10 {
         let space = get_width(dcode, 0);
         let character = dcode.code39.character();
+        let buf_ptr = dcode.buffer_ptr();
 
-        if character > 0 && *dcode.buf.offset((character - 1) as isize) == 0x2b {
+        if character > 0 && *buf_ptr.add((character - 1) as usize) == 0x2b as c_char {
             // STOP character found
             let mut sym = ZBAR_NONE;
 
@@ -573,7 +575,11 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
         return ZBAR_PARTIAL;
     }
 
-    if c < 0 || dcode.set_buffer_size((character + 1) as c_uint).is_err() {
+    if c < 0
+        || dcode
+            .set_buffer_capacity((character + 1) as c_uint)
+            .is_err()
+    {
         release_lock(dcode, ZBAR_CODE39);
         dcode.code39.set_character(-1);
         return ZBAR_NONE;
@@ -587,7 +593,8 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
         );
     }
 
-    *dcode.buf.offset(character as isize) = c as c_char;
+    let buf_ptr = dcode.buffer_mut_ptr();
+    *buf_ptr.add(character as usize) = c as c_char;
     dcode.code39.set_character(character + 1);
 
     ZBAR_NONE

@@ -191,8 +191,9 @@ unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
     }
 
     // Copy holding buffer
+    let buf_ptr = dcode.buffer_mut_ptr();
     for i in 0..4 {
-        *dcode.buf.offset(i) = dcode.i25.buf[i as usize] as c_char;
+        *buf_ptr.add(i) = dcode.i25.buf[i] as c_char;
     }
     false
 }
@@ -230,14 +231,15 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     }
 
     dcode.direction = 1 - 2 * (direction as c_int);
+    let buf_ptr = dcode.buffer_mut_ptr();
     if direction {
         // Reverse buffer
         let char_count = character as isize;
         for i in 0..(char_count / 2) {
             let j = char_count - 1 - i;
-            let c = *dcode.buf.offset(i);
-            *dcode.buf.offset(i) = *dcode.buf.offset(j);
-            *dcode.buf.offset(j) = c;
+            let c = *buf_ptr.offset(i);
+            *buf_ptr.offset(i) = *buf_ptr.offset(j);
+            *buf_ptr.offset(j) = c;
         }
     }
 
@@ -252,14 +254,14 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     let char_count = character as c_uint;
     zassert!(
-        char_count < dcode.buf_alloc,
+        char_count < dcode.buffer_capacity(),
         ZBAR_NONE,
         "i={:02x}\n",
         char_count
     );
 
-    dcode.buflen = char_count;
-    *dcode.buf.offset(char_count as isize) = 0;
+    dcode.set_buffer_len(char_count);
+    *buf_ptr.offset(char_count as isize) = 0;
     dcode.modifiers = 0;
     dcode.i25.set_character(-1);
     ZBAR_I25
@@ -310,7 +312,7 @@ pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t
     }
 
     if dcode
-        .set_buffer_size(dcode.i25.character() as c_uint + 3)
+        .set_buffer_capacity(dcode.i25.character() as c_uint + 3)
         .is_err()
     {
         // goto reset
@@ -323,7 +325,7 @@ pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t
 
     let character = dcode.i25.character();
     let buf = if character >= 4 {
-        dcode.buf
+        dcode.buffer_mut_ptr()
     } else {
         dcode.i25.buf.as_mut_ptr() as *mut c_char
     };

@@ -700,9 +700,6 @@ pub struct zbar_decoder_t {
 
     // Buffer management (everything above here is reset)
     buffer: Vec<u8>,
-    pub buf_alloc: c_uint,
-    pub buflen: c_uint,
-    pub buf: *mut c_char,
     pub userdata: *mut c_void,
     pub handler: Option<zbar_decoder_handler_t>,
 
@@ -723,9 +720,7 @@ impl zbar_decoder_t {
     pub unsafe fn new() -> Option<Self> {
         let mut decoder = Self::default();
 
-        decoder.buffer = vec![0; BUFFER_MIN as usize];
-        decoder.buf_alloc = BUFFER_MIN;
-        decoder.buf = decoder.buffer.as_mut_ptr() as *mut c_char;
+        decoder.buffer = Vec::with_capacity(BUFFER_MIN as usize);
 
         // Initialize default configs
         decoder.ean.enable = 1;
@@ -788,13 +783,16 @@ impl zbar_decoder_t {
         s
     }
 
-    /// Resize the decoder's data buffer if needed
-    /// Returns 1 on allocation failure or if max size exceeded, 0 on success
-    pub(crate) unsafe fn set_buffer_size(&mut self, len: c_uint) -> Result<(), ()> {
+    /// Resize the decoder's data buffer if needed.
+    ///
+    /// # Errors
+    /// Returns `Err` on allocation failure or if max size exceeded, `Ok` on success.
+    pub(crate) unsafe fn set_buffer_capacity(&mut self, len: c_uint) -> Result<(), ()> {
         if len <= BUFFER_MIN {
             return Ok(());
         }
-        if len < self.buf_alloc {
+        let current_alloc = self.buffer_capacity();
+        if len < current_alloc {
             // FIXME: size reduction heuristic?
             return Ok(());
         }
@@ -802,21 +800,42 @@ impl zbar_decoder_t {
             return Err(());
         }
 
-        let mut new_len = len;
-        if len < self.buf_alloc + BUFFER_INCR {
-            new_len = self.buf_alloc + BUFFER_INCR;
-            if new_len > BUFFER_MAX {
-                new_len = BUFFER_MAX;
+        self.buffer.reserve_exact((len - current_alloc) as usize);
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn buffer_capacity(&self) -> c_uint {
+        self.buffer.capacity() as c_uint
+    }
+
+    #[inline]
+    pub(crate) fn buffer_len(&self) -> c_uint {
+        self.buffer.len() as c_uint
+    }
+
+    #[inline]
+    pub(crate) fn set_buffer_len(&mut self, len: c_uint) {
+        debug_assert!(len <= self.buffer_capacity());
+        let len = len as usize;
+        let current = self.buffer.len();
+        if len <= current {
+            self.buffer.truncate(len);
+        } else {
+            unsafe {
+                self.buffer.set_len(len);
             }
         }
+    }
 
-        let required = new_len as usize;
-        if self.buffer.len() < required {
-            self.buffer.resize(required, 0);
-        }
-        self.buf = self.buffer.as_mut_ptr() as *mut c_char;
-        self.buf_alloc = new_len;
-        Ok(())
+    #[inline]
+    pub(crate) fn buffer_ptr(&self) -> *const c_char {
+        self.buffer.as_ptr() as *const c_char
+    }
+
+    #[inline]
+    pub(crate) fn buffer_mut_ptr(&mut self) -> *mut c_char {
+        self.buffer.as_mut_ptr() as *mut c_char
     }
 
     /// Acquire a decoder lock for a specific symbology type
@@ -846,7 +865,7 @@ impl zbar_decoder_t {
         self.modifiers = 0;
         self.direction = 0;
         self.s6 = 0;
-        self.buflen = 0;
+        self.set_buffer_len(0);
 
         self.ean.reset();
         self.i25.reset();
@@ -887,7 +906,6 @@ impl Drop for zbar_decoder_t {
                 decoder_free_databar_segments(self.databar.segs);
                 self.databar.segs = ptr::null_mut();
             }
-            self.buf = ptr::null_mut();
         }
     }
 }

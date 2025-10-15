@@ -264,6 +264,7 @@ fn plusmod47(mut acc: i32, add: i32) -> i32 {
 #[inline]
 unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     let n = dcode.code93.character() as usize;
+    let buf = dcode.buffer_ptr();
     let mut sum_c = 0;
     let mut acc_c = 0;
     let mut i_c = ((n - 2) % 20) as i32;
@@ -273,9 +274,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
 
     for i in 0..(n - 2) {
         let d = if dcode.code93.direction() {
-            *dcode.buf.add(n - 1 - i) as i32
+            *buf.add(n - 1 - i) as i32
         } else {
-            *dcode.buf.add(i) as i32
+            *buf.add(i) as i32
         };
 
         i_c -= 1;
@@ -296,9 +297,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     }
 
     let d = if dcode.code93.direction() {
-        *dcode.buf.offset(1) as i32
+        *buf.add(1) as i32
     } else {
-        *dcode.buf.add(n - 2) as i32
+        *buf.add(n - 2) as i32
     };
     if d != sum_c {
         return false;
@@ -307,9 +308,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     acc_k = plusmod47(acc_k, sum_c);
     sum_k = plusmod47(sum_k, acc_k);
     let d = if dcode.code93.direction() {
-        *dcode.buf.offset(0) as i32
+        *buf.add(0) as i32
     } else {
-        *dcode.buf.add(n - 1) as i32
+        *buf.add(n - 1) as i32
     };
     if d != sum_k {
         return false;
@@ -322,15 +323,16 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
 #[inline]
 unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     let n = dcode.code93.character() as usize;
+    let buf = dcode.buffer_mut_ptr();
 
     dcode.direction = 1 - 2 * (dcode.code93.direction() as c_int);
     if dcode.code93.direction() {
         // Reverse buffer
         for i in 0..(n / 2) {
             let j = n - 1 - i;
-            let d = *dcode.buf.add(i);
-            *dcode.buf.add(i) = *dcode.buf.add(j);
-            *dcode.buf.add(j) = d;
+            let d = *buf.add(i);
+            *buf.add(i) = *buf.add(j);
+            *buf.add(j) = d;
         }
     }
 
@@ -338,7 +340,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     let mut i = 0;
     let mut j = 0;
     while i < n {
-        let mut d = *dcode.buf.add(i) as u8;
+        let mut d = *buf.add(i) as u8;
         i += 1;
 
         if d < 0xa {
@@ -350,7 +352,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
         } else {
             let shift = d;
             zassert!(shift < 0x2f, true, "shift={:02x}\n", shift);
-            d = *dcode.buf.add(i) as u8;
+            d = *buf.add(i) as u8;
             i += 1;
             if !(0xa..0x24).contains(&d) {
                 return true;
@@ -364,13 +366,18 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 _ => return true,
             }
         }
-        *dcode.buf.offset(j as isize) = d as c_char;
+        *buf.add(j) = d as c_char;
         j += 1;
     }
 
-    zassert!((j as c_uint) < dcode.buf_alloc, true, "j={:02x}\n", j);
-    dcode.buflen = j as c_uint;
-    *dcode.buf.offset(j as isize) = 0;
+    zassert!(
+        (j as c_uint) < dcode.buffer_capacity(),
+        true,
+        "j={:02x}\n",
+        j
+    );
+    dcode.set_buffer_len(j as c_uint);
+    *buf.add(j) = 0;
     dcode.modifiers = 0;
     false
 }
@@ -421,24 +428,28 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     }
 
     let character = dcode.code93.character();
-    if dcode.set_buffer_size((character + 1) as c_uint).is_err() {
+    if dcode
+        .set_buffer_capacity((character + 1) as c_uint)
+        .is_err()
+    {
         return decode_abort(dcode);
     }
 
     dcode.code93.width = dcode.s6;
+    let buf_ptr = dcode.buffer_mut_ptr();
 
     if character == 1 {
         // Lock shared resources
         if acquire_lock(dcode, ZBAR_CODE93) {
             return decode_abort(dcode);
         }
-        *dcode.buf.offset(0) = dcode.code93.buf as c_char;
+        *buf_ptr.add(0) = dcode.code93.buf as c_char;
     }
 
     if character == 0 {
         dcode.code93.buf = c as u8;
     } else {
-        *dcode.buf.offset(character as isize) = c as c_char;
+        *buf_ptr.add(character as usize) = c as c_char;
     }
     dcode.code93.set_character(character + 1);
     ZBAR_NONE

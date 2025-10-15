@@ -309,7 +309,8 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     } else {
         0
     };
-    let mut sum = *dcode.buf.add(idx) as c_uint;
+    let buf = dcode.buffer_ptr();
+    let mut sum = *buf.add(idx) as c_uint;
     if sum >= 103 {
         sum -= 103;
     }
@@ -331,7 +332,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
         } else {
             i
         };
-        acc += *dcode.buf.add(idx) as c_uint;
+        acc += *buf.add(idx) as c_uint;
         if acc >= 103 {
             acc -= 103;
         }
@@ -356,7 +357,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     } else {
         (dcode.code128.character() - 2) as usize
     };
-    let check = *dcode.buf.add(idx) as c_uint;
+    let check = *buf.add(idx) as c_uint;
     sum != check
 }
 
@@ -371,14 +372,16 @@ unsafe fn postprocess_c(
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
     let newlen = dcode.code128.character() as usize + delta;
-    if dcode.set_buffer_size(newlen as c_uint).is_err() {
+    if dcode.set_buffer_capacity(newlen as c_uint).is_err() {
         return ZBAR_NONE as c_uint;
     }
 
+    let buf = dcode.buffer_mut_ptr();
+
     // Relocate unprocessed data to end of buffer
     libc::memmove(
-        dcode.buf.add(start + delta) as *mut libc::c_void,
-        dcode.buf.add(start) as *const libc::c_void,
+        buf.add(start + delta) as *mut libc::c_void,
+        buf.add(start) as *const libc::c_void,
         dcode.code128.character() as usize - start,
     );
     dcode.code128.set_character(newlen as i16);
@@ -386,26 +389,26 @@ unsafe fn postprocess_c(
     for i in 0..delta {
         let j = dst + i * 2;
         // Convert each set C character into two ASCII digits
-        let mut code = *dcode.buf.add(start + delta + i) as u8;
-        *dcode.buf.add(j) = b'0' as c_char;
+        let mut code = *buf.add(start + delta + i) as u8;
+        *buf.add(j) = b'0' as c_char;
         if code >= 50 {
             code -= 50;
-            *dcode.buf.add(j) += 5;
+            *buf.add(j) += 5;
         }
         if code >= 30 {
             code -= 30;
-            *dcode.buf.add(j) += 3;
+            *buf.add(j) += 3;
         }
         if code >= 20 {
             code -= 20;
-            *dcode.buf.add(j) += 2;
+            *buf.add(j) += 2;
         }
         if code >= 10 {
             code -= 10;
-            *dcode.buf.add(j) += 1;
+            *buf.add(j) += 1;
         }
         zassert!(
-            *dcode.buf.add(j) as u8 <= b'9',
+            *buf.add(j) as u8 <= b'9',
             delta as c_uint,
             "start={:x} end={:x} i={:x} j={:x}\n",
             start,
@@ -422,7 +425,7 @@ unsafe fn postprocess_c(
             i,
             j
         );
-        *dcode.buf.add(j + 1) = (b'0' + code) as c_char;
+        *buf.add(j + 1) = (b'0' + code) as c_char;
     }
     delta as c_uint
 }
@@ -432,31 +435,32 @@ unsafe fn postprocess_c(
 unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     dcode.modifiers = 0;
     dcode.direction = 1 - 2 * (dcode.code128.direction() as c_int);
+    let mut buf = dcode.buffer_mut_ptr();
 
     if dcode.code128.direction() != 0 {
         // Reverse buffer
         for i in 0..(dcode.code128.character() / 2) {
             let j = dcode.code128.character() - 1 - i;
-            let code = *dcode.buf.offset(i as isize);
-            *dcode.buf.offset(i as isize) = *dcode.buf.offset(j as isize);
-            *dcode.buf.offset(j as isize) = code;
+            let code = *buf.add(i as usize);
+            *buf.add(i as usize) = *buf.add(j as usize);
+            *buf.add(j as usize) = code;
         }
         zassert!(
-            *dcode.buf.offset((dcode.code128.character() - 1) as isize) as u8 == STOP_REV,
+            *buf.add((dcode.code128.character() - 1) as usize) as u8 == STOP_REV,
             true,
             "dir={:x}\n",
             dcode.code128.direction()
         );
     } else {
         zassert!(
-            *dcode.buf.offset((dcode.code128.character() - 1) as isize) as u8 == STOP_FWD,
+            *buf.add((dcode.code128.character() - 1) as usize) as u8 == STOP_FWD,
             true,
             "dir={:x}\n",
             dcode.code128.direction()
         );
     }
 
-    let code = *dcode.buf.offset(0) as u8;
+    let code = *buf.add(0) as u8;
     zassert!(
         (START_A..=START_C).contains(&code),
         true,
@@ -470,7 +474,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     let mut i = 1usize;
     let mut j = 0usize;
     while i < (dcode.code128.character() - 2) as usize {
-        let code = *dcode.buf.add(i) as u8;
+        let code = *buf.add(i) as u8;
         zassert!(
             (code & 0x80) == 0,
             true,
@@ -493,7 +497,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 // Convert character set A to ASCII
                 code -= 0x60;
             }
-            *dcode.buf.add(j) = code as c_char;
+            *buf.add(j) = code as c_char;
             j += 1;
             if (charset & 0x80) != 0 {
                 charset &= 0x7f;
@@ -512,6 +516,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                     cexp
                 );
                 let delta = postprocess_c(dcode, cexp, i, j);
+                buf = dcode.buffer_mut_ptr();
                 i += delta as usize;
                 j += (delta * 2) as usize;
                 cexp = 0;
@@ -531,7 +536,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 } else if i == 2 {
                     dcode.modifiers |= 1 << ZBAR_MOD_AIM;
                 } else if i < (dcode.code128.character() - 3) as usize {
-                    *dcode.buf.add(j) = 0x1d;
+                    *buf.add(j) = 0x1d;
                     j += 1;
                 }
                 // else drop trailing FNC1
@@ -573,12 +578,18 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
             charset,
             cexp
         );
-        j += (postprocess_c(dcode, cexp, i, j) * 2) as usize;
+        let delta = postprocess_c(dcode, cexp, i, j);
+        j += (delta * 2) as usize;
     }
 
-    zassert!((j as c_uint) < dcode.buf_alloc, true, "j={:02x}\n", j);
-    dcode.buflen = j as c_uint;
-    *dcode.buf.add(j) = 0;
+    zassert!(
+        (j as c_uint) < dcode.buffer_capacity(),
+        true,
+        "j={:02x}\n",
+        j
+    );
+    dcode.set_buffer_len(j as c_uint);
+    *buf.add(j) = 0;
     dcode.code128.set_character(j as i16);
     false
 }
@@ -629,7 +640,7 @@ pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
         return 0;
     } else if c < 0
         || dcode
-            .set_buffer_size((dcode.code128.character() + 1) as c_uint)
+            .set_buffer_capacity((dcode.code128.character() + 1) as c_uint)
             .is_err()
     {
         if dcode.code128.character() > 1 {
@@ -650,11 +661,12 @@ pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
     }
     dcode.code128.width = dcode.code128.s6;
 
+    let capacity = dcode.buffer_capacity();
     zassert!(
-        (dcode.buf_alloc as i16) > dcode.code128.character(),
+        (capacity as i16) > dcode.code128.character(),
         0,
         "alloc={:x} idx={:x} c={:02x}\n",
-        dcode.buf_alloc,
+        capacity,
         dcode.code128.character(),
         c
     );
@@ -665,11 +677,13 @@ pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
             dcode.code128.set_character(-1);
             return 0;
         }
-        *dcode.buf.offset(0) = dcode.code128.start() as c_char;
+        let buf_ptr = dcode.buffer_mut_ptr();
+        *buf_ptr.add(0) = dcode.code128.start() as c_char;
     }
 
     let character = dcode.code128.character();
-    *dcode.buf.offset(character as isize) = c as c_char;
+    let buf_ptr = dcode.buffer_mut_ptr();
+    *buf_ptr.add(character as usize) = c as c_char;
     dcode.code128.set_character(character + 1);
 
     if dcode.code128.character() > 2

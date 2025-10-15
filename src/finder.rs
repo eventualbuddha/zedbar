@@ -118,7 +118,7 @@ pub unsafe fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
         ((*qrf).line.pos[0] + get_width(dcode_ref, 4) as i32 + w.div_ceil(2) as i32) as i32;
 
     dcode_ref.direction = 0;
-    dcode_ref.buflen = 0;
+    dcode_ref.set_buffer_len(0);
 
     ZBAR_QRCODE
 }

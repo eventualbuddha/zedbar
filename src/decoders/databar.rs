@@ -298,11 +298,12 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 
     len -= 2;
 
-    if (*dcode).set_buffer_size(buflen as c_uint).is_err() {
+    if (*dcode).set_buffer_capacity(buflen as c_uint).is_err() {
         return -1;
     }
 
-    let mut buf = (*dcode).buf as *mut u8;
+    let base_buf = (*dcode).buffer_mut_ptr() as *mut u8;
+    let mut buf = base_buf;
 
     if enc != 0 {
         push_char(&mut buf, b'0');
@@ -546,18 +547,19 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
         }
     }
 
-    let total_len = buf.offset_from((*dcode).buf as *mut u8) as c_int;
-    if total_len < 0 || total_len as u32 >= (*dcode).buf_alloc {
+    let total_len = buf.offset_from(base_buf) as c_int;
+    if total_len < 0 || (total_len as u32) >= (*dcode).buffer_capacity() {
         return -1;
     }
 
     *buf = 0;
-    (*dcode).buflen = total_len as c_uint;
+    (*dcode).set_buffer_len(total_len as c_uint);
     if total_len > 0 {
         let last = buf.sub(1);
         if *last == GS {
             *last = 0;
-            (*dcode).buflen -= 1;
+            let new_len = (*dcode).buffer_len().saturating_sub(1);
+            (*dcode).set_buffer_len(new_len);
         }
     }
 
@@ -569,7 +571,7 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
     let db = &mut (*dcode).databar;
     let mut d_array = [*d.offset(0), *d.offset(1), *d.offset(2), *d.offset(3)];
 
-    let buf = (*dcode).buf;
+    let buf = (*dcode).buffer_mut_ptr();
     let mut chk = 0u32;
 
     // Write "01" prefix
@@ -654,9 +656,9 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
             chk = 10 - chk;
         }
         *buf.offset(13) = (chk as u8 + b'0') as c_char;
-        (*dcode).buflen = 14;
+        (*dcode).set_buffer_len(14);
     } else {
-        (*dcode).buflen = 13;
+        (*dcode).set_buffer_len(13);
     }
 }
 
@@ -848,7 +850,7 @@ pub unsafe fn match_segment(
     }
     (*seg).set_finder(-1);
 
-    if (*dcode).set_buffer_size(18).is_err() {
+    if (*dcode).set_buffer_capacity(18).is_err() {
         return ZBAR_PARTIAL;
     }
 

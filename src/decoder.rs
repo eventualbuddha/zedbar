@@ -62,12 +62,12 @@ pub unsafe fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
 
 /// Get decoded data buffer
 pub unsafe fn zbar_decoder_get_data(dcode: *const zbar_decoder_t) -> *const c_char {
-    (*dcode).buf as *const c_char
+    (*dcode).buffer_ptr()
 }
 
 /// Get length of decoded data
 pub unsafe fn zbar_decoder_get_data_length(dcode: *const zbar_decoder_t) -> c_uint {
-    (*dcode).buflen
+    (*dcode).buffer_len()
 }
 
 /// Get decode direction

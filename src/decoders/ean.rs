@@ -645,51 +645,58 @@ fn integrate_partial(
 
 /// Copy result to output buffer
 fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
-    let ean = &mut dcode.ean;
-    let mut base = sym;
-    let mut i: usize = 0;
+    let buf = dcode.buffer_mut_ptr();
     let mut j: usize = 0;
+    let new_direction;
 
-    if base > ZBAR_PARTIAL {
-        if base == ZBAR_UPCA {
-            i = 1;
-        } else if base == ZBAR_UPCE {
-            i = 1;
-            base -= 1;
-        } else if base == ZBAR_ISBN13 {
-            base = ZBAR_EAN13;
-        } else if base == ZBAR_ISBN10 {
-            i = 3;
-        }
+    {
+        let ean = &mut dcode.ean;
+        let mut base = sym;
+        let mut i: usize = 0;
 
-        if base == ZBAR_ISBN10
-            || (base > ZBAR_EAN5 && !test_cfg(ean_get_config(ean, sym), ZBAR_CFG_EMIT_CHECK))
-        {
-            base -= 1;
-        }
-
-        while j < base as usize && ean.buf[i] >= 0 {
-            unsafe {
-                *dcode.buf.add(j) = (ean.buf[i] + b'0' as c_char) as c_char;
+        if base > ZBAR_PARTIAL {
+            if base == ZBAR_UPCA {
+                i = 1;
+            } else if base == ZBAR_UPCE {
+                i = 1;
+                base -= 1;
+            } else if base == ZBAR_ISBN13 {
+                base = ZBAR_EAN13;
+            } else if base == ZBAR_ISBN10 {
+                i = 3;
             }
-            i += 1;
-            j += 1;
+
+            if base == ZBAR_ISBN10
+                || (base > ZBAR_EAN5 && !test_cfg(ean_get_config(ean, sym), ZBAR_CFG_EMIT_CHECK))
+            {
+                base -= 1;
+            }
+
+            while j < base as usize && ean.buf[i] >= 0 {
+                unsafe {
+                    *buf.add(j) = (ean.buf[i] + b'0' as c_char) as c_char;
+                }
+                i += 1;
+                j += 1;
+            }
+
+            if sym == ZBAR_ISBN10 && j == 9 && test_cfg(ean.isbn10_config, ZBAR_CFG_EMIT_CHECK) {
+                // recalculate ISBN-10 check digit
+                unsafe {
+                    *buf.add(j) = isbn10_calc_checksum(ean);
+                }
+                j += 1;
+            }
         }
 
-        if sym == ZBAR_ISBN10 && j == 9 && test_cfg(ean.isbn10_config, ZBAR_CFG_EMIT_CHECK) {
-            // recalculate ISBN-10 check digit
-            unsafe {
-                *dcode.buf.add(j) = isbn10_calc_checksum(ean);
-            }
-            j += 1;
-        }
+        new_direction = 1 - 2 * ean.direction;
     }
 
-    dcode.buflen = j as c_uint;
     unsafe {
-        *dcode.buf.add(j) = 0;
+        *buf.add(j) = 0;
     }
-    dcode.direction = 1 - 2 * ean.direction;
+    dcode.set_buffer_len(j as c_uint);
+    dcode.direction = new_direction;
     dcode.modifiers = 0;
 }
 
