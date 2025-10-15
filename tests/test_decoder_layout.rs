@@ -1,6 +1,6 @@
 use std::mem::size_of;
 use zbar::{
-    decoder::{zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_reset},
+    decoder::{zbar_decoder_create, zbar_decoder_destroy},
     decoder_types::*,
 };
 
@@ -63,7 +63,7 @@ fn test_decoder_reset_preserves_heap_allocations() {
         assert!(!buf_ptr.is_null(), "decoder buffer not allocated");
         assert!(!segs_ptr.is_null(), "databar segment array not allocated");
 
-        zbar_decoder_reset(decoder);
+        (*decoder).reset();
 
         assert_eq!((*decoder).buf, buf_ptr, "reset should not free buffer");
         assert_eq!(

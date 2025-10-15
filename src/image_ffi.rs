@@ -71,7 +71,7 @@ pub unsafe fn _zbar_image_free(img: *mut zbar_image_t) {
 }
 
 pub unsafe fn zbar_image_destroy(img: *mut zbar_image_t) {
-    if refcnt(&mut (*img).refcnt, -1) != 0 {
+    if refcnt(&mut (*img).refcnt, -1) == 0 {
         _zbar_image_free(img);
     }
 }

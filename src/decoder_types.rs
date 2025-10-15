@@ -4,8 +4,14 @@
 //! that mirror the C struct layouts exactly for FFI compatibility.
 
 use libc::{c_char, c_int, c_short, c_uint, c_void};
+use std::ptr;
 
-use crate::{decoder::decoder_realloc_buffer, line_scanner::zbar_color_t};
+use crate::{
+    decoder::{
+        decoder_free_buffer, decoder_free_databar_segments, decoder_realloc_buffer,
+    },
+    line_scanner::zbar_color_t,
+};
 
 /// Number of integer configs (ZBAR_CFG_MAX_LEN - ZBAR_CFG_MIN_LEN + 1)
 pub const NUM_CFGS: usize = 2;
@@ -143,6 +149,14 @@ impl i25_decoder_t {
     pub fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
     }
+
+    /// Reset i25 decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s10 = 0;
+    }
 }
 
 /// Code 39 decoder state
@@ -193,6 +207,14 @@ impl code39_decoder_t {
     #[inline]
     pub fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+    }
+
+    /// Reset code39 decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s9 = 0;
     }
 }
 
@@ -246,6 +268,13 @@ impl code93_decoder_t {
     pub fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
     }
+
+    /// Reset code93 decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+    }
 }
 
 /// Codabar decoder state
@@ -298,6 +327,14 @@ impl codabar_decoder_t {
     #[inline]
     pub fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+    }
+
+    /// Reset codabar decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s7 = 0;
     }
 }
 
@@ -364,6 +401,14 @@ impl code128_decoder_t {
     pub fn set_start(&mut self, val: u8) {
         self.bitfields_and_start =
             (self.bitfields_and_start & !(0xFF << 16)) | ((val as c_uint) << 16);
+    }
+
+    /// Reset code128 decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.set_direction(0);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s6 = 0;
     }
 }
 
@@ -525,6 +570,29 @@ impl databar_decoder_t {
     pub fn set_epoch(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xFF << 8)) | ((val as c_uint) << 8);
     }
+
+    /// Reset DataBar decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        let n = self.csegs() as isize;
+        self.new_scan();
+        for i in 0..n {
+            let seg = (self.segs).offset(i);
+            (*seg).set_finder(-1);
+        }
+    }
+
+    /// Prepare DataBar decoder for new scan
+    pub(crate) unsafe fn new_scan(&mut self) {
+        for i in 0..16 {
+            if self.chars[i] >= 0 {
+                let seg = (self.segs).offset(self.chars[i] as isize);
+                if (*seg).partial() {
+                    (*seg).set_finder(-1);
+                }
+                self.chars[i] = -1;
+            }
+        }
+    }
 }
 
 /// EAN pass state
@@ -561,6 +629,24 @@ pub struct ean_decoder_t {
     pub ean2_config: c_uint,
 }
 
+impl ean_decoder_t {
+    /// Prepare EAN decoder for new scan
+    pub(crate) unsafe fn new_scan(&mut self) {
+        self.pass[0].state = -1;
+        self.pass[1].state = -1;
+        self.pass[2].state = -1;
+        self.pass[3].state = -1;
+        self.s4 = 0;
+    }
+
+    /// Reset EAN decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.new_scan();
+        self.left = 0; // ZBAR_NONE
+        self.right = 0; // ZBAR_NONE
+    }
+}
+
 /// QR finder line (from qrcode.h)
 #[derive(Default, Copy, Clone)]
 #[allow(non_camel_case_types)]
@@ -578,6 +664,13 @@ pub struct qr_finder_t {
     pub s5: c_uint,
     pub line: qr_finder_line,
     pub config: c_uint,
+}
+
+impl qr_finder_t {
+    /// Reset QR finder state
+    pub(crate) fn reset(&mut self) {
+        self.s5 = 0;
+    }
 }
 
 // ============================================================================
@@ -655,5 +748,62 @@ impl zbar_decoder_t {
         self.buf = buf;
         self.buf_alloc = new_len;
         Ok(())
+    }
+
+    /// Reset decoder to initial state
+    pub unsafe fn reset(&mut self) {
+        self.idx = 0;
+        self.w.fill(0);
+        self.type_ = ZBAR_NONE;
+        self.lock = ZBAR_NONE;
+        self.modifiers = 0;
+        self.direction = 0;
+        self.s6 = 0;
+        self.buflen = 0;
+
+        self.ean.reset();
+        self.i25.reset();
+        self.databar.reset();
+        self.codabar.reset();
+        self.code39.reset();
+        self.code93.reset();
+        self.code128.reset();
+        self.qrf.reset();
+    }
+
+    /// Mark start of a new scan pass
+    ///
+    /// Clears any intra-symbol state and resets color to ZBAR_SPACE.
+    /// Any partially decoded symbol state is retained.
+    pub(crate) unsafe fn new_scan(&mut self) {
+        // Soft reset decoder
+        self.w.fill(0);
+        self.lock = ZBAR_NONE;
+        self.idx = 0;
+        self.s6 = 0;
+
+        self.ean.new_scan();
+        self.i25.reset();
+        self.databar.reset();
+        self.codabar.reset();
+        self.code39.reset();
+        self.code93.reset();
+        self.code128.reset();
+        self.qrf.reset();
+    }
+}
+
+impl Drop for zbar_decoder_t {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.databar.segs.is_null() {
+                decoder_free_databar_segments(self.databar.segs);
+                self.databar.segs = ptr::null_mut();
+            }
+            if !self.buf.is_null() {
+                decoder_free_buffer(self.buf);
+                self.buf = ptr::null_mut();
+            }
+        }
     }
 }

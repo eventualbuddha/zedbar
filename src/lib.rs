@@ -21,7 +21,6 @@ pub mod sqcode;
 pub mod symbol;
 
 // Re-export main types
-pub use decoder::Decoder;
 pub use error::{Error, Result};
 pub use image::Image;
 pub use scanner::Scanner;

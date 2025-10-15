@@ -7,7 +7,7 @@ use std::ptr;
 
 use libc::{c_int, c_uint};
 
-use crate::decoder::{zbar_decode_width, zbar_decoder_new_scan};
+use crate::decoder::zbar_decode_width;
 use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, ZBAR_NONE, ZBAR_PARTIAL};
 
 // Constants from scanner.c
@@ -215,7 +215,7 @@ pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_typ
 
     (*scn).y1_thresh = (*scn).y1_min_thresh;
     if !(*scn).decoder.is_null() {
-        zbar_decoder_new_scan((*scn).decoder);
+        (*(*scn).decoder).new_scan();
     }
     edge
 }

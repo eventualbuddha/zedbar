@@ -2,12 +2,10 @@
 
 use crate::{
     decoder_types::{
-        codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-        databar_decoder_t, databar_segment_t, ean_decoder_t, i25_decoder_t, qr_finder_t,
-        zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW, ZBAR_CFG_EMIT_CHECK,
-        ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR, ZBAR_CODE128,
-        ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_EAN13,
-        ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE,
+        databar_segment_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW,
+        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
+        ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP,
+        ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE,
         ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
     decoders::{
@@ -42,7 +40,9 @@ pub(crate) unsafe fn decoder_alloc_zeroed() -> *mut zbar_decoder_t {
 
 #[inline]
 pub(crate) unsafe fn decoder_free_struct(dcode: *mut zbar_decoder_t) {
-    ptr::drop_in_place(dcode);
+    if !dcode.is_null() {
+        ptr::drop_in_place(dcode);
+    }
 }
 
 #[inline]
@@ -196,93 +196,6 @@ pub unsafe fn _zbar_decoder_release_lock(
 }
 
 // ============================================================================
-// Decoder-specific reset functions
-// ============================================================================
-
-/// Reset codabar decoder state
-pub unsafe fn _zbar_codabar_reset(codabar: *mut codabar_decoder_t) {
-    (*codabar).set_direction(false);
-    (*codabar).set_element(0);
-    (*codabar).set_character(-1);
-    (*codabar).s7 = 0;
-}
-
-/// Reset code128 decoder state
-pub unsafe fn _zbar_code128_reset(dcode128: *mut code128_decoder_t) {
-    (*dcode128).set_direction(0);
-    (*dcode128).set_element(0);
-    (*dcode128).set_character(-1);
-    (*dcode128).s6 = 0;
-}
-
-/// Reset code39 decoder state
-pub unsafe fn _zbar_code39_reset(dcode39: *mut code39_decoder_t) {
-    (*dcode39).set_direction(false);
-    (*dcode39).set_element(0);
-    (*dcode39).set_character(-1);
-    (*dcode39).s9 = 0;
-}
-
-/// Reset code93 decoder state
-pub unsafe fn _zbar_code93_reset(dcode93: *mut code93_decoder_t) {
-    (*dcode93).set_direction(false);
-    (*dcode93).set_element(0);
-    (*dcode93).set_character(-1);
-}
-
-/// Reset i25 decoder state
-pub unsafe fn _zbar_i25_reset(i25: *mut i25_decoder_t) {
-    (*i25).set_direction(false);
-    (*i25).set_element(0);
-    (*i25).set_character(-1);
-    (*i25).s10 = 0;
-}
-
-/// Reset QR finder state
-pub unsafe fn _zbar_qr_finder_reset(qrf: *mut qr_finder_t) {
-    (*qrf).s5 = 0;
-}
-
-/// Prepare DataBar decoder for new scan
-pub unsafe fn _zbar_databar_new_scan(db: *mut databar_decoder_t) {
-    for i in 0..16 {
-        if (*db).chars[i] >= 0 {
-            let seg = ((*db).segs).offset((*db).chars[i] as isize);
-            if (*seg).partial() {
-                (*seg).set_finder(-1);
-            }
-            (*db).chars[i] = -1;
-        }
-    }
-}
-
-/// Reset DataBar decoder state
-pub unsafe fn _zbar_databar_reset(db: *mut databar_decoder_t) {
-    let n = (*db).csegs() as isize;
-    _zbar_databar_new_scan(db);
-    for i in 0..n {
-        let seg = ((*db).segs).offset(i);
-        (*seg).set_finder(-1);
-    }
-}
-
-/// Prepare EAN decoder for new scan
-pub unsafe fn _zbar_ean_new_scan(ean: *mut ean_decoder_t) {
-    (*ean).pass[0].state = -1;
-    (*ean).pass[1].state = -1;
-    (*ean).pass[2].state = -1;
-    (*ean).pass[3].state = -1;
-    (*ean).s4 = 0;
-}
-
-/// Reset EAN decoder state
-pub unsafe fn _zbar_ean_reset(ean: *mut ean_decoder_t) {
-    _zbar_ean_new_scan(ean);
-    (*ean).left = 0; // ZBAR_NONE
-    (*ean).right = 0; // ZBAR_NONE
-}
-
-// ============================================================================
 // Decoder lifecycle functions
 // ============================================================================
 
@@ -318,7 +231,6 @@ pub unsafe fn zbar_decoder_create() -> *mut zbar_decoder_t {
     (*dcode).databar.set_csegs(4);
     (*dcode).databar.segs = decoder_alloc_databar_segments(4);
     if (*dcode).databar.segs.is_null() {
-        decoder_free_buffer((*dcode).buf);
         decoder_free_struct(dcode);
         return std::ptr::null_mut();
     }
@@ -334,61 +246,13 @@ pub unsafe fn zbar_decoder_create() -> *mut zbar_decoder_t {
     (*dcode).qrf.config = 1 << ZBAR_CFG_ENABLE;
     (*dcode).sqf.config = 1 << ZBAR_CFG_ENABLE;
 
-    zbar_decoder_reset(dcode);
+    (*dcode).reset();
     dcode
 }
 
 /// Destroy a decoder instance
 pub unsafe fn zbar_decoder_destroy(dcode: *mut zbar_decoder_t) {
-    if !(*dcode).databar.segs.is_null() {
-        decoder_free_databar_segments((*dcode).databar.segs);
-    }
-    if !(*dcode).buf.is_null() {
-        decoder_free_buffer((*dcode).buf);
-    }
     decoder_free_struct(dcode);
-}
-
-/// Reset decoder to initial state
-pub unsafe fn zbar_decoder_reset(dcode: *mut zbar_decoder_t) {
-    (*dcode).idx = 0;
-    (*dcode).w.fill(0);
-    (*dcode).type_ = ZBAR_NONE;
-    (*dcode).lock = ZBAR_NONE;
-    (*dcode).modifiers = 0;
-    (*dcode).direction = 0;
-    (*dcode).s6 = 0;
-    (*dcode).buflen = 0;
-
-    _zbar_ean_reset(&mut (*dcode).ean);
-    _zbar_i25_reset(&mut (*dcode).i25);
-    _zbar_databar_reset(&mut (*dcode).databar);
-    _zbar_codabar_reset(&mut (*dcode).codabar);
-    _zbar_code39_reset(&mut (*dcode).code39);
-    _zbar_code93_reset(&mut (*dcode).code93);
-    _zbar_code128_reset(&mut (*dcode).code128);
-    _zbar_qr_finder_reset(&mut (*dcode).qrf);
-}
-
-/// Mark start of a new scan pass
-///
-/// Clears any intra-symbol state and resets color to ZBAR_SPACE.
-/// Any partially decoded symbol state is retained.
-pub unsafe fn zbar_decoder_new_scan(dcode: *mut zbar_decoder_t) {
-    // Soft reset decoder
-    (*dcode).w.fill(0);
-    (*dcode).lock = ZBAR_NONE;
-    (*dcode).idx = 0;
-    (*dcode).s6 = 0;
-
-    _zbar_ean_new_scan(&mut (*dcode).ean);
-    _zbar_i25_reset(&mut (*dcode).i25);
-    _zbar_databar_new_scan(&mut (*dcode).databar);
-    _zbar_codabar_reset(&mut (*dcode).codabar);
-    _zbar_code39_reset(&mut (*dcode).code39);
-    _zbar_code93_reset(&mut (*dcode).code93);
-    _zbar_code128_reset(&mut (*dcode).code128);
-    _zbar_qr_finder_reset(&mut (*dcode).qrf);
 }
 
 // ============================================================================
@@ -744,29 +608,5 @@ pub unsafe fn zbar_decoder_set_config(
         decoder_set_config_int(dcode, sym, cfg, val)
     } else {
         1
-    }
-}
-
-// ============================================================================
-// Debug helper
-// ============================================================================
-
-/// Low-level decoder for processing bar/space width streams
-pub struct Decoder {
-    _ptr: *mut std::ffi::c_void,
-}
-
-impl Decoder {
-    /// Create a new decoder
-    pub fn new() -> Self {
-        // Note: This is a placeholder - the C library doesn't expose the decoder directly
-        // In a full conversion, we'd implement the decoder logic in Rust
-        todo!("Decoder needs to be implemented as part of the Rust conversion")
-    }
-}
-
-impl Default for Decoder {
-    fn default() -> Self {
-        Self::new()
     }
 }

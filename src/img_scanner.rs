@@ -515,6 +515,13 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
     let syms = (*iscn).syms_ptr();
     debug_assert!(!syms.is_null());
 
+    // The symbol set takes ownership of the symbol reference.
+    // Ensure the reference count reflects this so that recycling
+    // and Drop logic can safely release it later.
+    let new_refcnt = refcnt(&mut (*sym).refcnt, 1);
+    debug_assert!(new_refcnt > 0);
+    let _ = new_refcnt;
+
     if (*syms).tail.is_null() {
         (*sym).next = (*syms).head;
         (*syms).head = sym;

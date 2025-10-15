@@ -196,15 +196,7 @@ pub unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
 ///
 /// The symbol set pointer must be valid and not previously freed.
 pub unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
-    let mut sym = (*syms).head;
-    while !sym.is_null() {
-        let next = (*sym).next;
-        (*sym).next = ptr::null_mut();
-        symbol_refcnt(sym, -1);
-        sym = next;
-    }
-    (*syms).head = ptr::null_mut();
-    libc::free(syms as *mut c_void);
+    drop(Box::from_raw(syms));
 }
 
 /// Allocate a zeroed symbol instance suitable for initialization.
