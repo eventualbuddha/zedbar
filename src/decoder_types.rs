@@ -5,7 +5,7 @@
 
 use libc::{c_char, c_int, c_short, c_uint, c_void};
 
-use crate::line_scanner::zbar_color_t;
+use crate::{decoder::decoder_realloc_buffer, line_scanner::zbar_color_t};
 
 /// Number of integer configs (ZBAR_CFG_MAX_LEN - ZBAR_CFG_MIN_LEN + 1)
 pub const NUM_CFGS: usize = 2;
@@ -623,5 +623,37 @@ pub struct zbar_decoder_t {
 impl zbar_decoder_t {
     pub(crate) fn color(&self) -> zbar_color_t {
         self.idx.into()
+    }
+
+    /// Resize the decoder's data buffer if needed
+    /// Returns 1 on allocation failure or if max size exceeded, 0 on success
+    pub(crate) unsafe fn set_buffer_size(&mut self, len: c_uint) -> Result<(), ()> {
+        if len <= BUFFER_MIN {
+            return Ok(());
+        }
+        if len < self.buf_alloc {
+            // FIXME: size reduction heuristic?
+            return Ok(());
+        }
+        if len > BUFFER_MAX {
+            return Err(());
+        }
+
+        let mut new_len = len;
+        if len < self.buf_alloc + BUFFER_INCR {
+            new_len = self.buf_alloc + BUFFER_INCR;
+            if new_len > BUFFER_MAX {
+                new_len = BUFFER_MAX;
+            }
+        }
+
+        let buf = decoder_realloc_buffer(self.buf, new_len as usize);
+        if buf.is_null() {
+            return Err(());
+        }
+
+        self.buf = buf;
+        self.buf_alloc = new_len;
+        Ok(())
     }
 }

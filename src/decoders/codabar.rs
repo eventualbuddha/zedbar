@@ -3,7 +3,6 @@
 //! This module implements decoding for Codabar barcodes.
 
 use crate::{
-    decoder::_zbar_decoder_size_buf,
     decoder_types::{
         codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW,
         ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
@@ -426,7 +425,7 @@ pub unsafe fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
         dcode.codabar.buf[character as usize] = c as u8;
     } else {
         if character >= BUFFER_MIN as i16
-            && _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, (character + 1) as c_uint) != 0
+            && dcode.set_buffer_size((character + 1) as c_uint).is_err()
         {
             // goto reset
             release_lock(dcode, ZBAR_CODABAR);

@@ -3,7 +3,6 @@
 //! This module implements decoding for Code 39 barcodes.
 
 use crate::{
-    decoder::_zbar_decoder_size_buf,
     decoder_types::{
         code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
         ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE, ZBAR_PARTIAL,
@@ -574,8 +573,7 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
         return ZBAR_PARTIAL;
     }
 
-    if c < 0 || _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, (character + 1) as c_uint) != 0
-    {
+    if c < 0 || dcode.set_buffer_size((character + 1) as c_uint).is_err() {
         release_lock(dcode, ZBAR_CODE39);
         dcode.code39.set_character(-1);
         return ZBAR_NONE;

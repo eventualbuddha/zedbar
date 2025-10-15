@@ -4,10 +4,10 @@ use crate::{
     decoder_types::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
         databar_decoder_t, databar_segment_t, ean_decoder_t, i25_decoder_t, qr_finder_t,
-        zbar_decoder_t, zbar_symbol_type_t, BUFFER_INCR, BUFFER_MAX, BUFFER_MIN, DECODE_WINDOW,
-        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
-        ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP,
-        ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE,
+        zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW, ZBAR_CFG_EMIT_CHECK,
+        ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR, ZBAR_CODE128,
+        ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_EAN13,
+        ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE,
         ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
     decoders::{
@@ -192,38 +192,6 @@ pub unsafe fn _zbar_decoder_release_lock(
 ) -> c_char {
     debug_assert_eq!((*dcode).lock, req, "lock={} req={}", (*dcode).lock, req);
     (*dcode).lock = 0;
-    0
-}
-
-/// Resize the decoder's data buffer if needed
-/// Returns 1 on allocation failure or if max size exceeded, 0 on success
-pub unsafe fn _zbar_decoder_size_buf(dcode: *mut zbar_decoder_t, len: c_uint) -> c_char {
-    if len <= BUFFER_MIN {
-        return 0;
-    }
-    if len < (*dcode).buf_alloc {
-        // FIXME: size reduction heuristic?
-        return 0;
-    }
-    if len > BUFFER_MAX {
-        return 1;
-    }
-
-    let mut new_len = len;
-    if len < (*dcode).buf_alloc + BUFFER_INCR {
-        new_len = (*dcode).buf_alloc + BUFFER_INCR;
-        if new_len > BUFFER_MAX {
-            new_len = BUFFER_MAX;
-        }
-    }
-
-    let buf = decoder_realloc_buffer((*dcode).buf, new_len as usize);
-    if buf.is_null() {
-        return 1;
-    }
-
-    (*dcode).buf = buf;
-    (*dcode).buf_alloc = new_len;
     0
 }
 

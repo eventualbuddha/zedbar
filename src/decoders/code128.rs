@@ -3,7 +3,6 @@
 //! This module implements decoding for Code 128 barcodes.
 
 use crate::{
-    decoder::_zbar_decoder_size_buf,
     decoder_types::{
         code128_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
         ZBAR_CFG_MIN_LEN, ZBAR_CODE128, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_NONE,
@@ -372,7 +371,7 @@ unsafe fn postprocess_c(
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
     let newlen = dcode.code128.character() as usize + delta;
-    if _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, newlen as c_uint) != 0 {
+    if dcode.set_buffer_size(newlen as c_uint).is_err() {
         return ZBAR_NONE as c_uint;
     }
 
@@ -629,10 +628,9 @@ pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
         dcode.code128.width = dcode.code128.s6;
         return 0;
     } else if c < 0
-        || _zbar_decoder_size_buf(
-            dcode as *mut zbar_decoder_t,
-            (dcode.code128.character() + 1) as c_uint,
-        ) != 0
+        || dcode
+            .set_buffer_size((dcode.code128.character() + 1) as c_uint)
+            .is_err()
     {
         if dcode.code128.character() > 1 {
             release_lock(dcode, ZBAR_CODE128);

@@ -5,8 +5,7 @@ use libc::{c_char, c_int, c_uint};
 use crate::{
     decoder::{
         _zbar_decoder_acquire_lock, _zbar_decoder_calc_s, _zbar_decoder_decode_e,
-        _zbar_decoder_pair_width, _zbar_decoder_release_lock, _zbar_decoder_size_buf,
-        decoder_realloc_databar_segments,
+        _zbar_decoder_pair_width, _zbar_decoder_release_lock, decoder_realloc_databar_segments,
     },
     decoder_types::{
         databar_decoder_t, databar_segment_t, zbar_decoder_t, zbar_symbol_type_t,
@@ -302,7 +301,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 
     len -= 2;
 
-    if _zbar_decoder_size_buf(dcode, buflen as c_uint) != 0 {
+    if (*dcode).set_buffer_size(buflen as c_uint).is_err() {
         return -1;
     }
 
@@ -852,7 +851,7 @@ pub unsafe fn match_segment(
     }
     (*seg).set_finder(-1);
 
-    if _zbar_decoder_size_buf(dcode, 18) != 0 {
+    if (*dcode).set_buffer_size(18).is_err() {
         return ZBAR_PARTIAL;
     }
 

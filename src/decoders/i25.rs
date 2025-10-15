@@ -3,7 +3,6 @@
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
 use crate::{
-    decoder::_zbar_decoder_size_buf,
     decoder_types::{
         i25_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
         ZBAR_CFG_MIN_LEN, ZBAR_I25, ZBAR_NONE, ZBAR_PARTIAL,
@@ -310,10 +309,9 @@ pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t
         return ZBAR_NONE;
     }
 
-    if _zbar_decoder_size_buf(
-        dcode as *mut zbar_decoder_t,
-        dcode.i25.character() as c_uint + 3,
-    ) != 0
+    if dcode
+        .set_buffer_size(dcode.i25.character() as c_uint + 3)
+        .is_err()
     {
         // goto reset
         if dcode.i25.character() >= 4 {

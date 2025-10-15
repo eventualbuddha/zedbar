@@ -3,7 +3,6 @@
 //! This module implements decoding for Code 93 barcodes.
 
 use crate::{
-    decoder::_zbar_decoder_size_buf,
     decoder_types::{
         code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
         ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
@@ -422,7 +421,7 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     }
 
     let character = dcode.code93.character();
-    if _zbar_decoder_size_buf(dcode as *mut zbar_decoder_t, (character + 1) as c_uint) != 0 {
+    if dcode.set_buffer_size((character + 1) as c_uint).is_err() {
         return decode_abort(dcode);
     }
 
