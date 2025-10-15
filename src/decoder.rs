@@ -27,16 +27,6 @@ fn test_cfg(config: c_uint, cfg: c_int) -> bool {
 }
 
 #[inline]
-pub(crate) unsafe fn decoder_free_buffer(buf: *mut c_char) {
-    libc::free(buf as *mut c_void);
-}
-
-#[inline]
-pub(crate) unsafe fn decoder_realloc_buffer(buf: *mut c_char, new_len: usize) -> *mut c_char {
-    libc::realloc(buf as *mut c_void, new_len) as *mut c_char
-}
-
-#[inline]
 pub(crate) unsafe fn decoder_alloc_databar_segments(count: usize) -> *mut databar_segment_t {
     libc::calloc(count, size_of::<databar_segment_t>()) as *mut databar_segment_t
 }

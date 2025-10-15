@@ -7,10 +7,7 @@ use libc::{c_char, c_int, c_short, c_uint, c_void};
 use std::ptr;
 
 use crate::{
-    decoder::{
-        decoder_alloc_databar_segments, decoder_free_buffer, decoder_free_databar_segments,
-        decoder_realloc_buffer,
-    },
+    decoder::{decoder_alloc_databar_segments, decoder_free_databar_segments},
     line_scanner::zbar_color_t,
 };
 
@@ -702,6 +699,7 @@ pub struct zbar_decoder_t {
     pub s6: c_uint,
 
     // Buffer management (everything above here is reset)
+    buffer: Vec<u8>,
     pub buf_alloc: c_uint,
     pub buflen: c_uint,
     pub buf: *mut c_char,
@@ -725,11 +723,9 @@ impl zbar_decoder_t {
     pub unsafe fn new() -> Option<Self> {
         let mut decoder = Self::default();
 
+        decoder.buffer = vec![0; BUFFER_MIN as usize];
         decoder.buf_alloc = BUFFER_MIN;
-        decoder.buf = libc::malloc(decoder.buf_alloc as usize) as *mut c_char;
-        if decoder.buf.is_null() {
-            return None;
-        }
+        decoder.buf = decoder.buffer.as_mut_ptr() as *mut c_char;
 
         // Initialize default configs
         decoder.ean.enable = 1;
@@ -814,12 +810,11 @@ impl zbar_decoder_t {
             }
         }
 
-        let buf = decoder_realloc_buffer(self.buf, new_len as usize);
-        if buf.is_null() {
-            return Err(());
+        let required = new_len as usize;
+        if self.buffer.len() < required {
+            self.buffer.resize(required, 0);
         }
-
-        self.buf = buf;
+        self.buf = self.buffer.as_mut_ptr() as *mut c_char;
         self.buf_alloc = new_len;
         Ok(())
     }
@@ -892,10 +887,7 @@ impl Drop for zbar_decoder_t {
                 decoder_free_databar_segments(self.databar.segs);
                 self.databar.segs = ptr::null_mut();
             }
-            if !self.buf.is_null() {
-                decoder_free_buffer(self.buf);
-                self.buf = ptr::null_mut();
-            }
+            self.buf = ptr::null_mut();
         }
     }
 }
