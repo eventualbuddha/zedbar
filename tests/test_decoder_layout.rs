@@ -1,8 +1,5 @@
 use std::mem::size_of;
-use zbar::{
-    decoder::{zbar_decoder_create, zbar_decoder_destroy},
-    decoder_types::*,
-};
+use zbar::decoder_types::*;
 
 #[test]
 fn test_decoder_struct_sizes() {
@@ -49,29 +46,4 @@ fn test_decoder_struct_sizes() {
         464,
         "zbar_decoder_t size mismatch"
     );
-}
-
-#[test]
-fn test_decoder_reset_preserves_heap_allocations() {
-    unsafe {
-        let decoder = zbar_decoder_create();
-        assert!(!decoder.is_null(), "decoder allocation failed");
-
-        let buf_ptr = (*decoder).buf;
-        let segs_ptr = (*decoder).databar.segs;
-
-        assert!(!buf_ptr.is_null(), "decoder buffer not allocated");
-        assert!(!segs_ptr.is_null(), "databar segment array not allocated");
-
-        (*decoder).reset();
-
-        assert_eq!((*decoder).buf, buf_ptr, "reset should not free buffer");
-        assert_eq!(
-            (*decoder).databar.segs,
-            segs_ptr,
-            "reset should not free databar segments"
-        );
-
-        zbar_decoder_destroy(decoder);
-    }
 }

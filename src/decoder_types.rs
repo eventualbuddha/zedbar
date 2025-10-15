@@ -8,7 +8,8 @@ use std::ptr;
 
 use crate::{
     decoder::{
-        decoder_free_buffer, decoder_free_databar_segments, decoder_realloc_buffer,
+        decoder_alloc_databar_segments, decoder_free_buffer, decoder_free_databar_segments,
+        decoder_realloc_buffer,
     },
     line_scanner::zbar_color_t,
 };
@@ -22,6 +23,12 @@ pub const DECODE_WINDOW: usize = 16;
 // Forward declare zbar_symbol_type_t as c_int
 #[allow(non_camel_case_types)]
 pub type zbar_symbol_type_t = c_int;
+
+// Macro equivalents
+#[inline]
+unsafe fn cfg_set(configs: &mut [c_int; 2], cfg: c_int, val: c_int) {
+    configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+}
 
 // ============================================================================
 // Symbol type constants
@@ -714,8 +721,75 @@ pub struct zbar_decoder_t {
 }
 
 impl zbar_decoder_t {
+    /// Create a new decoder instance
+    pub unsafe fn new() -> Option<Self> {
+        let mut decoder = Self::default();
+
+        decoder.buf_alloc = BUFFER_MIN;
+        decoder.buf = libc::malloc(decoder.buf_alloc as usize) as *mut c_char;
+        if decoder.buf.is_null() {
+            return None;
+        }
+
+        // Initialize default configs
+        decoder.ean.enable = 1;
+        decoder.ean.ean13_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.ean.ean8_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.ean.upca_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        decoder.ean.upce_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        decoder.ean.isbn10_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        decoder.ean.isbn13_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        // FIXME_ADDON_SYNC not defined, skip ean2/ean5 config
+
+        decoder.i25.config = 1 << ZBAR_CFG_ENABLE;
+        cfg_set(&mut decoder.i25.configs, ZBAR_CFG_MIN_LEN, 6);
+
+        decoder.databar.config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.databar.set_csegs(4);
+        decoder.databar.segs = decoder_alloc_databar_segments(4);
+        if decoder.databar.segs.is_null() {
+            return None;
+        }
+
+        decoder.codabar.config = 1 << ZBAR_CFG_ENABLE;
+        cfg_set(&mut decoder.codabar.configs, ZBAR_CFG_MIN_LEN, 4);
+
+        decoder.code39.config = 1 << ZBAR_CFG_ENABLE;
+        cfg_set(&mut decoder.code39.configs, ZBAR_CFG_MIN_LEN, 1);
+
+        decoder.code93.config = 1 << ZBAR_CFG_ENABLE;
+        decoder.code128.config = 1 << ZBAR_CFG_ENABLE;
+        decoder.qrf.config = 1 << ZBAR_CFG_ENABLE;
+        decoder.sqf.config = 1 << ZBAR_CFG_ENABLE;
+
+        decoder.reset();
+        Some(decoder)
+    }
+
     pub(crate) fn color(&self) -> zbar_color_t {
         self.idx.into()
+    }
+
+    /// Get width of a specific element from the decoder's history window
+    pub(crate) unsafe fn get_width(&self, offset: u8) -> c_uint {
+        self.w[((self.idx as usize).wrapping_sub(offset as usize)) & (DECODE_WINDOW - 1)]
+    }
+
+    /// Get the combined width of two consecutive elements
+    pub(crate) unsafe fn pair_width(&self, offset: u8) -> c_uint {
+        self.get_width(offset) + self.get_width(offset + 1)
+    }
+
+    /// Calculate sum of n consecutive element widths
+    pub(crate) unsafe fn calc_s(&self, mut offset: u8, mut n: u8) -> c_uint {
+        let mut s = 0;
+        while n > 0 {
+            s += self.get_width(offset);
+            offset += 1;
+            n -= 1;
+        }
+        s
     }
 
     /// Resize the decoder's data buffer if needed
@@ -748,6 +822,24 @@ impl zbar_decoder_t {
         self.buf = buf;
         self.buf_alloc = new_len;
         Ok(())
+    }
+
+    /// Acquire a decoder lock for a specific symbology type
+    /// Returns 1 if already locked, 0 if lock acquired
+    pub(crate) unsafe fn _zbar_decoder_acquire_lock(&mut self, req: zbar_symbol_type_t) -> c_char {
+        if self.lock != 0 {
+            return 1;
+        }
+        self.lock = req;
+        0
+    }
+
+    /// Release a decoder lock
+    /// Returns 0 on success
+    pub(crate) unsafe fn _zbar_decoder_release_lock(&mut self, req: zbar_symbol_type_t) -> c_char {
+        debug_assert_eq!(self.lock, req, "lock={} req={}", self.lock, req);
+        self.lock = 0;
+        0
     }
 
     /// Reset decoder to initial state

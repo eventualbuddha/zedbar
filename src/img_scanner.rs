@@ -1,6 +1,6 @@
 use std::{
     ffi::c_void,
-    ptr::{copy_nonoverlapping, null_mut, NonNull},
+    ptr::{self, copy_nonoverlapping, null_mut, NonNull},
 };
 
 use libc::{c_int, c_uint, memcmp, size_t};
@@ -86,10 +86,10 @@ macro_rules! c_assert {
 
 // Import from line_scanner, decoder, and symbol modules
 use crate::decoder::{
-    zbar_decoder_create, zbar_decoder_destroy, zbar_decoder_get_configs, zbar_decoder_get_data,
-    zbar_decoder_get_data_length, zbar_decoder_get_direction, zbar_decoder_get_modifiers,
-    zbar_decoder_get_type, zbar_decoder_get_userdata, zbar_decoder_set_config,
-    zbar_decoder_set_handler, zbar_decoder_set_userdata,
+    zbar_decoder_get_configs, zbar_decoder_get_data, zbar_decoder_get_data_length,
+    zbar_decoder_get_direction, zbar_decoder_get_modifiers, zbar_decoder_get_type,
+    zbar_decoder_get_userdata, zbar_decoder_set_config, zbar_decoder_set_handler,
+    zbar_decoder_set_userdata,
 };
 use crate::image_ffi::{_zbar_image_copy, _zbar_image_swap_symbols, zbar_image_destroy};
 use crate::line_scanner::{
@@ -572,7 +572,11 @@ pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
         return null_mut();
     }
 
-    (*iscn).dcode = zbar_decoder_create();
+    let Some(decoder) = zbar_decoder_t::new() else {
+        return null_mut();
+    };
+
+    (*iscn).dcode = Box::into_raw(Box::new(decoder));
     (*iscn).scn = zbar_scanner_create((*iscn).dcode as *mut _);
 
     if (*iscn).dcode.is_null() || (*iscn).scn.is_null() {
@@ -631,7 +635,7 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
     }
 
     if !(*iscn).dcode.is_null() {
-        zbar_decoder_destroy((*iscn).dcode as *mut _);
+        ptr::drop_in_place((*iscn).dcode);
         (*iscn).dcode = null_mut();
     }
 

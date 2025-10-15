@@ -3,10 +3,7 @@ use std::ptr::null_mut;
 use libc::{c_char, c_int, c_uint};
 
 use crate::{
-    decoder::{
-        _zbar_decoder_acquire_lock, _zbar_decoder_calc_s, _zbar_decoder_decode_e,
-        _zbar_decoder_pair_width, _zbar_decoder_release_lock, decoder_realloc_databar_segments,
-    },
+    decoder::{_zbar_decoder_decode_e, decoder_realloc_databar_segments},
     decoder_types::{
         databar_decoder_t, databar_segment_t, zbar_decoder_t, zbar_symbol_type_t,
         ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_MOD_GS1,
@@ -855,7 +852,7 @@ pub unsafe fn match_segment(
         return ZBAR_PARTIAL;
     }
 
-    if _zbar_decoder_acquire_lock(dcode, ZBAR_DATABAR) != 0 {
+    if (*dcode)._zbar_decoder_acquire_lock(ZBAR_DATABAR) != 0 {
         return ZBAR_PARTIAL;
     }
 
@@ -1073,7 +1070,7 @@ pub unsafe fn match_segment_exp(
         return ZBAR_PARTIAL;
     }
 
-    if _zbar_decoder_acquire_lock(dcode, ZBAR_DATABAR_EXP) != 0 {
+    if (*dcode)._zbar_decoder_acquire_lock(ZBAR_DATABAR_EXP) != 0 {
         return ZBAR_PARTIAL;
     }
 
@@ -1087,7 +1084,7 @@ pub unsafe fn match_segment_exp(
     }
 
     if databar_postprocess_exp(dcode, data_vals.as_mut_ptr()) != 0 {
-        _zbar_decoder_release_lock(dcode, ZBAR_DATABAR_EXP);
+        (*dcode)._zbar_decoder_release_lock(ZBAR_DATABAR_EXP);
         return ZBAR_PARTIAL;
     }
 
@@ -1296,11 +1293,7 @@ pub unsafe fn decode_char(
     dir: c_int,
 ) -> zbar_symbol_type_t {
     let db = &mut (*dcode).databar;
-    let s = _zbar_decoder_calc_s(
-        dcode as *const zbar_decoder_t,
-        if dir > 0 { off } else { off - 6 } as u8,
-        8,
-    );
+    let s = (*dcode).calc_s(if dir > 0 { off } else { off - 6 } as u8, 8);
     let mut emin = [0i32, 0i32];
     let mut sum = 0i32;
     let mut sig0 = 0u32;
@@ -1321,7 +1314,7 @@ pub unsafe fn decode_char(
 
     let mut off = off;
     for i in (0..4).rev() {
-        let e = _zbar_decoder_decode_e(_zbar_decoder_pair_width(dcode, off as u8), s, n);
+        let e = _zbar_decoder_decode_e((*dcode).pair_width(off as u8), s, n);
         if e < 0 {
             return ZBAR_NONE;
         }
@@ -1336,7 +1329,7 @@ pub unsafe fn decode_char(
             break;
         }
 
-        let e = _zbar_decoder_decode_e(_zbar_decoder_pair_width(dcode, off as u8), s, n);
+        let e = _zbar_decoder_decode_e((*dcode).pair_width(off as u8), s, n);
         if e < 0 {
             return ZBAR_NONE;
         }
@@ -1527,22 +1520,22 @@ pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
 /// Decode DataBar finder pattern
 pub unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let db = &mut (*dcode).databar;
-    let e0 = _zbar_decoder_pair_width(dcode, 1);
-    let e2 = _zbar_decoder_pair_width(dcode, 3);
+    let e0 = (*dcode).pair_width(1);
+    let e2 = (*dcode).pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
         let e = e2 * 4;
         if e < 15 * e0 || e > 34 * e0 {
             return ZBAR_NONE;
         }
-        (0, e2, _zbar_decoder_pair_width(dcode, 4))
+        (0, e2, (*dcode).pair_width(4))
     } else {
         let e = e0 * 4;
         if e < 15 * e2 || e > 34 * e2 {
             return ZBAR_NONE;
         }
-        (1, e0, _zbar_decoder_pair_width(dcode, 0))
+        (1, e0, (*dcode).pair_width(0))
     };
-    let e1 = _zbar_decoder_pair_width(dcode, 2);
+    let e1 = (*dcode).pair_width(2);
 
     let s = e1 + e3;
     if s < 12 {

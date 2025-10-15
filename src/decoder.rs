@@ -2,11 +2,11 @@
 
 use crate::{
     decoder_types::{
-        databar_segment_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW,
-        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
-        ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP,
-        ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE,
-        ZBAR_PARTIAL, ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
+        databar_segment_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_ENABLE,
+        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR, ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93,
+        ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5,
+        ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE,
+        ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
     },
     decoders::{
         codabar::_zbar_decode_codabar, code128::_zbar_decode_code128, code39::_zbar_decode_code39,
@@ -16,38 +16,14 @@ use crate::{
     finder::_zbar_find_qr,
 };
 use libc::{c_char, c_int, c_uint, c_void};
-use std::{mem::size_of, ptr};
+use std::mem::size_of;
 
 // Config constant not in decoder_types
 const ZBAR_CFG_NUM: c_int = 5;
 
-// Macro equivalents
-#[inline]
-unsafe fn cfg_set(configs: &mut [c_int; 2], cfg: c_int, val: c_int) {
-    configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
-}
-
 #[inline]
 fn test_cfg(config: c_uint, cfg: c_int) -> bool {
     ((config >> cfg) & 1) != 0
-}
-
-#[inline]
-pub(crate) unsafe fn decoder_alloc_zeroed() -> *mut zbar_decoder_t {
-    let decoder = Box::new(zbar_decoder_t::default());
-    Box::into_raw(decoder)
-}
-
-#[inline]
-pub(crate) unsafe fn decoder_free_struct(dcode: *mut zbar_decoder_t) {
-    if !dcode.is_null() {
-        ptr::drop_in_place(dcode);
-    }
-}
-
-#[inline]
-pub(crate) unsafe fn decoder_alloc_buffer(size: usize) -> *mut c_char {
-    libc::malloc(size) as *mut c_char
 }
 
 #[inline]
@@ -79,31 +55,6 @@ pub(crate) unsafe fn decoder_realloc_databar_segments(
         as *mut databar_segment_t
 }
 
-/// Get width of a specific element from the decoder's history window
-pub unsafe fn _zbar_decoder_get_width(dcode: *const zbar_decoder_t, offset: u8) -> c_uint {
-    (*dcode).w[(((*dcode).idx as usize).wrapping_sub(offset as usize)) & (DECODE_WINDOW - 1)]
-}
-
-/// Get the combined width of two consecutive elements
-pub unsafe fn _zbar_decoder_pair_width(dcode: *const zbar_decoder_t, offset: u8) -> c_uint {
-    _zbar_decoder_get_width(dcode, offset) + _zbar_decoder_get_width(dcode, offset + 1)
-}
-
-/// Calculate sum of n consecutive element widths
-pub unsafe fn _zbar_decoder_calc_s(
-    dcode: *const zbar_decoder_t,
-    mut offset: u8,
-    mut n: u8,
-) -> c_uint {
-    let mut s = 0;
-    while n > 0 {
-        s += _zbar_decoder_get_width(dcode, offset);
-        offset += 1;
-        n -= 1;
-    }
-    s
-}
-
 /// Decode element width into a discrete value
 /// Returns -1 if the element width is invalid
 pub unsafe fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
@@ -113,146 +64,6 @@ pub unsafe fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
     } else {
         big_e as c_int
     }
-}
-
-/// Sort 3 elements by width and return their indices
-pub unsafe fn _zbar_decoder_decode_sort3(dcode: *mut zbar_decoder_t, i0: c_int) -> c_uint {
-    let w0 = _zbar_decoder_get_width(dcode, i0 as u8);
-    let w2 = _zbar_decoder_get_width(dcode, (i0 + 2) as u8);
-    let w4 = _zbar_decoder_get_width(dcode, (i0 + 4) as u8);
-
-    if w0 < w2 {
-        if w2 < w4 {
-            ((i0 << 8) | ((i0 + 2) << 4) | (i0 + 4)) as c_uint
-        } else if w0 < w4 {
-            ((i0 << 8) | ((i0 + 4) << 4) | (i0 + 2)) as c_uint
-        } else {
-            (((i0 + 4) << 8) | (i0 << 4) | (i0 + 2)) as c_uint
-        }
-    } else if w4 < w2 {
-        (((i0 + 4) << 8) | ((i0 + 2) << 4) | i0) as c_uint
-    } else if w0 < w4 {
-        (((i0 + 2) << 8) | (i0 << 4) | (i0 + 4)) as c_uint
-    } else {
-        (((i0 + 2) << 8) | ((i0 + 4) << 4) | i0) as c_uint
-    }
-}
-
-/// Sort n elements by width and return their indices packed into a value
-pub unsafe fn _zbar_decoder_decode_sortn(
-    dcode: *mut zbar_decoder_t,
-    n: c_int,
-    i0: c_int,
-) -> c_uint {
-    let mut mask: c_uint = 0;
-    let mut sort: c_uint = 0;
-
-    for _ in (0..n).rev() {
-        let mut wmin = c_uint::MAX;
-        let mut jmin: c_int = -1;
-
-        for j in (0..n).rev() {
-            if (mask >> j) & 1 != 0 {
-                continue;
-            }
-            let w = _zbar_decoder_get_width(dcode, (i0 + j * 2) as u8);
-            if wmin >= w {
-                wmin = w;
-                jmin = j;
-            }
-        }
-
-        debug_assert!(jmin >= 0, "sortn({}, {}) jmin={}", n, i0, jmin);
-        sort <<= 4;
-        mask |= 1 << jmin;
-        sort |= (i0 + jmin * 2) as c_uint;
-    }
-
-    sort
-}
-
-/// Acquire a decoder lock for a specific symbology type
-/// Returns 1 if already locked, 0 if lock acquired
-pub unsafe fn _zbar_decoder_acquire_lock(
-    dcode: *mut zbar_decoder_t,
-    req: zbar_symbol_type_t,
-) -> c_char {
-    if (*dcode).lock != 0 {
-        return 1;
-    }
-    (*dcode).lock = req;
-    0
-}
-
-/// Release a decoder lock
-/// Returns 0 on success
-pub unsafe fn _zbar_decoder_release_lock(
-    dcode: *mut zbar_decoder_t,
-    req: zbar_symbol_type_t,
-) -> c_char {
-    debug_assert_eq!((*dcode).lock, req, "lock={} req={}", (*dcode).lock, req);
-    (*dcode).lock = 0;
-    0
-}
-
-// ============================================================================
-// Decoder lifecycle functions
-// ============================================================================
-
-/// Create a new decoder instance
-pub unsafe fn zbar_decoder_create() -> *mut zbar_decoder_t {
-    let dcode = decoder_alloc_zeroed();
-    if dcode.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    (*dcode).buf_alloc = BUFFER_MIN;
-    (*dcode).buf = decoder_alloc_buffer((*dcode).buf_alloc as usize);
-    if (*dcode).buf.is_null() {
-        decoder_free_struct(dcode);
-        return std::ptr::null_mut();
-    }
-
-    // Initialize default configs
-    (*dcode).ean.enable = 1;
-    (*dcode).ean.ean13_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
-    (*dcode).ean.ean8_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
-    (*dcode).ean.upca_config = 1 << ZBAR_CFG_EMIT_CHECK;
-    (*dcode).ean.upce_config = 1 << ZBAR_CFG_EMIT_CHECK;
-    (*dcode).ean.isbn10_config = 1 << ZBAR_CFG_EMIT_CHECK;
-    (*dcode).ean.isbn13_config = 1 << ZBAR_CFG_EMIT_CHECK;
-    // FIXME_ADDON_SYNC not defined, skip ean2/ean5 config
-
-    (*dcode).i25.config = 1 << ZBAR_CFG_ENABLE;
-    cfg_set(&mut (*dcode).i25.configs, ZBAR_CFG_MIN_LEN, 6);
-
-    (*dcode).databar.config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
-    (*dcode).databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
-    (*dcode).databar.set_csegs(4);
-    (*dcode).databar.segs = decoder_alloc_databar_segments(4);
-    if (*dcode).databar.segs.is_null() {
-        decoder_free_struct(dcode);
-        return std::ptr::null_mut();
-    }
-
-    (*dcode).codabar.config = 1 << ZBAR_CFG_ENABLE;
-    cfg_set(&mut (*dcode).codabar.configs, ZBAR_CFG_MIN_LEN, 4);
-
-    (*dcode).code39.config = 1 << ZBAR_CFG_ENABLE;
-    cfg_set(&mut (*dcode).code39.configs, ZBAR_CFG_MIN_LEN, 1);
-
-    (*dcode).code93.config = 1 << ZBAR_CFG_ENABLE;
-    (*dcode).code128.config = 1 << ZBAR_CFG_ENABLE;
-    (*dcode).qrf.config = 1 << ZBAR_CFG_ENABLE;
-    (*dcode).sqf.config = 1 << ZBAR_CFG_ENABLE;
-
-    (*dcode).reset();
-    dcode
-}
-
-/// Destroy a decoder instance
-pub unsafe fn zbar_decoder_destroy(dcode: *mut zbar_decoder_t) {
-    decoder_free_struct(dcode);
 }
 
 // ============================================================================
@@ -324,8 +135,8 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
     (*dcode).w[((*dcode).idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
 
     // Update shared character width
-    (*dcode).s6 = (*dcode).s6.wrapping_sub(_zbar_decoder_get_width(dcode, 7));
-    (*dcode).s6 = (*dcode).s6.wrapping_add(_zbar_decoder_get_width(dcode, 1));
+    (*dcode).s6 = (*dcode).s6.wrapping_sub((*dcode).get_width(7));
+    (*dcode).s6 = (*dcode).s6.wrapping_add((*dcode).get_width(1));
 
     // Each decoder processes width stream in parallel
     if test_cfg((*dcode).qrf.config, ZBAR_CFG_ENABLE) {
@@ -392,7 +203,7 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
 
     if sym != 0 {
         if (*dcode).lock != 0 && sym > ZBAR_PARTIAL && sym != ZBAR_QRCODE {
-            _zbar_decoder_release_lock(dcode, sym);
+            (*dcode)._zbar_decoder_release_lock(sym);
         }
         if let Some(handler) = (*dcode).handler {
             handler(dcode);
