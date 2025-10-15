@@ -5,14 +5,15 @@ use libc::{c_char, c_int, c_uint};
 use crate::{
     decoder::{
         _zbar_decoder_acquire_lock, _zbar_decoder_calc_s, _zbar_decoder_decode_e,
-        _zbar_decoder_get_color, _zbar_decoder_pair_width, _zbar_decoder_release_lock,
-        _zbar_decoder_size_buf, decoder_realloc_databar_segments,
+        _zbar_decoder_pair_width, _zbar_decoder_release_lock, _zbar_decoder_size_buf,
+        decoder_realloc_databar_segments,
     },
     decoder_types::{
         databar_decoder_t, databar_segment_t, zbar_decoder_t, zbar_symbol_type_t,
         ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_MOD_GS1,
         ZBAR_NONE, ZBAR_PARTIAL,
     },
+    line_scanner::zbar_color_t,
 };
 
 const DATABAR_MAX_SEGMENTS: usize = 32;
@@ -61,7 +62,7 @@ unsafe fn feed_bits(
 unsafe fn segment_index(seg: *mut crate::decoder_types::databar_segment_t) -> i32 {
     (((*seg).finder() as i32) << 2)
         | (((*seg).color() as i32) << 1)
-        | ((((*seg).color() ^ (*seg).side()) as i32) & 1)
+        | ((((*seg).color() as u8 ^ (*seg).side()) as i32) & 1)
 }
 
 /// DataBar finder pattern hash table
@@ -783,7 +784,7 @@ pub unsafe fn match_segment(
                 continue;
             }
 
-            let mut chkf = if (*seg).color() != 0 {
+            let mut chkf = if (*seg).color() != zbar_color_t::ZBAR_SPACE {
                 (*seg).finder() as i32 + (*s1).finder() as i32 * 9
             } else {
                 (*s1).finder() as i32 + (*seg).finder() as i32 * 9
@@ -1106,7 +1107,7 @@ pub unsafe fn match_segment_exp(
         }
     }
 
-    (*dcode).direction = (1 - 2 * (((*seg_ptr).side() ^ (*seg_ptr).color()) as i32)) * dir;
+    (*dcode).direction = (1 - 2 * (((*seg_ptr).side() ^ (*seg_ptr).color() as u8) as i32)) * dir;
     (*dcode).modifiers = 1 << ZBAR_MOD_GS1;
     ZBAR_DATABAR_EXP
 }
@@ -1410,12 +1411,13 @@ pub unsafe fn decode_char(
 
     let mut chk;
     if (*seg).exp() {
-        let side = (*seg).color() ^ (*seg).side() ^ 1;
+        let side = (*seg).color() as u8 ^ (*seg).side() ^ 1;
         if v >= 4096 {
             return ZBAR_NONE;
         }
         chk = _zbar_databar_calc_check(sig0, sig1, side as c_uint, 211);
-        if (*seg).finder() != 0 || (*seg).color() != 0 || (*seg).side() != 0 {
+        if (*seg).finder() != 0 || (*seg).color() != zbar_color_t::ZBAR_SPACE || (*seg).side() != 0
+        {
             let i = ((*seg).finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
             if !(0..12).contains(&i) {
                 return ZBAR_NONE;
@@ -1428,7 +1430,7 @@ pub unsafe fn decode_char(
         }
     } else {
         chk = _zbar_databar_calc_check(sig0, sig1, (*seg).side() as c_uint, 79);
-        if (*seg).color() != 0 {
+        if (*seg).color() != zbar_color_t::ZBAR_SPACE {
             chk = (chk * 16) % 79;
         }
     }
@@ -1503,7 +1505,7 @@ pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
                     let seg = ((*db).segs).add(j);
                     (*seg).set_finder(-1);
                     (*seg).set_exp(false);
-                    (*seg).set_color(0);
+                    (*seg).set_color(zbar_color_t::ZBAR_SPACE);
                     (*seg).set_side(0);
                     (*seg).set_partial(false);
                     (*seg).set_count(0);
@@ -1582,7 +1584,7 @@ pub unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     let seg = &mut (*db.segs.offset(iseg as isize));
     seg.set_finder(if finder >= 9 { finder - 9 } else { finder });
     seg.set_exp(finder >= 9);
-    seg.set_color(((_zbar_decoder_get_color(dcode) as c_int) ^ dir ^ 1) as u8);
+    seg.set_color((((*dcode).color() as u8) ^ dir as u8 ^ 1).into());
     seg.set_side(dir as u8);
     seg.set_partial(false);
     seg.set_count(1);

@@ -5,9 +5,10 @@
 use crate::{
     decoder::_zbar_decoder_size_buf,
     decoder_types::{
-        code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
-        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE, ZBAR_PARTIAL,
+        code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
+        ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE, ZBAR_PARTIAL,
     },
+    line_scanner::zbar_color_t,
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -297,12 +298,6 @@ static CODE39_CHARACTERS: &[u8; NUM_CHARS] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVW
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Return current element color
-#[inline]
-fn get_color(dcode: &zbar_decoder_t) -> u8 {
-    dcode.idx & 1
-}
-
 /// Retrieve i-th previous element width
 #[inline]
 fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
@@ -502,7 +497,7 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     dcode.code39.s9 = dcode.code39.s9.wrapping_sub(w9).wrapping_add(w0);
 
     if dcode.code39.character() < 0 {
-        if get_color(dcode) != ZBAR_BAR {
+        if dcode.color() != zbar_color_t::ZBAR_BAR {
             return ZBAR_NONE;
         }
         return code39_decode_start(dcode);

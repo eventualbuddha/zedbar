@@ -3,10 +3,13 @@
 //! This module implements decoding for EAN-8, EAN-13, UPC-A, UPC-E,
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
-use crate::decoder_types::{
-    ean_decoder_t, ean_pass_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
-    ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8, ZBAR_ISBN10,
-    ZBAR_ISBN13, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_SPACE, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
+use crate::{
+    decoder_types::{
+        ean_decoder_t, ean_pass_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW,
+        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5, ZBAR_EAN8,
+        ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
+    },
+    line_scanner::zbar_color_t,
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -77,12 +80,6 @@ static PARITY_DECODE: [u8; 64] = [
 // ============================================================================
 // Helper functions
 // ============================================================================
-
-/// Return current element color
-#[inline]
-fn get_color(dcode: &zbar_decoder_t) -> u8 {
-    dcode.idx & 1
-}
 
 /// Retrieve i-th previous element width
 #[inline]
@@ -190,7 +187,7 @@ fn aux_start(dcode: &zbar_decoder_t) -> i8 {
     let e1 = get_width(dcode, 4) + get_width(dcode, 5);
     let e1_code = decode_e(e1, dcode.ean.s4, 7);
 
-    if get_color(dcode) == ZBAR_BAR {
+    if dcode.color() == zbar_color_t::ZBAR_BAR {
         // check for quiet-zone
         let qz = get_width(dcode, 7);
         if qz == 0 || qz > dcode.ean.s4 * 3 / 4 {
@@ -224,7 +221,7 @@ fn aux_mid(dcode: &zbar_decoder_t) -> i8 {
 /// Attempt to decode previous 4 widths (2 bars and 2 spaces) as a character
 fn decode4(dcode: &zbar_decoder_t) -> i8 {
     // calculate similar edge measurements
-    let e1 = if get_color(dcode) == ZBAR_BAR {
+    let e1 = if dcode.color() == zbar_color_t::ZBAR_BAR {
         get_width(dcode, 0) + get_width(dcode, 1)
     } else {
         get_width(dcode, 2) + get_width(dcode, 3)
@@ -250,7 +247,7 @@ fn decode4(dcode: &zbar_decoder_t) -> i8 {
     // E1E2 == 44 (1010)
     if ((1 << code) & 0x0660) != 0 {
         // use sum of bar widths
-        let d2 = if get_color(dcode) == ZBAR_BAR {
+        let d2 = if dcode.color() == zbar_color_t::ZBAR_BAR {
             get_width(dcode, 0) + get_width(dcode, 2)
         } else {
             get_width(dcode, 1) + get_width(dcode, 3)
@@ -266,17 +263,6 @@ fn decode4(dcode: &zbar_decoder_t) -> i8 {
             code = ((code >> 1) & 3) | 0x10; // compress code space
         }
     }
-
-    zassert!(
-        code < 0x14,
-        -1,
-        "code={:02x} e1={:x} e2={:x} s4={:x} color={:x}",
-        code,
-        e1,
-        e2,
-        dcode.ean.s4,
-        get_color(dcode)
-    );
 
     code
 }
@@ -713,7 +699,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
     let idx = pass.state & STATE_IDX;
     let fwd = (pass.state & 1) as u8;
 
-    if get_color(dcode) == ZBAR_SPACE {
+    if dcode.color() == zbar_color_t::ZBAR_SPACE {
         if (pass.state & STATE_ADDON) != 0 {
             if idx == 0x09 || idx == 0x21 {
                 let qz = get_width(dcode, 0);

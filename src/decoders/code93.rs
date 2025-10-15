@@ -5,9 +5,10 @@
 use crate::{
     decoder::_zbar_decoder_size_buf,
     decoder_types::{
-        code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
-        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
+        code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
+        ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
     },
+    line_scanner::zbar_color_t,
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -40,12 +41,6 @@ static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Return current element color
-#[inline]
-fn get_color(dcode: &zbar_decoder_t) -> u8 {
-    dcode.idx & 1
-}
 
 /// Retrieve i-th previous element width
 #[inline]
@@ -386,7 +381,7 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     let dcode = &mut *dcode;
 
     if dcode.code93.character() < 0 {
-        if get_color(dcode) != ZBAR_BAR {
+        if dcode.color() != zbar_color_t::ZBAR_BAR {
             return ZBAR_NONE;
         }
         return decode_start(dcode);
@@ -396,7 +391,7 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     let element = dcode.code93.element() + 1;
     dcode.code93.set_element(element);
 
-    if element != 6 || get_color(dcode) == (dcode.code93.direction() as u8) {
+    if element != 6 || dcode.color() as u8 == (dcode.code93.direction() as u8) {
         return ZBAR_NONE;
     }
 

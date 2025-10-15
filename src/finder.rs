@@ -2,21 +2,17 @@
 //!
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
-use crate::decoder_types::{
-    qr_finder_line, qr_finder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_QRCODE,
-    ZBAR_SPACE,
+use crate::{
+    decoder_types::{
+        qr_finder_line, qr_finder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_QRCODE,
+    },
+    line_scanner::zbar_color_t,
 };
 use libc::c_uint;
 
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Return current element color
-#[inline]
-fn get_color(dcode: &zbar_decoder_t) -> u8 {
-    dcode.idx & 1
-}
 
 /// Retrieve i-th previous element width
 #[inline]
@@ -85,7 +81,7 @@ pub unsafe fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
     // instead of dark on light).
     // If we find finder patterns with the opposite polarity, we should invert
     // the final binarized image and use them to search for QR codes in that.
-    if get_color(dcode_ref) != ZBAR_SPACE || s < 7 {
+    if dcode_ref.color() != zbar_color_t::ZBAR_SPACE || s < 7 {
         return 0;
     }
 

@@ -79,11 +79,6 @@ pub(crate) unsafe fn decoder_realloc_databar_segments(
         as *mut databar_segment_t
 }
 
-/// Get the color (bar/space) of the current element
-pub unsafe fn _zbar_decoder_get_color(dcode: *const zbar_decoder_t) -> c_char {
-    ((*dcode).idx & 1) as c_char
-}
-
 /// Get width of a specific element from the decoder's history window
 pub unsafe fn _zbar_decoder_get_width(dcode: *const zbar_decoder_t, offset: u8) -> c_uint {
     (*dcode).w[(((*dcode).idx as usize).wrapping_sub(offset as usize)) & (DECODE_WINDOW - 1)]
@@ -431,11 +426,6 @@ pub unsafe fn zbar_decoder_new_scan(dcode: *mut zbar_decoder_t) {
 // ============================================================================
 // Decoder accessor functions
 // ============================================================================
-
-/// Get current decoder color (bar/space)
-pub unsafe fn zbar_decoder_get_color(dcode: *const zbar_decoder_t) -> c_int {
-    _zbar_decoder_get_color(dcode) as c_int
-}
 
 /// Get decoded data buffer
 pub unsafe fn zbar_decoder_get_data(dcode: *const zbar_decoder_t) -> *const c_char {

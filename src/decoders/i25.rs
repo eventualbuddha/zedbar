@@ -5,9 +5,10 @@
 use crate::{
     decoder::_zbar_decoder_size_buf,
     decoder_types::{
-        i25_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_BAR,
-        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_I25, ZBAR_NONE, ZBAR_PARTIAL,
+        i25_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
+        ZBAR_CFG_MIN_LEN, ZBAR_I25, ZBAR_NONE, ZBAR_PARTIAL,
     },
+    line_scanner::zbar_color_t,
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -23,12 +24,6 @@ macro_rules! zassert {
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Return current element color
-#[inline]
-fn get_color(dcode: &zbar_decoder_t) -> u8 {
-    dcode.idx & 1
-}
 
 /// Retrieve i-th previous element width
 #[inline]
@@ -160,7 +155,7 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     enc = i25_decode1(enc, get_width(dcode, i), s10);
     i += 1;
 
-    let valid = if get_color(dcode) == ZBAR_BAR {
+    let valid = if dcode.color() == zbar_color_t::ZBAR_BAR {
         enc == 4
     } else {
         enc = i25_decode1(enc, get_width(dcode, i), s10);
@@ -179,7 +174,9 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         return ZBAR_NONE;
     }
 
-    dcode.i25.set_direction(get_color(dcode) != 0);
+    dcode
+        .i25
+        .set_direction(dcode.color() != zbar_color_t::ZBAR_SPACE);
     dcode.i25.set_element(1);
     dcode.i25.set_character(0);
     ZBAR_PARTIAL

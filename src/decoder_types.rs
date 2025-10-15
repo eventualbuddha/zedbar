@@ -5,6 +5,8 @@
 
 use libc::{c_char, c_int, c_short, c_uint, c_void};
 
+use crate::line_scanner::zbar_color_t;
+
 /// Number of integer configs (ZBAR_CFG_MAX_LEN - ZBAR_CFG_MIN_LEN + 1)
 pub const NUM_CFGS: usize = 2;
 
@@ -59,13 +61,6 @@ pub const ZBAR_CFG_POSITION: c_int = 128;
 pub const ZBAR_CFG_TEST_INVERTED: c_int = 129;
 pub const ZBAR_CFG_X_DENSITY: c_int = 256;
 pub const ZBAR_CFG_Y_DENSITY: c_int = 257;
-
-// ============================================================================
-// Color constants
-// ============================================================================
-
-pub const ZBAR_SPACE: u8 = 0;
-pub const ZBAR_BAR: u8 = 1;
 
 // ============================================================================
 // Modifier constants
@@ -443,14 +438,14 @@ impl databar_segment_t {
     }
 
     #[inline]
-    pub fn color(&self) -> u8 {
+    pub fn color(&self) -> zbar_color_t {
         // color is bit 6
-        ((self.bitfields >> 6) & 1) as u8
+        (((self.bitfields >> 6) & 1) as u8).into()
     }
 
     #[inline]
-    pub fn set_color(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(1 << 6)) | (((val & 1) as c_uint) << 6);
+    pub fn set_color(&mut self, val: zbar_color_t) {
+        self.bitfields = (self.bitfields & !(1 << 6)) | ((val as c_uint) << 6);
     }
 
     #[inline]
@@ -623,4 +618,10 @@ pub struct zbar_decoder_t {
     pub code128: code128_decoder_t,
     pub qrf: qr_finder_t,
     pub sqf: sq_finder_t,
+}
+
+impl zbar_decoder_t {
+    pub(crate) fn color(&self) -> zbar_color_t {
+        self.idx.into()
+    }
 }

@@ -58,6 +58,16 @@ pub enum zbar_color_t {
     ZBAR_BAR = 1,   // dark area or colored bar segment
 }
 
+impl From<u8> for zbar_color_t {
+    fn from(value: u8) -> Self {
+        if value & 1 == 1 {
+            Self::ZBAR_BAR
+        } else {
+            Self::ZBAR_SPACE
+        }
+    }
+}
+
 /// Scanner state structure - must match the C layout exactly
 #[derive(Default)]
 pub struct zbar_scanner_t {
@@ -108,22 +118,6 @@ pub unsafe fn zbar_scanner_get_edge(
         1.. => edge >> prec,
         0 => edge,
         _ => edge << (-prec),
-    }
-}
-
-/// Get the current color of the scanner
-///
-/// Returns ZBAR_SPACE or ZBAR_BAR depending on whether the scanner is
-/// currently processing a space (light area) or bar (dark area).
-pub unsafe fn zbar_scanner_get_color(scn: *const zbar_scanner_t) -> zbar_color_t {
-    if scn.is_null() {
-        return zbar_color_t::ZBAR_SPACE;
-    }
-
-    if (*scn).y1_sign <= 0 {
-        zbar_color_t::ZBAR_SPACE
-    } else {
-        zbar_color_t::ZBAR_BAR
     }
 }
 

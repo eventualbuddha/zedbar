@@ -7,8 +7,9 @@ use crate::{
     decoder_types::{
         codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW,
         ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
-        ZBAR_NONE, ZBAR_PARTIAL, ZBAR_SPACE,
+        ZBAR_NONE, ZBAR_PARTIAL,
     },
+    line_scanner::zbar_color_t,
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -37,12 +38,6 @@ static CODABAR_CHARACTERS: &[u8; 20] = b"0123456789-$:/.+ABCD";
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Return current element color
-#[inline]
-fn get_color(dcode: &zbar_decoder_t) -> u8 {
-    dcode.idx & 1
-}
 
 /// Retrieve i-th previous element width
 #[inline]
@@ -396,7 +391,7 @@ pub unsafe fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
     let w1 = get_width(dcode, 1);
     dcode.codabar.s7 = dcode.codabar.s7.wrapping_sub(w8).wrapping_add(w1);
 
-    if get_color(dcode) != ZBAR_SPACE {
+    if dcode.color() != zbar_color_t::ZBAR_SPACE {
         return ZBAR_NONE;
     }
 
