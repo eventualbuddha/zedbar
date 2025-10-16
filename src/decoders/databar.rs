@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use libc::{c_char, c_int, c_uint};
+use libc::{c_int, c_uint};
 
 use crate::{
     decoder::{_zbar_decoder_decode_e, decoder_realloc_databar_segments},
@@ -568,23 +568,29 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
 pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_uint) {
-    let db = &mut (*dcode).databar;
+    let dcode = &mut *dcode;
     let mut d_array = [*d.offset(0), *d.offset(1), *d.offset(2), *d.offset(3)];
 
-    let buf = (*dcode).buffer_mut_ptr();
+    // Get config before borrowing buffer
+    let emit_check = ((dcode.databar.config >> ZBAR_CFG_EMIT_CHECK) & 1) != 0;
+
+    let buf = match dcode.buffer_mut_slice(16) {
+        Ok(buf) => buf,
+        Err(_) => return,
+    };
     let mut chk = 0u32;
 
     // Write "01" prefix
-    *buf.offset(0) = b'0' as c_char;
-    *buf.offset(1) = b'1' as c_char;
+    buf[0] = b'0';
+    buf[1] = b'1';
 
     // Start at position 15 and work backwards
     let mut buf_idx = 15;
 
     // Write two null terminators
-    *buf.offset(buf_idx) = 0;
+    buf[buf_idx] = 0;
     buf_idx -= 1;
-    *buf.offset(buf_idx) = 0;
+    buf[buf_idx] = 0;
     buf_idx -= 1;
 
     // First conversion
@@ -604,7 +610,7 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
         if (i & 1) != 0 {
             chk += c << 1;
         }
-        *buf.offset(buf_idx) = (c as u8 + b'0') as c_char;
+        buf[buf_idx] = c as u8 + b'0';
         buf_idx -= 1;
         if i != 0 {
             r /= 10;
@@ -625,7 +631,7 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
         if (i & 1) != 0 {
             chk += c << 1;
         }
-        *buf.offset(buf_idx) = (c as u8 + b'0') as c_char;
+        buf[buf_idx] = c as u8 + b'0';
         buf_idx -= 1;
         if i != 0 {
             r /= 10;
@@ -642,7 +648,7 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
         if (i & 1) == 0 {
             chk += c << 1;
         }
-        *buf.offset(buf_idx) = (c as u8 + b'0') as c_char;
+        buf[buf_idx] = c as u8 + b'0';
         buf_idx -= 1;
         if i != 0 {
             r /= 10;
@@ -650,15 +656,15 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
     }
 
     // Add check digit if configured
-    if ((db.config >> ZBAR_CFG_EMIT_CHECK) & 1) != 0 {
+    if emit_check {
         chk %= 10;
         if chk != 0 {
             chk = 10 - chk;
         }
-        *buf.offset(13) = (chk as u8 + b'0') as c_char;
-        (*dcode).set_buffer_len(14);
+        buf[13] = chk as u8 + b'0';
+        dcode.set_buffer_len(14);
     } else {
-        (*dcode).set_buffer_len(13);
+        dcode.set_buffer_len(13);
     }
 }
 
