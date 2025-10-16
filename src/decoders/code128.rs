@@ -9,7 +9,7 @@ use crate::{
     },
     line_scanner::zbar_color_t,
 };
-use libc::{c_char, c_int, c_uint};
+use libc::{c_int, c_uint};
 
 // Character count
 const NUM_CHARS: usize = 108;
@@ -436,46 +436,70 @@ unsafe fn postprocess_c(
 unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     dcode.modifiers = 0;
     dcode.direction = 1 - 2 * (dcode.code128.direction() as c_int);
-    let mut buf = dcode.buffer_mut_ptr();
+    let character_count = dcode.code128.character() as usize;
+    let direction = dcode.code128.direction();
 
-    if dcode.code128.direction() != 0 {
-        // Reverse buffer
-        for i in 0..(dcode.code128.character() / 2) {
-            let j = dcode.code128.character() - 1 - i;
-            let code = *buf.add(i as usize);
-            *buf.add(i as usize) = *buf.add(j as usize);
-            *buf.add(j as usize) = code;
+    // First phase: reverse buffer if needed and validate
+    {
+        let buf = match dcode.buffer_mut_slice(character_count) {
+            Ok(buf) => buf,
+            Err(_) => return true,
+        };
+
+        if direction != 0 {
+            // Reverse buffer
+            let half = character_count / 2;
+            for i in 0..half {
+                let j = character_count - 1 - i;
+                buf.swap(i, j);
+            }
+            zassert!(
+                buf[character_count - 1] == STOP_REV,
+                true,
+                "dir={:x}\n",
+                direction
+            );
+        } else {
+            zassert!(
+                buf[character_count - 1] == STOP_FWD,
+                true,
+                "dir={:x}\n",
+                direction
+            );
         }
-        zassert!(
-            *buf.add((dcode.code128.character() - 1) as usize) as u8 == STOP_REV,
-            true,
-            "dir={:x}\n",
-            dcode.code128.direction()
-        );
-    } else {
-        zassert!(
-            *buf.add((dcode.code128.character() - 1) as usize) as u8 == STOP_FWD,
-            true,
-            "dir={:x}\n",
-            dcode.code128.direction()
-        );
-    }
 
-    let code = *buf.add(0) as u8;
-    zassert!(
-        (START_A..=START_C).contains(&code),
-        true,
-        "code={:x}\n",
-        code
-    );
+        let code = buf[0];
+        zassert!(
+            (START_A..=START_C).contains(&code),
+            true,
+            "code={:x}\n",
+            code
+        );
+    } // buf borrow ends here
 
-    let mut charset = code - START_A;
-    let mut cexp = if code == START_C { 1 } else { 0 };
+    // Second phase: convert characters
+    let start_code = {
+        let buf = match dcode.buffer_mut_slice(character_count) {
+            Ok(buf) => buf,
+            Err(_) => return true,
+        };
+        buf[0]
+    };
+
+    let mut charset = start_code - START_A;
+    let mut cexp = if start_code == START_C { 1 } else { 0 };
 
     let mut i = 1usize;
     let mut j = 0usize;
-    while i < (dcode.code128.character() - 2) as usize {
-        let code = *buf.add(i) as u8;
+    while i < (character_count - 2) {
+        let code = {
+            let buf = match dcode.buffer_mut_slice(character_count.max(j + 1)) {
+                Ok(buf) => buf,
+                Err(_) => return true,
+            };
+            buf[i]
+        };
+        
         zassert!(
             (code & 0x80) == 0,
             true,
@@ -493,12 +517,17 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
             continue;
         } else if code < 0x60 {
             // Convert character set B to ASCII
-            let mut code = code + 0x20;
-            if (charset == 0 || charset == 0x81) && code >= 0x60 {
+            let mut ascii_code = code + 0x20;
+            if (charset == 0 || charset == 0x81) && ascii_code >= 0x60 {
                 // Convert character set A to ASCII
-                code -= 0x60;
+                ascii_code -= 0x60;
             }
-            *buf.add(j) = code as c_char;
+            
+            let buf = match dcode.buffer_mut_slice(character_count.max(j + 1)) {
+                Ok(buf) => buf,
+                Err(_) => return true,
+            };
+            buf[j] = ascii_code;
             j += 1;
             if (charset & 0x80) != 0 {
                 charset &= 0x7f;
@@ -517,7 +546,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                     cexp
                 );
                 let delta = postprocess_c(dcode, cexp, i, j);
-                buf = dcode.buffer_mut_ptr();
+                // Buffer was modified by postprocess_c, no need to re-acquire
                 i += delta as usize;
                 j += (delta * 2) as usize;
                 cexp = 0;
@@ -536,8 +565,12 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                     dcode.modifiers |= 1 << ZBAR_MOD_GS1;
                 } else if i == 2 {
                     dcode.modifiers |= 1 << ZBAR_MOD_AIM;
-                } else if i < (dcode.code128.character() - 3) as usize {
-                    *buf.add(j) = 0x1d;
+                } else if i < (character_count - 3) {
+                    let buf = match dcode.buffer_mut_slice(j + 1) {
+                        Ok(buf) => buf,
+                        Err(_) => return true,
+                    };
+                    buf[j] = 0x1d;
                     j += 1;
                 }
                 // else drop trailing FNC1
@@ -575,7 +608,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
             "i={:x} j={:x} code={:02x} charset={:x} cexp={:x}\n",
             i,
             j,
-            code,
+            0u8, // code is out of scope here
             charset,
             cexp
         );
@@ -590,7 +623,14 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
         j
     );
     dcode.set_buffer_len(j as c_uint);
-    *buf.add(j) = 0;
+    
+    // Write null terminator
+    let buf = match dcode.buffer_mut_slice(j + 1) {
+        Ok(buf) => buf,
+        Err(_) => return true,
+    };
+    buf[j] = 0;
+    
     dcode.code128.set_character(j as i16);
     false
 }
