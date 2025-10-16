@@ -732,11 +732,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     (*sym).modifiers = zbar_decoder_get_modifiers(dcode);
 
     // Copy data
-    copy_nonoverlapping(
-        data.as_ptr(),
-        (*sym).data as *mut u8,
-        datalen + 1,
-    );
+    copy_nonoverlapping(data.as_ptr(), (*sym).data as *mut u8, datalen + 1);
 
     // Initialize position
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {

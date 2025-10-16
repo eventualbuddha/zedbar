@@ -573,7 +573,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
     }
 
     buf[buf_idx] = 0;
-    
+
     // Check if last character is GS and remove it
     let final_len = if total_len > 0 && buf[buf_idx - 1] == GS {
         buf[buf_idx - 1] = 0;
@@ -581,7 +581,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
     } else {
         total_len
     };
-    
+
     dcode.set_buffer_len(final_len as c_uint);
     final_len
 }

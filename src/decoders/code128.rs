@@ -304,7 +304,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     }
 
     let buf = dcode.buffer_slice();
-    
+
     // Add in irregularly weighted start character
     let idx = if dcode.code128.direction() != 0 {
         (dcode.code128.character() - 1) as usize
@@ -427,7 +427,7 @@ unsafe fn postprocess_c(
         );
         buf[j + 1] = b'0' + code;
     }
-    
+
     dcode.code128.set_character(newlen as i16);
     delta as c_uint
 }
@@ -500,7 +500,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
             };
             buf[i]
         };
-        
+
         zassert!(
             (code & 0x80) == 0,
             true,
@@ -523,7 +523,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 // Convert character set A to ASCII
                 ascii_code -= 0x60;
             }
-            
+
             let buf = match dcode.buffer_mut_slice(character_count.max(j + 1)) {
                 Ok(buf) => buf,
                 Err(_) => return true,
@@ -624,14 +624,14 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
         j
     );
     dcode.set_buffer_len(j as c_uint);
-    
+
     // Write null terminator
     let buf = match dcode.buffer_mut_slice(j + 1) {
         Ok(buf) => buf,
         Err(_) => return true,
     };
     buf[j] = 0;
-    
+
     dcode.code128.set_character(j as i16);
     false
 }
