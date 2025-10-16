@@ -371,44 +371,43 @@ unsafe fn postprocess_c(
 ) -> c_uint {
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
-    let newlen = dcode.code128.character() as usize + delta;
+    let old_len = dcode.code128.character() as usize;
+    let newlen = old_len + delta;
     if dcode.set_buffer_capacity(newlen as c_uint).is_err() {
         return ZBAR_NONE as c_uint;
     }
 
-    let buf = dcode.buffer_mut_ptr();
+    let buf = match dcode.buffer_mut_slice(newlen) {
+        Ok(buf) => buf,
+        Err(_) => return ZBAR_NONE as c_uint,
+    };
 
     // Relocate unprocessed data to end of buffer
-    libc::memmove(
-        buf.add(start + delta) as *mut libc::c_void,
-        buf.add(start) as *const libc::c_void,
-        dcode.code128.character() as usize - start,
-    );
-    dcode.code128.set_character(newlen as i16);
+    buf.copy_within(start..old_len, start + delta);
 
     for i in 0..delta {
         let j = dst + i * 2;
         // Convert each set C character into two ASCII digits
-        let mut code = *buf.add(start + delta + i) as u8;
-        *buf.add(j) = b'0' as c_char;
+        let mut code = buf[start + delta + i];
+        buf[j] = b'0';
         if code >= 50 {
             code -= 50;
-            *buf.add(j) += 5;
+            buf[j] += 5;
         }
         if code >= 30 {
             code -= 30;
-            *buf.add(j) += 3;
+            buf[j] += 3;
         }
         if code >= 20 {
             code -= 20;
-            *buf.add(j) += 2;
+            buf[j] += 2;
         }
         if code >= 10 {
             code -= 10;
-            *buf.add(j) += 1;
+            buf[j] += 1;
         }
         zassert!(
-            *buf.add(j) as u8 <= b'9',
+            buf[j] <= b'9',
             delta as c_uint,
             "start={:x} end={:x} i={:x} j={:x}\n",
             start,
@@ -425,8 +424,10 @@ unsafe fn postprocess_c(
             i,
             j
         );
-        *buf.add(j + 1) = (b'0' + code) as c_char;
+        buf[j + 1] = b'0' + code;
     }
+    
+    dcode.code128.set_character(newlen as i16);
     delta as c_uint
 }
 
