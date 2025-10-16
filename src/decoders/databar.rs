@@ -24,20 +24,6 @@ fn var_max(len: i32, offset: i32) -> i32 {
 }
 
 #[inline]
-unsafe fn push_char(buf: &mut *mut u8, ch: u8) {
-    **buf = ch;
-    *buf = (*buf).add(1);
-}
-
-#[inline]
-unsafe fn push_char4(buf: &mut *mut u8, c0: u8, c1: u8, c2: u8, c3: u8) {
-    push_char(buf, c0);
-    push_char(buf, c1);
-    push_char(buf, c2);
-    push_char(buf, c3);
-}
-
-#[inline]
 unsafe fn feed_bits(
     d: &mut u64,
     bit_count: &mut i32,
@@ -243,6 +229,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
         return -1;
     }
 
+    let dcode = &mut *dcode;
     let mut data_ptr = data;
     let first = *data_ptr as u64;
     data_ptr = data_ptr.add(1);
@@ -298,16 +285,22 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 
     len -= 2;
 
-    if (*dcode).set_buffer_capacity(buflen as c_uint).is_err() {
+    if dcode.set_buffer_capacity(buflen as c_uint).is_err() {
         return -1;
     }
 
-    let base_buf = (*dcode).buffer_mut_ptr() as *mut u8;
-    let mut buf = base_buf;
+    let buffer_capacity = dcode.buffer_capacity();
+    let buf = match dcode.buffer_mut_slice(buflen as usize) {
+        Ok(buf) => buf,
+        Err(_) => return -1,
+    };
+    let mut buf_idx = 0usize;
 
     if enc != 0 {
-        push_char(&mut buf, b'0');
-        push_char(&mut buf, b'1');
+        buf[buf_idx] = b'0';
+        buf_idx += 1;
+        buf[buf_idx] = b'1';
+        buf_idx += 1;
     }
 
     if enc == 1 {
@@ -316,9 +309,11 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             return -1;
         }
         let digit = ((d >> i_bits) & 0xf) as u8;
-        push_char(&mut buf, b'0' + digit);
+        buf[buf_idx] = b'0' + digit;
+        buf_idx += 1;
     } else if enc != 0 {
-        push_char(&mut buf, b'9');
+        buf[buf_idx] = b'9';
+        buf_idx += 1;
     }
 
     if enc != 0 {
@@ -332,11 +327,11 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             if n >= 1000 {
                 return -1;
             }
-            _zbar_databar_decode10(buf, n as u64, 3);
-            buf = buf.add(3);
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 3);
+            buf_idx += 3;
         }
-        _zbar_databar_append_check14(buf.sub(13));
-        buf = buf.add(1);
+        _zbar_databar_append_check14(buf.as_mut_ptr().add(buf_idx - 13));
+        buf_idx += 1;
     }
 
     match enc {
@@ -344,13 +339,21 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 2);
             i_bits -= 2;
             let val = ((d >> i_bits) & 0x3) as u8;
-            push_char4(&mut buf, b'3', b'9', b'2', b'0' + val);
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'9';
+            buf[buf_idx + 2] = b'2';
+            buf[buf_idx + 3] = b'0' + val;
+            buf_idx += 4;
         }
         3 => {
             feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 12);
             i_bits -= 2;
             let val = ((d >> i_bits) & 0x3) as u8;
-            push_char4(&mut buf, b'3', b'9', b'3', b'0' + val);
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'9';
+            buf[buf_idx + 2] = b'3';
+            buf[buf_idx + 3] = b'0' + val;
+            buf_idx += 4;
             i_bits -= 10;
             if i_bits < 0 {
                 return -1;
@@ -359,8 +362,8 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             if n >= 1000 {
                 return -1;
             }
-            _zbar_databar_decode10(buf, n as u64, 3);
-            buf = buf.add(3);
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 3);
+            buf_idx += 3;
         }
         4 => {
             feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 15);
@@ -369,9 +372,13 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
                 return -1;
             }
             n = ((d >> i_bits) & 0x7fff) as u32;
-            push_char4(&mut buf, b'3', b'1', b'0', b'3');
-            _zbar_databar_decode10(buf, n as u64, 6);
-            buf = buf.add(6);
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'1';
+            buf[buf_idx + 2] = b'0';
+            buf[buf_idx + 3] = b'3';
+            buf_idx += 4;
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 6);
+            buf_idx += 6;
         }
         5 => {
             feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 15);
@@ -384,19 +391,27 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             if n >= 10000 {
                 prefix = b'3';
             }
-            push_char4(&mut buf, b'3', b'2', b'0', prefix);
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'2';
+            buf[buf_idx + 2] = b'0';
+            buf[buf_idx + 3] = prefix;
+            buf_idx += 4;
             if n >= 10000 {
                 n -= 10000;
             }
-            _zbar_databar_decode10(buf, n as u64, 6);
-            buf = buf.add(6);
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 6);
+            buf_idx += 6;
         }
         _ => {}
     }
 
     if enc >= 6 {
         let mut temp_enc = enc & 1;
-        push_char4(&mut buf, b'3', b'1' + temp_enc as u8, b'0', b'x');
+        buf[buf_idx] = b'3';
+        buf[buf_idx + 1] = b'1' + temp_enc as u8;
+        buf[buf_idx + 2] = b'0';
+        buf[buf_idx + 3] = b'x';
+        buf_idx += 4;
 
         feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 20);
         i_bits -= 20;
@@ -407,11 +422,10 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
         if n >= 1_000_000 {
             return -1;
         }
-        let buf_start = buf;
-        _zbar_databar_decode10(buf_start, n as u64, 6);
-        *buf_start.offset(-1) = *buf_start;
-        *buf_start = b'0';
-        buf = buf_start.add(6);
+        _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 6);
+        buf[buf_idx - 1] = buf[buf_idx];
+        buf[buf_idx] = b'0';
+        buf_idx += 6;
 
         feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 16);
         i_bits -= 16;
@@ -425,15 +439,17 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             let mm = rem % 12 + 1;
             let yy = rem / 12;
 
-            push_char(&mut buf, b'1');
+            buf[buf_idx] = b'1';
+            buf_idx += 1;
             temp_enc = enc - 6;
-            push_char(&mut buf, b'0' + ((temp_enc | 1) as u8));
-            _zbar_databar_decode10(buf, yy as u64, 2);
-            buf = buf.add(2);
-            _zbar_databar_decode10(buf, mm as u64, 2);
-            buf = buf.add(2);
-            _zbar_databar_decode10(buf, dd as u64, 2);
-            buf = buf.add(2);
+            buf[buf_idx] = b'0' + ((temp_enc | 1) as u8);
+            buf_idx += 1;
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), yy as u64, 2);
+            buf_idx += 2;
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), mm as u64, 2);
+            buf_idx += 2;
+            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), dd as u64, 2);
+            buf_idx += 2;
         } else if n > 38400 {
             return -1;
         }
@@ -459,7 +475,8 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
                     if digit > 9 {
                         return -1;
                     }
-                    push_char(&mut buf, b'0' + digit as u8);
+                    buf[buf_idx] = b'0' + digit as u8;
+                    buf_idx += 1;
                     break;
                 }
 
@@ -470,8 +487,10 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
                 let mut val = ((d >> i_bits) & 0x7f) as i32 - 8;
                 let n1 = val % 11;
                 val /= 11;
-                push_char(&mut buf, if val < 10 { b'0' + val as u8 } else { GS });
-                push_char(&mut buf, if n1 < 10 { b'0' + n1 as u8 } else { GS });
+                buf[buf_idx] = if val < 10 { b'0' + val as u8 } else { GS };
+                buf_idx += 1;
+                buf[buf_idx] = if n1 < 10 { b'0' + n1 as u8 } else { GS };
+                buf_idx += 1;
             } else {
                 let mut ch: u8 = 0;
                 i_bits -= 3;
@@ -541,29 +560,30 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
                 }
 
                 if ch != 0 {
-                    push_char(&mut buf, ch);
+                    buf[buf_idx] = ch;
+                    buf_idx += 1;
                 }
             }
         }
     }
 
-    let total_len = buf.offset_from(base_buf) as c_int;
-    if total_len < 0 || (total_len as u32) >= (*dcode).buffer_capacity() {
+    let total_len = buf_idx as c_int;
+    if total_len < 0 || (total_len as u32) >= buffer_capacity {
         return -1;
     }
 
-    *buf = 0;
-    (*dcode).set_buffer_len(total_len as c_uint);
-    if total_len > 0 {
-        let last = buf.sub(1);
-        if *last == GS {
-            *last = 0;
-            let new_len = (*dcode).buffer_len().saturating_sub(1);
-            (*dcode).set_buffer_len(new_len);
-        }
-    }
-
-    0
+    buf[buf_idx] = 0;
+    
+    // Check if last character is GS and remove it
+    let final_len = if total_len > 0 && buf[buf_idx - 1] == GS {
+        buf[buf_idx - 1] = 0;
+        total_len - 1
+    } else {
+        total_len
+    };
+    
+    dcode.set_buffer_len(final_len as c_uint);
+    final_len
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
