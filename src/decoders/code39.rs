@@ -460,13 +460,8 @@ unsafe fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
         buffer[..character].reverse();
     }
 
-    for i in 0..character {
-        let val = buffer[i];
-        buffer[i] = if (val as usize) < 0x2b {
-            CODE39_CHARACTERS[val as usize]
-        } else {
-            b'?'
-        };
+    for c in buffer.iter_mut().take(character) {
+        *c = *CODE39_CHARACTERS.get(*c as usize).unwrap_or(&b'?');
     }
 
     // Add null terminator
@@ -520,7 +515,7 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
             let buf_slice = dcode.buffer_slice();
             buf_slice
                 .get((character - 1) as usize)
-                .map_or(false, |&b| b == 0x2b)
+                .is_some_and(|&b| b == 0x2b)
         } else {
             false
         };

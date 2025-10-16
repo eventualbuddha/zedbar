@@ -659,19 +659,17 @@ fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
         base = sym;
 
         if base > ZBAR_PARTIAL {
-            if base == ZBAR_UPCA {
-                i = 1;
-            } else if base == ZBAR_UPCE {
-                i = 1;
-            } else if base == ZBAR_ISBN10 {
-                i = 3;
+            match base {
+                ZBAR_UPCA | ZBAR_UPCE => i = 1,
+                ZBAR_ISBN10 => i = 3,
+                _ => {}
             }
 
             let mut calc_base = base;
-            if base == ZBAR_ISBN13 {
-                calc_base = ZBAR_EAN13;
-            } else if base == ZBAR_UPCE {
-                calc_base -= 1;
+            match base {
+                ZBAR_ISBN13 => calc_base = ZBAR_EAN13,
+                ZBAR_UPCE => calc_base -= 1,
+                _ => {}
             }
 
             if base == ZBAR_ISBN10

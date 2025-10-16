@@ -193,9 +193,7 @@ unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
     // Copy holding buffer
     let temp_buf = dcode.i25.buf; // Copy the small array
     if let Ok(buffer) = dcode.buffer_mut_slice(4) {
-        for i in 0..4 {
-            buffer[i] = temp_buf[i];
-        }
+        buffer[..4].copy_from_slice(&temp_buf[..4]);
     }
     false
 }

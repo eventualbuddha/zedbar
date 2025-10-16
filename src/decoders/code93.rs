@@ -454,13 +454,11 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
 
     if character == 0 {
         dcode.code93.buf = c as u8;
-    } else {
-        if dcode
-            .write_buffer_byte(character as usize, c as u8)
-            .is_err()
-        {
-            return decode_abort(dcode);
-        }
+    } else if dcode
+        .write_buffer_byte(character as usize, c as u8)
+        .is_err()
+    {
+        return decode_abort(dcode);
     }
     dcode.code93.set_character(character + 1);
     ZBAR_NONE
