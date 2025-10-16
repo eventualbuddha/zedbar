@@ -833,6 +833,88 @@ impl zbar_decoder_t {
         self.buffer.as_mut_ptr() as *mut c_char
     }
 
+    /// Get a mutable slice to the buffer with the specified length.
+    /// This ensures the buffer has sufficient capacity and sets the length appropriately.
+    ///
+    /// # Safety
+    /// The caller must ensure that `len` bytes are properly initialized after this call
+    /// if they increase the buffer length.
+    ///
+    /// # Errors
+    /// Returns `Err` if capacity allocation fails or exceeds max size.
+    #[inline]
+    pub(crate) unsafe fn buffer_mut_slice(&mut self, len: usize) -> Result<&mut [u8], ()> {
+        let len_u32 = len as c_uint;
+        if len_u32 > BUFFER_MAX {
+            return Err(());
+        }
+
+        // Ensure we have capacity
+        if len > self.buffer.capacity() {
+            self.buffer.reserve_exact(len - self.buffer.capacity());
+        }
+
+        // Set length
+        if len != self.buffer.len() {
+            self.buffer.set_len(len);
+        }
+
+        Ok(&mut self.buffer[..len])
+    }
+
+    /// Get an immutable slice to the buffer's current contents.
+    #[inline]
+    pub(crate) fn buffer_slice(&self) -> &[u8] {
+        &self.buffer
+    }
+
+    /// Ensure the buffer has at least the specified capacity and length.
+    /// Returns a mutable slice to the buffer.
+    ///
+    /// This is useful when you need to write to a specific position in the buffer.
+    ///
+    /// # Safety
+    /// The caller must ensure proper initialization of the buffer contents.
+    ///
+    /// # Errors
+    /// Returns `Err` if capacity allocation fails or exceeds max size.
+    #[inline]
+    pub(crate) unsafe fn ensure_buffer_size(&mut self, min_len: usize) -> Result<&mut [u8], ()> {
+        let current_len = self.buffer.len();
+        if min_len <= current_len {
+            Ok(&mut self.buffer[..])
+        } else {
+            self.buffer_mut_slice(min_len)
+        }
+    }
+
+    /// Write a byte at the specified position, resizing the buffer if necessary.
+    ///
+    /// # Safety
+    /// The caller should ensure the buffer contents remain in a valid state.
+    ///
+    /// # Errors
+    /// Returns `Err` if capacity allocation fails or exceeds max size.
+    #[inline]
+    pub(crate) unsafe fn write_buffer_byte(&mut self, pos: usize, value: u8) -> Result<(), ()> {
+        if pos >= BUFFER_MAX as usize {
+            return Err(());
+        }
+
+        let required_len = pos + 1;
+        self.ensure_buffer_size(required_len)?;
+        self.buffer[pos] = value;
+        Ok(())
+    }
+
+    /// Truncate the buffer to the specified length.
+    ///
+    /// This is a safe operation as it only reduces the buffer size.
+    #[inline]
+    pub(crate) fn truncate_buffer(&mut self, len: usize) {
+        self.buffer.truncate(len);
+    }
+
     /// Acquire a decoder lock for a specific symbology type
     /// Returns 1 if already locked, 0 if lock acquired
     pub(crate) unsafe fn _zbar_decoder_acquire_lock(&mut self, req: zbar_symbol_type_t) -> c_char {

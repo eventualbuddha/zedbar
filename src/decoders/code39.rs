@@ -9,7 +9,7 @@ use crate::{
     },
     line_scanner::zbar_color_t,
 };
-use libc::{c_char, c_int, c_uint};
+use libc::{c_int, c_uint};
 
 // Number of characters in Code 39
 const NUM_CHARS: usize = 0x2c;
@@ -444,36 +444,37 @@ fn code39_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 /// Post-process decoded buffer
 #[inline]
 unsafe fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
-    let character = dcode.code39.character();
+    let character = dcode.code39.character() as usize;
     let direction = dcode.code39.direction();
-    let buf = dcode.buffer_mut_ptr();
 
     dcode.direction = 1 - 2 * (direction as c_int);
+
+    // Get mutable slice for the buffer with space for null terminator
+    let buffer = match dcode.buffer_mut_slice(character + 1) {
+        Ok(buf) => buf,
+        Err(_) => return -1,
+    };
+
     if direction {
         // Reverse buffer
-        for i in 0..(character / 2) {
-            let j = character - 1 - i;
-            let c = *buf.add(i as usize);
-            *buf.add(i as usize) = *buf.add(j as usize);
-            *buf.add(j as usize) = c;
-        }
+        buffer[..character].reverse();
     }
+
     for i in 0..character {
-        let val = *buf.add(i as usize) as u8;
-        *buf.add(i as usize) = if (val as usize) < 0x2b {
-            CODE39_CHARACTERS[val as usize] as c_char
+        let val = buffer[i];
+        buffer[i] = if (val as usize) < 0x2b {
+            CODE39_CHARACTERS[val as usize]
         } else {
-            b'?' as c_char
+            b'?'
         };
     }
-    zassert!(
-        (character as c_uint) < dcode.buffer_capacity(),
-        -1,
-        "i={:02x}\n",
-        character
-    );
-    dcode.set_buffer_len(character as c_uint);
-    *buf.add(character as usize) = 0;
+
+    // Add null terminator
+    buffer[character] = 0;
+
+    // Truncate to final length
+    dcode.truncate_buffer(character);
+
     dcode.modifiers = 0;
     0
 }
@@ -513,9 +514,18 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     if dcode.code39.element() == 10 {
         let space = get_width(dcode, 0);
         let character = dcode.code39.character();
-        let buf_ptr = dcode.buffer_ptr();
 
-        if character > 0 && *buf_ptr.add((character - 1) as usize) == 0x2b as c_char {
+        // Check if STOP character is in the buffer
+        let has_stop = if character > 0 {
+            let buf_slice = dcode.buffer_slice();
+            buf_slice
+                .get((character - 1) as usize)
+                .map_or(false, |&b| b == 0x2b)
+        } else {
+            false
+        };
+
+        if has_stop {
             // STOP character found
             let mut sym = ZBAR_NONE;
 
@@ -575,26 +585,30 @@ pub unsafe fn _zbar_decode_code39(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
         return ZBAR_PARTIAL;
     }
 
-    if c < 0
-        || dcode
-            .set_buffer_capacity((character + 1) as c_uint)
-            .is_err()
+    if c < 0 {
+        release_lock(dcode, ZBAR_CODE39);
+        dcode.code39.set_character(-1);
+        return ZBAR_NONE;
+    }
+
+    zassert!(
+        c < 0x2c,
+        ZBAR_NONE,
+        "c={:02x} s9={:x}\n",
+        c,
+        dcode.code39.s9
+    );
+
+    // Write directly to buffer using idiomatic method
+    if dcode
+        .write_buffer_byte(character as usize, c as u8)
+        .is_err()
     {
         release_lock(dcode, ZBAR_CODE39);
         dcode.code39.set_character(-1);
         return ZBAR_NONE;
-    } else {
-        zassert!(
-            c < 0x2c,
-            ZBAR_NONE,
-            "c={:02x} s9={:x}\n",
-            c,
-            dcode.code39.s9
-        );
     }
 
-    let buf_ptr = dcode.buffer_mut_ptr();
-    *buf_ptr.add(character as usize) = c as c_char;
     dcode.code39.set_character(character + 1);
 
     ZBAR_NONE

@@ -9,7 +9,7 @@ use crate::{
     },
     line_scanner::zbar_color_t,
 };
-use libc::{c_char, c_int, c_uint};
+use libc::{c_int, c_uint};
 
 // Checksum constant
 const CHKMOD: i32 = 47;
@@ -264,7 +264,13 @@ fn plusmod47(mut acc: i32, add: i32) -> i32 {
 #[inline]
 unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     let n = dcode.code93.character() as usize;
-    let buf = dcode.buffer_ptr();
+    let buf = dcode.buffer_slice();
+
+    // Ensure buffer has enough data
+    if buf.len() < n {
+        return false;
+    }
+
     let mut sum_c = 0;
     let mut acc_c = 0;
     let mut i_c = ((n - 2) % 20) as i32;
@@ -274,9 +280,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
 
     for i in 0..(n - 2) {
         let d = if dcode.code93.direction() {
-            *buf.add(n - 1 - i) as i32
+            buf[n - 1 - i] as i32
         } else {
-            *buf.add(i) as i32
+            buf[i] as i32
         };
 
         i_c -= 1;
@@ -297,9 +303,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     }
 
     let d = if dcode.code93.direction() {
-        *buf.add(1) as i32
+        buf[1] as i32
     } else {
-        *buf.add(n - 2) as i32
+        buf[n - 2] as i32
     };
     if d != sum_c {
         return false;
@@ -308,9 +314,9 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     acc_k = plusmod47(acc_k, sum_c);
     sum_k = plusmod47(sum_k, acc_k);
     let d = if dcode.code93.direction() {
-        *buf.add(0) as i32
+        buf[0] as i32
     } else {
-        *buf.add(n - 1) as i32
+        buf[n - 1] as i32
     };
     if d != sum_k {
         return false;
@@ -323,24 +329,26 @@ unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
 #[inline]
 unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     let n = dcode.code93.character() as usize;
-    let buf = dcode.buffer_mut_ptr();
+    let direction = dcode.code93.direction();
 
-    dcode.direction = 1 - 2 * (dcode.code93.direction() as c_int);
-    if dcode.code93.direction() {
+    dcode.direction = 1 - 2 * (direction as c_int);
+
+    // Get mutable slice for processing
+    let buffer = match dcode.buffer_mut_slice(n) {
+        Ok(buf) => buf,
+        Err(_) => return true,
+    };
+
+    if direction {
         // Reverse buffer
-        for i in 0..(n / 2) {
-            let j = n - 1 - i;
-            let d = *buf.add(i);
-            *buf.add(i) = *buf.add(j);
-            *buf.add(j) = d;
-        }
+        buffer[..n].reverse();
     }
 
     let n = n - 2;
     let mut i = 0;
     let mut j = 0;
     while i < n {
-        let mut d = *buf.add(i) as u8;
+        let mut d = buffer[i];
         i += 1;
 
         if d < 0xa {
@@ -352,7 +360,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
         } else {
             let shift = d;
             zassert!(shift < 0x2f, true, "shift={:02x}\n", shift);
-            d = *buf.add(i) as u8;
+            d = buffer[i];
             i += 1;
             if !(0xa..0x24).contains(&d) {
                 return true;
@@ -366,18 +374,14 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
                 _ => return true,
             }
         }
-        *buf.add(j) = d as c_char;
+        buffer[j] = d;
         j += 1;
     }
 
-    zassert!(
-        (j as c_uint) < dcode.buffer_capacity(),
-        true,
-        "j={:02x}\n",
-        j
-    );
-    dcode.set_buffer_len(j as c_uint);
-    *buf.add(j) = 0;
+    // Add null terminator and truncate
+    buffer[j] = 0;
+    dcode.truncate_buffer(j);
+
     dcode.modifiers = 0;
     false
 }
@@ -436,20 +440,27 @@ pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_typ
     }
 
     dcode.code93.width = dcode.s6;
-    let buf_ptr = dcode.buffer_mut_ptr();
 
     if character == 1 {
         // Lock shared resources
         if acquire_lock(dcode, ZBAR_CODE93) {
             return decode_abort(dcode);
         }
-        *buf_ptr.add(0) = dcode.code93.buf as c_char;
+        // Copy from holding buffer
+        if dcode.write_buffer_byte(0, dcode.code93.buf).is_err() {
+            return decode_abort(dcode);
+        }
     }
 
     if character == 0 {
         dcode.code93.buf = c as u8;
     } else {
-        *buf_ptr.add(character as usize) = c as c_char;
+        if dcode
+            .write_buffer_byte(character as usize, c as u8)
+            .is_err()
+        {
+            return decode_abort(dcode);
+        }
     }
     dcode.code93.set_character(character + 1);
     ZBAR_NONE

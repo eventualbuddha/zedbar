@@ -4,9 +4,9 @@
 
 use crate::{
     decoder_types::{
-        codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, BUFFER_MIN, DECODE_WINDOW,
-        ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR,
-        ZBAR_NONE, ZBAR_PARTIAL,
+        codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_ADD_CHECK,
+        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR, ZBAR_NONE,
+        ZBAR_PARTIAL,
     },
     line_scanner::zbar_color_t,
 };
@@ -321,17 +321,6 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     ZBAR_PARTIAL
 }
 
-/// Calculate checksum
-#[inline]
-unsafe fn codabar_checksum(dcode: &zbar_decoder_t, n: usize) -> bool {
-    let mut chk: c_uint = 0;
-    let buf = dcode.buffer_ptr();
-    for i in 0..n {
-        chk += *buf.add(i) as c_uint;
-    }
-    (chk & 0xf) != 0
-}
-
 /// Post-process decoded buffer
 #[inline]
 unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
@@ -339,56 +328,56 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
     dcode.direction = 1 - 2 * (dir as c_int);
     let mut n = dcode.codabar.character() as usize;
 
-    // Ensure buffer has capacity for the decoded data plus null terminator
-    if dcode.set_buffer_capacity((n + 1) as c_uint).is_err() {
-        return ZBAR_NONE;
-    }
+    // Cache all values we need from dcode before taking mutable borrow of buffer
+    let copy_len = n.min(NIBUF);
+    let temp_buf = dcode.codabar.buf; // Copy the small array
+    let has_checksum = test_cfg(dcode.codabar.config, ZBAR_CFG_ADD_CHECK);
+    let emit_check = test_cfg(dcode.codabar.config, ZBAR_CFG_EMIT_CHECK);
 
-    // Set buffer length to accommodate the data we're about to write
-    dcode.set_buffer_len(n as c_uint);
-
-    // Get buffer capacity for safe slice creation
-    let capacity = dcode.buffer_capacity() as usize;
-
-    // Get a mutable slice to the buffer for safe access
-    // We use capacity here to ensure we can access up to n+1 elements if needed
-    let buffer = std::slice::from_raw_parts_mut(dcode.buffer_mut_ptr() as *mut u8, capacity);
+    // Get a mutable slice to the buffer, ensuring it has space for n bytes plus null terminator
+    let buffer = match dcode.buffer_mut_slice(n + 1) {
+        Ok(buf) => buf,
+        Err(_) => return ZBAR_NONE,
+    };
 
     // Copy from holding buffer to main buffer
-    let copy_len = n.min(NIBUF);
-    buffer[..copy_len].copy_from_slice(&dcode.codabar.buf[..copy_len]);
+    buffer[..copy_len].copy_from_slice(&temp_buf[..copy_len]);
 
     if dir {
         // Reverse buffer
         buffer[..n].reverse();
     }
 
-    if test_cfg(dcode.codabar.config, ZBAR_CFG_ADD_CHECK) {
-        // Validate checksum
-        if codabar_checksum(dcode, n) {
+    if has_checksum {
+        // Validate checksum (read-only operation on buffer)
+        let mut chk: c_uint = 0;
+        for c in buffer.iter().take(n) {
+            chk += *c as c_uint;
+        }
+        if (chk & 0xf) != 0 {
             return ZBAR_NONE;
         }
-        if !test_cfg(dcode.codabar.config, ZBAR_CFG_EMIT_CHECK) {
+        if !emit_check {
             buffer[n - 2] = buffer[n - 1];
             n -= 1;
         }
     }
 
     // Translate character codes to ASCII
-    for i in 0..n {
-        let c = buffer[i];
-        buffer[i] = if (c as usize) < 0x14 {
-            CODABAR_CHARACTERS[c as usize]
-        } else {
-            b'?'
+    for c in buffer.iter_mut().take(n) {
+        *c = match CODABAR_CHARACTERS.get(*c as usize) {
+            None => b'?',
+            Some(c) => *c,
         };
     }
 
-    // Update final buffer length and add null terminator
-    dcode.set_buffer_len(n as c_uint);
+    // Add null terminator at position n
     buffer[n] = 0;
-    dcode.modifiers = 0;
 
+    // Truncate to final length (doesn't include null terminator)
+    dcode.truncate_buffer(n);
+
+    dcode.modifiers = 0;
     dcode.codabar.set_character(-1);
     ZBAR_CODABAR
 }
@@ -436,24 +425,16 @@ pub unsafe fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
     if character < NIBUF as i16 {
         dcode.codabar.buf[character as usize] = c as u8;
     } else {
-        let required_capacity = (character + 1) as c_uint;
-        if character >= BUFFER_MIN as i16 && dcode.set_buffer_capacity(required_capacity).is_err() {
+        // Write directly to the buffer using the idiomatic method
+        if dcode
+            .write_buffer_byte(character as usize, c as u8)
+            .is_err()
+        {
             // goto reset
             release_lock(dcode, ZBAR_CODABAR);
             dcode.codabar.set_character(-1);
             return ZBAR_NONE;
         }
-        // Ensure buffer length is at least character + 1 so we can write at position character
-        let current_len = dcode.buffer_len();
-        if current_len < required_capacity {
-            dcode.set_buffer_len(required_capacity);
-        }
-        // Use slice for safer access
-        let buffer_slice = std::slice::from_raw_parts_mut(
-            dcode.buffer_mut_ptr() as *mut u8,
-            required_capacity as usize,
-        );
-        buffer_slice[character as usize] = c as u8;
     }
     dcode.codabar.set_character(character + 1);
 

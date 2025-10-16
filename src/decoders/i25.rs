@@ -9,7 +9,7 @@ use crate::{
     },
     line_scanner::zbar_color_t,
 };
-use libc::{c_char, c_int, c_uint};
+use libc::{c_int, c_uint};
 
 // Assertion macro
 macro_rules! zassert {
@@ -191,9 +191,11 @@ unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
     }
 
     // Copy holding buffer
-    let buf_ptr = dcode.buffer_mut_ptr();
-    for i in 0..4 {
-        *buf_ptr.add(i) = dcode.i25.buf[i] as c_char;
+    let temp_buf = dcode.i25.buf; // Copy the small array
+    if let Ok(buffer) = dcode.buffer_mut_slice(4) {
+        for i in 0..4 {
+            buffer[i] = temp_buf[i];
+        }
     }
     false
 }
@@ -231,20 +233,23 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     }
 
     dcode.direction = 1 - 2 * (direction as c_int);
-    let buf_ptr = dcode.buffer_mut_ptr();
-    if direction {
-        // Reverse buffer
-        let char_count = character as isize;
-        for i in 0..(char_count / 2) {
-            let j = char_count - 1 - i;
-            let c = *buf_ptr.offset(i);
-            *buf_ptr.offset(i) = *buf_ptr.offset(j);
-            *buf_ptr.offset(j) = c;
-        }
-    }
 
+    let char_count = character as usize;
+
+    // Cache config values before taking mutable borrow
     let min_len = cfg(&dcode.i25, ZBAR_CFG_MIN_LEN);
     let max_len = cfg(&dcode.i25, ZBAR_CFG_MAX_LEN);
+
+    // Get mutable slice for the buffer with space for null terminator
+    let buffer = match dcode.buffer_mut_slice(char_count + 1) {
+        Ok(buf) => buf,
+        Err(_) => return ZBAR_NONE,
+    };
+
+    if direction {
+        // Reverse buffer
+        buffer[..char_count].reverse();
+    }
 
     if character < min_len as i16 || (max_len > 0 && character > max_len as i16) {
         release_lock(dcode, ZBAR_I25);
@@ -252,16 +257,12 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         return ZBAR_NONE;
     }
 
-    let char_count = character as c_uint;
-    zassert!(
-        char_count < dcode.buffer_capacity(),
-        ZBAR_NONE,
-        "i={:02x}\n",
-        char_count
-    );
+    // Add null terminator
+    buffer[char_count] = 0;
 
-    dcode.set_buffer_len(char_count);
-    *buf_ptr.offset(char_count as isize) = 0;
+    // Truncate to final length
+    dcode.truncate_buffer(char_count);
+
     dcode.modifiers = 0;
     dcode.i25.set_character(-1);
     ZBAR_I25
@@ -311,26 +312,24 @@ pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t
         return ZBAR_NONE;
     }
 
-    if dcode
-        .set_buffer_capacity(dcode.i25.character() as c_uint + 3)
-        .is_err()
-    {
-        // goto reset
-        if dcode.i25.character() >= 4 {
+    let character = dcode.i25.character();
+
+    if character >= 4 {
+        // Write to main buffer using idiomatic method
+        if dcode
+            .write_buffer_byte(character as usize, c + b'0')
+            .is_err()
+        {
+            // goto reset
             release_lock(dcode, ZBAR_I25);
+            dcode.i25.set_character(-1);
+            return ZBAR_NONE;
         }
-        dcode.i25.set_character(-1);
-        return ZBAR_NONE;
+    } else {
+        // Write to holding buffer
+        dcode.i25.buf[character as usize] = c + b'0';
     }
 
-    let character = dcode.i25.character();
-    let buf = if character >= 4 {
-        dcode.buffer_mut_ptr()
-    } else {
-        dcode.i25.buf.as_mut_ptr() as *mut c_char
-    };
-
-    *buf.offset(character as isize) = (c + b'0') as c_char;
     dcode.i25.set_character(character + 1);
 
     let c = i25_decode10(dcode, 0);
@@ -344,7 +343,23 @@ pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t
     }
 
     let character = dcode.i25.character();
-    *buf.offset(character as isize) = (c + b'0') as c_char;
+
+    if character >= 4 {
+        // Write to main buffer using idiomatic method
+        if dcode
+            .write_buffer_byte(character as usize, c + b'0')
+            .is_err()
+        {
+            // goto reset
+            release_lock(dcode, ZBAR_I25);
+            dcode.i25.set_character(-1);
+            return ZBAR_NONE;
+        }
+    } else {
+        // Write to holding buffer
+        dcode.i25.buf[character as usize] = c + b'0';
+    }
+
     dcode.i25.set_character(character + 1);
     dcode.i25.set_element(10);
 

@@ -645,57 +645,90 @@ fn integrate_partial(
 
 /// Copy result to output buffer
 fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
-    let buf = dcode.buffer_mut_ptr();
     let mut j: usize = 0;
     let new_direction;
+    let base;
+    let mut i: usize = 0;
+    let mut temp_buf = [0i8; 18]; // Max EAN buffer size
+    let mut buf_len = 0;
+    let needs_isbn10_check;
+    let isbn10_check_digit;
 
     {
-        let ean = &mut dcode.ean;
-        let mut base = sym;
-        let mut i: usize = 0;
+        let ean = &dcode.ean;
+        base = sym;
 
         if base > ZBAR_PARTIAL {
             if base == ZBAR_UPCA {
                 i = 1;
             } else if base == ZBAR_UPCE {
                 i = 1;
-                base -= 1;
-            } else if base == ZBAR_ISBN13 {
-                base = ZBAR_EAN13;
             } else if base == ZBAR_ISBN10 {
                 i = 3;
             }
 
-            if base == ZBAR_ISBN10
-                || (base > ZBAR_EAN5 && !test_cfg(ean_get_config(ean, sym), ZBAR_CFG_EMIT_CHECK))
-            {
-                base -= 1;
+            let mut calc_base = base;
+            if base == ZBAR_ISBN13 {
+                calc_base = ZBAR_EAN13;
+            } else if base == ZBAR_UPCE {
+                calc_base -= 1;
             }
 
-            while j < base as usize && ean.buf[i] >= 0 {
-                unsafe {
-                    *buf.add(j) = (ean.buf[i] + b'0' as c_char) as c_char;
-                }
+            if base == ZBAR_ISBN10
+                || (calc_base > ZBAR_EAN5
+                    && !test_cfg(ean_get_config(ean, sym), ZBAR_CFG_EMIT_CHECK))
+            {
+                calc_base -= 1;
+            }
+
+            // Copy to temp buffer
+            while j < calc_base as usize && j < 18 && ean.buf[i] >= 0 {
+                temp_buf[j] = ean.buf[i];
                 i += 1;
                 j += 1;
             }
+            buf_len = j;
 
-            if sym == ZBAR_ISBN10 && j == 9 && test_cfg(ean.isbn10_config, ZBAR_CFG_EMIT_CHECK) {
-                // recalculate ISBN-10 check digit
-                unsafe {
-                    *buf.add(j) = isbn10_calc_checksum(ean);
-                }
-                j += 1;
-            }
+            needs_isbn10_check =
+                base == ZBAR_ISBN10 && j == 9 && test_cfg(ean.isbn10_config, ZBAR_CFG_EMIT_CHECK);
+            isbn10_check_digit = if needs_isbn10_check {
+                isbn10_calc_checksum(ean) as u8
+            } else {
+                0
+            };
+        } else {
+            needs_isbn10_check = false;
+            isbn10_check_digit = 0;
         }
 
         new_direction = 1 - 2 * ean.direction;
     }
 
-    unsafe {
-        *buf.add(j) = 0;
+    if base > ZBAR_PARTIAL {
+        // Get mutable slice for writing
+        let buffer = unsafe {
+            match dcode.buffer_mut_slice(buf_len + if needs_isbn10_check { 2 } else { 1 }) {
+                Ok(buf) => buf,
+                Err(_) => return,
+            }
+        };
+
+        // Copy from temp buffer
+        for k in 0..buf_len {
+            buffer[k] = (temp_buf[k] + b'0' as c_char) as u8;
+        }
+
+        if needs_isbn10_check {
+            // Use pre-calculated ISBN-10 check digit
+            buffer[buf_len] = isbn10_check_digit;
+            buf_len += 1;
+        }
+
+        // Add null terminator
+        buffer[buf_len] = 0;
     }
-    dcode.set_buffer_len(j as c_uint);
+
+    dcode.truncate_buffer(buf_len);
     dcode.direction = new_direction;
     dcode.modifiers = 0;
 }
