@@ -677,13 +677,16 @@ pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
             dcode.code128.set_character(-1);
             return 0;
         }
-        let buf_ptr = dcode.buffer_mut_ptr();
-        *buf_ptr.add(0) = dcode.code128.start() as c_char;
+        let start = dcode.code128.start();
+        if let Ok(buf) = dcode.buffer_mut_slice(1) {
+            buf[0] = start;
+        }
     }
 
     let character = dcode.code128.character();
-    let buf_ptr = dcode.buffer_mut_ptr();
-    *buf_ptr.add(character as usize) = c as c_char;
+    if let Ok(buf) = dcode.buffer_mut_slice((character + 1) as usize) {
+        buf[character as usize] = c as u8;
+    }
     dcode.code128.set_character(character + 1);
 
     if dcode.code128.character() > 2
