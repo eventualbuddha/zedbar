@@ -698,8 +698,8 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
         return;
     }
 
-    let data = (*dcode).buffer_mut_ptr();
-    let datalen = (*dcode).buffer_len();
+    let data = (*dcode).buffer_slice();
+    let datalen = data.len();
 
     // Check for duplicate symbols
     let syms = (*iscn).syms_ptr();
@@ -710,10 +710,10 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     };
     while !sym.is_null() {
         if (*sym).symbol_type == type_
-            && (*sym).datalen == datalen
+            && (*sym).datalen == datalen as c_uint
             && memcmp(
                 (*sym).data as *const c_void,
-                data as *const c_void,
+                data.as_ptr() as *const c_void,
                 datalen as size_t,
             ) == 0
         {
@@ -733,9 +733,9 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
 
     // Copy data
     copy_nonoverlapping(
-        data as *const u8,
+        data.as_ptr(),
         (*sym).data as *mut u8,
-        (datalen + 1) as usize,
+        datalen + 1,
     );
 
     // Initialize position
