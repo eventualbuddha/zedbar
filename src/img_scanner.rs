@@ -86,8 +86,7 @@ macro_rules! c_assert {
 
 // Import from line_scanner, decoder, and symbol modules
 use crate::decoder::{
-    zbar_decoder_get_configs, zbar_decoder_get_data, zbar_decoder_get_data_length,
-    zbar_decoder_get_direction, zbar_decoder_get_modifiers, zbar_decoder_get_type,
+    zbar_decoder_get_configs, zbar_decoder_get_modifiers, zbar_decoder_get_type,
     zbar_decoder_get_userdata, zbar_decoder_set_config, zbar_decoder_set_handler,
     zbar_decoder_set_userdata,
 };
@@ -699,8 +698,8 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
         return;
     }
 
-    let data = zbar_decoder_get_data(dcode);
-    let datalen = zbar_decoder_get_data_length(dcode);
+    let data = (*dcode).buffer_mut_ptr();
+    let datalen = (*dcode).buffer_len();
 
     // Check for duplicate symbols
     let syms = (*iscn).syms_ptr();
@@ -745,7 +744,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     }
 
     // Set orientation
-    let dir = zbar_decoder_get_direction(dcode);
+    let dir = (*dcode).direction;
     if dir != 0 {
         (*sym).orient = (if (*iscn).dy != 0 { 1 } else { 0 }) + (((*iscn).du ^ dir) & 2);
     }

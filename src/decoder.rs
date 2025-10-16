@@ -15,7 +15,7 @@ use crate::{
     },
     finder::_zbar_find_qr,
 };
-use libc::{c_char, c_int, c_uint, c_void};
+use libc::{c_int, c_uint, c_void};
 use std::mem::size_of;
 
 // Config constant not in decoder_types
@@ -59,21 +59,6 @@ pub unsafe fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
 // ============================================================================
 // Decoder accessor functions
 // ============================================================================
-
-/// Get decoded data buffer
-pub unsafe fn zbar_decoder_get_data(dcode: *const zbar_decoder_t) -> *const c_char {
-    (*dcode).buffer_ptr()
-}
-
-/// Get length of decoded data
-pub unsafe fn zbar_decoder_get_data_length(dcode: *const zbar_decoder_t) -> c_uint {
-    (*dcode).buffer_len()
-}
-
-/// Get decode direction
-pub unsafe fn zbar_decoder_get_direction(dcode: *const zbar_decoder_t) -> c_int {
-    (*dcode).direction
-}
 
 /// Set decoder callback handler
 pub unsafe fn zbar_decoder_set_handler(
