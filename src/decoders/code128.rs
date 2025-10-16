@@ -303,14 +303,15 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
         return true;
     }
 
+    let buf = dcode.buffer_slice();
+    
     // Add in irregularly weighted start character
     let idx = if dcode.code128.direction() != 0 {
         (dcode.code128.character() - 1) as usize
     } else {
         0
     };
-    let buf = dcode.buffer_ptr();
-    let mut sum = *buf.add(idx) as c_uint;
+    let mut sum = buf[idx] as c_uint;
     if sum >= 103 {
         sum -= 103;
     }
@@ -332,7 +333,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
         } else {
             i
         };
-        acc += *buf.add(idx) as c_uint;
+        acc += buf[idx] as c_uint;
         if acc >= 103 {
             acc -= 103;
         }
@@ -357,7 +358,7 @@ unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     } else {
         (dcode.code128.character() - 2) as usize
     };
-    let check = *buf.add(idx) as c_uint;
+    let check = buf[idx] as c_uint;
     sum != check
 }
 

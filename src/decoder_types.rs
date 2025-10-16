@@ -823,11 +823,6 @@ impl zbar_decoder_t {
         }
     }
 
-    #[inline]
-    pub(crate) fn buffer_ptr(&self) -> *const c_char {
-        self.buffer.as_ptr() as *const c_char
-    }
-
     /// Get a mutable slice to the buffer with the specified length.
     /// This ensures the buffer has sufficient capacity and sets the length appropriately.
     ///
