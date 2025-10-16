@@ -230,7 +230,6 @@ pub struct code93_decoder_t {
     bitfields: c_uint,
     pub width: c_uint,
     pub buf: u8,
-    _padding: [u8; 3],
     pub config: c_uint,
     pub configs: [c_int; NUM_CFGS],
 }
@@ -290,7 +289,6 @@ pub struct codabar_decoder_t {
     pub s7: c_uint,
     pub width: c_uint,
     pub buf: [u8; 6],
-    _padding: [u8; 2],
     pub config: c_uint,
     pub configs: [c_int; NUM_CFGS],
 }
@@ -604,10 +602,8 @@ impl databar_decoder_t {
 #[allow(non_camel_case_types)]
 pub struct ean_pass_t {
     pub state: c_char,
-    _padding: [u8; 3],
     pub width: c_uint,
     pub raw: [u8; 7],
-    _padding2: u8,
 }
 
 /// EAN/UPC decoder state
@@ -622,7 +618,6 @@ pub struct ean_decoder_t {
     pub width: c_uint,
     pub buf: [c_char; 18],
     pub enable: c_char,
-    _padding: u8, // Align to 4 bytes
     pub ean13_config: c_uint,
     pub ean8_config: c_uint,
     pub upca_config: c_uint,
