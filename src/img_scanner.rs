@@ -221,6 +221,68 @@ impl zbar_image_scanner_t {
     pub fn take_syms(&mut self) -> Option<NonNull<zbar_symbol_set_t>> {
         self.syms.take()
     }
+
+    // Accessor methods for pointer fields
+    
+    #[inline]
+    pub(crate) fn scanner(&self) -> Option<&zbar_scanner_t> {
+        unsafe { self.scn.as_ref() }
+    }
+
+    #[inline]
+    pub(crate) fn scanner_mut(&mut self) -> Option<&mut zbar_scanner_t> {
+        unsafe { self.scn.as_mut() }
+    }
+
+    #[inline]
+    pub(crate) fn decoder(&self) -> Option<&zbar_decoder_t> {
+        unsafe { self.dcode.as_ref() }
+    }
+
+    #[inline]
+    pub(crate) fn decoder_mut(&mut self) -> Option<&mut zbar_decoder_t> {
+        unsafe { self.dcode.as_mut() }
+    }
+
+    #[inline]
+    pub(crate) fn qr_reader(&self) -> Option<&qr_reader> {
+        unsafe { self.qr.as_ref() }
+    }
+
+    #[inline]
+    pub(crate) fn qr_reader_mut(&mut self) -> Option<&mut qr_reader> {
+        unsafe { self.qr.as_mut() }
+    }
+
+    #[inline]
+    pub(crate) fn sq_reader(&self) -> Option<&SqReader> {
+        unsafe { self.sq.as_ref() }
+    }
+
+    #[inline]
+    pub(crate) fn sq_reader_mut(&mut self) -> Option<&mut SqReader> {
+        unsafe { self.sq.as_mut() }
+    }
+
+    #[inline]
+    pub(crate) fn set_scanner(&mut self, scn: *mut zbar_scanner_t) {
+        self.scn = scn;
+    }
+
+    #[inline]
+    pub(crate) fn set_decoder(&mut self, dcode: *mut zbar_decoder_t) {
+        self.dcode = dcode;
+    }
+
+    #[inline]
+    pub(crate) fn set_qr_reader(&mut self, qr: *mut qr_reader) {
+        self.qr = qr;
+    }
+
+    #[inline]
+    pub(crate) fn set_sq_reader(&mut self, sq: *mut SqReader) {
+        self.sq = sq;
+    }
 }
 
 /// Set the data handler callback for the image scanner
@@ -594,23 +656,27 @@ pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
         return null_mut();
     };
 
-    (*iscn).dcode = Box::into_raw(Box::new(decoder));
-    (*iscn).scn = zbar_scanner_create((*iscn).dcode as *mut _);
+    let iscn_ref = &mut *iscn;
+    let dcode_ptr = Box::into_raw(Box::new(decoder));
+    iscn_ref.set_decoder(dcode_ptr);
+    iscn_ref.set_scanner(zbar_scanner_create(dcode_ptr as *mut _));
 
-    if (*iscn).dcode.is_null() || (*iscn).scn.is_null() {
+    if iscn_ref.decoder().is_none() || iscn_ref.scanner().is_none() {
         zbar_image_scanner_destroy(iscn);
         return null_mut();
     }
 
-    zbar_decoder_set_userdata((*iscn).dcode as *mut _, iscn as *mut c_void);
-    zbar_decoder_set_handler((*iscn).dcode, Some(symbol_handler));
+    if let Some(dcode) = iscn_ref.decoder_mut() {
+        zbar_decoder_set_userdata(dcode as *mut _, iscn as *mut c_void);
+        zbar_decoder_set_handler(dcode, Some(symbol_handler));
+    }
 
-    (*iscn).qr = _zbar_qr_create();
-    (*iscn).sq = _zbar_sq_create();
+    iscn_ref.set_qr_reader(_zbar_qr_create());
+    iscn_ref.set_sq_reader(_zbar_sq_create());
 
     // Apply default configuration
-    (*iscn).configs[0] = 1; // ZBAR_CFG_X_DENSITY
-    (*iscn).configs[1] = 1; // ZBAR_CFG_Y_DENSITY
+    iscn_ref.configs[0] = 1; // ZBAR_CFG_X_DENSITY
+    iscn_ref.configs[1] = 1; // ZBAR_CFG_Y_DENSITY
 
     zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_POSITION, 1);
     zbar_image_scanner_set_config(iscn, 0, ZBAR_CFG_UNCERTAINTY, 2);
@@ -648,14 +714,14 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         }
     }
 
-    if !scanner.scn.is_null() {
-        zbar_scanner_destroy(scanner.scn);
-        scanner.scn = null_mut();
+    if let Some(scn) = scanner.scanner_mut() {
+        zbar_scanner_destroy(scn);
+        scanner.set_scanner(null_mut());
     }
 
-    if !scanner.dcode.is_null() {
-        ptr::drop_in_place(scanner.dcode);
-        scanner.dcode = null_mut();
+    if let Some(dcode) = scanner.decoder_mut() {
+        ptr::drop_in_place(dcode);
+        scanner.set_decoder(null_mut());
     }
 
     // Free recycled symbols
@@ -669,14 +735,14 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         }
     }
 
-    if !scanner.qr.is_null() {
-        _zbar_qr_destroy(scanner.qr);
-        scanner.qr = null_mut();
+    if let Some(qr) = scanner.qr_reader_mut() {
+        _zbar_qr_destroy(qr);
+        scanner.set_qr_reader(null_mut());
     }
 
-    if !scanner.sq.is_null() {
-        _zbar_sq_destroy(scanner.sq);
-        scanner.sq = null_mut();
+    if let Some(sq) = scanner.sq_reader_mut() {
+        _zbar_sq_destroy(sq);
+        scanner.set_sq_reader(null_mut());
     }
 
     image_scanner_free(iscn);
@@ -704,15 +770,16 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     // Calculate position if position tracking is enabled
     let iscn_ref = &*iscn;
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-        let scn = &*iscn_ref.scn;
-        let w = scanner_get_width(scn);
-        let u = iscn_ref.umin + iscn_ref.du * scanner_get_edge(scn, w, 0) as c_int;
-        if iscn_ref.dx != 0 {
-            x = u;
-            y = iscn_ref.v;
-        } else {
-            x = iscn_ref.v;
-            y = u;
+        if let Some(scn) = iscn_ref.scanner() {
+            let w = scanner_get_width(scn);
+            let u = iscn_ref.umin + iscn_ref.du * scanner_get_edge(scn, w, 0) as c_int;
+            if iscn_ref.dx != 0 {
+                x = u;
+                y = iscn_ref.v;
+            } else {
+                x = iscn_ref.v;
+                y = u;
+            }
         }
     }
 
@@ -803,7 +870,10 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
 
     // Delegate decoder configuration
     if cfg < ZBAR_CFG_UNCERTAINTY {
-        return zbar_decoder_set_config(iscn_ref.dcode, sym, cfg, val);
+        if let Some(dcode) = iscn_ref.decoder_mut() {
+            return zbar_decoder_set_config(dcode, sym, cfg, val);
+        }
+        return 1;
     }
 
     // Handle uncertainty and related configs

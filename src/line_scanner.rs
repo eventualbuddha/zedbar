@@ -82,6 +82,26 @@ pub struct zbar_scanner_t {
     width: c_uint,
 }
 
+impl zbar_scanner_t {
+    /// Get a reference to the decoder (if present)
+    #[inline]
+    pub fn decoder(&self) -> Option<&zbar_decoder_t> {
+        unsafe { self.decoder.as_ref() }
+    }
+
+    /// Get a mutable reference to the decoder (if present)
+    #[inline]
+    pub fn decoder_mut(&mut self) -> Option<&mut zbar_decoder_t> {
+        unsafe { self.decoder.as_mut() }
+    }
+
+    /// Set the decoder pointer
+    #[inline]
+    pub(crate) fn set_decoder(&mut self, decoder: *mut zbar_decoder_t) {
+        self.decoder = decoder;
+    }
+}
+
 // ============================================================================
 // Safe reference-based APIs
 // ============================================================================
@@ -123,7 +143,7 @@ pub unsafe fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
 /// Allocates and initializes a new scanner with the specified decoder.
 pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
     let mut scn = Box::new(zbar_scanner_t::default());
-    scn.decoder = dcode;
+    scn.set_decoder(dcode);
     scn.y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
     Box::into_raw(scn)
 }
@@ -144,8 +164,8 @@ fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
     scn.last_edge = scn.cur_edge;
 
     // pass to decoder
-    if !scn.decoder.is_null() {
-        unsafe { zbar_decode_width(scn.decoder, scn.width) }
+    if let Some(decoder) = scn.decoder_mut() {
+        unsafe { zbar_decode_width(decoder, scn.width) }
     } else {
         ZBAR_PARTIAL
     }
@@ -173,8 +193,8 @@ pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
 
     scn.y1_sign = 0;
     scn.width = 0;
-    if !scn.decoder.is_null() {
-        unsafe { zbar_decode_width(scn.decoder, 0) }
+    if let Some(decoder) = scn.decoder_mut() {
+        unsafe { zbar_decode_width(decoder, 0) }
     } else {
         ZBAR_PARTIAL
     }
@@ -199,8 +219,8 @@ pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     unsafe { ptr::write_bytes(start_ptr, 0, size) };
 
     scn.y1_thresh = scn.y1_min_thresh;
-    if !scn.decoder.is_null() {
-        unsafe { (*scn.decoder).new_scan() };
+    if let Some(decoder) = scn.decoder_mut() {
+        unsafe { decoder.new_scan() };
     }
     edge
 }
