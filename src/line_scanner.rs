@@ -171,8 +171,37 @@ pub unsafe fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t
     if scn.is_null() {
         return ZBAR_NONE;
     }
-    let scn = &mut *scn;
-    
+    scanner_flush(&mut *scn)
+}
+
+/// Start a new scan
+///
+/// Flushes any pending data and resets the scanner for a new scan.
+pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
+    if scn.is_null() {
+        return ZBAR_NONE;
+    }
+    scanner_new_scan(&mut *scn)
+}
+
+/// Process a single pixel intensity value
+///
+/// This is the main scanning function that processes each pixel's intensity
+/// value and detects bar/space transitions.
+pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
+    if scn.is_null() {
+        return ZBAR_NONE;
+    }
+    scan_y(&mut *scn, y)
+}
+
+// ============================================================================
+// Safe reference-based APIs
+// ============================================================================
+
+/// Flush the scanner state (safe reference version)
+#[inline]
+pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     if scn.y1_sign == 0 {
         return ZBAR_NONE;
     }
@@ -189,59 +218,39 @@ pub unsafe fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t
     scn.y1_sign = 0;
     scn.width = 0;
     if !scn.decoder.is_null() {
-        zbar_decode_width(scn.decoder, 0)
+        unsafe { zbar_decode_width(scn.decoder, 0) }
     } else {
         ZBAR_PARTIAL
     }
 }
 
-/// Start a new scan
-///
-/// Flushes any pending data and resets the scanner for a new scan.
-pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
-    if scn.is_null() {
-        return ZBAR_NONE;
-    }
-    
+/// Start a new scan (safe reference version)
+pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     let mut edge = ZBAR_NONE;
-    // Note: zbar_scanner_flush modifies scn.y1_sign through the mutable reference
-    loop {
-        let scn_ref = &*scn;
-        if scn_ref.y1_sign == 0 {
-            break;
-        }
-        let tmp = zbar_scanner_flush(scn);
+    
+    while scn.y1_sign != 0 {
+        let tmp = scanner_flush(scn);
         if tmp < 0 || tmp > edge {
             edge = tmp;
         }
     }
 
-    let scn_ref = &mut *scn;
-    
     // reset scanner and associated decoder
     // This zeroes out from x to the end of the structure
-    let start_ptr = ptr::addr_of_mut!(scn_ref.x) as *mut u8;
-    let scn_end = (scn as *mut u8).add(std::mem::size_of::<zbar_scanner_t>());
+    let start_ptr = ptr::addr_of_mut!(scn.x) as *mut u8;
+    let scn_end = (scn as *mut _ as *mut u8).wrapping_add(std::mem::size_of::<zbar_scanner_t>());
     let size = scn_end as usize - start_ptr as usize;
-    ptr::write_bytes(start_ptr, 0, size);
+    unsafe { ptr::write_bytes(start_ptr, 0, size) };
 
-    scn_ref.y1_thresh = scn_ref.y1_min_thresh;
-    if !scn_ref.decoder.is_null() {
-        (*scn_ref.decoder).new_scan();
+    scn.y1_thresh = scn.y1_min_thresh;
+    if !scn.decoder.is_null() {
+        unsafe { (*scn.decoder).new_scan() };
     }
     edge
 }
 
-/// Process a single pixel intensity value
-///
-/// This is the main scanning function that processes each pixel's intensity
-/// value and detects bar/space transitions.
-pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
-    if scn.is_null() {
-        return ZBAR_NONE;
-    }
-    let scn = &mut *scn;
-    
+/// Process a single pixel intensity value (safe reference version)
+pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
     // retrieve short value history
     let x = scn.x;
     let mut y0_1 = scn.y0[((x.wrapping_sub(1)) & 3) as usize];

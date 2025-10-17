@@ -16,7 +16,8 @@ use crate::{
     finder::{_zbar_decoder_get_qr_finder_line, _zbar_decoder_get_sq_finder_config},
     image_ffi::zbar_image_t,
     line_scanner::{
-        zbar_scanner_create, zbar_scanner_flush, zbar_scanner_new_scan, zbar_scanner_t,
+        scan_y, scanner_flush, scanner_new_scan, zbar_scanner_create, zbar_scanner_destroy,
+        zbar_scanner_get_edge, zbar_scanner_get_width, zbar_scanner_t,
     },
     qrcode::{
         qr_point,
@@ -91,9 +92,6 @@ use crate::decoder::{
     zbar_decoder_set_userdata,
 };
 use crate::image_ffi::{_zbar_image_copy, _zbar_image_swap_symbols, zbar_image_destroy};
-use crate::line_scanner::{
-    zbar_scan_y, zbar_scanner_destroy, zbar_scanner_get_edge, zbar_scanner_get_width,
-};
 
 // Helper macros for configuration access
 macro_rules! CFG {
@@ -397,15 +395,15 @@ pub unsafe fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_scanner_t) 
     if iscn.is_null() {
         return;
     }
-    let iscn = &*iscn;
-    let scn = iscn.scn;
+    let iscn = &mut *iscn;
+    let scn = &mut *iscn.scn;
 
     // Flush scanner pipeline twice
-    zbar_scanner_flush(scn);
-    zbar_scanner_flush(scn);
+    scanner_flush(scn);
+    scanner_flush(scn);
 
     // Start new scan
-    zbar_scanner_new_scan(scn);
+    scanner_new_scan(scn);
 }
 
 /// Allocate a symbol from the recycling pool or allocate a new one
@@ -879,8 +877,8 @@ pub unsafe fn _zbar_scan_image(
     let h = (*img).height;
     let data = (*img).data.as_ptr();
 
-    let scn = (*iscn).scn;
-    zbar_scanner_new_scan(scn);
+    let scn = &mut *(*iscn).scn;
+    scanner_new_scan(scn);
 
     // Horizontal scanning pass
     let density = CFG!(iscn, ZBAR_CFG_Y_DENSITY);
@@ -909,7 +907,7 @@ pub unsafe fn _zbar_scan_image(
                 let d = *p;
                 x += 1;
                 p = p.offset(1);
-                zbar_scan_y(scn, d as c_int);
+                scan_y(scn, d as c_int);
             }
             _zbar_image_scanner_quiet_border(iscn);
 
@@ -929,7 +927,7 @@ pub unsafe fn _zbar_scan_image(
                 let d = *p;
                 x -= 1;
                 p = p.offset(-1);
-                zbar_scan_y(scn, d as c_int);
+                scan_y(scn, d as c_int);
             }
             _zbar_image_scanner_quiet_border(iscn);
 
@@ -967,7 +965,7 @@ pub unsafe fn _zbar_scan_image(
                 let d = *p;
                 y += 1;
                 p = p.offset(w as isize);
-                zbar_scan_y(scn, d as c_int);
+                scan_y(scn, d as c_int);
             }
             _zbar_image_scanner_quiet_border(iscn);
 
@@ -987,7 +985,7 @@ pub unsafe fn _zbar_scan_image(
                 let d = *p;
                 y -= 1;
                 p = p.offset(-(w as isize));
-                zbar_scan_y(scn, d as c_int);
+                scan_y(scn, d as c_int);
             }
             _zbar_image_scanner_quiet_border(iscn);
 
