@@ -242,10 +242,11 @@ pub unsafe fn zbar_image_scanner_set_data_handler(
     if iscn.is_null() {
         return None;
     }
+    let iscn = &mut *iscn;
 
-    let result = (*iscn).handler;
-    (*iscn).handler = handler;
-    (*iscn).userdata = userdata;
+    let result = iscn.handler;
+    iscn.handler = handler;
+    iscn.userdata = userdata;
     result
 }
 
@@ -271,6 +272,7 @@ pub unsafe fn zbar_image_scanner_get_config(
     if iscn.is_null() || val.is_null() {
         return 1;
     }
+    let iscn = &mut *iscn;
 
     // Return error if symbol doesn't have config
     if !(ZBAR_PARTIAL..=ZBAR_CODE128).contains(&sym) || sym == ZBAR_COMPOSITE {
@@ -278,7 +280,7 @@ pub unsafe fn zbar_image_scanner_get_config(
     }
 
     if cfg < ZBAR_CFG_UNCERTAINTY {
-        return zbar_decoder_get_config((*iscn).dcode, sym, cfg, val);
+        return zbar_decoder_get_config(iscn.dcode, sym, cfg, val);
     }
 
     if cfg < ZBAR_CFG_POSITION {
@@ -287,7 +289,7 @@ pub unsafe fn zbar_image_scanner_get_config(
         }
 
         let i = _zbar_get_symbol_hash(sym);
-        *val = (*iscn).sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize];
+        *val = iscn.sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize];
         return 0;
     }
 
@@ -297,7 +299,7 @@ pub unsafe fn zbar_image_scanner_get_config(
     }
 
     if cfg < ZBAR_CFG_X_DENSITY {
-        *val = if ((*iscn).config & (1 << (cfg - ZBAR_CFG_POSITION))) != 0 {
+        *val = if (iscn.config & (1 << (cfg - ZBAR_CFG_POSITION))) != 0 {
             1
         } else {
             0
@@ -307,7 +309,7 @@ pub unsafe fn zbar_image_scanner_get_config(
 
     if cfg <= ZBAR_CFG_Y_DENSITY {
         // CFG macro: ((iscn)->configs[(cfg) - ZBAR_CFG_X_DENSITY])
-        *val = (*iscn).configs[(cfg - ZBAR_CFG_X_DENSITY) as usize];
+        *val = iscn.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize];
         return 0;
     }
 
@@ -326,6 +328,11 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
     iscn: *mut zbar_image_scanner_t,
     mut sym: *mut zbar_symbol_t,
 ) {
+    if iscn.is_null() {
+        return;
+    }
+    let iscn = &mut *iscn;
+    
     while !sym.is_null() {
         let next = (*sym).next;
 
@@ -345,7 +352,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
                 if refcnt(&mut (*syms).refcnt, -1) != 0 {
                     c_assert!(false);
                 }
-                _zbar_image_scanner_recycle_syms(iscn, (*syms).head);
+                _zbar_image_scanner_recycle_syms(iscn as *mut _, (*syms).head);
                 (*syms).head = null_mut();
                 {
                     symbol_set_free(syms);
@@ -368,7 +375,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
                 i = 0;
             }
 
-            let bucket = &mut (*iscn).recycle[i];
+            let bucket = &mut iscn.recycle[i];
             // FIXME cap bucket fill
             bucket.nsyms += 1;
             (*sym).next = bucket.head;
@@ -387,7 +394,11 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 pub unsafe fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_scanner_t) {
-    let scn = (*iscn).scn;
+    if iscn.is_null() {
+        return;
+    }
+    let iscn = &*iscn;
+    let scn = iscn.scn;
 
     // Flush scanner pipeline twice
     zbar_scanner_flush(scn);
@@ -414,6 +425,11 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     sym_type: c_int,
     datalen: c_int,
 ) -> *mut zbar_symbol_t {
+    if iscn.is_null() {
+        return null_mut();
+    }
+    let iscn = &mut *iscn;
+    
     // Recycle old or alloc new symbol
     let mut sym: *mut zbar_symbol_t = null_mut();
 
@@ -429,7 +445,7 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     // Try to get a symbol from this bucket or larger buckets
     let mut bucket_idx: Option<usize> = None;
     while i >= 0 {
-        sym = (*iscn).recycle[i as usize].head;
+        sym = iscn.recycle[i as usize].head;
         if !sym.is_null() {
             bucket_idx = Some(i as usize);
             break;
@@ -439,10 +455,10 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
 
     if let Some(idx) = bucket_idx {
         // Found a recycled symbol
-        (*iscn).recycle[idx].head = (*sym).next;
+        iscn.recycle[idx].head = (*sym).next;
         (*sym).next = null_mut();
-        c_assert!((*iscn).recycle[idx].nsyms > 0);
-        (*iscn).recycle[idx].nsyms -= 1;
+        c_assert!(iscn.recycle[idx].nsyms > 0);
+        iscn.recycle[idx].nsyms -= 1;
     } else {
         // Allocate a new symbol
         sym = symbol_alloc_zeroed();
