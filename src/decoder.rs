@@ -192,30 +192,54 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
 // Configuration functions
 // ============================================================================
 
-/// Get configuration pointer for a symbology (internal helper)
-unsafe fn decoder_get_configp(
-    dcode: *const zbar_decoder_t,
-    sym: zbar_symbol_type_t,
-) -> *const c_uint {
+/// Get configuration reference for a symbology (internal helper)
+fn decoder_get_config(dcode: &zbar_decoder_t, sym: zbar_symbol_type_t) -> Option<&c_uint> {
     match sym {
-        ZBAR_EAN13 => &(*dcode).ean.ean13_config as *const c_uint,
-        ZBAR_EAN2 => &(*dcode).ean.ean2_config as *const c_uint,
-        ZBAR_EAN5 => &(*dcode).ean.ean5_config as *const c_uint,
-        ZBAR_EAN8 => &(*dcode).ean.ean8_config as *const c_uint,
-        ZBAR_UPCA => &(*dcode).ean.upca_config as *const c_uint,
-        ZBAR_UPCE => &(*dcode).ean.upce_config as *const c_uint,
-        ZBAR_ISBN10 => &(*dcode).ean.isbn10_config as *const c_uint,
-        ZBAR_ISBN13 => &(*dcode).ean.isbn13_config as *const c_uint,
-        ZBAR_I25 => &(*dcode).i25.config as *const c_uint,
-        ZBAR_DATABAR => &(*dcode).databar.config as *const c_uint,
-        ZBAR_DATABAR_EXP => &(*dcode).databar.config_exp as *const c_uint,
-        ZBAR_CODABAR => &(*dcode).codabar.config as *const c_uint,
-        ZBAR_CODE39 => &(*dcode).code39.config as *const c_uint,
-        ZBAR_CODE93 => &(*dcode).code93.config as *const c_uint,
-        ZBAR_CODE128 => &(*dcode).code128.config as *const c_uint,
-        ZBAR_QRCODE => &(*dcode).qrf.config as *const c_uint,
-        ZBAR_SQCODE => &(*dcode).sqf.config as *const c_uint,
-        _ => std::ptr::null(),
+        ZBAR_EAN13 => Some(&dcode.ean.ean13_config),
+        ZBAR_EAN2 => Some(&dcode.ean.ean2_config),
+        ZBAR_EAN5 => Some(&dcode.ean.ean5_config),
+        ZBAR_EAN8 => Some(&dcode.ean.ean8_config),
+        ZBAR_UPCA => Some(&dcode.ean.upca_config),
+        ZBAR_UPCE => Some(&dcode.ean.upce_config),
+        ZBAR_ISBN10 => Some(&dcode.ean.isbn10_config),
+        ZBAR_ISBN13 => Some(&dcode.ean.isbn13_config),
+        ZBAR_I25 => Some(&dcode.i25.config),
+        ZBAR_DATABAR => Some(&dcode.databar.config),
+        ZBAR_DATABAR_EXP => Some(&dcode.databar.config_exp),
+        ZBAR_CODABAR => Some(&dcode.codabar.config),
+        ZBAR_CODE39 => Some(&dcode.code39.config),
+        ZBAR_CODE93 => Some(&dcode.code93.config),
+        ZBAR_CODE128 => Some(&dcode.code128.config),
+        ZBAR_QRCODE => Some(&dcode.qrf.config),
+        ZBAR_SQCODE => Some(&dcode.sqf.config),
+        _ => None,
+    }
+}
+
+/// Get mutable configuration reference for a symbology (internal helper)
+fn decoder_get_config_mut(
+    dcode: &mut zbar_decoder_t,
+    sym: zbar_symbol_type_t,
+) -> Option<&mut c_uint> {
+    match sym {
+        ZBAR_EAN13 => Some(&mut dcode.ean.ean13_config),
+        ZBAR_EAN2 => Some(&mut dcode.ean.ean2_config),
+        ZBAR_EAN5 => Some(&mut dcode.ean.ean5_config),
+        ZBAR_EAN8 => Some(&mut dcode.ean.ean8_config),
+        ZBAR_UPCA => Some(&mut dcode.ean.upca_config),
+        ZBAR_UPCE => Some(&mut dcode.ean.upce_config),
+        ZBAR_ISBN10 => Some(&mut dcode.ean.isbn10_config),
+        ZBAR_ISBN13 => Some(&mut dcode.ean.isbn13_config),
+        ZBAR_I25 => Some(&mut dcode.i25.config),
+        ZBAR_DATABAR => Some(&mut dcode.databar.config),
+        ZBAR_DATABAR_EXP => Some(&mut dcode.databar.config_exp),
+        ZBAR_CODABAR => Some(&mut dcode.codabar.config),
+        ZBAR_CODE39 => Some(&mut dcode.code39.config),
+        ZBAR_CODE93 => Some(&mut dcode.code93.config),
+        ZBAR_CODE128 => Some(&mut dcode.code128.config),
+        ZBAR_QRCODE => Some(&mut dcode.qrf.config),
+        ZBAR_SQCODE => Some(&mut dcode.sqf.config),
+        _ => None,
     }
 }
 
@@ -224,23 +248,26 @@ pub unsafe fn zbar_decoder_get_configs(
     dcode: *const zbar_decoder_t,
     sym: zbar_symbol_type_t,
 ) -> c_uint {
-    let config = decoder_get_configp(dcode, sym);
-    if config.is_null() {
-        0
-    } else {
-        *config
+    if dcode.is_null() {
+        return 0;
     }
+    let dcode = &*dcode;
+    decoder_get_config(dcode, sym).copied().unwrap_or(0)
 }
 
 /// Set boolean configuration (internal helper)
-unsafe fn decoder_set_config_bool(
-    dcode: *mut zbar_decoder_t,
+fn decoder_set_config_bool(
+    dcode: &mut zbar_decoder_t,
     sym: zbar_symbol_type_t,
     cfg: c_int,
     val: c_int,
 ) -> c_int {
-    let config = decoder_get_configp(dcode, sym) as *mut c_uint;
-    if config.is_null() || cfg >= ZBAR_CFG_NUM {
+    let config = match decoder_get_config_mut(dcode, sym) {
+        Some(c) => c,
+        None => return 1,
+    };
+    
+    if cfg >= ZBAR_CFG_NUM {
         return 1;
     }
 
@@ -253,15 +280,15 @@ unsafe fn decoder_set_config_bool(
     }
 
     // Update EAN enable flag
-    (*dcode).ean.enable = if test_cfg(
-        (*dcode).ean.ean13_config
-            | (*dcode).ean.ean2_config
-            | (*dcode).ean.ean5_config
-            | (*dcode).ean.ean8_config
-            | (*dcode).ean.upca_config
-            | (*dcode).ean.upce_config
-            | (*dcode).ean.isbn10_config
-            | (*dcode).ean.isbn13_config,
+    dcode.ean.enable = if test_cfg(
+        dcode.ean.ean13_config
+            | dcode.ean.ean2_config
+            | dcode.ean.ean5_config
+            | dcode.ean.ean8_config
+            | dcode.ean.upca_config
+            | dcode.ean.upce_config
+            | dcode.ean.isbn10_config
+            | dcode.ean.isbn13_config,
         ZBAR_CFG_ENABLE,
     ) {
         1
@@ -273,31 +300,31 @@ unsafe fn decoder_set_config_bool(
 }
 
 /// Set integer configuration (internal helper)
-unsafe fn decoder_set_config_int(
-    dcode: *mut zbar_decoder_t,
+fn decoder_set_config_int(
+    dcode: &mut zbar_decoder_t,
     sym: zbar_symbol_type_t,
     cfg: c_int,
     val: c_int,
 ) -> c_int {
     match sym {
         ZBAR_I25 => {
-            (*dcode).i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
         ZBAR_CODABAR => {
-            (*dcode).codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
         ZBAR_CODE39 => {
-            (*dcode).code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
         ZBAR_CODE93 => {
-            (*dcode).code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
         ZBAR_CODE128 => {
-            (*dcode).code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+            dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
         _ => 1,
@@ -311,7 +338,15 @@ pub unsafe fn zbar_decoder_get_config(
     cfg: c_int,
     val: *mut c_int,
 ) -> c_int {
-    let config = decoder_get_configp(dcode, sym);
+    if dcode.is_null() || val.is_null() {
+        return 1;
+    }
+    
+    let dcode = &*dcode;
+    let config = match decoder_get_config(dcode, sym) {
+        Some(c) => c,
+        None => return 1,
+    };
 
     // Return error if symbol doesn't have config
     if sym <= ZBAR_PARTIAL || sym > ZBAR_CODE128 || sym == ZBAR_COMPOSITE {
@@ -326,29 +361,15 @@ pub unsafe fn zbar_decoder_get_config(
 
     // Return decoder integer configs
     if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
-        match sym {
-            ZBAR_I25 => {
-                *val = (*dcode).i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
-                0
-            }
-            ZBAR_CODABAR => {
-                *val = (*dcode).codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
-                0
-            }
-            ZBAR_CODE39 => {
-                *val = (*dcode).code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
-                0
-            }
-            ZBAR_CODE93 => {
-                *val = (*dcode).code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
-                0
-            }
-            ZBAR_CODE128 => {
-                *val = (*dcode).code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize];
-                0
-            }
-            _ => 1,
-        }
+        *val = match sym {
+            ZBAR_I25 => dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            ZBAR_CODABAR => dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            ZBAR_CODE39 => dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            ZBAR_CODE93 => dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            ZBAR_CODE128 => dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            _ => return 1,
+        };
+        0
     } else {
         1
     }
@@ -361,6 +382,12 @@ pub unsafe fn zbar_decoder_set_config(
     cfg: c_int,
     val: c_int,
 ) -> c_int {
+    if dcode.is_null() {
+        return 1;
+    }
+    
+    let dcode = &mut *dcode;
+    
     // If ZBAR_NONE, set config for all symbologies
     if sym == ZBAR_NONE {
         const ALL: [zbar_symbol_type_t; 17] = [
@@ -383,7 +410,11 @@ pub unsafe fn zbar_decoder_set_config(
             ZBAR_SQCODE,
         ];
         for &s in &ALL {
-            zbar_decoder_set_config(dcode, s, cfg, val);
+            // We need to recursively call this, but we can't reborrow dcode
+            // So we need to use the raw pointer API
+            unsafe {
+                zbar_decoder_set_config(dcode as *mut _, s, cfg, val);
+            }
         }
         return 0;
     }
