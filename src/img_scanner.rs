@@ -13,7 +13,7 @@ use crate::{
         ZBAR_CODABAR, ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR,
         ZBAR_DATABAR_EXP, ZBAR_EAN5, ZBAR_ISBN10, ZBAR_ORIENT_UNKNOWN, ZBAR_PARTIAL, ZBAR_QRCODE,
     },
-    finder::{_zbar_decoder_get_qr_finder_line, _zbar_decoder_get_sq_finder_config},
+    finder::{decoder_get_qr_finder_line, decoder_get_sq_finder_config},
     image_ffi::zbar_image_t,
     line_scanner::{
         scan_y, scanner_flush, scanner_get_edge, scanner_get_width, scanner_new_scan,
@@ -490,31 +490,31 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanner_t) {
-    let line = _zbar_decoder_get_qr_finder_line((*iscn).dcode);
-    c_assert!(!line.is_null());
+    let iscn = &mut *iscn;
+    let line = decoder_get_qr_finder_line(&mut *iscn.dcode);
 
-    let scn = &*(*iscn).scn;
-    let mut u = scanner_get_edge(scn, (*line).pos[0] as c_uint, QR_FINDER_SUBPREC);
-    (*line).boffs = (u as c_int)
-        - scanner_get_edge(scn, (*line).boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
-    (*line).len =
-        scanner_get_edge(scn, (*line).len as c_uint, QR_FINDER_SUBPREC) as c_int;
-    (*line).eoffs = scanner_get_edge(scn, (*line).eoffs as c_uint, QR_FINDER_SUBPREC)
+    let scn = &*iscn.scn;
+    let mut u = scanner_get_edge(scn, line.pos[0] as c_uint, QR_FINDER_SUBPREC);
+    line.boffs = (u as c_int)
+        - scanner_get_edge(scn, line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
+    line.len =
+        scanner_get_edge(scn, line.len as c_uint, QR_FINDER_SUBPREC) as c_int;
+    line.eoffs = scanner_get_edge(scn, line.eoffs as c_uint, QR_FINDER_SUBPREC)
         as c_int
-        - (*line).len;
-    (*line).len -= u as c_int;
+        - line.len;
+    line.len -= u as c_int;
 
-    u = (qr_fixed((*iscn).umin, 0) as i64 + ((*iscn).du as i64) * (u as i64)) as c_uint;
-    if (*iscn).du < 0 {
-        std::mem::swap(&mut (*line).boffs, &mut (*line).eoffs);
-        u = u.wrapping_sub((*line).len as c_uint);
+    u = (qr_fixed(iscn.umin, 0) as i64 + (iscn.du as i64) * (u as i64)) as c_uint;
+    if iscn.du < 0 {
+        std::mem::swap(&mut line.boffs, &mut line.eoffs);
+        u = u.wrapping_sub(line.len as c_uint);
     }
 
-    let vert: c_int = if (*iscn).dx != 0 { 0 } else { 1 };
-    (*line).pos[vert as usize] = u as c_int;
-    (*line).pos[(1 - vert) as usize] = qr_fixed((*iscn).v, 1) as c_int;
+    let vert: c_int = if iscn.dx != 0 { 0 } else { 1 };
+    line.pos[vert as usize] = u as c_int;
+    line.pos[(1 - vert) as usize] = qr_fixed(iscn.v, 1) as c_int;
 
-    _zbar_qr_found_line((*iscn).qr, vert, line);
+    _zbar_qr_found_line(iscn.qr, vert, line);
 }
 
 /// Add a symbol to the scanner's symbol set
@@ -555,12 +555,10 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
 /// # Safety
 /// `iscn` must be a valid pointer to a zbar_image_scanner_t
 pub(crate) unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
-    // Cast pointers to the correct types expected by the functions
-    let dcode = (*iscn).dcode;
-    let sq = (*iscn).sq;
-
-    let config = _zbar_decoder_get_sq_finder_config(dcode);
-    _zbar_sq_new_config(sq, config);
+    let iscn = &mut *iscn;
+    
+    let config = decoder_get_sq_finder_config(&*iscn.dcode);
+    _zbar_sq_new_config(iscn.sq, config);
 }
 
 #[inline]

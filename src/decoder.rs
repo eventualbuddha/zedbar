@@ -13,7 +13,7 @@ use crate::{
         code93::_zbar_decode_code93, databar::_zbar_decode_databar, ean::_zbar_decode_ean,
         i25::_zbar_decode_i25,
     },
-    finder::_zbar_find_qr,
+    finder::find_qr,
 };
 use libc::{c_int, c_uint, c_void};
 use std::mem::size_of;
@@ -140,7 +140,7 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
 
     // Each decoder processes width stream in parallel
     if test_cfg(dcode_ref.qrf.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_find_qr(dcode);
+        let tmp = find_qr(dcode_ref);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
