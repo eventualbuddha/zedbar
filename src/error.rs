@@ -125,10 +125,15 @@ pub struct ErrInfo {
 /// Formats and prints the error information to stderr.
 /// Returns the negative severity value.
 pub unsafe fn _zbar_error_spew(err: *mut ErrInfo, verbosity: c_int) -> c_int {
-    let err_str = _zbar_error_string(err, verbosity);
+    if err.is_null() {
+        return 0;
+    }
+    let err = &*err;
+    
+    let err_str = _zbar_error_string(err as *const _ as *mut _, verbosity);
     eprint!("{err_str}");
 
-    -(*err).sev
+    -err.sev
 }
 
 /// Format error message as string
@@ -136,30 +141,35 @@ pub unsafe fn _zbar_error_spew(err: *mut ErrInfo, verbosity: c_int) -> c_int {
 /// Allocates and formats a detailed error message string.
 /// The string is stored in err->buf and returned.
 pub unsafe fn _zbar_error_string(err: *mut ErrInfo, _verbosity: c_int) -> String {
+    if err.is_null() {
+        return String::new();
+    }
+    let err = &*err;
+    
     // Get severity string
-    let sev = if (*err).sev >= SEV_FATAL && (*err).sev <= SEV_NOTE {
-        SEV_STR[((*err).sev + 2) as usize]
+    let sev = if err.sev >= SEV_FATAL && err.sev <= SEV_NOTE {
+        SEV_STR[(err.sev + 2) as usize]
     } else {
         SEV_STR[1]
     };
 
     // Get module string
-    let module = if (*err).module >= ZBAR_MOD_PROCESSOR && (*err).module < ZBAR_MOD_UNKNOWN {
-        MOD_STR[(*err).module as usize]
+    let module = if err.module >= ZBAR_MOD_PROCESSOR && err.module < ZBAR_MOD_UNKNOWN {
+        MOD_STR[err.module as usize]
     } else {
         MOD_STR[ZBAR_MOD_UNKNOWN as usize]
     };
 
     // Get function name
-    let func = if !(*err).func.is_null() {
-        CStr::from_ptr((*err).func).to_str().unwrap_or("<unknown>")
+    let func = if !err.func.is_null() {
+        CStr::from_ptr(err.func).to_str().unwrap_or("<unknown>")
     } else {
         "<unknown>"
     };
 
     // Get error type string
-    let err_type = if (*err).type_ >= 0 && (*err).type_ < ZBAR_ERR_NUM {
-        ERR_STR[(*err).type_ as usize]
+    let err_type = if err.type_ >= 0 && err.type_ < ZBAR_ERR_NUM {
+        ERR_STR[err.type_ as usize]
     } else {
         ERR_STR[ZBAR_ERR_NUM as usize]
     };
@@ -172,12 +182,12 @@ pub unsafe fn _zbar_error_string(err: *mut ErrInfo, _verbosity: c_int) -> String
 
     // Add detail if present
     let mut msg = base;
-    if !(*err).detail.is_null() {
-        let detail = CStr::from_ptr((*err).detail).to_str().unwrap_or("");
+    if !err.detail.is_null() {
+        let detail = CStr::from_ptr(err.detail).to_str().unwrap_or("");
 
         if detail.contains("%s") {
-            let arg = if !(*err).arg_str.is_null() {
-                CStr::from_ptr((*err).arg_str).to_str().unwrap_or("<?>")
+            let arg = if !err.arg_str.is_null() {
+                CStr::from_ptr(err.arg_str).to_str().unwrap_or("<?>")
             } else {
                 "<?>"
             };
@@ -186,9 +196,9 @@ pub unsafe fn _zbar_error_string(err: *mut ErrInfo, _verbosity: c_int) -> String
         } else if detail.contains("%d") || detail.contains("%x") {
             // Format integer argument
             let formatted = if detail.contains("%x") {
-                detail.replace("%x", &format!("{:x}", (*err).arg_int))
+                detail.replace("%x", &format!("{:x}", err.arg_int))
             } else {
-                detail.replace("%d", &format!("{}", (*err).arg_int))
+                detail.replace("%d", &format!("{}", err.arg_int))
             };
             msg.push_str(&formatted);
         } else {
@@ -197,14 +207,14 @@ pub unsafe fn _zbar_error_string(err: *mut ErrInfo, _verbosity: c_int) -> String
     }
 
     // Add system error if applicable
-    if (*err).type_ == 5 {
+    if err.type_ == 5 {
         // ZBAR_ERR_SYSTEM
-        let syserr = libc::strerror((*err).errnum);
+        let syserr = libc::strerror(err.errnum);
         if !syserr.is_null() {
             let syserr_str = CStr::from_ptr(syserr).to_str().unwrap_or("unknown");
-            msg.push_str(&format!(": {} ({})\n", syserr_str, (*err).errnum));
+            msg.push_str(&format!(": {} ({})\n", syserr_str, err.errnum));
         } else {
-            msg.push_str(&format!(": ({})\n", (*err).errnum));
+            msg.push_str(&format!(": ({})\n", err.errnum));
         }
     } else {
         msg.push('\n');
@@ -220,17 +230,25 @@ const ZBAR_ERR_SYSTEM: c_int = 2; // from zbar.h
 pub unsafe fn _zbar_err_copy(dst_c: *mut libc::c_void, src_c: *mut libc::c_void) -> c_int {
     let dst = dst_c as *mut ErrInfo;
     let src = src_c as *mut ErrInfo;
-    debug_assert!((*dst).magic == ERRINFO_MAGIC);
-    debug_assert!((*src).magic == ERRINFO_MAGIC);
+    
+    if dst.is_null() || src.is_null() {
+        return -1;
+    }
+    
+    let dst = &mut *dst;
+    let src = &mut *src;
+    
+    debug_assert!(dst.magic == ERRINFO_MAGIC);
+    debug_assert!(src.magic == ERRINFO_MAGIC);
 
-    (*dst).errnum = (*src).errnum;
-    (*dst).sev = (*src).sev;
-    (*dst).type_ = (*src).type_;
-    (*dst).func = (*src).func;
-    (*dst).detail = (*src).detail;
-    (*dst).arg_str = (*src).arg_str;
-    (*src).arg_str = std::ptr::null_mut(); // unused at src, avoid double free
-    (*dst).arg_int = (*src).arg_int;
+    dst.errnum = src.errnum;
+    dst.sev = src.sev;
+    dst.type_ = src.type_;
+    dst.func = src.func;
+    dst.detail = src.detail;
+    dst.arg_str = src.arg_str;
+    src.arg_str = std::ptr::null_mut(); // unused at src, avoid double free
+    dst.arg_int = src.arg_int;
     -1
 }
 
@@ -241,16 +259,21 @@ pub unsafe fn _zbar_err_capture(
     func: *const c_char,
     detail: *const c_char,
 ) -> c_int {
-    debug_assert!((*err).magic == ERRINFO_MAGIC);
-    if type_ == ZBAR_ERR_SYSTEM {
-        (*err).errnum = *libc::__errno_location();
+    if err.is_null() {
+        return -1;
     }
-    (*err).sev = sev;
-    (*err).type_ = type_;
-    (*err).func = func;
-    (*err).detail = detail;
+    let err = &mut *err;
+    
+    debug_assert!(err.magic == ERRINFO_MAGIC);
+    if type_ == ZBAR_ERR_SYSTEM {
+        err.errnum = *libc::__errno_location();
+    }
+    err.sev = sev;
+    err.type_ = type_;
+    err.func = func;
+    err.detail = detail;
     if ZBAR_VERBOSITY >= 1 {
-        _zbar_error_spew(err, 0);
+        _zbar_error_spew(err as *mut _, 0);
     }
     -1
 }
@@ -263,12 +286,17 @@ pub unsafe fn _zbar_err_capture_str(
     detail: *const c_char,
     arg: *const c_char,
 ) -> c_int {
-    debug_assert!((*err).magic == ERRINFO_MAGIC);
-    if !(*err).arg_str.is_null() {
-        libc::free((*err).arg_str as *mut libc::c_void);
+    if err.is_null() {
+        return -1;
     }
-    (*err).arg_str = libc::strdup(arg);
-    _zbar_err_capture(err, sev, type_, func, detail)
+    let err = &mut *err;
+    
+    debug_assert!(err.magic == ERRINFO_MAGIC);
+    if !err.arg_str.is_null() {
+        libc::free(err.arg_str as *mut libc::c_void);
+    }
+    err.arg_str = libc::strdup(arg);
+    _zbar_err_capture(err as *mut _, sev, type_, func, detail)
 }
 
 pub unsafe fn _zbar_err_capture_int(
@@ -279,9 +307,14 @@ pub unsafe fn _zbar_err_capture_int(
     detail: *const c_char,
     arg: c_int,
 ) -> c_int {
-    debug_assert!((*err).magic == ERRINFO_MAGIC);
-    (*err).arg_int = arg;
-    _zbar_err_capture(err, sev, type_, func, detail)
+    if err.is_null() {
+        return -1;
+    }
+    let err = &mut *err;
+    
+    debug_assert!(err.magic == ERRINFO_MAGIC);
+    err.arg_int = arg;
+    _zbar_err_capture(err as *mut _, sev, type_, func, detail)
 }
 
 pub unsafe fn _zbar_err_capture_num(
@@ -292,20 +325,35 @@ pub unsafe fn _zbar_err_capture_num(
     detail: *const c_char,
     num: c_int,
 ) -> c_int {
-    debug_assert!((*err).magic == ERRINFO_MAGIC);
-    (*err).errnum = num;
-    _zbar_err_capture(err, sev, type_, func, detail)
+    if err.is_null() {
+        return -1;
+    }
+    let err = &mut *err;
+    
+    debug_assert!(err.magic == ERRINFO_MAGIC);
+    err.errnum = num;
+    _zbar_err_capture(err as *mut _, sev, type_, func, detail)
 }
 
 pub unsafe fn _zbar_err_init(err: *mut ErrInfo, module: c_int) {
-    (*err).magic = ERRINFO_MAGIC;
-    (*err).module = module;
+    if err.is_null() {
+        return;
+    }
+    let err = &mut *err;
+    
+    err.magic = ERRINFO_MAGIC;
+    err.module = module;
 }
 
 pub unsafe fn _zbar_err_cleanup(err: *mut ErrInfo) {
-    debug_assert!((*err).magic == ERRINFO_MAGIC);
-    if !(*err).arg_str.is_null() {
-        libc::free((*err).arg_str as *mut libc::c_void);
-        (*err).arg_str = std::ptr::null_mut();
+    if err.is_null() {
+        return;
+    }
+    let err = &mut *err;
+    
+    debug_assert!(err.magic == ERRINFO_MAGIC);
+    if !err.arg_str.is_null() {
+        libc::free(err.arg_str as *mut libc::c_void);
+        err.arg_str = std::ptr::null_mut();
     }
 }

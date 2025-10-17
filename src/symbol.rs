@@ -174,8 +174,13 @@ pub unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
 ///
 /// The symbol pointer must be valid.
 pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
-    if refcnt(&mut (*sym).refcnt, delta) == 0 && delta <= 0 {
-        symbol_free(sym);
+    if sym.is_null() {
+        return;
+    }
+    let sym = &mut *sym;
+    
+    if refcnt(&mut sym.refcnt, delta) == 0 && delta <= 0 {
+        symbol_free(sym as *mut _);
     }
 }
 
@@ -207,58 +212,73 @@ pub unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
 
 /// Release any allocated symbol data buffer and reset metadata.
 pub unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
-    if !(*sym).data.is_null() {
-        libc::free((*sym).data as *mut c_void);
+    if sym.is_null() {
+        return;
     }
-    (*sym).data = ptr::null_mut();
-    (*sym).datalen = 0;
-    (*sym).data_alloc = 0;
+    let sym = &mut *sym;
+    
+    if !sym.data.is_null() {
+        libc::free(sym.data as *mut c_void);
+    }
+    sym.data = ptr::null_mut();
+    sym.datalen = 0;
+    sym.data_alloc = 0;
 }
 
 /// Ensure the symbol data buffer can hold at least `capacity` bytes (including null terminator).
 /// Returns `true` on success and leaves the buffer unchanged on failure.
 pub unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> bool {
+    if sym.is_null() {
+        return false;
+    }
+    let sym = &mut *sym;
+    
     if capacity == 0 {
-        symbol_clear_data(sym);
+        symbol_clear_data(sym as *mut _);
         return true;
     }
-    if (*sym).data_alloc as usize >= capacity {
+    if sym.data_alloc as usize >= capacity {
         return true;
     }
 
-    let new_ptr = libc::realloc((*sym).data as *mut c_void, capacity) as *mut c_char;
+    let new_ptr = libc::realloc(sym.data as *mut c_void, capacity) as *mut c_char;
     if new_ptr.is_null() {
         return false;
     }
 
-    (*sym).data = new_ptr;
-    (*sym).data_alloc = capacity as c_uint;
+    sym.data = new_ptr;
+    sym.data_alloc = capacity as c_uint;
     true
 }
 
 /// Ensure the symbol point array can store at least `capacity` points.
 /// Returns `true` on success and leaves the buffer unchanged on failure.
 pub unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> bool {
+    if sym.is_null() {
+        return false;
+    }
+    let sym = &mut *sym;
+    
     if capacity == 0 {
-        if !(*sym).pts.is_null() {
-            libc::free((*sym).pts);
-            (*sym).pts = ptr::null_mut();
+        if !sym.pts.is_null() {
+            libc::free(sym.pts);
+            sym.pts = ptr::null_mut();
         }
-        (*sym).pts_alloc = 0;
+        sym.pts_alloc = 0;
         return true;
     }
-    if (*sym).pts_alloc >= capacity {
+    if sym.pts_alloc >= capacity {
         return true;
     }
 
     let new_size = capacity as usize * size_of::<Point>();
-    let new_ptr = libc::realloc((*sym).pts, new_size);
+    let new_ptr = libc::realloc(sym.pts, new_size);
     if new_ptr.is_null() {
         return false;
     }
 
-    (*sym).pts = new_ptr;
-    (*sym).pts_alloc = capacity;
+    sym.pts = new_ptr;
+    sym.pts_alloc = capacity;
     true
 }
 
@@ -276,12 +296,18 @@ pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_
     if sym.is_null() {
         ptr::null()
     } else {
-        (*sym).next
+        let sym = &*sym;
+        sym.next
     }
 }
 
 pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
-    if refcnt(&mut (*syms).refcnt, delta) == 0 && delta <= 0 {
+    if syms.is_null() {
+        return;
+    }
+    let syms_ref = &mut *syms;
+    
+    if refcnt(&mut syms_ref.refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms);
     }
 }
@@ -290,18 +316,23 @@ pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
 type Point = [c_int; 2];
 
 pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
-    let i = (*sym).npts as usize;
-    (*sym).npts += 1;
+    if sym.is_null() {
+        return;
+    }
+    let sym = &mut *sym;
+    
+    let i = sym.npts as usize;
+    sym.npts += 1;
 
-    if (*sym).npts >= (*sym).pts_alloc {
-        let new_capacity = (*sym).pts_alloc + 1;
-        if !symbol_reserve_points(sym, new_capacity) {
-            (*sym).npts -= 1;
+    if sym.npts >= sym.pts_alloc {
+        let new_capacity = sym.pts_alloc + 1;
+        if !symbol_reserve_points(sym as *mut _, new_capacity) {
+            sym.npts -= 1;
             return;
         }
     }
 
-    let pts = (*sym).pts as *mut Point;
+    let pts = sym.pts as *mut Point;
     (*pts.add(i))[0] = x;
     (*pts.add(i))[1] = y;
 }
