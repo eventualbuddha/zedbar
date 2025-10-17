@@ -26,29 +26,29 @@ const THRESH_INIT: c_uint = 14;
 ///
 /// Implements adaptive threshold calculation that slowly fades back to minimum.
 /// This helps with noise rejection while maintaining sensitivity.
-pub unsafe fn calc_thresh(scn: *mut zbar_scanner_t) -> c_uint {
+pub fn calc_thresh(scn: &mut zbar_scanner_t) -> c_uint {
     // threshold 1st to improve noise rejection
-    let thresh = (*scn).y1_thresh;
+    let thresh = scn.y1_thresh;
 
-    if thresh <= (*scn).y1_min_thresh || (*scn).width == 0 {
-        return (*scn).y1_min_thresh;
+    if thresh <= scn.y1_min_thresh || scn.width == 0 {
+        return scn.y1_min_thresh;
     }
 
     // slowly return threshold to min
-    let dx = ((*scn).x << ZBAR_FIXED) - (*scn).last_edge;
+    let dx = (scn.x << ZBAR_FIXED) - scn.last_edge;
     let mut t = thresh as u64 * dx as u64;
-    t /= (*scn).width as u64;
+    t /= scn.width as u64;
     t /= ZBAR_SCANNER_THRESH_FADE as u64;
 
     if thresh > t as c_uint {
         let new_thresh = thresh - t as c_uint;
-        if new_thresh > (*scn).y1_min_thresh {
+        if new_thresh > scn.y1_min_thresh {
             return new_thresh;
         }
     }
 
-    (*scn).y1_thresh = (*scn).y1_min_thresh;
-    (*scn).y1_min_thresh
+    scn.y1_thresh = scn.y1_min_thresh;
+    scn.y1_min_thresh
 }
 
 /// Color of element: bar or space
@@ -90,8 +90,8 @@ pub unsafe fn zbar_scanner_get_width(scn: *const zbar_scanner_t) -> c_uint {
     if scn.is_null() {
         return 0;
     }
-
-    (*scn).width
+    let scn = &*scn;
+    scn.width
 }
 
 /// Get the interpolated position of the last edge
@@ -106,8 +106,9 @@ pub unsafe fn zbar_scanner_get_edge(
     if scn.is_null() {
         return 0;
     }
+    let scn = &*scn;
 
-    let edge = (*scn)
+    let edge = scn
         .last_edge
         .wrapping_sub(offset)
         .wrapping_sub(1 << ZBAR_FIXED)
@@ -134,32 +135,30 @@ pub unsafe fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
 ///
 /// Allocates and initializes a new scanner with the specified decoder.
 pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
-    let scn = Box::new(zbar_scanner_t::default());
-    let scn = Box::into_raw(scn);
-
-    (*scn).decoder = dcode;
-    (*scn).y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
-    scn
+    let mut scn = Box::new(zbar_scanner_t::default());
+    scn.decoder = dcode;
+    scn.y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
+    Box::into_raw(scn)
 }
 
 /// Process an edge and pass the width to the decoder
 ///
 /// This function is called when an edge (transition) is detected.
 /// It calculates the width of the element and passes it to the decoder.
-unsafe fn process_edge(scn: *mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
-    if (*scn).y1_sign == 0 {
-        (*scn).last_edge = (1 << ZBAR_FIXED) + ROUND;
-        (*scn).cur_edge = (1 << ZBAR_FIXED) + ROUND;
-    } else if (*scn).last_edge == 0 {
-        (*scn).last_edge = (*scn).cur_edge;
+fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
+    if scn.y1_sign == 0 {
+        scn.last_edge = (1 << ZBAR_FIXED) + ROUND;
+        scn.cur_edge = (1 << ZBAR_FIXED) + ROUND;
+    } else if scn.last_edge == 0 {
+        scn.last_edge = scn.cur_edge;
     }
 
-    (*scn).width = (*scn).cur_edge - (*scn).last_edge;
-    (*scn).last_edge = (*scn).cur_edge;
+    scn.width = scn.cur_edge - scn.last_edge;
+    scn.last_edge = scn.cur_edge;
 
     // pass to decoder
-    if !(*scn).decoder.is_null() {
-        zbar_decode_width((*scn).decoder, (*scn).width)
+    if !scn.decoder.is_null() {
+        unsafe { zbar_decode_width(scn.decoder, scn.width) }
     } else {
         ZBAR_PARTIAL
     }
@@ -169,23 +168,28 @@ unsafe fn process_edge(scn: *mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t
 ///
 /// Forces completion of any pending scan line.
 pub unsafe fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
-    if (*scn).y1_sign == 0 {
+    if scn.is_null() {
+        return ZBAR_NONE;
+    }
+    let scn = &mut *scn;
+    
+    if scn.y1_sign == 0 {
         return ZBAR_NONE;
     }
 
-    let x = ((*scn).x << ZBAR_FIXED) + ROUND;
+    let x = (scn.x << ZBAR_FIXED) + ROUND;
 
-    if (*scn).cur_edge != x || (*scn).y1_sign > 0 {
-        let edge = process_edge(scn, -(*scn).y1_sign);
-        (*scn).cur_edge = x;
-        (*scn).y1_sign = -(*scn).y1_sign;
+    if scn.cur_edge != x || scn.y1_sign > 0 {
+        let edge = process_edge(scn, -scn.y1_sign);
+        scn.cur_edge = x;
+        scn.y1_sign = -scn.y1_sign;
         return edge;
     }
 
-    (*scn).y1_sign = 0;
-    (*scn).width = 0;
-    if !(*scn).decoder.is_null() {
-        zbar_decode_width((*scn).decoder, 0)
+    scn.y1_sign = 0;
+    scn.width = 0;
+    if !scn.decoder.is_null() {
+        zbar_decode_width(scn.decoder, 0)
     } else {
         ZBAR_PARTIAL
     }
@@ -195,27 +199,35 @@ pub unsafe fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t
 ///
 /// Flushes any pending data and resets the scanner for a new scan.
 pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
+    if scn.is_null() {
+        return ZBAR_NONE;
+    }
+    
     let mut edge = ZBAR_NONE;
-    // Note: clippy can't detect that zbar_scanner_flush modifies (*scn).y1_sign through the pointer,
-    // but it does - this is not an infinite loop
-    #[allow(clippy::while_immutable_condition)]
-    while (*scn).y1_sign != 0 {
+    // Note: zbar_scanner_flush modifies scn.y1_sign through the mutable reference
+    loop {
+        let scn_ref = &*scn;
+        if scn_ref.y1_sign == 0 {
+            break;
+        }
         let tmp = zbar_scanner_flush(scn);
         if tmp < 0 || tmp > edge {
             edge = tmp;
         }
     }
 
+    let scn_ref = &mut *scn;
+    
     // reset scanner and associated decoder
     // This zeroes out from x to the end of the structure
-    let start_ptr = ptr::addr_of_mut!((*scn).x) as *mut u8;
+    let start_ptr = ptr::addr_of_mut!(scn_ref.x) as *mut u8;
     let scn_end = (scn as *mut u8).add(std::mem::size_of::<zbar_scanner_t>());
     let size = scn_end as usize - start_ptr as usize;
     ptr::write_bytes(start_ptr, 0, size);
 
-    (*scn).y1_thresh = (*scn).y1_min_thresh;
-    if !(*scn).decoder.is_null() {
-        (*(*scn).decoder).new_scan();
+    scn_ref.y1_thresh = scn_ref.y1_min_thresh;
+    if !scn_ref.decoder.is_null() {
+        (*scn_ref.decoder).new_scan();
     }
     edge
 }
@@ -225,26 +237,31 @@ pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_typ
 /// This is the main scanning function that processes each pixel's intensity
 /// value and detects bar/space transitions.
 pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
+    if scn.is_null() {
+        return ZBAR_NONE;
+    }
+    let scn = &mut *scn;
+    
     // retrieve short value history
-    let x = (*scn).x;
-    let mut y0_1 = (*scn).y0[((x.wrapping_sub(1)) & 3) as usize];
+    let x = scn.x;
+    let mut y0_1 = scn.y0[((x.wrapping_sub(1)) & 3) as usize];
     let mut y0_0 = y0_1;
 
     if x != 0 {
         // update weighted moving average
         y0_0 += ((y - y0_1) * EWMA_WEIGHT as i32) >> ZBAR_FIXED;
-        (*scn).y0[(x & 3) as usize] = y0_0;
+        scn.y0[(x & 3) as usize] = y0_0;
     } else {
         y0_0 = y;
         y0_1 = y;
-        (*scn).y0[0] = y;
-        (*scn).y0[1] = y;
-        (*scn).y0[2] = y;
-        (*scn).y0[3] = y;
+        scn.y0[0] = y;
+        scn.y0[1] = y;
+        scn.y0[2] = y;
+        scn.y0[3] = y;
     }
 
-    let y0_2 = (*scn).y0[((x.wrapping_sub(2)) & 3) as usize];
-    let y0_3 = (*scn).y0[((x.wrapping_sub(3)) & 3) as usize];
+    let y0_2 = scn.y0[((x.wrapping_sub(2)) & 3) as usize];
+    let y0_3 = scn.y0[((x.wrapping_sub(3)) & 3) as usize];
 
     // 1st differential @ x-1
     let mut y1_1 = y0_1 - y0_2;
@@ -264,7 +281,7 @@ pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_typ
     // 2nd zero-crossing is 1st local min/max - could be edge
     if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (calc_thresh(scn) <= y1_1.unsigned_abs()) {
         // check for 1st sign change
-        let y1_rev = if (*scn).y1_sign > 0 {
+        let y1_rev = if scn.y1_sign > 0 {
             y1_1 < 0
         } else {
             y1_1 > 0
@@ -275,30 +292,30 @@ pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_typ
             edge = process_edge(scn, y1_1);
         }
 
-        if y1_rev || ((*scn).y1_sign.abs() < y1_1.abs()) {
-            (*scn).y1_sign = y1_1;
+        if y1_rev || (scn.y1_sign.abs() < y1_1.abs()) {
+            scn.y1_sign = y1_1;
 
             // adaptive thresholding
             // start at multiple of new min/max
-            (*scn).y1_thresh =
+            scn.y1_thresh =
                 ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
-            if (*scn).y1_thresh < (*scn).y1_min_thresh {
-                (*scn).y1_thresh = (*scn).y1_min_thresh;
+            if scn.y1_thresh < scn.y1_min_thresh {
+                scn.y1_thresh = scn.y1_min_thresh;
             }
 
             // update current edge
             let d = y2_1 - y2_2;
-            (*scn).cur_edge = 1 << ZBAR_FIXED;
+            scn.cur_edge = 1 << ZBAR_FIXED;
             if d == 0 {
-                (*scn).cur_edge >>= 1;
+                scn.cur_edge >>= 1;
             } else if y2_1 != 0 {
                 // interpolate zero crossing
-                (*scn).cur_edge -= (((y2_1 << ZBAR_FIXED) + 1) / d) as c_uint;
+                scn.cur_edge -= (((y2_1 << ZBAR_FIXED) + 1) / d) as c_uint;
             }
-            (*scn).cur_edge += x << ZBAR_FIXED;
+            scn.cur_edge += x << ZBAR_FIXED;
         }
     }
 
-    (*scn).x = x + 1;
+    scn.x = x + 1;
     edge
 }
