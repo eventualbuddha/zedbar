@@ -453,8 +453,9 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
 
     if let Some(idx) = bucket_idx {
         // Found a recycled symbol
-        iscn.recycle[idx].head = (*sym).next;
-        (*sym).next = null_mut();
+        let sym_ref = &mut *sym;
+        iscn.recycle[idx].head = sym_ref.next;
+        sym_ref.next = null_mut();
         c_assert!(iscn.recycle[idx].nsyms > 0);
         iscn.recycle[idx].nsyms -= 1;
     } else {
@@ -463,15 +464,16 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     }
 
     // Initialize the symbol
-    (*sym).symbol_type = sym_type;
-    (*sym).quality = 1;
-    (*sym).npts = 0;
-    (*sym).orient = ZBAR_ORIENT_UNKNOWN;
-    c_assert!((*sym).syms.is_null());
+    let sym_ref = &mut *sym;
+    sym_ref.symbol_type = sym_type;
+    sym_ref.quality = 1;
+    sym_ref.npts = 0;
+    sym_ref.orient = ZBAR_ORIENT_UNKNOWN;
+    c_assert!(sym_ref.syms.is_null());
 
     if datalen > 0 {
         if symbol_reserve_data(sym, datalen as usize) {
-            (*sym).datalen = (datalen - 1) as c_uint;
+            sym_ref.datalen = (datalen - 1) as c_uint;
         } else {
             symbol_clear_data(sym);
         }
@@ -526,25 +528,29 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
     iscn: *mut zbar_image_scanner_t,
     sym: *mut zbar_symbol_t,
 ) {
-    let syms = (*iscn).syms_ptr();
+    let iscn = &mut *iscn;
+    let syms = iscn.syms_ptr();
     debug_assert!(!syms.is_null());
+    let syms = &mut *syms;
+    let sym_ref = &mut *sym;
 
     // The symbol set takes ownership of the symbol reference.
     // Ensure the reference count reflects this so that recycling
     // and Drop logic can safely release it later.
-    let new_refcnt = refcnt(&mut (*sym).refcnt, 1);
+    let new_refcnt = refcnt(&mut sym_ref.refcnt, 1);
     debug_assert!(new_refcnt > 0);
     let _ = new_refcnt;
 
-    if (*syms).tail.is_null() {
-        (*sym).next = (*syms).head;
-        (*syms).head = sym;
+    if syms.tail.is_null() {
+        sym_ref.next = syms.head;
+        syms.head = sym;
     } else {
-        (*sym).next = (*(*syms).tail).next;
-        (*(*syms).tail).next = sym;
+        let tail = &mut *syms.tail;
+        sym_ref.next = tail.next;
+        tail.next = sym;
     }
 
-    (*syms).nsyms += 1;
+    syms.nsyms += 1;
 }
 
 /// SQ code handler - updates SQ reader configuration
@@ -634,41 +640,43 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
     let scanner = &mut *iscn;
     if let Some(syms_handle) = scanner.take_syms() {
         let syms_ptr = syms_handle.as_ptr();
-        if (*syms_ptr).refcnt != 0 {
+        let syms = &*syms_ptr;
+        if syms.refcnt != 0 {
             zbar_symbol_set_ref(syms_ptr, -1);
         } else {
             symbol_set_free(syms_ptr);
         }
     }
 
-    if !(*iscn).scn.is_null() {
-        zbar_scanner_destroy((*iscn).scn);
-        (*iscn).scn = null_mut();
+    if !scanner.scn.is_null() {
+        zbar_scanner_destroy(scanner.scn);
+        scanner.scn = null_mut();
     }
 
-    if !(*iscn).dcode.is_null() {
-        ptr::drop_in_place((*iscn).dcode);
-        (*iscn).dcode = null_mut();
+    if !scanner.dcode.is_null() {
+        ptr::drop_in_place(scanner.dcode);
+        scanner.dcode = null_mut();
     }
 
     // Free recycled symbols
     for i in 0..RECYCLE_BUCKETS {
-        let mut sym = (*iscn).recycle[i].head;
+        let mut sym = scanner.recycle[i].head;
         while !sym.is_null() {
-            let next = (*sym).next;
+            let sym_ref = &*sym;
+            let next = sym_ref.next;
             symbol_free(sym);
             sym = next;
         }
     }
 
-    if !(*iscn).qr.is_null() {
-        _zbar_qr_destroy((*iscn).qr);
-        (*iscn).qr = null_mut();
+    if !scanner.qr.is_null() {
+        _zbar_qr_destroy(scanner.qr);
+        scanner.qr = null_mut();
     }
 
-    if !(*iscn).sq.is_null() {
-        _zbar_sq_destroy((*iscn).sq);
-        (*iscn).sq = null_mut();
+    if !scanner.sq.is_null() {
+        _zbar_sq_destroy(scanner.sq);
+        scanner.sq = null_mut();
     }
 
     image_scanner_free(iscn);
@@ -694,15 +702,16 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     }
 
     // Calculate position if position tracking is enabled
+    let iscn_ref = &*iscn;
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-        let scn = &*(*iscn).scn;
+        let scn = &*iscn_ref.scn;
         let w = scanner_get_width(scn);
-        let u = (*iscn).umin + (*iscn).du * scanner_get_edge(scn, w, 0) as c_int;
-        if (*iscn).dx != 0 {
+        let u = iscn_ref.umin + iscn_ref.du * scanner_get_edge(scn, w, 0) as c_int;
+        if iscn_ref.dx != 0 {
             x = u;
-            y = (*iscn).v;
+            y = iscn_ref.v;
         } else {
-            x = (*iscn).v;
+            x = iscn_ref.v;
             y = u;
         }
     }
@@ -716,37 +725,39 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     let datalen = data.len();
 
     // Check for duplicate symbols
-    let syms = (*iscn).syms_ptr();
+    let syms = iscn_ref.syms_ptr();
     let mut sym = if !syms.is_null() {
         (*syms).head
     } else {
         null_mut()
     };
     while !sym.is_null() {
-        if (*sym).symbol_type == type_
-            && (*sym).datalen == datalen as c_uint
+        let sym_ref = &mut *sym;
+        if sym_ref.symbol_type == type_
+            && sym_ref.datalen == datalen as c_uint
             && memcmp(
-                (*sym).data as *const c_void,
+                sym_ref.data as *const c_void,
                 data.as_ptr() as *const c_void,
                 datalen as size_t,
             ) == 0
         {
-            (*sym).quality += 1;
+            sym_ref.quality += 1;
             if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
                 _zbar_symbol_add_point(sym, x, y);
             }
             return;
         }
-        sym = (*sym).next;
+        sym = sym_ref.next;
     }
 
     // Allocate new symbol
     sym = _zbar_image_scanner_alloc_sym(iscn, type_ as c_int, (datalen + 1) as c_int);
-    (*sym).configs = zbar_decoder_get_configs(dcode, type_);
-    (*sym).modifiers = zbar_decoder_get_modifiers(dcode);
+    let sym_ref = &mut *sym;
+    sym_ref.configs = zbar_decoder_get_configs(dcode, type_);
+    sym_ref.modifiers = zbar_decoder_get_modifiers(dcode);
 
     // Copy data
-    copy_nonoverlapping(data.as_ptr(), (*sym).data as *mut u8, datalen + 1);
+    copy_nonoverlapping(data.as_ptr(), sym_ref.data as *mut u8, datalen + 1);
 
     // Initialize position
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
@@ -756,7 +767,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     // Set orientation
     let dir = (*dcode).direction;
     if dir != 0 {
-        (*sym).orient = (if (*iscn).dy != 0 { 1 } else { 0 }) + (((*iscn).du ^ dir) & 2);
+        sym_ref.orient = (if iscn_ref.dy != 0 { 1 } else { 0 }) + ((iscn_ref.du ^ dir) & 2);
     }
 
     _zbar_image_scanner_add_sym(iscn, sym);
@@ -780,9 +791,11 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
     cfg: c_int,
     val: c_int,
 ) -> c_int {
+    let iscn_ref = &mut *iscn;
+    
     // Handle EAN composite configuration
     if (sym == 0 || sym == ZBAR_COMPOSITE) && cfg == ZBAR_CFG_ENABLE {
-        (*iscn).ean_config = if val != 0 { 1 } else { 0 };
+        iscn_ref.ean_config = if val != 0 { 1 } else { 0 };
         if sym != 0 {
             return 0;
         }
@@ -790,7 +803,7 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
 
     // Delegate decoder configuration
     if cfg < ZBAR_CFG_UNCERTAINTY {
-        return zbar_decoder_set_config((*iscn).dcode, sym, cfg, val);
+        return zbar_decoder_set_config(iscn_ref.dcode, sym, cfg, val);
     }
 
     // Handle uncertainty and related configs
@@ -801,10 +814,10 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
         let c = (cfg - ZBAR_CFG_UNCERTAINTY) as usize;
         if sym > ZBAR_PARTIAL {
             let i = _zbar_get_symbol_hash(sym) as usize;
-            (*iscn).sym_configs[c][i] = val;
+            iscn_ref.sym_configs[c][i] = val;
         } else {
             for i in 0..NUM_SYMS {
-                (*iscn).sym_configs[c][i] = val;
+                iscn_ref.sym_configs[c][i] = val;
             }
         }
         return 0;
@@ -817,7 +830,7 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
 
     // Handle density configuration
     if (ZBAR_CFG_X_DENSITY..=ZBAR_CFG_Y_DENSITY).contains(&cfg) {
-        (*iscn).configs[(cfg - ZBAR_CFG_X_DENSITY) as usize] = val;
+        iscn_ref.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize] = val;
         return 0;
     }
 
@@ -825,9 +838,9 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
     let cfg_bit = cfg - ZBAR_CFG_POSITION;
 
     if val == 0 {
-        (*iscn).config &= !(1 << cfg_bit);
+        iscn_ref.config &= !(1 << cfg_bit);
     } else if val == 1 {
-        (*iscn).config |= 1 << cfg_bit;
+        iscn_ref.config |= 1 << cfg_bit;
     } else {
         return 1;
     }
