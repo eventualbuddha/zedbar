@@ -16,8 +16,8 @@ use crate::{
     finder::{_zbar_decoder_get_qr_finder_line, _zbar_decoder_get_sq_finder_config},
     image_ffi::zbar_image_t,
     line_scanner::{
-        scan_y, scanner_flush, scanner_new_scan, zbar_scanner_create, zbar_scanner_destroy,
-        zbar_scanner_get_edge, zbar_scanner_get_width, zbar_scanner_t,
+        scan_y, scanner_flush, scanner_get_edge, scanner_get_width, scanner_new_scan,
+        zbar_scanner_create, zbar_scanner_destroy, zbar_scanner_t,
     },
     qrcode::{
         qr_point,
@@ -493,12 +493,13 @@ pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanne
     let line = _zbar_decoder_get_qr_finder_line((*iscn).dcode);
     c_assert!(!line.is_null());
 
-    let mut u = zbar_scanner_get_edge((*iscn).scn, (*line).pos[0] as c_uint, QR_FINDER_SUBPREC);
+    let scn = &*(*iscn).scn;
+    let mut u = scanner_get_edge(scn, (*line).pos[0] as c_uint, QR_FINDER_SUBPREC);
     (*line).boffs = (u as c_int)
-        - zbar_scanner_get_edge((*iscn).scn, (*line).boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
+        - scanner_get_edge(scn, (*line).boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
     (*line).len =
-        zbar_scanner_get_edge((*iscn).scn, (*line).len as c_uint, QR_FINDER_SUBPREC) as c_int;
-    (*line).eoffs = zbar_scanner_get_edge((*iscn).scn, (*line).eoffs as c_uint, QR_FINDER_SUBPREC)
+        scanner_get_edge(scn, (*line).len as c_uint, QR_FINDER_SUBPREC) as c_int;
+    (*line).eoffs = scanner_get_edge(scn, (*line).eoffs as c_uint, QR_FINDER_SUBPREC)
         as c_int
         - (*line).len;
     (*line).len -= u as c_int;
@@ -696,8 +697,9 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
 
     // Calculate position if position tracking is enabled
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-        let w = zbar_scanner_get_width((*iscn).scn);
-        let u = (*iscn).umin + (*iscn).du * zbar_scanner_get_edge((*iscn).scn, w, 0) as c_int;
+        let scn = &*(*iscn).scn;
+        let w = scanner_get_width(scn);
+        let u = (*iscn).umin + (*iscn).du * scanner_get_edge(scn, w, 0) as c_int;
         if (*iscn).dx != 0 {
             x = u;
             y = (*iscn).v;

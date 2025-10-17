@@ -82,32 +82,19 @@ pub struct zbar_scanner_t {
     width: c_uint,
 }
 
+// ============================================================================
+// Safe reference-based APIs
+// ============================================================================
+
 /// Get the width of the most recent bar or space
-///
-/// This function returns the width of the last decoded element (bar or space)
-/// in the barcode scan line.
-pub unsafe fn zbar_scanner_get_width(scn: *const zbar_scanner_t) -> c_uint {
-    if scn.is_null() {
-        return 0;
-    }
-    let scn = &*scn;
+#[inline]
+pub fn scanner_get_width(scn: &zbar_scanner_t) -> c_uint {
     scn.width
 }
 
 /// Get the interpolated position of the last edge
-///
-/// Returns the interpolated position of the last processed edge, adjusted by
-/// the specified offset and precision.
-pub unsafe fn zbar_scanner_get_edge(
-    scn: *const zbar_scanner_t,
-    offset: c_uint,
-    prec: c_int,
-) -> c_uint {
-    if scn.is_null() {
-        return 0;
-    }
-    let scn = &*scn;
-
+#[inline]
+pub fn scanner_get_edge(scn: &zbar_scanner_t, offset: c_uint, prec: c_int) -> c_uint {
     let edge = scn
         .last_edge
         .wrapping_sub(offset)
@@ -164,42 +151,11 @@ fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
     }
 }
 
+// ============================================================================
+// Safe reference-based APIs (main implementations)
+// ============================================================================
+
 /// Flush the scanner state
-///
-/// Forces completion of any pending scan line.
-pub unsafe fn zbar_scanner_flush(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
-    if scn.is_null() {
-        return ZBAR_NONE;
-    }
-    scanner_flush(&mut *scn)
-}
-
-/// Start a new scan
-///
-/// Flushes any pending data and resets the scanner for a new scan.
-pub unsafe fn zbar_scanner_new_scan(scn: *mut zbar_scanner_t) -> zbar_symbol_type_t {
-    if scn.is_null() {
-        return ZBAR_NONE;
-    }
-    scanner_new_scan(&mut *scn)
-}
-
-/// Process a single pixel intensity value
-///
-/// This is the main scanning function that processes each pixel's intensity
-/// value and detects bar/space transitions.
-pub unsafe fn zbar_scan_y(scn: *mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
-    if scn.is_null() {
-        return ZBAR_NONE;
-    }
-    scan_y(&mut *scn, y)
-}
-
-// ============================================================================
-// Safe reference-based APIs
-// ============================================================================
-
-/// Flush the scanner state (safe reference version)
 #[inline]
 pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     if scn.y1_sign == 0 {
@@ -224,7 +180,7 @@ pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     }
 }
 
-/// Start a new scan (safe reference version)
+/// Start a new scan
 pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     let mut edge = ZBAR_NONE;
     
@@ -249,7 +205,7 @@ pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     edge
 }
 
-/// Process a single pixel intensity value (safe reference version)
+/// Process a single pixel intensity value
 pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
     // retrieve short value history
     let x = scn.x;
