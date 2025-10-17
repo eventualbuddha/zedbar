@@ -224,10 +224,11 @@ pub unsafe fn qr_code_data_list_extract_text(
                 }
                 let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
                 *sym_cur = sym;
-                (*sym).datalen = sa_text.len() as u32;
+                let sym_ref = &mut *sym;
+                sym_ref.datalen = sa_text.len() as u32;
 
                 if sa[j] < 0 {
-                    (*sym).symbol_type = ZBAR_PARTIAL;
+                    sym_ref.symbol_type = ZBAR_PARTIAL;
                     let mut k = j + 1;
                     while k < sa_size && sa[k] < 0 {
                         k += 1;
@@ -237,8 +238,8 @@ pub unsafe fn qr_code_data_list_extract_text(
                         break;
                     }
                     sa_text.push(0);
-                    (*sym).datalen = sa_text.len() as u32;
-                    sym_cur = &mut (*sym).next;
+                    sym_ref.datalen = sa_text.len() as u32;
+                    sym_cur = &mut sym_ref.next;
                     let next_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
                     *sym_cur = next_sym;
                 }
@@ -335,7 +336,8 @@ pub unsafe fn qr_code_data_list_extract_text(
                         _ => {}
                     }
                 }
-                sym_cur = &mut (*sym).next;
+                let sym_ref = &mut *sym;
+                sym_cur = &mut sym_ref.next;
                 j += 1;
             }
 
@@ -398,21 +400,23 @@ pub unsafe fn qr_code_data_list_extract_text(
 
                 if sa_size == 1 {
                     let sym = syms_head;
-                    (*sym).data = ptr as *mut c_char;
-                    (*sym).datalen = (len - 1) as u32;
-                    (*sym).data_alloc = len as u32;
-                    (*sym).modifiers = fnc1 as u32;
+                    let sym_ref = &mut *sym;
+                    sym_ref.data = ptr as *mut c_char;
+                    sym_ref.datalen = (len - 1) as u32;
+                    sym_ref.data_alloc = len as u32;
+                    sym_ref.modifiers = fnc1 as u32;
                     _zbar_image_scanner_add_sym(iscn, sym);
                 } else {
                     let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
-                    (*sa_sym).syms = symbol_set_create();
+                    let sa_sym_ref = &mut *sa_sym;
+                    sa_sym_ref.syms = symbol_set_create();
                     // This part is complex, involving restructuring the symbol set.
                     // For now, we just add the combined text to a single symbol.
                     // A full port would need to replicate the logic from the C code.
-                    (*sa_sym).data = ptr as *mut c_char;
-                    (*sa_sym).datalen = (len - 1) as u32;
-                    (*sa_sym).data_alloc = len as u32;
-                    (*sa_sym).modifiers = fnc1 as u32;
+                    sa_sym_ref.data = ptr as *mut c_char;
+                    sa_sym_ref.datalen = (len - 1) as u32;
+                    sa_sym_ref.data_alloc = len as u32;
+                    sa_sym_ref.modifiers = fnc1 as u32;
                     _zbar_image_scanner_add_sym(iscn, sa_sym);
                     _zbar_image_scanner_recycle_syms(iscn, syms_head);
                 }

@@ -118,9 +118,10 @@ unsafe fn sq_extract_text(iscn: *mut zbar_image_scanner_t, buf: &[u8], len: size
 
     std::ptr::copy_nonoverlapping(encoded.as_ptr(), data_ptr as *mut u8, encoded.len());
 
-    (*sym).data = data_ptr;
-    (*sym).data_alloc = (b64_len + 1) as c_uint;
-    (*sym).datalen = b64_len as c_uint;
+    let sym = &mut *sym;
+    sym.data = data_ptr;
+    sym.data_alloc = (b64_len + 1) as c_uint;
+    sym.datalen = b64_len as c_uint;
 
     _zbar_image_scanner_add_sym(iscn, sym);
     false
@@ -132,11 +133,12 @@ fn is_black_color(c: u8) -> bool {
 }
 
 unsafe fn is_black(img: *const zbar_image_t, x: i32, y: i32) -> bool {
-    if x < 0 || x >= (*img).width as i32 || y < 0 || y >= (*img).height as i32 {
+    let img = &*img;
+    if x < 0 || x >= img.width as i32 || y < 0 || y >= img.height as i32 {
         return false;
     }
-    let data = (*img).data.as_ptr();
-    let idx = y as usize * (*img).width as usize + x as usize;
+    let data = img.data.as_ptr();
+    let idx = y as usize * img.width as usize + x as usize;
     is_black_color(*data.add(idx))
 }
 
@@ -235,7 +237,8 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
     }
 
     // Calculate weighted center for dot
-    let data = (*img).data.as_ptr();
+    let img_ref = &*img;
+    let data = img_ref.data.as_ptr();
     let mut x_sum = 0u32;
     let mut y_sum = 0u32;
     let mut total_weight = 0u32;
@@ -245,7 +248,7 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
             if !is_black(img, x as i32, y as i32) {
                 continue;
             }
-            let idx = y as usize * (*img).width as usize + x as usize;
+            let idx = y as usize * img_ref.width as usize + x as usize;
             let weight = (0xff - *data.add(idx)) as u32;
             x_sum += weight * x;
             y_sum += weight * y;
@@ -328,12 +331,14 @@ pub unsafe fn sq_decode(
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) -> c_int {
-    if !(*reader).enabled {
+    let reader = &*reader;
+    if !reader.enabled {
         return 0;
     }
 
+    let img = &*img;
     // Check image format (Y800 = fourcc('Y','8','0','0'))
-    if (*img).format != 0x30303859 {
+    if img.format != 0x30303859 {
         let _ = writeln!(std::io::stderr(), "Unexpected image format");
         return 1;
     }
@@ -343,8 +348,8 @@ pub unsafe fn sq_decode(
     let mut scan_y = 0u32;
     let mut found_start = false;
 
-    'outer: for y in 0..(*img).height {
-        for x in 0..(*img).width {
+    'outer: for y in 0..img.height {
+        for x in 0..img.width {
             if is_black(img, x as i32, y as i32) {
                 scan_x = x;
                 scan_y = y;
@@ -601,14 +606,14 @@ pub unsafe fn sq_decode(
             let bottom_right_source_y =
                 bottom_border[x].y + right_border[y].y - right_border[border_len - 1].y;
 
-            let data = (*img).data.as_ptr();
+            let data = img.data.as_ptr();
             let sample_x = top_left_source_x as usize;
             let sample_y = top_left_source_y as usize;
-            let top_left_color = *data.add(sample_y * (*img).width as usize + sample_x);
+            let top_left_color = *data.add(sample_y * img.width as usize + sample_x);
 
             let sample_x = bottom_right_source_x as usize;
             let sample_y = bottom_right_source_y as usize;
-            let bottom_right_color = *data.add(sample_y * (*img).width as usize + sample_x);
+            let bottom_right_color = *data.add(sample_y * img.width as usize + sample_x);
 
             let mixed_color = ((top_weight + left_weight) * top_left_color as f32
                 + (bottom_weight + right_weight) * bottom_right_color as f32)
@@ -659,7 +664,8 @@ pub unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
 /// The `reader` pointer must be valid and point to an initialized `SqReader`.
 pub unsafe fn _zbar_sq_reset(reader: *mut SqReader) {
     if !reader.is_null() {
-        (*reader).enabled = true;
+        let reader = &mut *reader;
+        reader.enabled = true;
     }
 }
 
@@ -672,7 +678,8 @@ pub unsafe fn _zbar_sq_new_config(reader: *mut SqReader, config: c_uint) -> c_in
     if reader.is_null() {
         return -1;
     }
-    (*reader).enabled = config != 0;
+    let reader = &mut *reader;
+    reader.enabled = config != 0;
     0
 }
 

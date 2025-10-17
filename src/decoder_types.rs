@@ -578,8 +578,8 @@ impl databar_decoder_t {
         let n = self.csegs() as isize;
         self.new_scan();
         for i in 0..n {
-            let seg = (self.segs).offset(i);
-            (*seg).set_finder(-1);
+            let seg = &mut *(self.segs).offset(i);
+            seg.set_finder(-1);
         }
     }
 
@@ -587,9 +587,9 @@ impl databar_decoder_t {
     pub(crate) unsafe fn new_scan(&mut self) {
         for i in 0..16 {
             if self.chars[i] >= 0 {
-                let seg = (self.segs).offset(self.chars[i] as isize);
-                if (*seg).partial() {
-                    (*seg).set_finder(-1);
+                let seg = &mut *(self.segs).offset(self.chars[i] as isize);
+                if seg.partial() {
+                    seg.set_finder(-1);
                 }
                 self.chars[i] = -1;
             }

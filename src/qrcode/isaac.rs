@@ -267,7 +267,8 @@ pub unsafe fn isaac_init(ctx: *mut IsaacCtx, seed: *const u8, nseed: i32) {
 ///
 /// `ctx` must be a valid pointer to an initialized `IsaacCtx` structure
 pub unsafe fn isaac_next_uint32(ctx: *mut IsaacCtx) -> u32 {
-    (*ctx).next_u32()
+    let ctx = &mut *ctx;
+    ctx.next_u32()
 }
 
 /// Get a uniformly distributed random integer less than the given maximum
@@ -276,7 +277,8 @@ pub unsafe fn isaac_next_uint32(ctx: *mut IsaacCtx) -> u32 {
 ///
 /// `ctx` must be a valid pointer to an initialized `IsaacCtx` structure
 pub unsafe fn isaac_next_uint(ctx: *mut IsaacCtx, n: u32) -> u32 {
-    (*ctx).next_uint(n)
+    let ctx = &mut *ctx;
+    ctx.next_uint(n)
 }
 
 #[cfg(test)]
