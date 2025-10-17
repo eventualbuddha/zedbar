@@ -58,7 +58,8 @@ pub unsafe fn zbar_image_create() -> *mut zbar_image_t {
     if img.is_null() {
         return null_mut();
     }
-    refcnt(&mut (*img).refcnt, 1);
+    let img_ref = &mut *img;
+    refcnt(&mut img_ref.refcnt, 1);
     img
 }
 
@@ -71,39 +72,45 @@ pub unsafe fn _zbar_image_free(img: *mut zbar_image_t) {
 }
 
 pub unsafe fn zbar_image_destroy(img: *mut zbar_image_t) {
-    if refcnt(&mut (*img).refcnt, -1) == 0 {
+    let img_ref = &mut *img;
+    if refcnt(&mut img_ref.refcnt, -1) == 0 {
         _zbar_image_free(img);
     }
 }
 
 pub unsafe fn zbar_image_first_symbol(img: *const zbar_image_t) -> *const zbar_symbol_t {
-    (*img)
-        .syms
+    let img = &*img;
+    img.syms
         .map_or(null(), |syms| unsafe { (*syms.as_ptr()).head })
 }
 
 pub unsafe fn _zbar_image_swap_symbols(a: *mut zbar_image_t, b: *mut zbar_image_t) {
-    std::mem::swap(&mut (*a).syms, &mut (*b).syms);
+    let a = &mut *a;
+    let b = &mut *b;
+    std::mem::swap(&mut a.syms, &mut b.syms);
 }
 
 pub unsafe fn _zbar_image_copy(src: *const zbar_image_t, inverted: c_int) -> *mut zbar_image_t {
     const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
     const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
 
-    if inverted != 0 && (*src).format != FOURCC_Y800 && (*src).format != FOURCC_GREY {
+    let src = &*src;
+    
+    if inverted != 0 && src.format != FOURCC_Y800 && src.format != FOURCC_GREY {
         return null_mut();
     }
 
     let dst = zbar_image_create();
-    (*dst).format = (*src).format;
-    (*dst).width = (*src).width;
-    (*dst).height = (*src).height;
-    (*dst).data = vec![0; (*src).data.len()];
+    let dst_ref = &mut *dst;
+    dst_ref.format = src.format;
+    dst_ref.width = src.width;
+    dst_ref.height = src.height;
+    dst_ref.data = vec![0; src.data.len()];
 
     if inverted == 0 {
-        (*dst).data.copy_from_slice(&(*src).data);
+        dst_ref.data.copy_from_slice(&src.data);
     } else {
-        for (dp, sp) in (*dst).data.iter_mut().zip((*src).data.iter()) {
+        for (dp, sp) in dst_ref.data.iter_mut().zip(src.data.iter()) {
             *dp = !(*sp);
         }
     }
