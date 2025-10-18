@@ -22,8 +22,8 @@ use crate::{
     qrcode::{
         qr_point,
         qrdec::{
-            _zbar_qr_create, _zbar_qr_decode, _zbar_qr_destroy, _zbar_qr_found_line,
-            _zbar_qr_reset, qr_finder_lines,
+            _zbar_qr_create, _zbar_qr_decode, _zbar_qr_found_line, _zbar_qr_reset,
+            qr_finder_lines,
         },
         rs::rs_gf256,
         IsaacCtx,
@@ -165,7 +165,7 @@ pub struct zbar_image_scanner_t {
     /// associated symbol decoder
     dcode: Option<zbar_decoder_t>,
     /// QR Code 2D reader
-    qr: *mut qr_reader,
+    qr: Option<qr_reader>,
     /// SQ Code 2D reader
     sq: Option<SqReader>,
 
@@ -242,11 +242,6 @@ impl zbar_image_scanner_t {
     }
 
     #[inline]
-    pub(crate) fn qr_reader_mut(&mut self) -> Option<&mut qr_reader> {
-        unsafe { self.qr.as_mut() }
-    }
-
-    #[inline]
     pub(crate) fn set_scanner(&mut self, scn: *mut zbar_scanner_t) {
         self.scn = scn;
     }
@@ -257,7 +252,7 @@ impl zbar_image_scanner_t {
     }
 
     #[inline]
-    pub(crate) fn set_qr_reader(&mut self, qr: *mut qr_reader) {
+    pub(crate) fn set_qr_reader(&mut self, qr: Option<qr_reader>) {
         self.qr = qr;
     }
 
@@ -561,7 +556,9 @@ pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanne
     line.pos[vert as usize] = u as c_int;
     line.pos[(1 - vert) as usize] = qr_fixed(iscn.v, 1) as c_int;
 
-    _zbar_qr_found_line(iscn.qr, vert, line);
+    if let Some(qr) = &mut iscn.qr {
+        _zbar_qr_found_line(qr, vert, line);
+    }
 }
 
 /// Add a symbol to the scanner's symbol set
@@ -661,7 +658,7 @@ pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
         zbar_decoder_set_handler(dcode, Some(symbol_handler));
     }
 
-    iscn_ref.set_qr_reader(_zbar_qr_create());
+    iscn_ref.set_qr_reader(Some(_zbar_qr_create()));
     iscn_ref.set_sq_reader(Some(SqReader::new()));
 
     // Apply default configuration
@@ -720,10 +717,8 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         }
     }
 
-    if let Some(qr) = scanner.qr_reader_mut() {
-        _zbar_qr_destroy(qr);
-        scanner.set_qr_reader(null_mut());
-    }
+    // qr is owned, so it will be dropped automatically when scanner is dropped
+    // No need to call _zbar_qr_destroy
 
     image_scanner_free(iscn);
 }
@@ -913,7 +908,9 @@ pub unsafe fn _zbar_scan_image(
     img: *mut zbar_image_t,
 ) -> *mut zbar_symbol_set_t {
     // Reset QR and SQ decoders
-    _zbar_qr_reset((*iscn).qr);
+    if let Some(qr) = &mut (*iscn).qr {
+        _zbar_qr_reset(qr);
+    }
     if let Some(sq) = &mut (*iscn).sq {
         sq.reset();
     }
@@ -1065,7 +1062,9 @@ pub unsafe fn _zbar_scan_image(
     (*iscn).img = null_mut();
 
     // Decode QR and SQ codes
-    _zbar_qr_decode((*iscn).qr, iscn, img);
+    if let Some(qr) = &mut (*iscn).qr {
+        _zbar_qr_decode(qr, iscn, img);
+    }
 
     _zbar_image_scanner_sq_handler(iscn);
     if let Some(sq) = &mut (*iscn).sq {

@@ -257,24 +257,6 @@ pub struct qr_finder_lines {
     lines: Vec<qr_finder_line>,
 }
 
-#[inline]
-unsafe fn qr_reader_alloc_zeroed() -> *mut qr_reader {
-    // SAFETY: We zero-initialize the memory to match the original C calloc behavior.
-    // While this creates an invalid qr_reader (Vec fields are not valid when zeroed),
-    // the caller MUST immediately call qr_reader_init() which properly initializes
-    // all fields (isaac, gf, and finder_lines) before any use. This is guaranteed by
-    // the only caller _zbar_qr_create().
-    #[allow(invalid_value)]
-    let reader = Box::new(std::mem::zeroed::<qr_reader>());
-    Box::into_raw(reader)
-}
-
-#[inline]
-unsafe fn qr_reader_free(reader: *mut qr_reader) {
-    drop(Box::from_raw(reader));
-}
-
-#[inline]
 unsafe fn qr_alloc_array<T>(count: usize) -> *mut T {
     libc::malloc(count * size_of::<T>()) as *mut T
 }
@@ -335,32 +317,22 @@ impl<T> Drop for TempArray<T> {
     }
 }
 
-/// Initializes a client reader handle.
-pub unsafe fn qr_reader_init(reader: *mut qr_reader) {
-    isaac_init((&mut (*reader).isaac) as *mut _, null(), 0);
-    rs_gf256_init((&mut (*reader).gf) as *mut _, QR_PPOLY);
-    // Initialize the Vecs (calloc zeroes memory, which creates invalid Vecs)
-    std::ptr::write(&mut (*reader).finder_lines[0], qr_finder_lines::default());
-    std::ptr::write(&mut (*reader).finder_lines[1], qr_finder_lines::default());
-}
-
 /// Allocates a client reader handle.
-pub unsafe fn _zbar_qr_create() -> *mut qr_reader {
-    let reader = qr_reader_alloc_zeroed();
-    qr_reader_init(reader);
+pub unsafe fn _zbar_qr_create() -> qr_reader {
+    let mut reader = qr_reader {
+        gf: std::mem::zeroed(),
+        isaac: std::mem::zeroed(),
+        finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
+    };
+    isaac_init((&mut reader.isaac) as *mut _, null(), 0);
+    rs_gf256_init((&mut reader.gf) as *mut _, QR_PPOLY);
     reader
 }
 
-/// Frees a client reader handle.
-pub unsafe fn _zbar_qr_destroy(reader: *mut qr_reader) {
-    // Box::from_raw will automatically drop all fields (including Vecs)
-    qr_reader_free(reader);
-}
-
 /// reset finder state between scans
-pub unsafe fn _zbar_qr_reset(reader: *mut qr_reader) {
-    (*reader).finder_lines[0].lines.clear();
-    (*reader).finder_lines[1].lines.clear();
+pub unsafe fn _zbar_qr_reset(reader: &mut qr_reader) {
+    reader.finder_lines[0].lines.clear();
+    reader.finder_lines[1].lines.clear();
 }
 
 /// A cluster of lines crossing a finder pattern (all in the same direction).
@@ -1975,13 +1947,13 @@ pub unsafe fn qr_finder_find_crossings(
 pub unsafe fn qr_finder_centers_locate(
     _centers: *mut *mut qr_finder_center,
     _edge_pts: *mut *mut qr_finder_edge_pt,
-    reader: *mut qr_reader,
+    reader: &mut qr_reader,
     _width: c_int,
     _height: c_int,
 ) -> c_int {
     *_centers = null_mut();
     *_edge_pts = null_mut();
-    let hlines_vec = &(*reader).finder_lines[0].lines;
+    let hlines_vec = &reader.finder_lines[0].lines;
     let hlines = if hlines_vec.is_empty() {
         null_mut()
     } else {
@@ -1989,7 +1961,7 @@ pub unsafe fn qr_finder_centers_locate(
     };
     let nhlines = hlines_vec.len() as c_int;
 
-    let vlines_vec = &(*reader).finder_lines[1].lines;
+    let vlines_vec = &reader.finder_lines[1].lines;
     let vlines = if vlines_vec.is_empty() {
         null_mut()
     } else {
@@ -2015,7 +1987,7 @@ pub unsafe fn qr_finder_centers_locate(
     // coordinate, for clustering purposes.
     // We scan the image in the opposite order, so sort the lines we found here.
     if nvlines > 1 {
-        (*reader).finder_lines[1].lines.sort_by(|a, b| {
+        reader.finder_lines[1].lines.sort_by(|a, b| {
             a.pos[0]
                 .cmp(&b.pos[0])
                 .then_with(|| a.pos[1].cmp(&b.pos[1]))
@@ -4840,11 +4812,11 @@ pub unsafe fn qr_reader_try_configuration(
 
 /// Add a found finder line to the reader's line list
 pub unsafe fn _zbar_qr_found_line(
-    reader: *mut qr_reader,
+    reader: &mut qr_reader,
     dir: c_int,
     line: *const qr_finder_line,
 ) -> c_int {
-    let lines = &mut (*reader).finder_lines[dir as usize];
+    let lines = &mut reader.finder_lines[dir as usize];
     lines.lines.push(*line);
     0
 }
@@ -4993,7 +4965,7 @@ pub unsafe fn qr_reader_match_centers(
 
 /// Decode QR codes from an image
 pub unsafe fn _zbar_qr_decode(
-    reader: *mut qr_reader,
+    reader: &mut qr_reader,
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) -> c_int {
@@ -5001,7 +4973,7 @@ pub unsafe fn _zbar_qr_decode(
     let mut edge_pts: *mut qr_finder_edge_pt = null_mut();
     let mut centers: *mut qr_finder_center = null_mut();
 
-    if (*reader).finder_lines[0].lines.len() < 9 || (*reader).finder_lines[1].lines.len() < 9 {
+    if reader.finder_lines[0].lines.len() < 9 || reader.finder_lines[1].lines.len() < 9 {
         return 0;
     }
 
