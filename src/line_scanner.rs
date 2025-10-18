@@ -148,6 +148,16 @@ pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scann
     Box::into_raw(scn)
 }
 
+/// Create a new scanner instance (owned version)
+///
+/// Initializes a new scanner with the specified decoder.
+pub fn zbar_scanner_new(dcode: *mut zbar_decoder_t) -> zbar_scanner_t {
+    let mut scn = zbar_scanner_t::default();
+    scn.set_decoder(dcode);
+    scn.y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
+    scn
+}
+
 /// Process an edge and pass the width to the decoder
 ///
 /// This function is called when an edge (transition) is detected.

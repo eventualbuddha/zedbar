@@ -17,7 +17,7 @@ use crate::{
     image_ffi::zbar_image_t,
     line_scanner::{
         scan_y, scanner_flush, scanner_get_edge, scanner_get_width, scanner_new_scan,
-        zbar_scanner_create, zbar_scanner_destroy, zbar_scanner_t,
+        zbar_scanner_new, zbar_scanner_t,
     },
     qrcode::{
         qr_point,
@@ -160,7 +160,7 @@ pub struct recycle_bucket_t {
 #[allow(non_camel_case_types)]
 pub struct zbar_image_scanner_t {
     /// associated linear intensity scanner
-    scn: *mut zbar_scanner_t,
+    scn: Option<zbar_scanner_t>,
 
     /// associated symbol decoder
     dcode: Option<zbar_decoder_t>,
@@ -223,12 +223,12 @@ impl zbar_image_scanner_t {
 
     #[inline]
     pub(crate) fn scanner(&self) -> Option<&zbar_scanner_t> {
-        unsafe { self.scn.as_ref() }
+        self.scn.as_ref()
     }
 
     #[inline]
     pub(crate) fn scanner_mut(&mut self) -> Option<&mut zbar_scanner_t> {
-        unsafe { self.scn.as_mut() }
+        self.scn.as_mut()
     }
 
     #[inline]
@@ -242,7 +242,7 @@ impl zbar_image_scanner_t {
     }
 
     #[inline]
-    pub(crate) fn set_scanner(&mut self, scn: *mut zbar_scanner_t) {
+    pub(crate) fn set_scanner(&mut self, scn: Option<zbar_scanner_t>) {
         self.scn = scn;
     }
 
@@ -436,7 +436,9 @@ pub unsafe fn _zbar_image_scanner_quiet_border(iscn: *mut zbar_image_scanner_t) 
         return;
     }
     let iscn = &mut *iscn;
-    let scn = &mut *iscn.scn;
+    let Some(scn) = iscn.scn.as_mut() else {
+        return;
+    };
 
     // Flush scanner pipeline twice
     scanner_flush(scn);
@@ -538,7 +540,9 @@ pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanne
     };
     let line = decoder_get_qr_finder_line(dcode);
 
-    let scn = &*iscn.scn;
+    let Some(scn) = iscn.scn.as_ref() else {
+        return;
+    };
     let mut u = scanner_get_edge(scn, line.pos[0] as c_uint, QR_FINDER_SUBPREC);
     line.boffs =
         (u as c_int) - scanner_get_edge(scn, line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
@@ -644,9 +648,10 @@ pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
     let iscn_ref = &mut *iscn;
     iscn_ref.set_decoder(Some(decoder));
 
-    // Get a pointer to the decoder for the scanner (scanner needs a raw pointer)
+    // Get a pointer to the decoder for the scanner
     let dcode_ptr = iscn_ref.dcode.as_mut().unwrap() as *mut zbar_decoder_t;
-    iscn_ref.set_scanner(zbar_scanner_create(dcode_ptr as *mut _));
+    let scanner = zbar_scanner_new(dcode_ptr as *mut _);
+    iscn_ref.set_scanner(Some(scanner));
 
     if iscn_ref.decoder().is_none() || iscn_ref.scanner().is_none() {
         zbar_image_scanner_destroy(iscn);
@@ -701,10 +706,7 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         }
     }
 
-    if let Some(scn) = scanner.scanner_mut() {
-        zbar_scanner_destroy(scn);
-        scanner.set_scanner(null_mut());
-    }
+    // Scanner is now owned and will be dropped automatically
 
     // Free recycled symbols
     for i in 0..RECYCLE_BUCKETS {
@@ -939,7 +941,9 @@ pub unsafe fn _zbar_scan_image(
     let h = (*img).height;
     let data = (*img).data.as_ptr();
 
-    let scn = &mut *(*iscn).scn;
+    let Some(scn) = (*iscn).scn.as_mut() else {
+        return null_mut();
+    };
     scanner_new_scan(scn);
 
     // Horizontal scanning pass
