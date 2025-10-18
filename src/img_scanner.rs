@@ -174,8 +174,6 @@ pub struct zbar_image_scanner_t {
     /// user result callback
     handler: Option<zbar_image_data_handler_t>,
 
-    /// currently scanning image *root*
-    img: *mut zbar_image_t,
     /// current scan direction
     dx: c_int,
     dy: c_int,
@@ -224,11 +222,6 @@ impl zbar_image_scanner_t {
     #[inline]
     pub(crate) fn scanner(&self) -> Option<&zbar_scanner_t> {
         self.scn.as_ref()
-    }
-
-    #[inline]
-    pub(crate) fn scanner_mut(&mut self) -> Option<&mut zbar_scanner_t> {
-        self.scn.as_mut()
     }
 
     #[inline]
@@ -923,7 +916,6 @@ pub unsafe fn _zbar_scan_image(
     {
         return null_mut();
     }
-    (*iscn).img = img;
 
     // Recycle previous scanner and image results
     let scanner = &mut *iscn;
@@ -1063,7 +1055,6 @@ pub unsafe fn _zbar_scan_image(
         }
     }
     (*iscn).dy = 0;
-    (*iscn).img = null_mut();
 
     // Decode QR and SQ codes
     if let Some(qr) = &mut (*iscn).qr {
