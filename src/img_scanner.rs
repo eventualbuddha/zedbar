@@ -28,10 +28,7 @@ use crate::{
         rs::rs_gf256,
         IsaacCtx,
     },
-    sqcode::{
-        SqReader, _zbar_sq_create, _zbar_sq_decode, _zbar_sq_destroy, _zbar_sq_new_config,
-        _zbar_sq_reset,
-    },
+    sqcode::{SqReader, _zbar_sq_decode},
     symbol::{
         _zbar_get_symbol_hash, _zbar_symbol_add_point, symbol_alloc_zeroed, symbol_clear_data,
         symbol_free, symbol_refcnt, symbol_reserve_data, symbol_set_create, symbol_set_free,
@@ -170,7 +167,7 @@ pub struct zbar_image_scanner_t {
     /// QR Code 2D reader
     qr: *mut qr_reader,
     /// SQ Code 2D reader
-    sq: *mut SqReader,
+    sq: Option<SqReader>,
 
     /// application data
     userdata: *const c_void,
@@ -223,7 +220,7 @@ impl zbar_image_scanner_t {
     }
 
     // Accessor methods for pointer fields
-    
+
     #[inline]
     pub(crate) fn scanner(&self) -> Option<&zbar_scanner_t> {
         unsafe { self.scn.as_ref() }
@@ -245,23 +242,8 @@ impl zbar_image_scanner_t {
     }
 
     #[inline]
-    pub(crate) fn qr_reader(&self) -> Option<&qr_reader> {
-        unsafe { self.qr.as_ref() }
-    }
-
-    #[inline]
     pub(crate) fn qr_reader_mut(&mut self) -> Option<&mut qr_reader> {
         unsafe { self.qr.as_mut() }
-    }
-
-    #[inline]
-    pub(crate) fn sq_reader(&self) -> Option<&SqReader> {
-        unsafe { self.sq.as_ref() }
-    }
-
-    #[inline]
-    pub(crate) fn sq_reader_mut(&mut self) -> Option<&mut SqReader> {
-        unsafe { self.sq.as_mut() }
     }
 
     #[inline]
@@ -280,7 +262,7 @@ impl zbar_image_scanner_t {
     }
 
     #[inline]
-    pub(crate) fn set_sq_reader(&mut self, sq: *mut SqReader) {
+    pub(crate) fn set_sq_reader(&mut self, sq: Option<SqReader>) {
         self.sq = sq;
     }
 }
@@ -392,7 +374,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
         return;
     }
     let iscn = &mut *iscn;
-    
+
     while !sym.is_null() {
         let next = (*sym).next;
 
@@ -489,7 +471,7 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
         return null_mut();
     }
     let iscn = &mut *iscn;
-    
+
     // Recycle old or alloc new symbol
     let mut sym: *mut zbar_symbol_t = null_mut();
 
@@ -559,13 +541,10 @@ pub(crate) unsafe fn _zbar_image_scanner_qr_handler(iscn: *mut zbar_image_scanne
 
     let scn = &*iscn.scn;
     let mut u = scanner_get_edge(scn, line.pos[0] as c_uint, QR_FINDER_SUBPREC);
-    line.boffs = (u as c_int)
-        - scanner_get_edge(scn, line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
-    line.len =
-        scanner_get_edge(scn, line.len as c_uint, QR_FINDER_SUBPREC) as c_int;
-    line.eoffs = scanner_get_edge(scn, line.eoffs as c_uint, QR_FINDER_SUBPREC)
-        as c_int
-        - line.len;
+    line.boffs =
+        (u as c_int) - scanner_get_edge(scn, line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
+    line.len = scanner_get_edge(scn, line.len as c_uint, QR_FINDER_SUBPREC) as c_int;
+    line.eoffs = scanner_get_edge(scn, line.eoffs as c_uint, QR_FINDER_SUBPREC) as c_int - line.len;
     line.len -= u as c_int;
 
     u = (qr_fixed(iscn.umin, 0) as i64 + (iscn.du as i64) * (u as i64)) as c_uint;
@@ -624,9 +603,11 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
 /// `iscn` must be a valid pointer to a zbar_image_scanner_t
 pub(crate) unsafe fn _zbar_image_scanner_sq_handler(iscn: *mut zbar_image_scanner_t) {
     let iscn = &mut *iscn;
-    
+
     let config = decoder_get_sq_finder_config(&*iscn.dcode);
-    _zbar_sq_new_config(iscn.sq, config);
+    if let Some(sq) = &mut iscn.sq {
+        sq.set_enabled(config != 0);
+    }
 }
 
 #[inline]
@@ -672,7 +653,7 @@ pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
     }
 
     iscn_ref.set_qr_reader(_zbar_qr_create());
-    iscn_ref.set_sq_reader(_zbar_sq_create());
+    iscn_ref.set_sq_reader(Some(SqReader::new()));
 
     // Apply default configuration
     iscn_ref.configs[0] = 1; // ZBAR_CFG_X_DENSITY
@@ -740,10 +721,8 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
         scanner.set_qr_reader(null_mut());
     }
 
-    if let Some(sq) = scanner.sq_reader_mut() {
-        _zbar_sq_destroy(sq);
-        scanner.set_sq_reader(null_mut());
-    }
+    // sq is owned, so it will be dropped automatically when scanner is dropped
+    // No need to call _zbar_sq_destroy
 
     image_scanner_free(iscn);
 }
@@ -859,7 +838,7 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
     val: c_int,
 ) -> c_int {
     let iscn_ref = &mut *iscn;
-    
+
     // Handle EAN composite configuration
     if (sym == 0 || sym == ZBAR_COMPOSITE) && cfg == ZBAR_CFG_ENABLE {
         iscn_ref.ean_config = if val != 0 { 1 } else { 0 };
@@ -934,7 +913,9 @@ pub unsafe fn _zbar_scan_image(
 ) -> *mut zbar_symbol_set_t {
     // Reset QR and SQ decoders
     _zbar_qr_reset((*iscn).qr);
-    _zbar_sq_reset((*iscn).sq);
+    if let Some(sq) = &mut (*iscn).sq {
+        sq.reset();
+    }
 
     // Image must be in grayscale format
     if (*img).format != fourcc(b'Y', b'8', b'0', b'0')
@@ -1086,7 +1067,9 @@ pub unsafe fn _zbar_scan_image(
     _zbar_qr_decode((*iscn).qr, iscn, img);
 
     _zbar_image_scanner_sq_handler(iscn);
-    _zbar_sq_decode((*iscn).sq, iscn, img);
+    if let Some(sq) = &mut (*iscn).sq {
+        _zbar_sq_decode(sq, iscn, img);
+    }
 
     // Filter and merge EAN composite results
     let filter = density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1;

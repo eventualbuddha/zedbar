@@ -17,7 +17,7 @@ use crate::{
     image_ffi::zbar_image_t,
     img_scanner::{qr_reader, zbar_image_scanner_t},
     qrcode::{
-        binarize::qr_binarize,
+        binarize::binarize,
         qrdectxt::qr_code_data_list_extract_text,
         util::{qr_ihypot, qr_ilog, qr_isqrt},
     },
@@ -5008,11 +5008,7 @@ pub unsafe fn _zbar_qr_decode(
     let ncenters = qr_finder_centers_locate(&mut centers, &mut edge_pts, reader, 0, 0);
 
     if ncenters >= 3 {
-        let bin = qr_binarize(
-            (*img).data.as_ptr(),
-            (*img).width as c_int,
-            (*img).height as c_int,
-        );
+        let bin = binarize(&(*img).data, (*img).width as usize, (*img).height as usize);
 
         let mut qrlist: qr_code_data_list = std::mem::zeroed();
         qr_code_data_list_init(&mut qrlist);
@@ -5022,7 +5018,7 @@ pub unsafe fn _zbar_qr_decode(
             &mut qrlist,
             centers,
             ncenters,
-            bin,
+            bin.as_ptr(),
             (*img).width as c_int,
             (*img).height as c_int,
         );
@@ -5034,7 +5030,6 @@ pub unsafe fn _zbar_qr_decode(
         };
 
         qr_code_data_list_clear(&mut qrlist);
-        qr_free_bytes(bin);
     } else {
         nqrdata = 0;
     }

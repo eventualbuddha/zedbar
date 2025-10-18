@@ -110,12 +110,12 @@ pub fn find_qr(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     let w3 = get_width(dcode, 3);
     let w4 = get_width(dcode, 4);
     let w5 = get_width(dcode, 5);
-    
+
     let eoffs = (qz + w1.div_ceil(2)) as i32;
     let len = (qz + w1 + w2) as i32;
     let pos = (len + w3 as i32) as i32;
     let boffs = (pos + w4 as i32 + w5.div_ceil(2) as i32) as i32;
-    
+
     // Now update the line structure
     dcode.qrf.line.eoffs = eoffs;
     dcode.qrf.line.len = len;
@@ -127,20 +127,4 @@ pub fn find_qr(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.set_buffer_len(0);
 
     ZBAR_QRCODE
-}
-
-// ============================================================================
-// Unsafe FFI wrappers (for C compatibility - to be removed)
-// ============================================================================
-
-pub unsafe fn _zbar_decoder_get_sq_finder_config(dcode: *mut zbar_decoder_t) -> c_uint {
-    decoder_get_sq_finder_config(&*dcode)
-}
-
-pub unsafe fn _zbar_decoder_get_qr_finder_line(dcode: *mut zbar_decoder_t) -> *mut qr_finder_line {
-    decoder_get_qr_finder_line(&mut *dcode)
-}
-
-pub unsafe fn _zbar_find_qr(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    find_qr(&mut *dcode)
 }

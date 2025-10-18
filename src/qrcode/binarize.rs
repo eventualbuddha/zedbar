@@ -27,13 +27,12 @@ use std::cmp::{max, min};
 /// # Returns
 /// A binary mask where 0xFF represents foreground (black) and 0x00 represents background (white).
 /// Returns an empty vector if width or height is <= 0.
-pub fn binarize(img: &[u8], width: i32, height: i32) -> Vec<u8> {
-    if width <= 0 || height <= 0 {
+pub fn binarize(img: &[u8], width: usize, height: usize) -> Vec<u8> {
+    // Handle empty images
+    if width == 0 || height == 0 {
         return Vec::new();
     }
-
-    let width = width as usize;
-    let height = height as usize;
+    
     let mut mask = vec![0u8; width * height];
 
     // Determine window size (power of 2, between 16 and 256)
@@ -112,31 +111,6 @@ pub fn binarize(img: &[u8], width: i32, height: i32) -> Vec<u8> {
     mask
 }
 
-// C FFI exports
-
-/// C FFI wrapper for qr_binarize
-///
-/// # Safety
-///
-/// - `img` must point to a valid buffer of at least `width * height` bytes
-/// - The returned pointer must be freed by the caller using `free()`
-/// - Returns NULL if width or height is <= 0
-pub unsafe fn qr_binarize(img: *const u8, width: i32, height: i32) -> *mut u8 {
-    if img.is_null() || width <= 0 || height <= 0 {
-        return std::ptr::null_mut();
-    }
-
-    let img_slice = std::slice::from_raw_parts(img, (width * height) as usize);
-    let mask = binarize(img_slice, width, height);
-
-    // Allocate C-compatible memory and copy the result
-    let ptr = libc::malloc((width * height) as usize) as *mut u8;
-    if !ptr.is_null() {
-        std::ptr::copy_nonoverlapping(mask.as_ptr(), ptr, mask.len());
-    }
-    ptr
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,9 +119,6 @@ mod tests {
     fn test_binarize_empty() {
         let img = vec![0u8; 0];
         let mask = binarize(&img, 0, 0);
-        assert_eq!(mask.len(), 0);
-
-        let mask = binarize(&img, -1, -1);
         assert_eq!(mask.len(), 0);
     }
 
@@ -177,7 +148,7 @@ mod tests {
             }
         }
 
-        let mask = binarize(&img, width as i32, height as i32);
+        let mask = binarize(&img, width, height);
         assert_eq!(mask.len(), width * height);
 
         // The black square should be detected as foreground (0xFF)
@@ -198,7 +169,7 @@ mod tests {
             }
         }
 
-        let mask = binarize(&img, width as i32, height as i32);
+        let mask = binarize(&img, width, height);
         assert_eq!(mask.len(), width * height);
 
         // Left side (dark) should be foreground, right side (light) should be background
@@ -212,29 +183,5 @@ mod tests {
         let img = vec![0, 255, 255, 0]; // 2x2 checkerboard
         let mask = binarize(&img, 2, 2);
         assert_eq!(mask.len(), 4);
-    }
-
-    #[test]
-    fn test_qr_binarize_c_ffi() {
-        unsafe {
-            // Test NULL pointer
-            let result = qr_binarize(std::ptr::null(), 10, 10);
-            assert!(result.is_null());
-
-            // Test zero dimensions
-            let img = [128u8; 100];
-            let result = qr_binarize(img.as_ptr(), 0, 10);
-            assert!(result.is_null());
-
-            // Test valid input
-            let img = [128u8; 100];
-            let result = qr_binarize(img.as_ptr(), 10, 10);
-            assert!(!result.is_null());
-
-            // Verify the result and free it
-            let mask_slice = std::slice::from_raw_parts(result, 100);
-            assert_eq!(mask_slice.len(), 100);
-            libc::free(result as *mut libc::c_void);
-        }
     }
 }

@@ -805,11 +805,6 @@ impl zbar_decoder_t {
     }
 
     #[inline]
-    pub(crate) fn buffer_len(&self) -> c_uint {
-        self.buffer.len() as c_uint
-    }
-
-    #[inline]
     pub(crate) fn set_buffer_len(&mut self, len: c_uint) {
         debug_assert!(len <= self.buffer_capacity());
         let len = len as usize;

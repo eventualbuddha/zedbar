@@ -48,6 +48,19 @@ struct Dot {
 pub struct SqReader {
     enabled: bool,
 }
+impl SqReader {
+    pub(crate) fn new() -> Self {
+        Self { enabled: true }
+    }
+
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.enabled = true
+    }
+}
 
 const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -327,11 +340,10 @@ unsafe fn find_bottom_dot(
 /// - `iscn` points to a valid `zbar_image_scanner_t` instance
 /// - `img` points to a valid `zbar_image_t` with properly initialized image data
 pub unsafe fn sq_decode(
-    reader: *mut SqReader,
+    reader: &mut SqReader,
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) -> c_int {
-    let reader = &*reader;
     if !reader.enabled {
         return 0;
     }
@@ -657,32 +669,6 @@ pub unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
     }
 }
 
-/// Resets an SQCode reader to its initial state
-///
-/// # Safety
-///
-/// The `reader` pointer must be valid and point to an initialized `SqReader`.
-pub unsafe fn _zbar_sq_reset(reader: *mut SqReader) {
-    if !reader.is_null() {
-        let reader = &mut *reader;
-        reader.enabled = true;
-    }
-}
-
-/// Configures an SQCode reader
-///
-/// # Safety
-///
-/// The `reader` pointer must be valid and point to an initialized `SqReader`.
-pub unsafe fn _zbar_sq_new_config(reader: *mut SqReader, config: c_uint) -> c_int {
-    if reader.is_null() {
-        return -1;
-    }
-    let reader = &mut *reader;
-    reader.enabled = config != 0;
-    0
-}
-
 /// Decodes an SQCode from an image
 ///
 /// # Safety
@@ -692,7 +678,7 @@ pub unsafe fn _zbar_sq_new_config(reader: *mut SqReader, config: c_uint) -> c_in
 /// - `iscn` must point to a valid `zbar_image_scanner_t`
 /// - `img` must point to a valid `zbar_image_t` with initialized image data
 pub unsafe fn _zbar_sq_decode(
-    reader: *mut SqReader,
+    reader: &mut SqReader,
     iscn: *mut zbar_image_scanner_t,
     img: *mut zbar_image_t,
 ) -> c_int {
