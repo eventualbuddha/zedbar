@@ -540,4 +540,40 @@ mod tests {
             println!("Decoded I25: {}", symbol.data_string().unwrap_or(""));
         }
     }
+
+    #[test]
+    fn test_pixel_wifi_qr_decode() {
+        // Test for pixel-wifi-sharing-qr-code.png
+        // This is a QR code that previously caused an overflow in the sqcode decoder
+        let img = ::image::ImageReader::open("examples/pixel-wifi-sharing-qr-code.png")
+            .expect("Failed to open pixel-wifi-sharing-qr-code.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(
+            num_symbols > 0,
+            "Expected to find at least one QR code in pixel-wifi-sharing-qr-code.png"
+        );
+
+        let symbols = zbar_img.symbols();
+        for symbol in symbols {
+            assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
+            let data = symbol.data_string().unwrap_or("");
+            println!("Decoded pixel WiFi QR: {} bytes", data.len());
+            assert!(!data.is_empty(), "QR code data should not be empty");
+        }
+    }
 }

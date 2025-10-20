@@ -252,9 +252,9 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
     // Calculate weighted center for dot
     let img_ref = &*img;
     let data = img_ref.data.as_ptr();
-    let mut x_sum = 0u32;
-    let mut y_sum = 0u32;
-    let mut total_weight = 0u32;
+    let mut x_sum = 0u64;
+    let mut y_sum = 0u64;
+    let mut total_weight = 0u64;
 
     for y in y0..(y0 + height) {
         for x in x0..(x0 + width) {
@@ -262,9 +262,9 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
                 continue;
             }
             let idx = y as usize * img_ref.width as usize + x as usize;
-            let weight = (0xff - *data.add(idx)) as u32;
-            x_sum += weight * x;
-            y_sum += weight * y;
+            let weight = (0xff - *data.add(idx)) as u64;
+            x_sum += weight * x as u64;
+            y_sum += weight * y as u64;
             total_weight += weight;
         }
     }
