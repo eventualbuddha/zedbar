@@ -568,12 +568,99 @@ mod tests {
             "Expected to find at least one QR code in pixel-wifi-sharing-qr-code.png"
         );
 
-        let symbols = zbar_img.symbols();
-        for symbol in symbols {
-            assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
-            let data = symbol.data_string().unwrap_or("");
-            println!("Decoded pixel WiFi QR: {} bytes", data.len());
-            assert!(!data.is_empty(), "QR code data should not be empty");
-        }
+        let symbol = zbar_img.symbols().into_iter().next().unwrap();
+        assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
+        let data = symbol.data_string().unwrap_or("");
+        assert_eq!(data, "WIFI:S:Not a real network;T:SAE;P:password;H:false;;");
+    }
+
+    #[test]
+    fn test_qr_code_capstone_interference() {
+        let img = ::image::ImageReader::open("examples/qr-code-capstone-interference.png")
+            .expect("Failed to open image")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        let mut zbar_img =
+            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one QR code");
+
+        let symbol = zbar_img.symbols().into_iter().next().unwrap();
+        assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
+        let data = symbol.data_string().unwrap_or("");
+        assert_eq!(
+            data,
+            "http://txz.qq.com/p?k=T8sZMvS*JxhU0kQFseMOMQZAKuE7An3u&f=716027609"
+        );
+    }
+
+    #[test]
+    #[ignore = "QR decoder cannot decode low-contrast color QR codes - finder patterns detected but data extraction fails"]
+    fn test_qr_code_color_bands() {
+        // This QR code has colored bands that result in very low contrast when converted to grayscale
+        // (grayscale range 145-255 instead of 0-255). The C zbar library can decode it, but the Rust
+        // port's QR decoder fails during data extraction even though it successfully:
+        // - Detects finder patterns (180 horizontal, 191 vertical lines)
+        // - Locates the 3 finder centers
+        // - Applies histogram stretching to improve contrast
+        // The issue appears to be in qr_reader_match_centers or subsequent data decoding functions.
+        let img = ::image::ImageReader::open("examples/qr-code-color-bands.png")
+            .expect("Failed to open image")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let data = gray.as_raw();
+
+        // Apply histogram stretching for low-contrast images
+        // Find min/max values
+        let min_val = *data.iter().min().unwrap_or(&0);
+        let max_val = *data.iter().max().unwrap_or(&255);
+        
+        let normalized = if max_val > min_val {
+            // Stretch the histogram to full 0-255 range
+            data.iter()
+                .map(|&pixel| {
+                    let stretched = ((pixel as u16 - min_val as u16) * 255) / (max_val as u16 - min_val as u16);
+                    stretched as u8
+                })
+                .collect::<Vec<u8>>()
+        } else {
+            data.to_vec()
+        };
+
+        let mut zbar_img =
+            Image::from_gray(&normalized, width, height).expect("Failed to create ZBar image");
+
+        let mut scanner = Scanner::new();
+        scanner
+            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
+            .expect("Failed to configure scanner");
+
+        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        assert!(num_symbols > 0, "Expected to find at least one QR code");
+
+        let symbol = zbar_img.symbols().into_iter().next().unwrap();
+        assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
+        let data = symbol.data_string().unwrap_or("");
+        assert_eq!(
+            data,
+            "二维码生成器
+https://zh.qr-code-generator.com
+打印出来的二维码至少要2厘米宽，确保用任何设备或应用都可以成功扫描。 ... 通过三个简单步骤，就能使用二维码生成器在几秒钟内创建一个二维码。首先，选择二维码的 ..."
+        );
     }
 }
+
