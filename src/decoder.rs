@@ -127,7 +127,7 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
     if dcode.is_null() {
         return ZBAR_NONE;
     }
-    
+
     let dcode_ref = &mut *dcode;
     let mut sym = 0; // ZBAR_NONE
 
@@ -291,7 +291,7 @@ fn decoder_set_config_bool(
         Some(c) => c,
         None => return 1,
     };
-    
+
     if cfg >= ZBAR_CFG_NUM {
         return 1;
     }
@@ -366,7 +366,7 @@ pub unsafe fn zbar_decoder_get_config(
     if dcode.is_null() || val.is_null() {
         return 1;
     }
-    
+
     let dcode = &*dcode;
     let config = match decoder_get_config(dcode, sym) {
         Some(c) => c,
@@ -410,9 +410,9 @@ pub unsafe fn zbar_decoder_set_config(
     if dcode.is_null() {
         return 1;
     }
-    
+
     let dcode = &mut *dcode;
-    
+
     // If ZBAR_NONE, set config for all symbologies
     if sym == ZBAR_NONE {
         const ALL: [zbar_symbol_type_t; 17] = [

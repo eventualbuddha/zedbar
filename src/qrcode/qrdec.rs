@@ -11,6 +11,7 @@ use std::{
 };
 
 use libc::{c_int, c_uchar, c_uint, memcpy, memset, size_t};
+use reed_solomon::Decoder as RSDecoder;
 
 use crate::{
     decoder_types::qr_finder_line,
@@ -27,7 +28,6 @@ use super::{
     bch15_5::bch15_5_correct,
     isaac::{isaac_next_uint, IsaacCtx},
     isaac_init,
-    rs::{rs_correct, rs_gf256, rs_gf256_init, QR_PPOLY},
 };
 
 /// A line in QR code coordinate space: [A, B, C] for equation Ax + By + C = 0
@@ -320,12 +320,10 @@ impl<T> Drop for TempArray<T> {
 /// Allocates a client reader handle.
 pub unsafe fn _zbar_qr_create() -> qr_reader {
     let mut reader = qr_reader {
-        gf: std::mem::zeroed(),
         isaac: std::mem::zeroed(),
         finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
     };
     isaac_init((&mut reader.isaac) as *mut _, null(), 0);
-    rs_gf256_init(&mut reader.gf, QR_PPOLY);
     reader
 }
 
@@ -3605,7 +3603,6 @@ pub unsafe fn qr_code_data_parse(
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn qr_code_decode(
     _qrdata: *mut qr_code_data,
-    _gf: &rs_gf256,
     _ul_pos: *const qr_point,
     _ur_pos: *const qr_point,
     _dl_pos: *const qr_point,
@@ -3668,22 +3665,45 @@ pub unsafe fn qr_code_decode(
     qr_free_array(blocks);
     qr_free_array(data_bits);
 
-    // Perform the error correction
+    // Perform the error correction using reed-solomon crate
     let mut ndata = 0;
     let mut ncodewords_processed = 0;
     let mut ret = 0;
 
     for i in 0..nblocks {
         let block_szi = block_sz + (i >= nshort_blocks) as c_int;
-        ret = rs_correct(
-            _gf,
-            0, // QR_M0
+
+        // Use reed-solomon crate for error correction
+        // QR codes always use m0=0, so we can use the crate directly
+        let block_slice = std::slice::from_raw_parts_mut(
             block_data.add(ncodewords_processed as usize),
-            block_szi,
-            npar,
-            null(),
-            0,
+            block_szi as usize,
         );
+
+        // Save original for error counting
+        let original = block_slice.to_vec();
+
+        let decoder = RSDecoder::new(npar as usize);
+        ret = match decoder.correct(&original, None) {
+            Ok(corrected) => {
+                // Copy corrected data back
+                let corrected_data = corrected.to_vec();
+                block_slice.copy_from_slice(&corrected_data);
+                // Count errors by comparing original with corrected
+                let mut error_count = 0;
+                for j in 0..block_szi as usize {
+                    if original[j] != corrected_data[j] {
+                        error_count += 1;
+                    }
+                }
+                if error_count > 0 {
+                    error_count
+                } else {
+                    0
+                }
+            }
+            Err(_) => -1, // Correction failed
+        };
 
         // For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
         // to use all the parity bytes for correction.
@@ -4737,7 +4757,6 @@ pub unsafe fn qr_reader_try_configuration(
         if fmt_info < 0
             || qr_code_decode(
                 _qrdata,
-                &(*_reader).gf,
                 &(*ul.c).pos,
                 &(*ur.c).pos,
                 &(*dl.c).pos,
@@ -4789,7 +4808,6 @@ pub unsafe fn qr_reader_try_configuration(
 
             if qr_code_decode(
                 _qrdata,
-                &(*_reader).gf,
                 &(*ul.c).pos,
                 &(*dl.c).pos,
                 &(*ur.c).pos,

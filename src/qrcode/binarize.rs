@@ -32,7 +32,7 @@ pub fn binarize(img: &[u8], width: usize, height: usize) -> Vec<u8> {
     if width == 0 || height == 0 {
         return Vec::new();
     }
-    
+
     let mut mask = vec![0u8; width * height];
 
     // Determine window size (power of 2, between 16 and 256)

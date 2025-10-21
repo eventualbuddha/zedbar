@@ -178,7 +178,7 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
         return;
     }
     let sym = &mut *sym;
-    
+
     if refcnt(&mut sym.refcnt, delta) == 0 && delta <= 0 {
         symbol_free(sym as *mut _);
     }
@@ -216,7 +216,7 @@ pub unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
         return;
     }
     let sym = &mut *sym;
-    
+
     if !sym.data.is_null() {
         libc::free(sym.data as *mut c_void);
     }
@@ -232,7 +232,7 @@ pub unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> b
         return false;
     }
     let sym = &mut *sym;
-    
+
     if capacity == 0 {
         symbol_clear_data(sym as *mut _);
         return true;
@@ -258,7 +258,7 @@ pub unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> b
         return false;
     }
     let sym = &mut *sym;
-    
+
     if capacity == 0 {
         if !sym.pts.is_null() {
             libc::free(sym.pts);
@@ -306,7 +306,7 @@ pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
         return;
     }
     let syms_ref = &mut *syms;
-    
+
     if refcnt(&mut syms_ref.refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms);
     }
@@ -320,7 +320,7 @@ pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int
         return;
     }
     let sym = &mut *sym;
-    
+
     let i = sym.npts as usize;
     sym.npts += 1;
 

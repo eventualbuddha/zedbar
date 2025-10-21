@@ -213,7 +213,7 @@ pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
 /// Start a new scan
 pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     let mut edge = ZBAR_NONE;
-    
+
     while scn.y1_sign != 0 {
         let tmp = scanner_flush(scn);
         if tmp < 0 || tmp > edge {
@@ -276,11 +276,7 @@ pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
     // 2nd zero-crossing is 1st local min/max - could be edge
     if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (calc_thresh(scn) <= y1_1.unsigned_abs()) {
         // check for 1st sign change
-        let y1_rev = if scn.y1_sign > 0 {
-            y1_1 < 0
-        } else {
-            y1_1 > 0
-        };
+        let y1_rev = if scn.y1_sign > 0 { y1_1 < 0 } else { y1_1 > 0 };
 
         if y1_rev {
             // intensity change reversal - finalize previous edge
@@ -292,8 +288,7 @@ pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
 
             // adaptive thresholding
             // start at multiple of new min/max
-            scn.y1_thresh =
-                ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
+            scn.y1_thresh = ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
             if scn.y1_thresh < scn.y1_min_thresh {
                 scn.y1_thresh = scn.y1_min_thresh;
             }

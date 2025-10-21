@@ -22,10 +22,8 @@ use crate::{
     qrcode::{
         qr_point,
         qrdec::{
-            _zbar_qr_create, _zbar_qr_decode, _zbar_qr_found_line, _zbar_qr_reset,
-            qr_finder_lines,
+            _zbar_qr_create, _zbar_qr_decode, _zbar_qr_found_line, _zbar_qr_reset, qr_finder_lines,
         },
-        rs::rs_gf256,
         IsaacCtx,
     },
     sqcode::{SqReader, _zbar_sq_decode},
@@ -111,8 +109,6 @@ const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
 
 #[allow(non_camel_case_types)]
 pub struct qr_reader {
-    /// The GF(256) representation used in Reed-Solomon decoding.
-    pub gf: rs_gf256,
     /// The random number generator used by RANSAC.
     pub isaac: IsaacCtx,
     ///  current finder state, horizontal and vertical lines

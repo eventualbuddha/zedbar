@@ -628,12 +628,13 @@ mod tests {
         // Find min/max values
         let min_val = *data.iter().min().unwrap_or(&0);
         let max_val = *data.iter().max().unwrap_or(&255);
-        
+
         let normalized = if max_val > min_val {
             // Stretch the histogram to full 0-255 range
             data.iter()
                 .map(|&pixel| {
-                    let stretched = ((pixel as u16 - min_val as u16) * 255) / (max_val as u16 - min_val as u16);
+                    let stretched =
+                        ((pixel as u16 - min_val as u16) * 255) / (max_val as u16 - min_val as u16);
                     stretched as u8
                 })
                 .collect::<Vec<u8>>()
@@ -663,4 +664,3 @@ https://zh.qr-code-generator.com
         );
     }
 }
-

@@ -129,7 +129,7 @@ pub unsafe fn _zbar_error_spew(err: *mut ErrInfo, verbosity: c_int) -> c_int {
         return 0;
     }
     let err = &*err;
-    
+
     let err_str = _zbar_error_string(err as *const _ as *mut _, verbosity);
     eprint!("{err_str}");
 
@@ -145,7 +145,7 @@ pub unsafe fn _zbar_error_string(err: *mut ErrInfo, _verbosity: c_int) -> String
         return String::new();
     }
     let err = &*err;
-    
+
     // Get severity string
     let sev = if err.sev >= SEV_FATAL && err.sev <= SEV_NOTE {
         SEV_STR[(err.sev + 2) as usize]
@@ -230,14 +230,14 @@ const ZBAR_ERR_SYSTEM: c_int = 2; // from zbar.h
 pub unsafe fn _zbar_err_copy(dst_c: *mut libc::c_void, src_c: *mut libc::c_void) -> c_int {
     let dst = dst_c as *mut ErrInfo;
     let src = src_c as *mut ErrInfo;
-    
+
     if dst.is_null() || src.is_null() {
         return -1;
     }
-    
+
     let dst = &mut *dst;
     let src = &mut *src;
-    
+
     debug_assert!(dst.magic == ERRINFO_MAGIC);
     debug_assert!(src.magic == ERRINFO_MAGIC);
 
@@ -263,7 +263,7 @@ pub unsafe fn _zbar_err_capture(
         return -1;
     }
     let err = &mut *err;
-    
+
     debug_assert!(err.magic == ERRINFO_MAGIC);
     if type_ == ZBAR_ERR_SYSTEM {
         err.errnum = *libc::__errno_location();
@@ -290,7 +290,7 @@ pub unsafe fn _zbar_err_capture_str(
         return -1;
     }
     let err = &mut *err;
-    
+
     debug_assert!(err.magic == ERRINFO_MAGIC);
     if !err.arg_str.is_null() {
         libc::free(err.arg_str as *mut libc::c_void);
@@ -311,7 +311,7 @@ pub unsafe fn _zbar_err_capture_int(
         return -1;
     }
     let err = &mut *err;
-    
+
     debug_assert!(err.magic == ERRINFO_MAGIC);
     err.arg_int = arg;
     _zbar_err_capture(err as *mut _, sev, type_, func, detail)
@@ -329,7 +329,7 @@ pub unsafe fn _zbar_err_capture_num(
         return -1;
     }
     let err = &mut *err;
-    
+
     debug_assert!(err.magic == ERRINFO_MAGIC);
     err.errnum = num;
     _zbar_err_capture(err as *mut _, sev, type_, func, detail)
@@ -340,7 +340,7 @@ pub unsafe fn _zbar_err_init(err: *mut ErrInfo, module: c_int) {
         return;
     }
     let err = &mut *err;
-    
+
     err.magic = ERRINFO_MAGIC;
     err.module = module;
 }
@@ -350,7 +350,7 @@ pub unsafe fn _zbar_err_cleanup(err: *mut ErrInfo) {
         return;
     }
     let err = &mut *err;
-    
+
     debug_assert!(err.magic == ERRINFO_MAGIC);
     if !err.arg_str.is_null() {
         libc::free(err.arg_str as *mut libc::c_void);

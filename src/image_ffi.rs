@@ -95,7 +95,7 @@ pub unsafe fn _zbar_image_copy(src: *const zbar_image_t, inverted: c_int) -> *mu
     const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
 
     let src = &*src;
-    
+
     if inverted != 0 && src.format != FOURCC_Y800 && src.format != FOURCC_GREY {
         return null_mut();
     }
