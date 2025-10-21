@@ -71,7 +71,15 @@ fn main() {
     let symbols = zbar_img.symbols();
     for symbol in symbols {
         let symbol_type = symbol.symbol_type();
-        let data = symbol.data_string().unwrap_or("<invalid UTF-8>");
-        println!("{:?}:{}", symbol_type, data);
+        let data_bytes = symbol.data();
+        // Try UTF-8 first, otherwise print raw bytes
+        if let Ok(data_str) = std::str::from_utf8(data_bytes) {
+            println!("{:?}:{}", symbol_type, data_str);
+        } else {
+            // For binary data, print as raw bytes
+            print!("{:?}:", symbol_type);
+            std::io::Write::write_all(&mut std::io::stdout(), data_bytes).ok();
+            println!();
+        }
     }
 }

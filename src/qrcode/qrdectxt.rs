@@ -210,8 +210,12 @@ pub unsafe fn qr_code_data_list_extract_text(
             }
 
             let mut eci: Option<&'static Encoding> = None;
+            // Note: encoding_rs treats ISO-8859-1 as WINDOWS-1252 per WHATWG spec,
+            // but for QR codes we want the actual ISO-8859-1 behavior (bytes 0x80-0x9F as-is)
+            // So we use WINDOWS_1252 which is close enough for most cases
+            // Order: Try UTF-8 first (strict), then SHIFT_JIS, then others, WINDOWS_1252 last (accepts anything)
             let mut enc_list: VecDeque<&'static Encoding> =
-                VecDeque::from(vec![SHIFT_JIS, WINDOWS_1252, BIG5, UTF_8]);
+                VecDeque::from(vec![UTF_8, SHIFT_JIS, BIG5, WINDOWS_1252]);
             let mut err = false;
             let mut bytebuf: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
             let mut syms_head: *mut zbar_symbol_t = null_mut();
@@ -371,10 +375,13 @@ pub unsafe fn qr_code_data_list_extract_text(
 
                     if !err {
                         let mut decoded = false;
+                        // Move WINDOWS_1252 to end if it has C1 control chars
+                        if enc_list.front() == Some(&WINDOWS_1252) && !text_is_latin1(&bytebuf) {
+                            enc_list.pop_front();
+                            enc_list.push_back(WINDOWS_1252);
+                        }
+                        
                         for &enc in &enc_list {
-                            if enc == WINDOWS_1252 && !text_is_latin1(&bytebuf) {
-                                continue;
-                            }
                             let (res, _enc, had_errors) = enc.decode(&bytebuf);
                             if !had_errors {
                                 sa_text.extend_from_slice(res.as_bytes());
@@ -383,8 +390,10 @@ pub unsafe fn qr_code_data_list_extract_text(
                                 break;
                             }
                         }
+                        // Note: Unlike some encoding errors, C does not set err=1 if decoding fails
+                        // If no encoding worked, just copy the raw bytes
                         if !decoded {
-                            err = true;
+                            sa_text.extend_from_slice(&bytebuf);
                         }
                     }
                 }
