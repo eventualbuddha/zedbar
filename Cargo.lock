@@ -968,6 +968,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "reed-solomon"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13de68c877a77f35885442ac72c8beb7c2f0b09380c43b734b9d63d1db69ee54"
+
+[[package]]
 name = "regex-syntax"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1363,6 +1369,7 @@ dependencies = [
  "libc",
  "proptest",
  "qrcode",
+ "reed-solomon",
  "rqrr",
 ]
 
