@@ -253,18 +253,18 @@ fn test_rqrr_crash_4_binary() {
     // The bug was in qrdectxt.rs where decoding failures were treated as errors
     let result = decode_image_binary("examples/rqrr-crash-4.png");
     assert!(result.is_some(), "Should decode the QR code");
-    
+
     let (symbol_type, data) = result.unwrap();
     assert_eq!(symbol_type, "QrCode");
-    
+
     // Verify it's binary data (contains bytes that would fail UTF-8 decoding as WINDOWS-1252)
     assert_eq!(data.len(), 2146, "Binary data should be 2146 bytes");
-    
+
     // Check first few bytes to ensure we're getting the right data
     // These bytes are from the actual decoded QR code
     assert_eq!(&data[..4], &[0x07, 0xC3, 0x84, 0x18]);
-    
+
     // Verify it contains binary data (bytes outside printable ASCII)
-    let has_binary = data.iter().any(|&b| b < 0x20 || b >= 0x80);
+    let has_binary = data.iter().any(|b| !(0x20..0x80).contains(b));
     assert!(has_binary, "Should contain binary data");
 }

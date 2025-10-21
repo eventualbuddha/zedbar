@@ -199,7 +199,7 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
         }
 
         // Use checked arithmetic to avoid overflow
-        let y_end = y0.checked_add(height).unwrap_or(u32::MAX);
+        let y_end = y0.saturating_add(height);
         for y in y0..y_end {
             if is_black(img, x0 as i32 - 1, y as i32) {
                 x0 -= 1;
@@ -259,9 +259,9 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
     let mut total_weight = 0u64;
 
     // Use checked arithmetic to avoid overflow
-    let y_end = y0.checked_add(height).unwrap_or(u32::MAX);
-    let x_end = x0.checked_add(width).unwrap_or(u32::MAX);
-    
+    let y_end = y0.saturating_add(height);
+    let x_end = x0.saturating_add(width);
+
     for y in y0..y_end {
         for x in x0..x_end {
             if !is_black(img, x as i32, y as i32) {
@@ -289,7 +289,7 @@ unsafe fn find_left_dot(
     found_x: &mut u32,
     found_y: &mut u32,
 ) -> bool {
-    let y_end = dot.y0.checked_add(dot.height).unwrap_or(u32::MAX);
+    let y_end = dot.y0.saturating_add(dot.height);
     for y in dot.y0..y_end {
         for x in ((dot.x0 as i32 - 2 * dot.width as i32)..=(dot.x0 as i32 - 1)).rev() {
             if is_black(img, x, y as i32) {
@@ -308,10 +308,10 @@ unsafe fn find_right_dot(
     found_x: &mut u32,
     found_y: &mut u32,
 ) -> bool {
-    let y_end = dot.y0.checked_add(dot.height).unwrap_or(u32::MAX);
-    let x_start = dot.x0.checked_add(dot.width).unwrap_or(u32::MAX);
-    let x_end = dot.x0.checked_add(3 * dot.width).unwrap_or(u32::MAX);
-    
+    let y_end = dot.y0.saturating_add(dot.height);
+    let x_start = dot.x0.saturating_add(dot.width);
+    let x_end = dot.x0.saturating_add(3 * dot.width);
+
     for y in dot.y0..y_end {
         for x in x_start..x_end {
             if is_black(img, x as i32, y as i32) {
@@ -330,10 +330,14 @@ unsafe fn find_bottom_dot(
     found_x: &mut u32,
     found_y: &mut u32,
 ) -> bool {
-    let x_end = dot.x0.checked_add(dot.width).and_then(|v| v.checked_sub(1)).unwrap_or(0);
-    let y_start = dot.y0.checked_add(dot.height).unwrap_or(u32::MAX);
-    let y_end = dot.y0.checked_add(3 * dot.height).unwrap_or(u32::MAX);
-    
+    let x_end = dot
+        .x0
+        .checked_add(dot.width)
+        .and_then(|v| v.checked_sub(1))
+        .unwrap_or(0);
+    let y_start = dot.y0.saturating_add(dot.height);
+    let y_end = dot.y0.saturating_add(3 * dot.height);
+
     for x in (dot.x0..=x_end).rev() {
         for y in y_start..y_end {
             if is_black(img, x as i32, y as i32) {

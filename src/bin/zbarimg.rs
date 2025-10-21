@@ -121,8 +121,11 @@ fn main() {
             eprintln!("No barcodes found");
             process::exit(1);
         } else {
-            eprintln!("scanned {} barcode symbols from {} image(s)", 
-                     total_symbols, args.files.len());
+            eprintln!(
+                "scanned {} barcode symbols from {} image(s)",
+                total_symbols,
+                args.files.len()
+            );
         }
     } else if total_symbols == 0 {
         // In quiet mode, still exit with error if no barcodes found

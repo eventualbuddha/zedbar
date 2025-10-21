@@ -380,7 +380,7 @@ pub unsafe fn qr_code_data_list_extract_text(
                             enc_list.pop_front();
                             enc_list.push_back(WINDOWS_1252);
                         }
-                        
+
                         for &enc in &enc_list {
                             let (res, _enc, had_errors) = enc.decode(&bytebuf);
                             if !had_errors {
