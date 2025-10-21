@@ -177,6 +177,17 @@ fn test_upca_decoded_as_ean13() {
 }
 
 #[test]
+fn test_rqrr_crash_2() {
+    // Regression test for integer overflow in databar decoder
+    // This image previously caused panic due to epoch overflow
+    let result = decode_image("examples/rqrr-crash-2.jpeg");
+    assert!(result.is_some());
+    let (symbol_type, data) = result.unwrap();
+    assert_eq!(symbol_type, "QrCode");
+    assert!(data.contains("欢迎访问太平洋IT百科栏目"));
+}
+
+#[test]
 fn test_all_examples_decode() {
     // Verify that all example images can be decoded without errors
     let images = vec![
@@ -195,6 +206,7 @@ fn test_all_examples_decode() {
         "examples/test-ean8.png",
         "examples/test-i25.png",
         "examples/test-upca.png",
+        "examples/rqrr-crash-2.jpeg",
     ];
 
     for image_path in images {

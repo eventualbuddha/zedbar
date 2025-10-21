@@ -701,15 +701,15 @@ pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_ui
 /// # Returns
 /// 1 if widths match within tolerance, 0 otherwise
 pub fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
-    let dwf = wf * 3;
-    let wd = wd * 14;
-    let wf = wf * n;
+    let dwf = wf.wrapping_mul(3);
+    let wd = wd.wrapping_mul(14);
+    let wf = wf.wrapping_mul(n);
 
     // Check: wf - dwf <= wd && wd <= wf + dwf
     // In C, this relies on unsigned wraparound if wf < dwf
     // For unsigned subtraction: wf - dwf will wrap if wf < dwf,
     // resulting in a very large number, making the condition false
-    if wf.wrapping_sub(dwf) <= wd && wd <= wf + dwf {
+    if wf.wrapping_sub(dwf) <= wd && wd <= wf.wrapping_add(dwf) {
         1
     } else {
         0
@@ -1665,7 +1665,7 @@ pub unsafe fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
             (*pair).set_partial(true);
         }
     } else {
-        db.set_epoch(db.epoch() + 1);
+        db.set_epoch(db.epoch().wrapping_add(1));
     }
 
     sym
