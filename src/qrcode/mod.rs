@@ -4,13 +4,11 @@
 
 pub mod bch15_5;
 pub mod binarize;
-pub mod isaac;
 pub mod qrdec;
 pub mod qrdectxt;
 pub mod util;
 
 pub use bch15_5::{bch15_5_correct, bch15_5_encode};
-pub use isaac::{isaac_init, isaac_next_uint, isaac_next_uint32, IsaacCtx};
 pub use qrdec::{
     bch18_6_correct, qr_aff_line_step, qr_alignment_pattern_search, qr_code_data,
     qr_code_data_clear, qr_code_data_entry, qr_code_data_list, qr_code_data_list_add,

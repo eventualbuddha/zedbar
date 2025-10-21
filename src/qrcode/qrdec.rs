@@ -7,10 +7,12 @@ use std::{
     cmp::Ordering,
     ffi::c_void,
     mem::{size_of, swap},
-    ptr::{null, null_mut},
+    ptr::null_mut,
 };
 
 use libc::{c_int, c_uchar, c_uint, memcpy, memset, size_t};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
 
 use crate::{
@@ -24,11 +26,7 @@ use crate::{
     },
 };
 
-use super::{
-    bch15_5::bch15_5_correct,
-    isaac::{isaac_next_uint, IsaacCtx},
-    isaac_init,
-};
+use super::bch15_5::bch15_5_correct;
 
 /// A line in QR code coordinate space: [A, B, C] for equation Ax + By + C = 0
 pub type qr_line = [c_int; 3];
@@ -319,12 +317,10 @@ impl<T> Drop for TempArray<T> {
 
 /// Allocates a client reader handle.
 pub unsafe fn _zbar_qr_create() -> qr_reader {
-    let mut reader = qr_reader {
-        isaac: std::mem::zeroed(),
+    qr_reader {
+        rng: ChaCha8Rng::from_seed([0u8; 32]),
         finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
-    };
-    isaac_init((&mut reader.isaac) as *mut _, null(), 0);
-    reader
+    }
 }
 
 /// reset finder state between scans
@@ -767,7 +763,7 @@ pub unsafe fn qr_hom_fit(
     _dl: *mut qr_finder,
     _p: *mut qr_point,
     _aff: *const qr_aff,
-    _isaac: *mut IsaacCtx,
+    rng: &mut ChaCha8Rng,
     _img: *const c_uchar,
     _width: c_int,
     _height: c_int,
@@ -781,8 +777,8 @@ pub unsafe fn qr_hom_fit(
     // Fitting lines is easy for the edges on which we have two finder patterns.
     // After the fit, UL is guaranteed to be on the proper side, but if either of
     // the other two finder patterns aren't, something is wrong.
-    qr_finder_ransac(_ul, _aff, _isaac, 0);
-    qr_finder_ransac(_dl, _aff, _isaac, 0);
+    qr_finder_ransac(_ul, _aff, rng, 0);
+    qr_finder_ransac(_dl, _aff, rng, 0);
     qr_line_fit_finder_pair(&mut l[0], _aff, _ul, _dl, 0);
     if qr_line_eval(
         &l[0],
@@ -797,8 +793,8 @@ pub unsafe fn qr_hom_fit(
     {
         return -1;
     }
-    qr_finder_ransac(_ul, _aff, _isaac, 2);
-    qr_finder_ransac(_ur, _aff, _isaac, 2);
+    qr_finder_ransac(_ul, _aff, rng, 2);
+    qr_finder_ransac(_ur, _aff, rng, 2);
     qr_line_fit_finder_pair(&mut l[2], _aff, _ul, _ur, 2);
     if qr_line_eval(
         &l[2],
@@ -816,7 +812,7 @@ pub unsafe fn qr_hom_fit(
 
     // The edges which only have one finder pattern are more difficult.
     let drv = (*_ur).size[1] >> 1;
-    qr_finder_ransac(_ur, _aff, _isaac, 1);
+    qr_finder_ransac(_ur, _aff, rng, 1);
     let mut dru = 0;
     if qr_line_fit_finder_edge(&mut l[1], _ur, 1, (*_aff).res) >= 0 {
         if qr_line_eval(
@@ -841,7 +837,7 @@ pub unsafe fn qr_hom_fit(
     let mut rv = (*_ur).o[1] - 2 * drv;
 
     let dbu = (*_dl).size[0] >> 1;
-    qr_finder_ransac(_dl, _aff, _isaac, 3);
+    qr_finder_ransac(_dl, _aff, rng, 3);
     let mut dbv = 0;
     if qr_line_fit_finder_edge(&mut l[3], _dl, 3, (*_aff).res) >= 0 {
         if qr_line_eval(
@@ -1291,7 +1287,7 @@ pub unsafe fn qr_finder_estimate_module_size_and_version(
 pub unsafe fn qr_finder_ransac(
     _f: *mut qr_finder,
     _hom: *const qr_aff,
-    _isaac: *mut IsaacCtx,
+    rng: &mut ChaCha8Rng,
     _e: c_int,
 ) {
     let edge_pts = (*_f).edge_pts[_e as usize];
@@ -1310,14 +1306,14 @@ pub unsafe fn qr_finder_ransac(
             let mut q1: qr_point = [0, 0];
 
             // Pick two random points on this edge
-            let p0i = isaac_next_uint(_isaac, n as u32) as isize;
-            let mut p1i = isaac_next_uint(_isaac, (n - 1) as u32) as isize;
+            let p0i = rng.random_range(0..n) as usize;
+            let mut p1i = rng.random_range(0..n - 1) as usize;
             if p1i >= p0i {
                 p1i += 1;
             }
 
-            let p0 = &(*edge_pts.offset(p0i)).pos;
-            let p1 = &(*edge_pts.offset(p1i)).pos;
+            let p0 = &(*edge_pts.add(p0i)).pos;
+            let p1 = &(*edge_pts.add(p1i)).pos;
 
             // If the corresponding line is not within 45 degrees of the proper
             // orientation in the square domain, reject it outright.
@@ -4659,7 +4655,7 @@ pub unsafe fn qr_reader_try_configuration(
             &mut dl,
             bbox.as_mut_ptr(),
             &aff,
-            &mut (*_reader).isaac,
+            &mut (*_reader).rng,
             _img,
             _width,
             _height,
