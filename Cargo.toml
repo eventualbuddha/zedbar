@@ -16,6 +16,8 @@ image = "0.25"
 encoding_rs = "0.8.33"
 reed-solomon = "0.2.1"
 clap = { version = "4.5", features = ["derive"] }
+rand = "0.8"
+rand_chacha = "0.3"
 
 # For incremental migration - keep C dependencies during transition
 [[bin]]
