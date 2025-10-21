@@ -220,3 +220,51 @@ fn test_all_examples_decode() {
         assert!(result.is_some(), "Failed to decode {}", image_path);
     }
 }
+
+/// Helper function to decode an image file and return raw binary data
+fn decode_image_binary(path: &str) -> Option<(String, Vec<u8>)> {
+    let path = Path::new(path);
+    if !path.exists() {
+        return None;
+    }
+
+    let img = image::open(path).ok()?.to_luma8();
+    let mut scanner = Scanner::new();
+
+    // Create a zbar Image from the image buffer
+    let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).ok()?;
+
+    // Scan the image
+    scanner.scan(&mut zbar_image).ok()?;
+
+    // Get the symbols
+    let symbols = zbar_image.symbols();
+
+    symbols.iter().next().map(|symbol| {
+        let symbol_type = format!("{:?}", symbol.symbol_type());
+        let data = symbol.data().to_vec();
+        (symbol_type, data)
+    })
+}
+
+#[test]
+fn test_rqrr_crash_4_binary() {
+    // This is a binary QR code that previously failed to decode
+    // The bug was in qrdectxt.rs where decoding failures were treated as errors
+    let result = decode_image_binary("examples/rqrr-crash-4.png");
+    assert!(result.is_some(), "Should decode the QR code");
+    
+    let (symbol_type, data) = result.unwrap();
+    assert_eq!(symbol_type, "QrCode");
+    
+    // Verify it's binary data (contains bytes that would fail UTF-8 decoding as WINDOWS-1252)
+    assert_eq!(data.len(), 2146, "Binary data should be 2146 bytes");
+    
+    // Check first few bytes to ensure we're getting the right data
+    // These bytes are from the actual decoded QR code
+    assert_eq!(&data[..4], &[0x07, 0xC3, 0x84, 0x18]);
+    
+    // Verify it contains binary data (bytes outside printable ASCII)
+    let has_binary = data.iter().any(|&b| b < 0x20 || b >= 0x80);
+    assert!(has_binary, "Should contain binary data");
+}
