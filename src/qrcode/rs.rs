@@ -54,8 +54,7 @@ pub struct rs_gf256 {
 
 /// Initialize discrete logarithm tables for GF(2**8) using a given primitive
 /// irreducible polynomial.
-pub unsafe fn rs_gf256_init(gf: *mut rs_gf256, ppoly: c_uint) {
-    let gf = &mut *gf;
+pub unsafe fn rs_gf256_init(gf: &mut rs_gf256, ppoly: c_uint) {
     let mut p: c_uint = 1;
 
     // Initialize the table of powers of a primitive root, alpha=0x02
@@ -524,7 +523,7 @@ fn rs_find_roots(
 /// Returns the number of errors corrected if successful, or a negative number if
 /// the message could not be corrected because too many errors were detected.
 pub unsafe fn rs_correct(
-    gf: *const rs_gf256,
+    gf: &rs_gf256,
     m0: c_int,
     data: *mut u8,
     ndata: c_int,
@@ -532,7 +531,6 @@ pub unsafe fn rs_correct(
     erasures: *const u8,
     nerasures: c_int,
 ) -> c_int {
-    let gf = &*gf;
     let data_slice = std::slice::from_raw_parts_mut(data, ndata as usize);
     let erasures_slice = if erasures.is_null() || nerasures == 0 {
         &[]

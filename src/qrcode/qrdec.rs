@@ -325,7 +325,7 @@ pub unsafe fn _zbar_qr_create() -> qr_reader {
         finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
     };
     isaac_init((&mut reader.isaac) as *mut _, null(), 0);
-    rs_gf256_init((&mut reader.gf) as *mut _, QR_PPOLY);
+    rs_gf256_init(&mut reader.gf, QR_PPOLY);
     reader
 }
 
@@ -3605,7 +3605,7 @@ pub unsafe fn qr_code_data_parse(
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn qr_code_decode(
     _qrdata: *mut qr_code_data,
-    _gf: *const rs_gf256,
+    _gf: &rs_gf256,
     _ul_pos: *const qr_point,
     _ur_pos: *const qr_point,
     _dl_pos: *const qr_point,
