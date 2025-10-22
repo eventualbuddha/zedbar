@@ -15,8 +15,8 @@ use crate::{
         ZBAR_ORIENT_DOWN, ZBAR_ORIENT_LEFT, ZBAR_ORIENT_RIGHT, ZBAR_ORIENT_UP, ZBAR_PARTIAL,
         ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
     },
-    ffi::refcnt,
     img_scanner::zbar_symbol_set_t,
+    refcnt,
 };
 use libc::{c_char, c_int, c_uint, c_ulong, c_void};
 use std::{mem::size_of, ptr};
@@ -179,7 +179,7 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
     }
     let sym = &mut *sym;
 
-    if refcnt(&mut sym.refcnt, delta) == 0 && delta <= 0 {
+    if refcnt!(sym.refcnt, delta) == 0 && delta <= 0 {
         symbol_free(sym as *mut _);
     }
 }
@@ -191,7 +191,7 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
 /// Allocates memory that must be freed with `symbol_set_free`.
 pub unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
     let mut symbol_set = Box::new(zbar_symbol_set_t::default());
-    refcnt(&mut symbol_set.refcnt, 1);
+    refcnt!(symbol_set.refcnt, 1);
     Box::into_raw(symbol_set)
 }
 
@@ -307,7 +307,7 @@ pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     }
     let syms_ref = &mut *syms;
 
-    if refcnt(&mut syms_ref.refcnt, delta) == 0 && delta <= 0 {
+    if refcnt!(syms_ref.refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms);
     }
 }

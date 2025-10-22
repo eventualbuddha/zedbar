@@ -145,8 +145,7 @@ fn is_black_color(c: u8) -> bool {
     c <= 0x7f
 }
 
-unsafe fn is_black(img: *const zbar_image_t, x: i32, y: i32) -> bool {
-    let img = &*img;
+unsafe fn is_black(img: &zbar_image_t, x: i32, y: i32) -> bool {
     if x < 0 || x >= img.width as i32 || y < 0 || y >= img.height as i32 {
         return false;
     }
@@ -160,7 +159,7 @@ fn set_dot_center(dot: &mut Dot, x: f32, y: f32) {
     dot.center.y = y;
 }
 
-unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, start_y: i32) {
+unsafe fn sq_scan_shape(img: &zbar_image_t, dot: &mut Dot, start_x: i32, start_y: i32) {
     if !is_black(img, start_x, start_y) {
         dot.shape_type = Shape::Void;
         dot.x0 = start_x as u32;
@@ -252,8 +251,7 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
     }
 
     // Calculate weighted center for dot
-    let img_ref = &*img;
-    let data = img_ref.data.as_ptr();
+    let data = img.data.as_ptr();
     let mut x_sum = 0u64;
     let mut y_sum = 0u64;
     let mut total_weight = 0u64;
@@ -267,7 +265,7 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
             if !is_black(img, x as i32, y as i32) {
                 continue;
             }
-            let idx = y as usize * img_ref.width as usize + x as usize;
+            let idx = y as usize * img.width as usize + x as usize;
             let weight = (0xff - *data.add(idx)) as u64;
             x_sum += weight * x as u64;
             y_sum += weight * y as u64;
@@ -284,7 +282,7 @@ unsafe fn sq_scan_shape(img: *const zbar_image_t, dot: &mut Dot, start_x: i32, s
 }
 
 unsafe fn find_left_dot(
-    img: *const zbar_image_t,
+    img: &zbar_image_t,
     dot: &Dot,
     found_x: &mut u32,
     found_y: &mut u32,
@@ -303,7 +301,7 @@ unsafe fn find_left_dot(
 }
 
 unsafe fn find_right_dot(
-    img: *const zbar_image_t,
+    img: &zbar_image_t,
     dot: &Dot,
     found_x: &mut u32,
     found_y: &mut u32,
@@ -325,7 +323,7 @@ unsafe fn find_right_dot(
 }
 
 unsafe fn find_bottom_dot(
-    img: *const zbar_image_t,
+    img: &zbar_image_t,
     dot: &Dot,
     found_x: &mut u32,
     found_y: &mut u32,

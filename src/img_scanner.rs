@@ -25,6 +25,7 @@ use crate::{
             _zbar_qr_create, _zbar_qr_decode, _zbar_qr_found_line, _zbar_qr_reset, qr_finder_lines,
         },
     },
+    refcnt,
     sqcode::{SqReader, _zbar_sq_decode},
     symbol::{
         _zbar_get_symbol_hash, _zbar_symbol_add_point, symbol_alloc_zeroed, symbol_clear_data,
@@ -45,9 +46,6 @@ const QR_FINDER_SUBPREC: c_int = 2;
 fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
     (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
 }
-
-// Import types and functions from ffi module
-use crate::ffi::refcnt;
 
 // Import functions and constants from symbol module
 pub struct qr_finder_line {
@@ -85,7 +83,7 @@ use crate::decoder::{
     zbar_decoder_get_userdata, zbar_decoder_set_config, zbar_decoder_set_handler,
     zbar_decoder_set_userdata,
 };
-use crate::image_ffi::{_zbar_image_copy, _zbar_image_swap_symbols, zbar_image_destroy};
+use crate::image_ffi::_zbar_image_copy;
 
 // Helper macros for configuration access
 macro_rules! CFG {
@@ -141,7 +139,8 @@ impl Drop for zbar_symbol_set_t {
 }
 
 // Function pointer type for image data handler callbacks
-pub type zbar_image_data_handler_t = unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
+pub(crate) type zbar_image_data_handler_t =
+    unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
 
 #[derive(Default)]
 #[allow(non_camel_case_types)]
@@ -362,7 +361,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
     while !sym.is_null() {
         let next = (*sym).next;
 
-        if (*sym).refcnt != 0 && refcnt(&mut (*sym).refcnt, -1) != 0 {
+        if (*sym).refcnt != 0 && refcnt!((*sym).refcnt, -1) != 0 {
             // Unlink referenced symbol
             // FIXME handle outstanding component refs (currently unsupported)
             c_assert!((*sym).data_alloc != 0);
@@ -375,7 +374,7 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
 
             if !(*sym).syms.is_null() {
                 let syms = (*sym).syms;
-                if refcnt(&mut (*syms).refcnt, -1) != 0 {
+                if refcnt!((*syms).refcnt, -1) != 0 {
                     c_assert!(false);
                 }
                 _zbar_image_scanner_recycle_syms(iscn as *mut _, (*syms).head);
@@ -571,7 +570,7 @@ pub(crate) unsafe fn _zbar_image_scanner_add_sym(
     // The symbol set takes ownership of the symbol reference.
     // Ensure the reference count reflects this so that recycling
     // and Drop logic can safely release it later.
-    let new_refcnt = refcnt(&mut sym_ref.refcnt, 1);
+    let new_refcnt = refcnt!(sym_ref.refcnt, 1);
     debug_assert!(new_refcnt > 0);
     let _ = new_refcnt;
 
@@ -895,7 +894,7 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
 /// Pointer to symbol set on success, null on error
 pub unsafe fn _zbar_scan_image(
     iscn: *mut zbar_image_scanner_t,
-    img: *mut zbar_image_t,
+    img: &mut zbar_image_t,
 ) -> *mut zbar_symbol_set_t {
     // Reset QR and SQ decoders
     if let Some(qr) = &mut (*iscn).qr {
@@ -906,8 +905,7 @@ pub unsafe fn _zbar_scan_image(
     }
 
     // Image must be in grayscale format
-    if (*img).format != fourcc(b'Y', b'8', b'0', b'0')
-        && (*img).format != fourcc(b'G', b'R', b'E', b'Y')
+    if img.format != fourcc(b'Y', b'8', b'0', b'0') && img.format != fourcc(b'G', b'R', b'E', b'Y')
     {
         return null_mut();
     }
@@ -922,11 +920,11 @@ pub unsafe fn _zbar_scan_image(
     } else {
         zbar_symbol_set_ref(syms, 2);
     }
-    (*img).set_syms_ptr(syms);
+    img.set_syms_ptr(syms);
 
-    let w = (*img).width;
-    let h = (*img).height;
-    let data = (*img).data.as_ptr();
+    let w = img.width;
+    let h = img.height;
+    let data = img.data.as_ptr();
 
     let Some(scn) = (*iscn).scn.as_mut() else {
         return null_mut();
@@ -1162,20 +1160,17 @@ pub unsafe fn _zbar_scan_image(
 ///
 /// # Returns
 /// Number of symbols found, -1 on error
-pub unsafe fn zbar_scan_image(iscn: *mut zbar_image_scanner_t, img: *mut zbar_image_t) -> c_int {
+pub unsafe fn zbar_scan_image(iscn: *mut zbar_image_scanner_t, img: &mut zbar_image_t) -> c_int {
     let mut syms = _zbar_scan_image(iscn, img);
     if syms.is_null() {
         return -1;
     }
 
-    let mut inv: *mut zbar_image_t = null_mut();
-
     // Try inverted image if no symbols found and TEST_INVERTED is enabled
     if (*syms).nsyms == 0 && TEST_CFG!(iscn, ZBAR_CFG_TEST_INVERTED) {
-        inv = _zbar_image_copy(img, 1);
-        if !inv.is_null() {
-            syms = _zbar_scan_image(iscn, inv);
-            _zbar_image_swap_symbols(img, inv);
+        if let Some(mut inv) = _zbar_image_copy(&*img, 1) {
+            syms = _zbar_scan_image(iscn, &mut inv);
+            std::mem::swap(&mut img.syms, &mut inv.syms);
         }
     }
 
@@ -1184,10 +1179,6 @@ pub unsafe fn zbar_scan_image(iscn: *mut zbar_image_scanner_t, img: *mut zbar_im
         if let Some(handler) = (*iscn).handler {
             handler(img, (*iscn).userdata);
         }
-    }
-
-    if !inv.is_null() {
-        zbar_image_destroy(inv);
     }
 
     (*syms).nsyms as c_int

@@ -4981,7 +4981,7 @@ pub unsafe fn qr_reader_match_centers(
 pub unsafe fn _zbar_qr_decode(
     reader: &mut qr_reader,
     iscn: *mut zbar_image_scanner_t,
-    img: *mut zbar_image_t,
+    img: &mut zbar_image_t,
 ) -> c_int {
     let nqrdata: c_int;
     let mut edge_pts: *mut qr_finder_edge_pt = null_mut();
@@ -4994,7 +4994,7 @@ pub unsafe fn _zbar_qr_decode(
     let ncenters = qr_finder_centers_locate(&mut centers, &mut edge_pts, reader, 0, 0);
 
     if ncenters >= 3 {
-        let bin = binarize(&(*img).data, (*img).width as usize, (*img).height as usize);
+        let bin = binarize(&img.data, img.width as usize, img.height as usize);
 
         let mut qrlist: qr_code_data_list = std::mem::zeroed();
         qr_code_data_list_init(&mut qrlist);
@@ -5005,12 +5005,12 @@ pub unsafe fn _zbar_qr_decode(
             centers,
             ncenters,
             bin.as_ptr(),
-            (*img).width as c_int,
-            (*img).height as c_int,
+            img.width as c_int,
+            img.height as c_int,
         );
 
         nqrdata = if qrlist.nqrdata > 0 {
-            qr_code_data_list_extract_text(&qrlist as *const _ as *const _, iscn, img)
+            qr_code_data_list_extract_text(&qrlist as *const _ as *const _, iscn)
         } else {
             0
         };

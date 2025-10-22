@@ -13,7 +13,6 @@ use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use crate::decoder_types::{
     ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_PARTIAL, ZBAR_QRCODE,
 };
-use crate::image_ffi::zbar_image_t;
 use crate::img_scanner::{
     _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
     zbar_image_scanner_get_config, zbar_image_scanner_t,
@@ -122,7 +121,6 @@ unsafe fn sym_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
 pub unsafe fn qr_code_data_list_extract_text(
     _qrlist: *const qr_code_data_list,
     iscn: *mut zbar_image_scanner_t,
-    _img: *mut zbar_image_t,
 ) -> c_int {
     let mut raw_binary: c_int = 0;
     zbar_image_scanner_get_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY, &mut raw_binary);
