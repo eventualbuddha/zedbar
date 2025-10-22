@@ -24,7 +24,7 @@ pub mod symbol;
 pub use error::{Error, Result};
 pub use image::Image;
 pub use scanner::Scanner;
-pub use symbol::{Symbol, SymbolSet, SymbolType};
+pub use symbol::SymbolType;
 
 mod ffi;
 

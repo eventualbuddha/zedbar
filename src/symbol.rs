@@ -18,7 +18,7 @@ use crate::{
     img_scanner::zbar_symbol_set_t,
     refcnt,
 };
-use libc::{c_char, c_int, c_uint, c_ulong, c_void};
+use libc::{c_char, c_int, c_uint, c_void};
 use std::{mem::size_of, ptr};
 
 const NUM_SYMS: usize = 20;
@@ -121,21 +121,20 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
 #[derive(Default)]
 #[allow(non_camel_case_types)]
 pub struct zbar_symbol_t {
-    pub symbol_type: c_int,
-    pub configs: c_uint,
-    pub modifiers: c_uint,
-    pub data_alloc: c_uint,
-    pub datalen: c_uint,
-    pub data: *mut c_char,
-    pub pts_alloc: c_uint,
-    pub npts: c_uint,
-    pub pts: *mut c_void,
-    pub orient: c_int,
-    pub refcnt: c_int,
-    pub next: *mut zbar_symbol_t,
-    pub syms: *mut zbar_symbol_set_t,
-    pub time: c_ulong,
-    pub quality: c_int,
+    pub(crate) symbol_type: c_int,
+    pub(crate) configs: c_uint,
+    pub(crate) modifiers: c_uint,
+    pub(crate) data_alloc: c_uint,
+    pub(crate) datalen: c_uint,
+    pub(crate) data: *mut c_char,
+    pub(crate) pts_alloc: c_uint,
+    pub(crate) npts: c_uint,
+    pub(crate) pts: *mut c_void,
+    pub(crate) orient: c_int,
+    pub(crate) refcnt: c_int,
+    pub(crate) next: *mut zbar_symbol_t,
+    pub(crate) syms: *mut zbar_symbol_set_t,
+    pub(crate) quality: c_int,
 }
 
 impl Drop for zbar_symbol_t {
@@ -164,7 +163,7 @@ impl Drop for zbar_symbol_t {
 /// # Safety
 ///
 /// The symbol pointer must be valid and not previously freed.
-pub unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
+pub(crate) unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
     drop(Box::from_raw(sym));
 }
 
@@ -173,7 +172,7 @@ pub unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
 /// # Safety
 ///
 /// The symbol pointer must be valid.
-pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
+pub(crate) unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
     if sym.is_null() {
         return;
     }
@@ -189,7 +188,7 @@ pub unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
 /// # Safety
 ///
 /// Allocates memory that must be freed with `symbol_set_free`.
-pub unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
+pub(crate) unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
     let mut symbol_set = Box::new(zbar_symbol_set_t::default());
     refcnt!(symbol_set.refcnt, 1);
     Box::into_raw(symbol_set)
@@ -200,18 +199,18 @@ pub unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
 /// # Safety
 ///
 /// The symbol set pointer must be valid and not previously freed.
-pub unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
+pub(crate) unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
     drop(Box::from_raw(syms));
 }
 
 /// Allocate a zeroed symbol instance suitable for initialization.
-pub unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
+pub(crate) unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
     let symbol = Box::new(zbar_symbol_t::default());
     Box::into_raw(symbol)
 }
 
 /// Release any allocated symbol data buffer and reset metadata.
-pub unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
+pub(crate) unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
     if sym.is_null() {
         return;
     }
@@ -227,7 +226,7 @@ pub unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
 
 /// Ensure the symbol data buffer can hold at least `capacity` bytes (including null terminator).
 /// Returns `true` on success and leaves the buffer unchanged on failure.
-pub unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> bool {
+pub(crate) unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> bool {
     if sym.is_null() {
         return false;
     }
@@ -253,7 +252,7 @@ pub unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> b
 
 /// Ensure the symbol point array can store at least `capacity` points.
 /// Returns `true` on success and leaves the buffer unchanged on failure.
-pub unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> bool {
+pub(crate) unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> bool {
     if sym.is_null() {
         return false;
     }
@@ -282,17 +281,7 @@ pub unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> b
     true
 }
 
-// C FFI exports
-
-pub unsafe fn zbar_get_symbol_name(sym: c_int) -> *const c_char {
-    get_symbol_name(sym).as_ptr() as *const c_char
-}
-
-pub unsafe fn _zbar_get_symbol_hash(sym: c_int) -> c_int {
-    get_symbol_hash(sym)
-}
-
-pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_t {
+pub(crate) unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_t {
     if sym.is_null() {
         ptr::null()
     } else {
@@ -301,7 +290,7 @@ pub unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_
     }
 }
 
-pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
+pub(crate) unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
     if syms.is_null() {
         return;
     }
@@ -315,7 +304,7 @@ pub unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
 // Point storage for location data (two consecutive c_int values)
 type Point = [c_int; 2];
 
-pub unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
+pub(crate) unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
     if sym.is_null() {
         return;
     }
@@ -433,12 +422,6 @@ impl Symbol {
     pub fn next(&self) -> Option<Symbol> {
         let next_ptr = unsafe { zbar_symbol_next(self.ptr) };
         unsafe { Symbol::from_ptr(next_ptr) }
-    }
-
-    pub fn add_point(&mut self, x: c_int, y: c_int) {
-        unsafe {
-            _zbar_symbol_add_point(self.ptr as *mut _, x, y);
-        }
     }
 }
 

@@ -28,7 +28,7 @@ use crate::{
     refcnt,
     sqcode::{sq_decode, SqReader},
     symbol::{
-        _zbar_get_symbol_hash, _zbar_symbol_add_point, symbol_alloc_zeroed, symbol_clear_data,
+        _zbar_symbol_add_point, get_symbol_hash, symbol_alloc_zeroed, symbol_clear_data,
         symbol_free, symbol_refcnt, symbol_reserve_data, symbol_set_create, symbol_set_free,
         zbar_symbol_set_ref, zbar_symbol_t,
     },
@@ -358,7 +358,7 @@ pub unsafe fn zbar_image_scanner_get_config(
             return 1;
         }
 
-        let i = _zbar_get_symbol_hash(sym);
+        let i = get_symbol_hash(sym);
         *val = iscn.sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize];
         return 0;
     }
@@ -822,7 +822,7 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
         }
         let c = (cfg - ZBAR_CFG_UNCERTAINTY) as usize;
         if sym > ZBAR_PARTIAL {
-            let i = _zbar_get_symbol_hash(sym) as usize;
+            let i = get_symbol_hash(sym) as usize;
             iscn.sym_configs[c][i] = val;
         } else {
             for i in 0..NUM_SYMS {
