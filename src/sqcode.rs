@@ -6,8 +6,7 @@
 use crate::{
     image_ffi::zbar_image_t,
     img_scanner::{
-        _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym,
-        _zbar_image_scanner_recycle_syms, zbar_image_scanner_t,
+        _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_t,
     },
 };
 use libc::{c_char, c_int, c_uint, size_t};
@@ -106,7 +105,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract text from buffer and add to scanner results
-unsafe fn sq_extract_text(iscn: *mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
+unsafe fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
     let b64_len = len.div_ceil(3) * 4;
 
     let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_SQCODE, 0);
@@ -136,7 +135,7 @@ unsafe fn sq_extract_text(iscn: *mut zbar_image_scanner_t, buf: &[u8], len: size
     sym.data_alloc = (b64_len + 1) as c_uint;
     sym.datalen = b64_len as c_uint;
 
-    _zbar_image_scanner_add_sym(iscn, sym);
+    iscn.add_symbol(&mut *sym);
     false
 }
 
@@ -358,14 +357,13 @@ unsafe fn find_bottom_dot(
 /// - `img` points to a valid `zbar_image_t` with properly initialized image data
 pub unsafe fn sq_decode(
     reader: &mut SqReader,
-    iscn: *mut zbar_image_scanner_t,
-    img: *mut zbar_image_t,
+    iscn: &mut zbar_image_scanner_t,
+    img: &mut zbar_image_t,
 ) -> c_int {
     if !reader.enabled {
         return 0;
     }
 
-    let img = &*img;
     // Check image format (Y800 = fourcc('Y','8','0','0'))
     if img.format != 0x30303859 {
         let _ = writeln!(std::io::stderr(), "Unexpected image format");
@@ -684,20 +682,4 @@ pub unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
     if !reader.is_null() {
         let _ = Box::from_raw(reader);
     }
-}
-
-/// Decodes an SQCode from an image
-///
-/// # Safety
-///
-/// All pointers must be valid and properly initialized:
-/// - `reader` must point to a valid `SqReader`
-/// - `iscn` must point to a valid `zbar_image_scanner_t`
-/// - `img` must point to a valid `zbar_image_t` with initialized image data
-pub unsafe fn _zbar_sq_decode(
-    reader: &mut SqReader,
-    iscn: *mut zbar_image_scanner_t,
-    img: *mut zbar_image_t,
-) -> c_int {
-    sq_decode(reader, iscn, img)
 }

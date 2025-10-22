@@ -3,7 +3,10 @@
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
 //! The conversion to Rust is being done incrementally.
 
-use std::ptr::{null, NonNull};
+use std::{
+    mem::swap,
+    ptr::{null, NonNull},
+};
 
 use libc::{c_int, c_uint};
 
@@ -21,13 +24,17 @@ pub struct zbar_image_t {
     pub data: Vec<u8>,
     pub refcnt: c_int,
     pub seq: c_uint,
-    pub syms: Option<NonNull<zbar_symbol_set_t>>,
+    syms: Option<NonNull<zbar_symbol_set_t>>,
 }
 
 impl zbar_image_t {
     #[inline]
     pub(crate) fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
         self.syms = NonNull::new(ptr);
+    }
+
+    pub(crate) fn swap_symbols_with(&mut self, other: &mut Self) {
+        swap(&mut self.syms, &mut other.syms);
     }
 }
 

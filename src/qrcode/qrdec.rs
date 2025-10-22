@@ -4980,7 +4980,7 @@ pub unsafe fn qr_reader_match_centers(
 /// Decode QR codes from an image
 pub unsafe fn _zbar_qr_decode(
     reader: &mut qr_reader,
-    iscn: *mut zbar_image_scanner_t,
+    iscn: &mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
 ) -> c_int {
     let nqrdata: c_int;
@@ -5010,7 +5010,7 @@ pub unsafe fn _zbar_qr_decode(
         );
 
         nqrdata = if qrlist.nqrdata > 0 {
-            qr_code_data_list_extract_text(&qrlist as *const _ as *const _, iscn)
+            qr_code_data_list_extract_text(&qrlist, iscn)
         } else {
             0
         };

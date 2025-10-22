@@ -14,12 +14,12 @@ use crate::decoder_types::{
     ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_PARTIAL, ZBAR_QRCODE,
 };
 use crate::img_scanner::{
-    _zbar_image_scanner_add_sym, _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms,
-    zbar_image_scanner_get_config, zbar_image_scanner_t,
+    _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_get_config,
+    zbar_image_scanner_t,
 };
+use crate::qrcode::qr_code_data_list;
 use crate::symbol::{_zbar_symbol_add_point, symbol_set_create, zbar_symbol_t};
 
-use super::qr_point;
 use super::qrdec::qr_mode;
 
 fn qr_mode_has_data(_mode: qr_mode) -> bool {
@@ -50,29 +50,6 @@ pub struct qr_code_data_entry_sa {
     pub sa_index: c_uchar,
     pub sa_size: c_uchar,
     pub sa_parity: c_uchar,
-}
-
-pub struct qr_code_data_entry {
-    pub mode: qr_mode,
-    pub payload: qr_code_data_entry_payload,
-}
-
-pub struct qr_code_data {
-    pub entries: *mut qr_code_data_entry,
-    pub nentries: c_int,
-    pub version: c_uchar,
-    pub ecc_level: c_uchar,
-    pub sa_index: c_uchar,
-    pub sa_size: c_uchar,
-    pub sa_parity: c_uchar,
-    pub self_parity: c_uchar,
-    pub bbox: [qr_point; 4],
-}
-
-pub struct qr_code_data_list {
-    pub qrdata: *mut qr_code_data,
-    pub nqrdata: c_int,
-    pub cqrdata: c_int,
 }
 
 fn text_is_ascii(text: &[u8]) -> bool {
@@ -119,13 +96,12 @@ unsafe fn sym_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
 /// The caller must ensure that the pointers are valid and that the data they
 /// point to has the expected layout.
 pub unsafe fn qr_code_data_list_extract_text(
-    _qrlist: *const qr_code_data_list,
-    iscn: *mut zbar_image_scanner_t,
+    qrlist: &qr_code_data_list,
+    iscn: &mut zbar_image_scanner_t,
 ) -> c_int {
     let mut raw_binary: c_int = 0;
     zbar_image_scanner_get_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY, &mut raw_binary);
 
-    let qrlist = &*_qrlist;
     let qrdata = slice::from_raw_parts(qrlist.qrdata, qrlist.nqrdata as usize);
     let mut mark = vec![0u8; qrlist.nqrdata as usize];
     let ntext = 0;
@@ -412,7 +388,7 @@ pub unsafe fn qr_code_data_list_extract_text(
                     sym_ref.datalen = (len - 1) as u32;
                     sym_ref.data_alloc = len as u32;
                     sym_ref.modifiers = fnc1 as u32;
-                    _zbar_image_scanner_add_sym(iscn, sym);
+                    iscn.add_symbol(&mut *sym);
                 } else {
                     let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
                     let sa_sym_ref = &mut *sa_sym;
@@ -424,7 +400,7 @@ pub unsafe fn qr_code_data_list_extract_text(
                     sa_sym_ref.datalen = (len - 1) as u32;
                     sa_sym_ref.data_alloc = len as u32;
                     sa_sym_ref.modifiers = fnc1 as u32;
-                    _zbar_image_scanner_add_sym(iscn, sa_sym);
+                    iscn.add_symbol(&mut *sa_sym);
                     _zbar_image_scanner_recycle_syms(iscn, syms_head);
                 }
             } else {
