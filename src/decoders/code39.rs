@@ -443,7 +443,7 @@ fn code39_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
 /// Post-process decoded buffer
 #[inline]
-unsafe fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
+fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
     let character = dcode.code39.character() as usize;
     let direction = dcode.code39.direction();
 

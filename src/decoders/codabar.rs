@@ -323,7 +323,7 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
 /// Post-process decoded buffer
 #[inline]
-unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     let dir = dcode.codabar.direction();
     dcode.direction = 1 - 2 * (dir as c_int);
     let mut n = dcode.codabar.character() as usize;
@@ -383,7 +383,7 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
 }
 
 /// Main Codabar decode function
-pub unsafe fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Update latest character width
     let w8 = get_width(dcode, 8);
     let w1 = get_width(dcode, 1);
