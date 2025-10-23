@@ -18,7 +18,6 @@ pub const NUM_CFGS: usize = 2;
 pub const DECODE_WINDOW: usize = 16;
 
 // Forward declare zbar_symbol_type_t as c_int
-#[allow(non_camel_case_types)]
 pub type zbar_symbol_type_t = c_int;
 
 // Macro equivalents
@@ -103,7 +102,6 @@ pub const BUFFER_INCR: c_uint = 0x10;
 
 /// Interleaved 2 of 5 decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct i25_decoder_t {
     // Bitfields packed into first 32 bits:
     // direction: 1 bit, element: 4 bits, character: 12 bits = 17 bits used
@@ -165,7 +163,6 @@ impl i25_decoder_t {
 
 /// Code 39 decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct code39_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
     bitfields: c_uint,
@@ -224,7 +221,6 @@ impl code39_decoder_t {
 
 /// Code 93 decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct code93_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12
     bitfields: c_uint,
@@ -282,7 +278,6 @@ impl code93_decoder_t {
 
 /// Codabar decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct codabar_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
     bitfields: c_uint,
@@ -342,7 +337,6 @@ impl codabar_decoder_t {
 
 /// Code 128 decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct code128_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12 (16 bits)
     // start: 8 bits - packed into same u32
@@ -416,7 +410,6 @@ impl code128_decoder_t {
 
 /// SQ Code finder state (already defined but include here for completeness)
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct sq_finder_t {
     pub config: c_uint,
 }
@@ -426,7 +419,6 @@ pub struct sq_finder_t {
 // ============================================================================
 
 /// DataBar segment (partial)
-#[allow(non_camel_case_types)]
 pub struct databar_segment_t {
     // First 32 bits of bitfields:
     // finder: 5, exp: 1, color: 1, side: 1,
@@ -542,7 +534,6 @@ impl databar_segment_t {
 
 /// DataBar decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct databar_decoder_t {
     pub config: c_uint,
     pub config_exp: c_uint,
@@ -599,7 +590,6 @@ impl databar_decoder_t {
 
 /// EAN pass state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct ean_pass_t {
     pub state: c_char,
     pub width: c_uint,
@@ -608,7 +598,6 @@ pub struct ean_pass_t {
 
 /// EAN/UPC decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct ean_decoder_t {
     pub pass: [ean_pass_t; 4],
     pub left: zbar_symbol_type_t,
@@ -648,7 +637,6 @@ impl ean_decoder_t {
 
 /// QR finder line (from qrcode.h)
 #[derive(Default, Copy, Clone)]
-#[allow(non_camel_case_types)]
 pub struct qr_finder_line {
     pub pos: [c_int; 2], // qr_point
     pub len: c_int,
@@ -658,7 +646,6 @@ pub struct qr_finder_line {
 
 /// QR Code finder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct qr_finder_t {
     pub s5: c_uint,
     pub line: qr_finder_line,
@@ -677,12 +664,10 @@ impl qr_finder_t {
 // ============================================================================
 
 /// Decoder handler callback
-#[allow(non_camel_case_types)]
 pub type zbar_decoder_handler_t = unsafe fn(*mut zbar_decoder_t);
 
 /// Main barcode decoder state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct zbar_decoder_t {
     // Basic decoder state
     pub idx: u8,

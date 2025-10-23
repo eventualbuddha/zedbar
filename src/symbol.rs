@@ -119,7 +119,6 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
 }
 
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct zbar_symbol_t {
     pub(crate) symbol_type: c_int,
     pub(crate) configs: c_uint,

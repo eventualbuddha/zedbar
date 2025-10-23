@@ -16,7 +16,6 @@ use crate::{
 };
 
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct zbar_image_t {
     pub format: u32,
     pub width: c_uint,

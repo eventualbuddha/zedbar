@@ -4379,7 +4379,6 @@ pub unsafe fn qr_alignment_pattern_search(
 
 /// QR code data mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum qr_mode {
     /// Numeric digits ('0'...'9')
     QR_MODE_NUM = 1,

@@ -104,7 +104,6 @@ const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
     (a as u32) | ((b as u32) << 8) | ((c as u32) << 16) | ((d as u32) << 24)
 }
 
-#[allow(non_camel_case_types)]
 pub struct qr_reader {
     /// The random number generator used by RANSAC.
     pub rng: rand_chacha::ChaCha8Rng,
@@ -113,7 +112,6 @@ pub struct qr_reader {
 }
 
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct zbar_symbol_set_t {
     pub refcnt: c_int,
     pub nsyms: c_int,
@@ -143,7 +141,6 @@ pub(crate) type zbar_image_data_handler_t =
     unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
 
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct recycle_bucket_t {
     nsyms: c_int,
     head: *mut zbar_symbol_t,
@@ -151,7 +148,6 @@ pub struct recycle_bucket_t {
 
 /// image scanner state
 #[derive(Default)]
-#[allow(non_camel_case_types)]
 pub struct zbar_image_scanner_t {
     /// associated linear intensity scanner
     scn: Option<zbar_scanner_t>,
