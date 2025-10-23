@@ -298,7 +298,7 @@ fn decode6(dcode: &zbar_decoder_t) -> i8 {
 
 /// Validate checksum
 #[inline]
-unsafe fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
+fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
     if dcode.code128.character() < 3 {
         return true;
     }
@@ -637,9 +637,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 128 decode function
-pub unsafe fn _zbar_decode_code128(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let dcode = &mut *dcode;
-
+pub unsafe fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Update latest character width
     dcode.code128.s6 = dcode
         .code128

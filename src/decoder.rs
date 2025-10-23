@@ -147,28 +147,28 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
     }
 
     if dcode_ref.ean.enable != 0 {
-        let tmp = _zbar_decode_ean(dcode);
+        let tmp = _zbar_decode_ean(&mut *dcode);
         if tmp != 0 {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode_ref.code39.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_code39(dcode);
+        let tmp = _zbar_decode_code39(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode_ref.code93.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_code93(dcode);
+        let tmp = _zbar_decode_code93(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode_ref.code128.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_code128(dcode);
+        let tmp = _zbar_decode_code128(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
@@ -178,21 +178,21 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
         dcode_ref.databar.config | dcode_ref.databar.config_exp,
         ZBAR_CFG_ENABLE,
     ) {
-        let tmp = _zbar_decode_databar(dcode);
+        let tmp = _zbar_decode_databar(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode_ref.codabar.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_codabar(dcode);
+        let tmp = _zbar_decode_codabar(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode_ref.i25.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_i25(dcode);
+        let tmp = _zbar_decode_i25(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
@@ -269,14 +269,7 @@ fn decoder_get_config_mut(
 }
 
 /// Get all configurations for a symbology
-pub unsafe fn zbar_decoder_get_configs(
-    dcode: *const zbar_decoder_t,
-    sym: zbar_symbol_type_t,
-) -> c_uint {
-    if dcode.is_null() {
-        return 0;
-    }
-    let dcode = &*dcode;
+pub fn zbar_decoder_get_configs(dcode: &zbar_decoder_t, sym: zbar_symbol_type_t) -> c_uint {
     decoder_get_config(dcode, sym).copied().unwrap_or(0)
 }
 
@@ -358,16 +351,15 @@ fn decoder_set_config_int(
 
 /// Get decoder configuration value
 pub unsafe fn zbar_decoder_get_config(
-    dcode: *mut zbar_decoder_t,
+    dcode: &mut zbar_decoder_t,
     sym: zbar_symbol_type_t,
     cfg: c_int,
     val: *mut c_int,
 ) -> c_int {
-    if dcode.is_null() || val.is_null() {
+    if val.is_null() {
         return 1;
     }
 
-    let dcode = &*dcode;
     let config = match decoder_get_config(dcode, sym) {
         Some(c) => c,
         None => return 1,

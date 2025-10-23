@@ -383,9 +383,7 @@ unsafe fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t 
 }
 
 /// Main Codabar decode function
-pub unsafe fn _zbar_decode_codabar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let dcode = &mut *dcode;
-
+pub unsafe fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Update latest character width
     let w8 = get_width(dcode, 8);
     let w1 = get_width(dcode, 1);

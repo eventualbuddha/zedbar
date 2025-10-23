@@ -644,7 +644,7 @@ fn integrate_partial(
 }
 
 /// Copy result to output buffer
-fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
+unsafe fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
     let mut j: usize = 0;
     let new_direction;
     let base;
@@ -704,11 +704,10 @@ fn postprocess(dcode: &mut zbar_decoder_t, sym: zbar_symbol_type_t) {
 
     if base > ZBAR_PARTIAL {
         // Get mutable slice for writing
-        let buffer = unsafe {
-            match dcode.buffer_mut_slice(buf_len + if needs_isbn10_check { 2 } else { 1 }) {
-                Ok(buf) => buf,
-                Err(_) => return,
-            }
+        let buffer = match dcode.buffer_mut_slice(buf_len + if needs_isbn10_check { 2 } else { 1 })
+        {
+            Ok(buf) => buf,
+            Err(_) => return,
         };
 
         // Copy from temp buffer
@@ -839,9 +838,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> zbar_symbol
 // ============================================================================
 
 /// Main EAN/UPC decoder entry point
-pub unsafe fn _zbar_decode_ean(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let dcode = &mut *dcode;
-
+pub unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // process up to 4 separate passes
     let mut sym = ZBAR_NONE;
     let pass_idx = (dcode.idx & 3) as usize;

@@ -267,9 +267,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 }
 
 /// Main I25 decode function
-pub unsafe fn _zbar_decode_i25(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let dcode = &mut *dcode;
-
+pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Update latest character width
     let w10 = get_width(dcode, 10);
     let w0 = get_width(dcode, 0);

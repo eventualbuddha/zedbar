@@ -262,7 +262,7 @@ fn plusmod47(mut acc: i32, add: i32) -> i32 {
 
 /// Validate checksums
 #[inline]
-unsafe fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
+fn validate_checksums(dcode: &zbar_decoder_t) -> bool {
     let n = dcode.code93.character() as usize;
     let buf = dcode.buffer_slice();
 
@@ -387,9 +387,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 93 decode function
-pub unsafe fn _zbar_decode_code93(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let dcode = &mut *dcode;
-
+pub unsafe fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     if dcode.code93.character() < 0 {
         if dcode.color() != zbar_color_t::ZBAR_BAR {
             return ZBAR_NONE;

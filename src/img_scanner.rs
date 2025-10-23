@@ -345,8 +345,11 @@ pub unsafe fn zbar_image_scanner_get_config(
     }
 
     if cfg < ZBAR_CFG_UNCERTAINTY {
-        let dcode_ptr = iscn.dcode.as_mut().map_or(null_mut(), |d| d as *mut _);
-        return zbar_decoder_get_config(dcode_ptr, sym, cfg, val);
+        if let Some(dcode) = &mut iscn.dcode.as_mut() {
+            return zbar_decoder_get_config(dcode, sym, cfg, val);
+        } else {
+            return 1;
+        }
     }
 
     if cfg < ZBAR_CFG_POSITION {
@@ -757,7 +760,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     // Allocate new symbol
     let sym = _zbar_image_scanner_alloc_sym(&mut *iscn, type_ as c_int, (datalen + 1) as c_int);
     let sym_ref = &mut *sym;
-    sym_ref.configs = zbar_decoder_get_configs(dcode, type_);
+    sym_ref.configs = zbar_decoder_get_configs(&*dcode, type_);
     sym_ref.modifiers = zbar_decoder_get_modifiers(dcode);
 
     // Copy data

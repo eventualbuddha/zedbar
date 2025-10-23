@@ -153,7 +153,7 @@ impl i25_decoder_t {
     }
 
     /// Reset i25 decoder state
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.set_direction(false);
         self.set_element(0);
         self.set_character(-1);
@@ -211,7 +211,7 @@ impl code39_decoder_t {
     }
 
     /// Reset code39 decoder state
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.set_direction(false);
         self.set_element(0);
         self.set_character(-1);
@@ -269,7 +269,7 @@ impl code93_decoder_t {
     }
 
     /// Reset code93 decoder state
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.set_direction(false);
         self.set_element(0);
         self.set_character(-1);
@@ -327,7 +327,7 @@ impl codabar_decoder_t {
     }
 
     /// Reset codabar decoder state
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.set_direction(false);
         self.set_element(0);
         self.set_character(-1);
@@ -400,7 +400,7 @@ impl code128_decoder_t {
     }
 
     /// Reset code128 decoder state
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.set_direction(0);
         self.set_element(0);
         self.set_character(-1);
@@ -619,7 +619,7 @@ pub struct ean_decoder_t {
 
 impl ean_decoder_t {
     /// Prepare EAN decoder for new scan
-    pub(crate) unsafe fn new_scan(&mut self) {
+    pub(crate) fn new_scan(&mut self) {
         self.pass[0].state = -1;
         self.pass[1].state = -1;
         self.pass[2].state = -1;
@@ -628,7 +628,7 @@ impl ean_decoder_t {
     }
 
     /// Reset EAN decoder state
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.new_scan();
         self.left = 0; // ZBAR_NONE
         self.right = 0; // ZBAR_NONE
@@ -767,7 +767,7 @@ impl zbar_decoder_t {
     ///
     /// # Errors
     /// Returns `Err` on allocation failure or if max size exceeded, `Ok` on success.
-    pub(crate) unsafe fn set_buffer_capacity(&mut self, len: c_uint) -> Result<(), ()> {
+    pub(crate) fn set_buffer_capacity(&mut self, len: c_uint) -> Result<(), ()> {
         if len <= BUFFER_MIN {
             return Ok(());
         }
@@ -839,7 +839,6 @@ impl zbar_decoder_t {
     }
 
     /// Ensure the buffer has at least the specified capacity and length.
-    /// Returns a mutable slice to the buffer.
     ///
     /// This is useful when you need to write to a specific position in the buffer.
     ///
@@ -849,13 +848,12 @@ impl zbar_decoder_t {
     /// # Errors
     /// Returns `Err` if capacity allocation fails or exceeds max size.
     #[inline]
-    pub(crate) unsafe fn ensure_buffer_size(&mut self, min_len: usize) -> Result<&mut [u8], ()> {
+    pub(crate) unsafe fn ensure_buffer_size(&mut self, min_len: usize) -> Result<(), ()> {
         let current_len = self.buffer.len();
-        if min_len <= current_len {
-            Ok(&mut self.buffer[..])
-        } else {
-            self.buffer_mut_slice(min_len)
+        if min_len > current_len {
+            self.buffer_mut_slice(min_len)?;
         }
+        Ok(())
     }
 
     /// Write a byte at the specified position, resizing the buffer if necessary.
@@ -887,7 +885,7 @@ impl zbar_decoder_t {
 
     /// Acquire a decoder lock for a specific symbology type
     /// Returns 1 if already locked, 0 if lock acquired
-    pub(crate) unsafe fn _zbar_decoder_acquire_lock(&mut self, req: zbar_symbol_type_t) -> c_char {
+    pub(crate) fn _zbar_decoder_acquire_lock(&mut self, req: zbar_symbol_type_t) -> c_char {
         if self.lock != 0 {
             return 1;
         }
@@ -897,7 +895,7 @@ impl zbar_decoder_t {
 
     /// Release a decoder lock
     /// Returns 0 on success
-    pub(crate) unsafe fn _zbar_decoder_release_lock(&mut self, req: zbar_symbol_type_t) -> c_char {
+    pub(crate) fn _zbar_decoder_release_lock(&mut self, req: zbar_symbol_type_t) -> c_char {
         debug_assert_eq!(self.lock, req, "lock={} req={}", self.lock, req);
         self.lock = 0;
         0

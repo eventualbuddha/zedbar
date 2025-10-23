@@ -222,13 +222,14 @@ pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     }
 
     // reset scanner and associated decoder
-    // This zeroes out from x to the end of the structure
-    let start_ptr = ptr::addr_of_mut!(scn.x) as *mut u8;
-    let scn_end = (scn as *mut _ as *mut u8).wrapping_add(std::mem::size_of::<zbar_scanner_t>());
-    let size = scn_end as usize - start_ptr as usize;
-    unsafe { ptr::write_bytes(start_ptr, 0, size) };
-
+    scn.x = 0;
+    scn.y0 = Default::default();
+    scn.y1_sign = 0;
     scn.y1_thresh = scn.y1_min_thresh;
+    scn.cur_edge = 0;
+    scn.last_edge = 0;
+    scn.width = 0;
+
     if let Some(decoder) = scn.decoder_mut() {
         unsafe { decoder.new_scan() };
     }

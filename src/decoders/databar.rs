@@ -587,8 +587,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-pub unsafe fn _zbar_databar_postprocess(dcode: *mut zbar_decoder_t, d: *mut c_uint) {
-    let dcode = &mut *dcode;
+pub unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, d: *mut c_uint) {
     let mut d_array = [*d.offset(0), *d.offset(1), *d.offset(2), *d.offset(3)];
 
     // Get config before borrowing buffer
@@ -769,10 +768,10 @@ pub unsafe fn _zbar_databar_merge_segment(
 
 /// Match DataBar segment to find complete symbol
 pub unsafe fn match_segment(
-    dcode: *mut zbar_decoder_t,
+    dcode: &mut zbar_decoder_t,
     seg: *mut crate::decoder_types::databar_segment_t,
 ) -> zbar_symbol_type_t {
-    let db = &mut (*dcode).databar;
+    let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
     let mut maxcnt = 0;
@@ -876,17 +875,17 @@ pub unsafe fn match_segment(
     }
     (*seg).set_finder(-1);
 
-    if (*dcode).set_buffer_capacity(18).is_err() {
+    if dcode.set_buffer_capacity(18).is_err() {
         return ZBAR_PARTIAL;
     }
 
-    if (*dcode)._zbar_decoder_acquire_lock(ZBAR_DATABAR) != 0 {
+    if dcode._zbar_decoder_acquire_lock(ZBAR_DATABAR) != 0 {
         return ZBAR_PARTIAL;
     }
 
     _zbar_databar_postprocess(dcode, d.as_mut_ptr());
-    (*dcode).modifiers = 1 << ZBAR_MOD_GS1;
-    (*dcode).direction = 1 - 2 * (((*seg).side() as i32) ^ ((*seg).color() as i32) ^ 1);
+    dcode.modifiers = 1 << ZBAR_MOD_GS1;
+    dcode.direction = 1 - 2 * (((*seg).side() as i32) ^ ((*seg).color() as i32) ^ 1);
     ZBAR_DATABAR
 }
 
@@ -1315,13 +1314,12 @@ pub fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uin
 
 /// Decode a DataBar character from width measurements
 pub unsafe fn decode_char(
-    dcode: *mut zbar_decoder_t,
+    dcode: &mut zbar_decoder_t,
     seg: *mut crate::decoder_types::databar_segment_t,
     off: c_int,
     dir: c_int,
 ) -> zbar_symbol_type_t {
-    let db = &mut (*dcode).databar;
-    let s = (*dcode).calc_s(if dir > 0 { off } else { off - 6 } as u8, 8);
+    let s = dcode.calc_s(if dir > 0 { off } else { off - 6 } as u8, 8);
     let mut emin = [0i32, 0i32];
     let mut sum = 0i32;
     let mut sig0 = 0u32;
@@ -1342,7 +1340,7 @@ pub unsafe fn decode_char(
 
     let mut off = off;
     for i in (0..4).rev() {
-        let e = _zbar_decoder_decode_e((*dcode).pair_width(off as u8), s, n);
+        let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
             return ZBAR_NONE;
         }
@@ -1357,7 +1355,7 @@ pub unsafe fn decode_char(
             break;
         }
 
-        let e = _zbar_decoder_decode_e((*dcode).pair_width(off as u8), s, n);
+        let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
             return ZBAR_NONE;
         }
@@ -1458,7 +1456,7 @@ pub unsafe fn decode_char(
     (*seg).set_check(chk as u8);
     (*seg).data = v as i16;
 
-    _zbar_databar_merge_segment(db, seg);
+    _zbar_databar_merge_segment(&mut dcode.databar, seg);
 
     if (*seg).exp() {
         return match_segment_exp(dcode, seg, dir);
@@ -1470,20 +1468,20 @@ pub unsafe fn decode_char(
 
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
-pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
+pub unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
     let mut maxage = 0u32;
-    let csegs = (*db).csegs() as usize;
+    let csegs = db.csegs() as usize;
     let mut old: c_int = -1;
 
     // First pass: look for empty slots or very old segments
     for i in 0..csegs {
-        let seg = ((*db).segs).add(i);
+        let seg = db.segs.add(i);
 
         if (*seg).finder() < 0 {
             return i as c_int;
         }
 
-        let age = (*db).epoch().wrapping_sub((*seg).epoch());
+        let age = db.epoch().wrapping_sub((*seg).epoch());
         if age >= 128 && (*seg).count() < 2 {
             (*seg).set_finder(-1);
             return i as c_int;
@@ -1512,17 +1510,17 @@ pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
 
         if new_csegs != csegs {
             // Reallocate segment array
-            let new_ptr = decoder_realloc_databar_segments((*db).segs, new_csegs);
+            let new_ptr = decoder_realloc_databar_segments(db.segs, new_csegs);
 
             if new_ptr.is_null() {
                 // Allocation failed, fall through to reuse old segment
             } else {
-                (*db).segs = new_ptr;
-                (*db).set_csegs(new_csegs as u8);
+                db.segs = new_ptr;
+                db.set_csegs(new_csegs as u8);
 
                 // Initialize new segments
                 for j in i..new_csegs {
-                    let seg = ((*db).segs).add(j);
+                    let seg = (db.segs).add(j);
                     (*seg).set_finder(-1);
                     (*seg).set_exp(false);
                     (*seg).set_color(zbar_color_t::ZBAR_SPACE);
@@ -1539,31 +1537,30 @@ pub unsafe fn _zbar_databar_alloc_segment(db: *mut databar_decoder_t) -> c_int {
 
     // Reuse oldest segment
     if old >= 0 {
-        let seg = ((*db).segs).offset(old as isize);
+        let seg = db.segs.offset(old as isize);
         (*seg).set_finder(-1);
     }
     old
 }
 
 /// Decode DataBar finder pattern
-pub unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let db = &mut (*dcode).databar;
-    let e0 = (*dcode).pair_width(1);
-    let e2 = (*dcode).pair_width(3);
+pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+    let e0 = dcode.pair_width(1);
+    let e2 = dcode.pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
         let e = e2 * 4;
         if e < 15 * e0 || e > 34 * e0 {
             return ZBAR_NONE;
         }
-        (0, e2, (*dcode).pair_width(4))
+        (0, e2, dcode.pair_width(4))
     } else {
         let e = e0 * 4;
         if e < 15 * e2 || e > 34 * e2 {
             return ZBAR_NONE;
         }
-        (1, e0, (*dcode).pair_width(0))
+        (1, e0, dcode.pair_width(0))
     };
-    let e1 = (*dcode).pair_width(2);
+    let e1 = dcode.pair_width(2);
 
     let s = e1 + e3;
     if s < 12 {
@@ -1587,7 +1584,13 @@ pub unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
         + FINDER_HASH[((sig >> 1) & 0x1f) as usize])
         & 0x1f;
     if finder == 0x1f
-        || (((if finder < 9 { db.config } else { db.config_exp }) >> ZBAR_CFG_ENABLE) & 1) == 0
+        || (((if finder < 9 {
+            dcode.databar.config
+        } else {
+            dcode.databar.config_exp
+        }) >> ZBAR_CFG_ENABLE)
+            & 1)
+            == 0
     {
         return ZBAR_NONE;
     }
@@ -1596,58 +1599,59 @@ pub unsafe fn decode_finder(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
         return ZBAR_NONE;
     }
 
-    let iseg = _zbar_databar_alloc_segment(db);
+    let iseg = _zbar_databar_alloc_segment(&mut dcode.databar);
     if iseg < 0 {
         return ZBAR_NONE;
     }
 
-    let seg = &mut (*db.segs.offset(iseg as isize));
+    let seg = &mut (*dcode.databar.segs.offset(iseg as isize));
     seg.set_finder(if finder >= 9 { finder - 9 } else { finder });
     seg.set_exp(finder >= 9);
-    seg.set_color((((*dcode).color() as u8) ^ dir as u8 ^ 1).into());
+    seg.set_color(((dcode.color() as u8) ^ dir as u8 ^ 1).into());
     seg.set_side(dir as u8);
     seg.set_partial(false);
     seg.set_count(1);
     seg.width = s as i16;
-    seg.set_epoch(db.epoch());
+    seg.set_epoch(dcode.databar.epoch());
 
     let rc = decode_char(dcode, seg, 12 - dir, -1);
     if rc == 0 {
         seg.set_partial(true);
     } else {
-        db.set_epoch(db.epoch().wrapping_add(1));
+        dcode
+            .databar
+            .set_epoch(dcode.databar.epoch().wrapping_add(1));
     }
 
-    let i = (((*dcode).idx as c_int + 8 + dir) & 0xf) as usize;
-    if db.chars[i] != -1 {
+    let i = ((dcode.idx as c_int + 8 + dir) & 0xf) as usize;
+    if dcode.databar.chars[i] != -1 {
         return ZBAR_NONE;
     }
-    db.chars[i] = iseg as i8;
+    dcode.databar.chars[i] = iseg as i8;
     rc
 }
 
-pub unsafe fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_type_t {
-    let db = &mut (*dcode).databar;
-    let i = (*dcode).idx & 0xf;
+pub unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+    let i = dcode.idx & 0xf;
 
     let mut sym = decode_finder(dcode);
 
-    let iseg = db.chars[i as usize];
+    let iseg = dcode.databar.chars[i as usize];
     if iseg < 0 {
         return sym;
     }
 
-    db.chars[i as usize] = -1;
-    let mut seg = db.segs.offset(iseg as isize);
+    dcode.databar.chars[i as usize] = -1;
+    let mut seg = dcode.databar.segs.offset(iseg as isize);
 
     let pair;
     if (*seg).partial() {
         pair = null_mut();
         (*seg).set_side(!(*seg).side());
     } else {
-        let jseg = _zbar_databar_alloc_segment(db as *mut _);
-        pair = db.segs.offset(iseg as isize);
-        seg = db.segs.offset(jseg as isize);
+        let jseg = _zbar_databar_alloc_segment(&mut dcode.databar);
+        pair = dcode.databar.segs.offset(iseg as isize);
+        seg = dcode.databar.segs.offset(jseg as isize);
         (*seg).set_finder((*pair).finder());
         (*seg).set_exp((*pair).exp());
         (*seg).set_color((*pair).color());
@@ -1655,7 +1659,7 @@ pub unsafe fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
         (*seg).set_partial(false);
         (*seg).set_count(1);
         (*seg).width = (*pair).width;
-        (*seg).set_epoch(db.epoch());
+        (*seg).set_epoch(dcode.databar.epoch());
     }
 
     sym = decode_char(dcode, seg, 1, 1);
@@ -1665,7 +1669,9 @@ pub unsafe fn _zbar_decode_databar(dcode: *mut zbar_decoder_t) -> zbar_symbol_ty
             (*pair).set_partial(true);
         }
     } else {
-        db.set_epoch(db.epoch().wrapping_add(1));
+        dcode
+            .databar
+            .set_epoch(dcode.databar.epoch().wrapping_add(1));
     }
 
     sym
