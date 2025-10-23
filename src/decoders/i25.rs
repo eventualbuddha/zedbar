@@ -190,11 +190,6 @@ unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
         return true;
     }
 
-    // Copy holding buffer
-    let temp_buf = dcode.i25.buf; // Copy the small array
-    if let Ok(buffer) = dcode.buffer_mut_slice(4) {
-        buffer[..4].copy_from_slice(&temp_buf[..4]);
-    }
     false
 }
 
@@ -238,11 +233,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     let min_len = cfg(&dcode.i25, ZBAR_CFG_MIN_LEN);
     let max_len = cfg(&dcode.i25, ZBAR_CFG_MAX_LEN);
 
-    // Get mutable slice for the buffer with space for null terminator
-    let buffer = match dcode.buffer_mut_slice(char_count + 1) {
-        Ok(buf) => buf,
-        Err(_) => return ZBAR_NONE,
-    };
+    let buffer = &mut dcode.i25.buffer;
 
     if direction {
         // Reverse buffer
@@ -255,11 +246,12 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         return ZBAR_NONE;
     }
 
-    // Add null terminator
-    buffer[char_count] = 0;
+    let buffer = buffer.clone();
 
-    // Truncate to final length
-    dcode.truncate_buffer(char_count);
+    dcode
+        .buffer_mut_slice(char_count)
+        .unwrap()
+        .copy_from_slice(&buffer[..char_count]);
 
     dcode.modifiers = 0;
     dcode.i25.set_character(-1);
@@ -310,22 +302,7 @@ pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t
 
     let character = dcode.i25.character();
 
-    if character >= 4 {
-        // Write to main buffer using idiomatic method
-        if dcode
-            .write_buffer_byte(character as usize, c + b'0')
-            .is_err()
-        {
-            // goto reset
-            release_lock(dcode, ZBAR_I25);
-            dcode.i25.set_character(-1);
-            return ZBAR_NONE;
-        }
-    } else {
-        // Write to holding buffer
-        dcode.i25.buf[character as usize] = c + b'0';
-    }
-
+    dcode.i25.set_byte(character as usize, c + b'0');
     dcode.i25.set_character(character + 1);
 
     let c = i25_decode10(dcode, 0);
@@ -340,22 +317,7 @@ pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t
 
     let character = dcode.i25.character();
 
-    if character >= 4 {
-        // Write to main buffer using idiomatic method
-        if dcode
-            .write_buffer_byte(character as usize, c + b'0')
-            .is_err()
-        {
-            // goto reset
-            release_lock(dcode, ZBAR_I25);
-            dcode.i25.set_character(-1);
-            return ZBAR_NONE;
-        }
-    } else {
-        // Write to holding buffer
-        dcode.i25.buf[character as usize] = c + b'0';
-    }
-
+    dcode.i25.set_byte(character as usize, c + b'0');
     dcode.i25.set_character(character + 1);
     dcode.i25.set_element(10);
 

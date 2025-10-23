@@ -109,7 +109,7 @@ pub struct i25_decoder_t {
     bitfields: c_uint,
     pub s10: c_uint,
     pub width: c_uint,
-    pub buf: [u8; 4],
+    pub buffer: Vec<u8>,
     pub config: c_uint,
     pub configs: [c_int; NUM_CFGS],
 }
@@ -158,6 +158,13 @@ impl i25_decoder_t {
         self.set_element(0);
         self.set_character(-1);
         self.s10 = 0;
+    }
+
+    pub(crate) fn set_byte(&mut self, index: usize, value: u8) {
+        if self.buffer.len() <= index {
+            self.buffer.resize(index + 1, 0);
+        }
+        self.buffer[index] = value;
     }
 }
 
