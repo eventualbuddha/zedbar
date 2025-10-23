@@ -449,26 +449,22 @@ unsafe fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
 
     dcode.direction = 1 - 2 * (direction as c_int);
 
-    // Get mutable slice for the buffer with space for null terminator
-    let buffer = match dcode.buffer_mut_slice(character + 1) {
-        Ok(buf) => buf,
-        Err(_) => return -1,
-    };
+    let buffer = &mut dcode.code39.buffer[..character];
 
     if direction {
         // Reverse buffer
-        buffer[..character].reverse();
+        buffer.reverse();
     }
 
-    for c in buffer.iter_mut().take(character) {
+    for c in buffer.iter_mut() {
         *c = *CODE39_CHARACTERS.get(*c as usize).unwrap_or(&b'?');
     }
 
-    // Add null terminator
-    buffer[character] = 0;
-
-    // Truncate to final length
-    dcode.truncate_buffer(character);
+    let buffer = buffer.to_vec();
+    dcode
+        .buffer_mut_slice(character)
+        .unwrap()
+        .copy_from_slice(&buffer);
 
     dcode.modifiers = 0;
     0
@@ -510,7 +506,7 @@ pub unsafe fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_typ
 
         // Check if STOP character is in the buffer
         let has_stop = if character > 0 {
-            let buf_slice = dcode.buffer_slice();
+            let buf_slice = &dcode.code39.buffer;
             buf_slice
                 .get((character - 1) as usize)
                 .is_some_and(|&b| b == 0x2b)
@@ -592,16 +588,7 @@ pub unsafe fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_typ
         dcode.code39.s9
     );
 
-    // Write directly to buffer using idiomatic method
-    if dcode
-        .write_buffer_byte(character as usize, c as u8)
-        .is_err()
-    {
-        release_lock(dcode, ZBAR_CODE39);
-        dcode.code39.set_character(-1);
-        return ZBAR_NONE;
-    }
-
+    dcode.code39.set_byte(character as usize, c as u8);
     dcode.code39.set_character(character + 1);
 
     ZBAR_NONE

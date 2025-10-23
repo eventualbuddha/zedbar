@@ -177,6 +177,7 @@ pub struct code39_decoder_t {
     pub width: c_uint,
     pub config: c_uint,
     pub configs: [c_int; NUM_CFGS],
+    pub buffer: Vec<u8>,
 }
 
 impl code39_decoder_t {
@@ -223,6 +224,13 @@ impl code39_decoder_t {
         self.set_element(0);
         self.set_character(-1);
         self.s9 = 0;
+    }
+
+    pub(crate) fn set_byte(&mut self, index: usize, value: u8) {
+        if self.buffer.len() <= index {
+            self.buffer.resize(index + 1, 0);
+        }
+        self.buffer[index] = value;
     }
 }
 
