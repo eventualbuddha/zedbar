@@ -759,7 +759,7 @@ pub unsafe fn qr_hom_fit(
     _p: *mut qr_point,
     _aff: *const qr_aff,
     rng: &mut ChaCha8Rng,
-    _img: *const c_uchar,
+    img: &[u8],
     _width: c_int,
     _height: c_int,
 ) -> c_int {
@@ -907,11 +907,11 @@ pub unsafe fn qr_hom_fit(
                 r.reserve((cr - nr) as usize);
             }
 
-            let mut ret = qr_finder_quick_crossing_check(_img, _width, _height, x0, y0, x1, y1, 1);
+            let mut ret = qr_finder_quick_crossing_check(img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
                 r.push([0; 2]);
                 ret = qr_finder_locate_crossing(
-                    _img,
+                    img,
                     _width,
                     _height,
                     x0,
@@ -969,11 +969,11 @@ pub unsafe fn qr_hom_fit(
                 b.reserve((cb - nb) as usize);
             }
 
-            let mut ret = qr_finder_quick_crossing_check(_img, _width, _height, x0, y0, x1, y1, 1);
+            let mut ret = qr_finder_quick_crossing_check(img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
                 b.push([0; 2]);
                 ret = qr_finder_locate_crossing(
-                    _img,
+                    img,
                     _width,
                     _height,
                     x0,
@@ -1076,7 +1076,7 @@ pub unsafe fn qr_hom_fit(
             (*_p.add(3))[0],
             (*_p.add(3))[1],
         );
-        if qr_alignment_pattern_search(&mut p3, &cell, dim - 7, dim - 7, 4, _img, _width, _height)
+        if qr_alignment_pattern_search(&mut p3, &cell, dim - 7, dim - 7, 4, img, _width, _height)
             >= 0
         {
             // We do need four points in a square to initialize our homography,
@@ -2247,7 +2247,7 @@ pub unsafe fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _hom: *const q
 
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn qr_finder_quick_crossing_check(
-    _img: *const c_uchar,
+    _img: &[u8],
     _width: c_int,
     _height: c_int,
     _x0: c_int,
@@ -2275,14 +2275,12 @@ pub unsafe fn qr_finder_quick_crossing_check(
         return -1;
     }
 
-    if (c_int::from(*_img.add((_y0 * _width + _x0) as usize) == 0)) != _v
-        || (c_int::from(*_img.add((_y1 * _width + _x1) as usize) == 0)) != _v
+    if (c_int::from(_img[(_y0 * _width + _x0) as usize] == 0)) != _v
+        || (c_int::from(_img[(_y1 * _width + _x1) as usize] == 0)) != _v
     {
         return 1;
     }
-    if (c_int::from(*_img.add((((_y0 + _y1) >> 1) * _width + ((_x0 + _x1) >> 1)) as usize) == 0))
-        == _v
-    {
+    if (c_int::from(_img[(((_y0 + _y1) >> 1) * _width + ((_x0 + _x1) >> 1)) as usize] == 0)) == _v {
         return -1;
     }
     0
@@ -2388,7 +2386,7 @@ const BCH18_6_CODES: [c_uint; 34] = [
 pub unsafe fn qr_finder_version_decode(
     _f: *const qr_finder,
     _hom: *const qr_hom,
-    _img: *const c_uchar,
+    _img: &[u8],
     _width: c_int,
     _height: c_int,
     _dir: c_int,
@@ -2459,7 +2457,7 @@ pub unsafe fn qr_finder_fmt_info_decode(
     _ur: *const qr_finder,
     _dl: *const qr_finder,
     _hom: *const qr_hom,
-    _img: *const c_uchar,
+    _img: &[u8],
     _width: c_int,
     _height: c_int,
 ) -> c_int {
@@ -2792,7 +2790,7 @@ unsafe fn qr_sampling_grid_init(
     _ur_pos: *const qr_point,
     _dl_pos: *const qr_point,
     _p: *mut qr_point,
-    _img: *const c_uchar,
+    _img: &[u8],
     _width: c_int,
     _height: c_int,
 ) {
@@ -3089,7 +3087,7 @@ unsafe fn qr_sampling_grid_sample(
     _data_bits: *mut c_uint,
     _dim: c_int,
     _fmt_info: c_int,
-    _img: *const c_uchar,
+    _img: &[u8],
     _width: c_int,
     _height: c_int,
 ) {
@@ -3590,7 +3588,7 @@ unsafe fn qr_code_decode(
     _dl_pos: *const qr_point,
     _version: c_int,
     _fmt_info: c_int,
-    _img: *const c_uchar,
+    _img: &[u8],
     _width: c_int,
     _height: c_int,
 ) -> c_int {
@@ -3972,7 +3970,7 @@ unsafe fn qr_hom_cell_init(
 /// Samples a pixel from the binarized image, with coordinates in QR_FINDER_SUBPREC
 /// subpixel units. Clamps coordinates to valid image bounds.
 pub unsafe fn qr_img_get_bit(
-    img: *const u8,
+    img: &[u8],
     width: c_int,
     height: c_int,
     mut x: c_int,
@@ -3983,7 +3981,7 @@ pub unsafe fn qr_img_get_bit(
     let y_clamped = y.clamp(0, height - 1);
     let x_clamped = x.clamp(0, width - 1);
     let idx = y_clamped * width + x_clamped;
-    if *img.offset(idx as isize) != 0 {
+    if img[idx as usize] != 0 {
         1
     } else {
         0
@@ -4041,7 +4039,7 @@ unsafe fn qr_hom_cell_project(
 /// Returns 0 on success, -1 if no crossing found.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn qr_finder_locate_crossing(
-    img: *const u8,
+    img: &[u8],
     width: c_int,
     _height: c_int,
     x0: c_int,
@@ -4071,7 +4069,7 @@ pub unsafe fn qr_finder_locate_crossing(
             x0_pos[1 - steep] += step[1 - steep];
             err -= dx[steep];
         }
-        let pixel = *img.offset((x0_pos[1] * width + x0_pos[0]) as isize);
+        let pixel = img[(x0_pos[1] * width + x0_pos[0]) as usize];
         if ((pixel == 0) as c_int) != v {
             break;
         }
@@ -4089,7 +4087,7 @@ pub unsafe fn qr_finder_locate_crossing(
             x1_pos[1 - steep] -= step[1 - steep];
             err -= dx[steep];
         }
-        let pixel = *img.offset((x1_pos[1] * width + x1_pos[0]) as isize);
+        let pixel = img[(x1_pos[1] * width + x1_pos[0]) as usize];
         if ((pixel == 0) as c_int) != v {
             break;
         }
@@ -4109,7 +4107,7 @@ unsafe fn qr_alignment_pattern_fetch(
     p: &[[qr_point; 5]; 5],
     x0: c_int,
     y0: c_int,
-    img: *const u8,
+    img: &[u8],
     width: c_int,
     height: c_int,
 ) -> c_uint {
@@ -4137,7 +4135,7 @@ unsafe fn qr_alignment_pattern_search(
     _u: c_int,
     _v: c_int,
     r: c_int,
-    img: *const u8,
+    img: &[u8],
     width: c_int,
     height: c_int,
 ) -> c_int {
@@ -4489,9 +4487,9 @@ pub(crate) unsafe fn qr_code_data_clear(qrdata: &mut qr_code_data) {
 ///
 /// Returns the version number if successful, -1 otherwise.
 pub(crate) unsafe fn qr_reader_try_configuration(
-    _reader: *mut qr_reader,
+    reader: &mut qr_reader,
     qrdata: &mut qr_code_data,
-    _img: *const c_uchar,
+    img: &[u8],
     _width: c_int,
     _height: c_int,
     _c: *mut *mut qr_finder_center,
@@ -4600,8 +4598,8 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             &mut dl,
             bbox.as_mut_ptr(),
             &aff,
-            &mut (*_reader).rng,
-            _img,
+            &mut reader.rng,
+            img,
             _width,
             _height,
         ) < 0
@@ -4650,7 +4648,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             // value away.
             // If no decoded version could be sufficiently close, we don't even try.
             let ur_version_tmp = if ur.eversion[1] >= 7 - QR_LARGE_VERSION_SLACK {
-                let ver = qr_finder_version_decode(&ur, &hom, _img, _width, _height, 0);
+                let ver = qr_finder_version_decode(&ur, &hom, img, _width, _height, 0);
                 if (ver - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK {
                     -1
                 } else {
@@ -4661,7 +4659,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             };
 
             let dl_version_tmp = if dl.eversion[0] >= 7 - QR_LARGE_VERSION_SLACK {
-                let ver = qr_finder_version_decode(&dl, &hom, _img, _width, _height, 1);
+                let ver = qr_finder_version_decode(&dl, &hom, img, _width, _height, 1);
                 if (ver - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
                     -1
                 } else {
@@ -4694,7 +4692,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             continue;
         }
 
-        fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, _img, _width, _height);
+        fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, img, _width, _height);
         if fmt_info < 0
             || qr_code_decode(
                 qrdata,
@@ -4703,7 +4701,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
                 &(*dl.c).pos,
                 ur_version,
                 fmt_info,
-                _img,
+                img,
                 _width,
                 _height,
             ) < 0
@@ -4730,7 +4728,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             dl.o.swap(0, 1);
             dl.size.swap(0, 1);
 
-            fmt_info = qr_finder_fmt_info_decode(&ul, &dl, &ur, &hom, _img, _width, _height);
+            fmt_info = qr_finder_fmt_info_decode(&ul, &dl, &ur, &hom, img, _width, _height);
             if fmt_info < 0 {
                 continue;
             }
@@ -4754,7 +4752,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
                 &(*ur.c).pos,
                 ur_version,
                 fmt_info,
-                _img,
+                img,
                 _width,
                 _height,
             ) < 0
@@ -4782,11 +4780,11 @@ pub unsafe fn _zbar_qr_found_line(
 
 /// Match finder centers and decode QR codes
 unsafe fn qr_reader_match_centers(
-    _reader: *mut qr_reader,
+    reader: &mut qr_reader,
     _qrlist: &mut qr_code_data_list,
     _centers: *mut qr_finder_center,
     _ncenters: c_int,
-    _img: *const c_uchar,
+    img: &[u8],
     _width: c_int,
     _height: c_int,
 ) {
@@ -4814,9 +4812,9 @@ unsafe fn qr_reader_match_centers(
                     ];
                     let mut qrdata = qr_code_data::default();
                     let version = qr_reader_try_configuration(
-                        _reader,
+                        reader,
                         &mut qrdata,
-                        _img,
+                        img,
                         _width,
                         _height,
                         c.as_mut_ptr(),
@@ -4885,7 +4883,7 @@ unsafe fn qr_reader_match_centers(
                                 }
                             }
                             qr_reader_match_centers(
-                                _reader, _qrlist, inside, ninside, _img, _width, _height,
+                                reader, _qrlist, inside, ninside, img, _width, _height,
                             );
                             qr_free_array(inside);
                         }
@@ -4946,7 +4944,7 @@ pub unsafe fn qr_decode(
             &mut qrlist,
             centers,
             ncenters,
-            bin.as_ptr(),
+            &bin,
             img.width as c_int,
             img.height as c_int,
         );
