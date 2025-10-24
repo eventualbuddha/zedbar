@@ -6,7 +6,6 @@
 use std::collections::VecDeque;
 use std::os::raw::{c_char, c_int, c_uchar, c_uint};
 use std::ptr::null_mut;
-use std::slice;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
@@ -17,20 +16,8 @@ use crate::img_scanner::{
     _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_get_config,
     zbar_image_scanner_t,
 };
-use crate::qrcode::qr_code_data_list;
+use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
 use crate::symbol::{_zbar_symbol_add_point, symbol_set_create, zbar_symbol_t};
-
-use super::qrdec::qr_mode;
-
-fn qr_mode_has_data(_mode: qr_mode) -> bool {
-    matches!(
-        _mode,
-        qr_mode::QR_MODE_NUM
-            | qr_mode::QR_MODE_ALNUM
-            | qr_mode::QR_MODE_BYTE
-            | qr_mode::QR_MODE_KANJI
-    )
-}
 
 pub union qr_code_data_entry_payload {
     pub data: qr_code_data_entry_data,
@@ -95,18 +82,18 @@ unsafe fn sym_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
 /// This function is unsafe because it dereferences raw pointers passed from C.
 /// The caller must ensure that the pointers are valid and that the data they
 /// point to has the expected layout.
-pub unsafe fn qr_code_data_list_extract_text(
+pub(crate) unsafe fn qr_code_data_list_extract_text(
     qrlist: &qr_code_data_list,
     iscn: &mut zbar_image_scanner_t,
 ) -> c_int {
     let mut raw_binary: c_int = 0;
     zbar_image_scanner_get_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY, &mut raw_binary);
 
-    let qrdata = slice::from_raw_parts(qrlist.qrdata, qrlist.nqrdata as usize);
-    let mut mark = vec![0u8; qrlist.nqrdata as usize];
+    let qrdata = &qrlist.qrdata;
+    let mut mark = vec![0u8; qrdata.len()];
     let ntext = 0;
 
-    for i in 0..qrlist.nqrdata as usize {
+    for i in 0..qrdata.len() {
         if mark[i] == 0 {
             let mut sa: [c_int; 16] = [-1; 16];
             let sa_size;
@@ -114,7 +101,7 @@ pub unsafe fn qr_code_data_list_extract_text(
             if qrdata[i].sa_size > 0 {
                 sa_size = qrdata[i].sa_size as usize;
                 let sa_parity = qrdata[i].sa_parity;
-                for j in i..qrlist.nqrdata as usize {
+                for j in i..qrdata.len() {
                     if mark[j] == 0
                         && qrdata[j].sa_size as usize == sa_size
                         && qrdata[j].sa_parity == sa_parity
@@ -137,37 +124,35 @@ pub unsafe fn qr_code_data_list_extract_text(
             for j in 0..sa_size {
                 if sa[j] >= 0 {
                     let qrdataj = &qrdata[sa[j] as usize];
-                    let entries = slice::from_raw_parts(qrdataj.entries, qrdataj.nentries as usize);
-                    for entry in entries {
-                        let shift = match entry.mode {
-                            qr_mode::QR_MODE_FNC1_1ST => {
+                    for entry in &qrdataj.entries {
+                        match entry.payload {
+                            qr_code_data_payload::Fnc1FirstPositionMarker => {
                                 if fnc1 == 0 {
                                     fnc1 = 1 << ZBAR_MOD_GS1;
                                 }
-                                0
                             }
-                            qr_mode::QR_MODE_FNC1_2ND => {
+                            qr_code_data_payload::ApplicationIndicator(ai) => {
                                 if fnc1 == 0 {
                                     fnc1 = 1 << ZBAR_MOD_AIM;
-                                    fnc1_2ai = entry.payload.ai;
+                                    fnc1_2ai = ai;
                                     sa_ctext += 2;
                                 }
-                                0
                             }
-                            qr_mode::QR_MODE_KANJI => {
+                            qr_code_data_payload::Kanji(ref data) => {
                                 has_kanji = true;
-                                2
+                                sa_ctext += data.len() << 2;
                             }
-                            qr_mode::QR_MODE_BYTE => 2,
-                            _ => {
-                                if qr_mode_has_data(entry.mode) {
-                                    sa_ctext += entry.payload.data.len as usize;
-                                }
-                                0
+                            qr_code_data_payload::Bytes(ref data) => {
+                                sa_ctext += data.len() << 2;
                             }
-                        };
-                        if shift > 0 {
-                            sa_ctext += (entry.payload.data.len as usize) << shift;
+                            qr_code_data_payload::Numeric(ref data)
+                            | qr_code_data_payload::Alphanumeric(ref data) => {
+                                sa_ctext += data.len();
+                            }
+                            qr_code_data_payload::StructuredAppendedHeaderData(_)
+                            | qr_code_data_payload::ExtendedChannelInterpretation(_) => {
+                                // does not count toward `sa_ctext`
+                            }
                         }
                     }
                 }
@@ -228,12 +213,14 @@ pub unsafe fn qr_code_data_list_extract_text(
                 sym_add_point(sym, qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
                 sym_add_point(sym, qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
 
-                let entries = slice::from_raw_parts(qrdataj.entries, qrdataj.nentries as usize);
+                let entries = &qrdataj.entries;
                 for entry in entries.iter() {
                     // Process byte buffer if needed
                     if !bytebuf.is_empty()
-                        && (entry.mode != qr_mode::QR_MODE_BYTE
-                            && entry.mode != qr_mode::QR_MODE_KANJI)
+                        && !matches!(
+                            entry.payload,
+                            qr_code_data_payload::Bytes(_) | qr_code_data_payload::Kanji(_)
+                        )
                     {
                         // convert bytes to text
                         if let Some(enc) = eci {
@@ -287,24 +274,18 @@ pub unsafe fn qr_code_data_list_extract_text(
                         break;
                     }
 
-                    match entry.mode {
-                        qr_mode::QR_MODE_NUM | qr_mode::QR_MODE_ALNUM => {
-                            let data = slice::from_raw_parts(
-                                entry.payload.data.buf,
-                                entry.payload.data.len as usize,
-                            );
+                    match &entry.payload {
+                        qr_code_data_payload::Numeric(ref data)
+                        | qr_code_data_payload::Alphanumeric(ref data) => {
                             sa_text.extend_from_slice(data);
                         }
-                        qr_mode::QR_MODE_BYTE | qr_mode::QR_MODE_KANJI => {
-                            let data = slice::from_raw_parts(
-                                entry.payload.data.buf,
-                                entry.payload.data.len as usize,
-                            );
+                        qr_code_data_payload::Bytes(ref data)
+                        | qr_code_data_payload::Kanji(ref data) => {
                             bytebuf.extend_from_slice(data);
                         }
-                        qr_mode::QR_MODE_ECI => {
+                        qr_code_data_payload::ExtendedChannelInterpretation(val) => {
                             // Simplified ECI handling
-                            eci = match entry.payload.eci {
+                            eci = match val {
                                 3..=13 | 15..=18 => Some(WINDOWS_1252), // approx
                                 20 => Some(SHIFT_JIS),
                                 26 => Some(UTF_8),

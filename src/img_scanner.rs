@@ -21,9 +21,7 @@ use crate::{
     },
     qrcode::{
         qr_point,
-        qrdec::{
-            _zbar_qr_create, _zbar_qr_decode, _zbar_qr_found_line, _zbar_qr_reset, qr_finder_lines,
-        },
+        qrdec::{_zbar_qr_create, _zbar_qr_found_line, _zbar_qr_reset, qr_decode, qr_finder_lines},
     },
     refcnt,
     sqcode::{sq_decode, SqReader},
@@ -1025,7 +1023,7 @@ pub unsafe fn _zbar_scan_image(
 
     // Decode QR and SQ codes
     if let Some(qr) = &mut (*iscn).qr {
-        _zbar_qr_decode(qr, &mut *iscn, img);
+        qr_decode(qr, &mut *iscn, img);
     }
 
     _zbar_image_scanner_sq_handler(&mut *iscn);

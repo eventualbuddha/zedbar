@@ -97,7 +97,7 @@ fn qr_signmask(x: i64) -> i64 {
 ///
 /// Given three corners and an alignment pattern center, compute the fourth corner
 /// by geometric projection. Returns 0 on success, -1 if projection fails.
-pub unsafe fn qr_hom_project_alignment_to_corner(
+unsafe fn qr_hom_project_alignment_to_corner(
     brx: *mut c_int,
     bry: *mut c_int,
     p: *const qr_point,
@@ -164,7 +164,7 @@ pub unsafe fn qr_hom_project_alignment_to_corner(
 /// This is used for edges that have only one finder pattern, where we walk along the edge
 /// collecting sample points. If we don't get enough points (> 1), we fall back to an
 /// axis-aligned line in the affine coordinate system.
-pub unsafe fn qr_hom_fit_edge_line(
+unsafe fn qr_hom_fit_edge_line(
     line: *mut qr_line,
     pts: *mut qr_point,
     npts: c_int,
@@ -224,7 +224,7 @@ pub unsafe fn qr_hom_fit_edge_line(
 /// Represents a mapping from a unit square to a quadrilateral in the image,
 /// used for extracting QR code modules with perspective correction.
 #[derive(Copy, Clone)]
-pub struct qr_hom_cell {
+struct qr_hom_cell {
     /// Forward transformation matrix [3][3]
     pub fwd: [[c_int; 3]; 3],
     /// X offset in image space
@@ -238,7 +238,7 @@ pub struct qr_hom_cell {
 }
 
 /// Sampling grid for QR code module extraction
-pub struct qr_sampling_grid {
+struct qr_sampling_grid {
     /// Array of homography cells for mapping between code and image space
     pub cells: [*mut qr_hom_cell; 6],
     /// Mask indicating which modules are part of function patterns
@@ -262,11 +262,6 @@ unsafe fn qr_alloc_array<T>(count: usize) -> *mut T {
 #[inline]
 unsafe fn qr_calloc_array<T>(count: usize) -> *mut T {
     libc::calloc(count, size_of::<T>()) as *mut T
-}
-
-#[inline]
-unsafe fn qr_realloc_array<T>(ptr: *mut T, count: usize) -> *mut T {
-    libc::realloc(ptr as *mut c_void, count * size_of::<T>()) as *mut T
 }
 
 #[inline]
@@ -2051,7 +2046,7 @@ pub unsafe fn qr_finder_centers_locate(
 ///
 /// Function patterns include finder patterns, timing patterns, and alignment patterns.
 /// We store bits column-wise, since that's how they're read out of the grid.
-pub unsafe fn qr_sampling_grid_fp_mask_rect(
+unsafe fn qr_sampling_grid_fp_mask_rect(
     _grid: *mut qr_sampling_grid,
     _dim: c_int,
     _u: c_int,
@@ -2073,7 +2068,7 @@ pub unsafe fn qr_sampling_grid_fp_mask_rect(
 /// Determine if a given grid location is inside a function pattern
 ///
 /// Returns 1 if the location (_u, _v) is part of a function pattern, 0 otherwise.
-pub unsafe fn qr_sampling_grid_is_in_fp(
+unsafe fn qr_sampling_grid_is_in_fp(
     _grid: *const qr_sampling_grid,
     _dim: c_int,
     _u: c_int,
@@ -2774,7 +2769,7 @@ pub unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int
 ///
 /// # Safety
 /// This function is unsafe because it frees raw pointers.
-pub unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
+unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
     if !_grid.is_null() {
         qr_free_array((*_grid).fpmask);
         qr_free_array((*_grid).cells[0]);
@@ -2790,7 +2785,7 @@ pub unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
 /// # Safety
 /// This function is unsafe because it allocates memory and dereferences raw pointers.
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn qr_sampling_grid_init(
+unsafe fn qr_sampling_grid_init(
     _grid: *mut qr_sampling_grid,
     _version: c_int,
     _ul_pos: *const qr_point,
@@ -3089,7 +3084,7 @@ pub unsafe fn qr_sampling_grid_init(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-pub unsafe fn qr_sampling_grid_sample(
+unsafe fn qr_sampling_grid_sample(
     _grid: *const qr_sampling_grid,
     _data_bits: *mut c_uint,
     _dim: c_int,
@@ -3293,8 +3288,8 @@ const QR_ALNUM_TABLE: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
-pub unsafe fn qr_code_data_parse(
-    _qrdata: *mut qr_code_data,
+pub(crate) unsafe fn qr_code_data_parse(
+    _qrdata: &mut qr_code_data,
     _version: c_int,
     _data: *const c_uchar,
     _ndata: c_int,
@@ -3308,12 +3303,10 @@ pub unsafe fn qr_code_data_parse(
 
     let mut qpb: qr_pack_buf = std::mem::zeroed();
     let mut self_parity: c_uint = 0;
-    let mut centries = 0;
 
     // Entries are stored directly in the struct during parsing
-    (*_qrdata).entries = null_mut();
-    (*_qrdata).nentries = 0;
-    (*_qrdata).sa_size = 0;
+    _qrdata.entries = vec![];
+    _qrdata.sa_size = 0;
 
     // The versions are divided into 3 ranges that each use a different number of bits for length fields
     let len_bits_idx = (if _version > 9 { 1 } else { 0 }) + (if _version > 26 { 1 } else { 0 });
@@ -3329,24 +3322,13 @@ pub unsafe fn qr_code_data_parse(
             break;
         }
 
-        if (*_qrdata).nentries >= centries {
-            centries = (centries << 1) | 1;
-            (*_qrdata).entries = qr_realloc_array((*_qrdata).entries, centries as usize);
-        }
-
-        let entry = (*_qrdata).entries.add((*_qrdata).nentries as usize);
-        (*_qrdata).nentries += 1;
-        (*entry).payload.data.buf = null_mut();
-
         let Ok(mode) = qr_mode::try_from(mode) else {
             // Unknown mode - we can't skip it, so fail
             return -1;
         };
 
-        (*entry).mode = mode;
-
-        match mode {
-            qr_mode::QR_MODE_NUM => {
+        let payload = match mode {
+            qr_mode::NUM => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]);
                 if len < 0 {
                     return -1;
@@ -3358,11 +3340,9 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = qr_alloc_bytes(len as usize);
-                (*entry).payload.data.buf = buf;
-                (*entry).payload.data.len = len;
+                let mut data = vec![0; len as usize];
+                let mut buf = data.as_mut_slice();
 
-                let mut buf_ptr = buf;
                 // Read groups of 3 digits encoded in 10 bits
                 for _ in 0..count {
                     let bits = qr_pack_buf_read(&mut qpb, 10) as c_uint;
@@ -3371,19 +3351,19 @@ pub unsafe fn qr_code_data_parse(
                     }
                     let c = b'0' + (bits / 100) as u8;
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
+                    buf[0] = c;
+                    buf = &mut buf[1..];
 
                     let bits = bits % 100;
                     let c = b'0' + (bits / 10) as u8;
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
+                    buf[0] = c;
+                    buf = &mut buf[1..];
 
                     let c = b'0' + (bits % 10) as u8;
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
+                    buf[0] = c;
+                    buf = &mut buf[1..];
                 }
 
                 // Read the last two digits encoded in 7 bits
@@ -3394,12 +3374,12 @@ pub unsafe fn qr_code_data_parse(
                     }
                     let c = b'0' + (bits / 10) as u8;
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
+                    buf[0] = c;
+                    buf = &mut buf[1..];
 
                     let c = b'0' + (bits % 10) as u8;
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
+                    buf[0] = c;
                 }
                 // Or the last one digit encoded in 4 bits
                 else if rem != 0 {
@@ -3409,10 +3389,12 @@ pub unsafe fn qr_code_data_parse(
                     }
                     let c = b'0' + bits as u8;
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
+                    buf[0] = c;
                 }
+
+                qr_code_data_payload::Numeric(data)
             }
-            qr_mode::QR_MODE_ALNUM => {
+            qr_mode::ALNUM => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]);
                 if len < 0 {
                     return -1;
@@ -3424,11 +3406,9 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = qr_alloc_bytes(len as usize);
-                (*entry).payload.data.buf = buf;
-                (*entry).payload.data.len = len;
+                let mut data = vec![0; len as usize];
+                let mut buf = data.as_mut_slice();
 
-                let mut buf_ptr = buf;
                 // Read groups of two characters encoded in 11 bits
                 for _ in 0..count {
                     let bits = qr_pack_buf_read(&mut qpb, 11) as c_uint;
@@ -3437,13 +3417,13 @@ pub unsafe fn qr_code_data_parse(
                     }
                     let c = QR_ALNUM_TABLE[(bits / 45) as usize];
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
+                    buf[0] = c;
+                    buf = &mut buf[1..];
 
                     let c = QR_ALNUM_TABLE[(bits % 45) as usize];
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
-                    buf_ptr = buf_ptr.add(1);
+                    buf[0] = c;
+                    buf = &mut buf[1..];
                 }
 
                 // Read the last character encoded in 6 bits
@@ -3454,27 +3434,33 @@ pub unsafe fn qr_code_data_parse(
                     }
                     let c = QR_ALNUM_TABLE[bits as usize];
                     self_parity ^= c as c_uint;
-                    *buf_ptr = c;
+                    buf[0] = c;
                 }
+
+                qr_code_data_payload::Alphanumeric(data)
             }
-            qr_mode::QR_MODE_STRUCT => {
+            qr_mode::STRUCT => {
                 // Structured-append header
                 let bits = qr_pack_buf_read(&mut qpb, 16);
                 if bits < 0 {
                     return -1;
                 }
 
+                let mut sa = qr_code_data_sa::default();
+
                 // If this is the first S-A header, save it
-                if (*_qrdata).sa_size == 0 {
-                    (*_qrdata).sa_index = ((bits >> 12) & 0xF) as c_uchar;
-                    (*entry).payload.sa.sa_index = (*_qrdata).sa_index;
-                    (*_qrdata).sa_size = (((bits >> 8) & 0xF) + 1) as c_uchar;
-                    (*entry).payload.sa.sa_size = (*_qrdata).sa_size;
-                    (*_qrdata).sa_parity = (bits & 0xFF) as c_uchar;
-                    (*entry).payload.sa.sa_parity = (*_qrdata).sa_parity;
+                if _qrdata.sa_size == 0 {
+                    _qrdata.sa_index = ((bits >> 12) & 0xF) as c_uchar;
+                    sa.sa_index = _qrdata.sa_index;
+                    _qrdata.sa_size = (((bits >> 8) & 0xF) + 1) as c_uchar;
+                    sa.sa_size = _qrdata.sa_size;
+                    _qrdata.sa_parity = (bits & 0xFF) as c_uchar;
+                    sa.sa_parity = _qrdata.sa_parity;
                 }
+
+                qr_code_data_payload::StructuredAppendedHeaderData(sa)
             }
-            qr_mode::QR_MODE_BYTE => {
+            qr_mode::BYTE => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]);
                 if len < 0 {
                     return -1;
@@ -3484,21 +3470,22 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = qr_alloc_bytes(len as usize);
-                (*entry).payload.data.buf = buf;
-                (*entry).payload.data.len = len;
+                let mut data = vec![0; len as usize];
 
-                for i in 0..len {
+                for b in data.iter_mut() {
                     let c = qr_pack_buf_read(&mut qpb, 8) as c_uchar;
                     self_parity ^= c as c_uint;
-                    *buf.add(i as usize) = c;
+                    *b = c;
                 }
+
+                qr_code_data_payload::Bytes(data)
             }
-            qr_mode::QR_MODE_FNC1_1ST => {
+            qr_mode::FNC1_1ST => {
                 // FNC1 first position marker
                 // No data to read
+                qr_code_data_payload::Fnc1FirstPositionMarker
             }
-            qr_mode::QR_MODE_ECI => {
+            qr_mode::ECI => {
                 // Extended Channel Interpretation
                 let bits = qr_pack_buf_read(&mut qpb, 8);
                 if bits < 0 {
@@ -3534,9 +3521,9 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 };
 
-                (*entry).payload.eci = val;
+                qr_code_data_payload::ExtendedChannelInterpretation(val)
             }
-            qr_mode::QR_MODE_KANJI => {
+            qr_mode::KANJI => {
                 let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]);
                 if len < 0 {
                     return -1;
@@ -3546,23 +3533,23 @@ pub unsafe fn qr_code_data_parse(
                     return -1;
                 }
 
-                let buf = qr_alloc_bytes((2 * len) as usize);
-                (*entry).payload.data.buf = buf;
-                (*entry).payload.data.len = 2 * len;
+                let mut data = vec![0; (2 * len) as usize];
 
                 // Decode 2-byte SJIS characters encoded in 13 bits
-                for i in 0..len {
+                for i in 0..(len as usize) {
                     let mut bits = qr_pack_buf_read(&mut qpb, 13) as c_uint;
                     bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
                     if bits >= 0xA000 {
                         bits += 0x4000;
                     }
                     self_parity ^= bits;
-                    *buf.add((2 * i) as usize) = (bits >> 8) as c_uchar;
-                    *buf.add((2 * i + 1) as usize) = (bits & 0xFF) as c_uchar;
+                    data[i * 2] = (bits >> 8) as c_uchar;
+                    data[i * 2 + 1] = (bits & 0xFF) as c_uchar;
                 }
+
+                qr_code_data_payload::Kanji(data)
             }
-            qr_mode::QR_MODE_FNC1_2ND => {
+            qr_mode::FNC1_2ND => {
                 // FNC1 second position marker
                 let bits = qr_pack_buf_read(&mut qpb, 8);
                 if !((0..100).contains(&bits)
@@ -3571,16 +3558,15 @@ pub unsafe fn qr_code_data_parse(
                 {
                     return -1;
                 }
-                (*entry).payload.ai = bits;
+                qr_code_data_payload::ApplicationIndicator(bits)
             }
-        }
+        };
+
+        _qrdata.entries.push(qr_code_data_entry { payload });
     }
 
     // Store the parity of the data from this code
-    (*_qrdata).self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
-
-    // Shrink entries array to actual size
-    (*_qrdata).entries = qr_realloc_array((*_qrdata).entries, (*_qrdata).nentries as usize);
+    _qrdata.self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
 
     0
 }
@@ -3597,8 +3583,8 @@ pub unsafe fn qr_code_data_parse(
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn qr_code_decode(
-    _qrdata: *mut qr_code_data,
+unsafe fn qr_code_decode(
+    _qrdata: &mut qr_code_data,
     _ul_pos: *const qr_point,
     _ur_pos: *const qr_point,
     _dl_pos: *const qr_point,
@@ -3617,7 +3603,7 @@ pub unsafe fn qr_code_decode(
         _ul_pos,
         _ur_pos,
         _dl_pos,
-        (*_qrdata).bbox.as_mut_ptr(),
+        _qrdata.bbox.as_mut_ptr(),
         _img,
         _width,
         _height,
@@ -3728,8 +3714,8 @@ pub unsafe fn qr_code_decode(
         if ret < 0 {
             qr_code_data_clear(_qrdata);
         }
-        (*_qrdata).version = _version as c_uchar;
-        (*_qrdata).ecc_level = ecc_level as c_uchar;
+        _qrdata.version = _version as c_uchar;
+        _qrdata.ecc_level = ecc_level as c_uchar;
     }
 
     qr_free_bytes(block_data);
@@ -3780,7 +3766,7 @@ pub unsafe fn bch18_6_correct(y: *mut c_uint) -> c_int {
 /// The transformation handles both affine and projective distortion, with careful
 /// attention to numerical stability through dynamic range scaling.
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn qr_hom_cell_init(
+unsafe fn qr_hom_cell_init(
     cell: *mut qr_hom_cell,
     u0: c_int,
     v0: c_int,
@@ -4008,7 +3994,7 @@ pub unsafe fn qr_img_get_bit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.*/
-pub unsafe fn qr_hom_cell_fproject(
+unsafe fn qr_hom_cell_fproject(
     _p: *mut qr_point,
     _cell: *const qr_hom_cell,
     mut _x: c_int,
@@ -4029,7 +4015,7 @@ pub unsafe fn qr_hom_cell_fproject(
     }
 }
 
-pub unsafe fn qr_hom_cell_project(
+unsafe fn qr_hom_cell_project(
     _p: *mut qr_point,
     _cell: *const qr_hom_cell,
     mut _u: c_int,
@@ -4145,7 +4131,7 @@ unsafe fn qr_alignment_pattern_fetch(
 /// Searches for an alignment pattern around the specified grid coordinates (u, v)
 /// within a radius of r modules. Returns 0 on success, -1 if the best match is too poor.
 #[allow(clippy::too_many_arguments)]
-pub unsafe fn qr_alignment_pattern_search(
+unsafe fn qr_alignment_pattern_search(
     p: *mut qr_point,
     cell: *const qr_hom_cell,
     _u: c_int,
@@ -4381,21 +4367,21 @@ pub unsafe fn qr_alignment_pattern_search(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum qr_mode {
     /// Numeric digits ('0'...'9')
-    QR_MODE_NUM = 1,
+    NUM = 1,
     /// Alphanumeric characters ('0'...'9', 'A'...'Z', plus punctuation ' ', '$', '%', '*', '+', '-', '.', '/', ':')
-    QR_MODE_ALNUM = 2,
+    ALNUM = 2,
     /// Structured-append header
-    QR_MODE_STRUCT = 3,
+    STRUCT = 3,
     /// Raw 8-bit bytes
-    QR_MODE_BYTE = 4,
+    BYTE = 4,
     /// FNC1 marker in first position (GS1 formatting)
-    QR_MODE_FNC1_1ST = 5,
+    FNC1_1ST = 5,
     /// Extended Channel Interpretation code
-    QR_MODE_ECI = 7,
+    ECI = 7,
     /// SJIS kanji characters
-    QR_MODE_KANJI = 8,
+    KANJI = 8,
     /// FNC1 marker in second position (industry application)
-    QR_MODE_FNC1_2ND = 9,
+    FNC1_2ND = 9,
 }
 
 impl TryFrom<c_int> for qr_mode {
@@ -4403,48 +4389,43 @@ impl TryFrom<c_int> for qr_mode {
 
     fn try_from(value: c_int) -> Result<Self, Self::Error> {
         Ok(match value {
-            1 => Self::QR_MODE_NUM,
-            2 => Self::QR_MODE_ALNUM,
-            3 => Self::QR_MODE_STRUCT,
-            4 => Self::QR_MODE_BYTE,
-            5 => Self::QR_MODE_FNC1_1ST,
-            7 => Self::QR_MODE_ECI,
-            8 => Self::QR_MODE_KANJI,
-            9 => Self::QR_MODE_FNC1_2ND,
+            1 => Self::NUM,
+            2 => Self::ALNUM,
+            3 => Self::STRUCT,
+            4 => Self::BYTE,
+            5 => Self::FNC1_1ST,
+            7 => Self::ECI,
+            8 => Self::KANJI,
+            9 => Self::FNC1_2ND,
             _ => return Err(()),
         })
     }
 }
 
-/// Check if a mode has a data buffer associated with it
-#[inline]
-fn qr_mode_has_data(mode: qr_mode) -> bool {
-    let mode_val = mode as c_uint;
-    (mode_val & (mode_val - 1)) == 0
-}
-
 /// Data payload for a QR code data entry
-#[derive(Copy, Clone)]
-pub union qr_code_data_payload {
-    /// Data buffer for modes that have one
-    pub data: qr_code_data_buffer,
-    /// Decoded "Extended Channel Interpretation" data
-    pub eci: c_uint,
-    /// Decoded "Application Indicator" for FNC1 in 2nd position
-    pub ai: c_int,
-    /// Structured-append header data
-    pub sa: qr_code_data_sa,
-}
-
-/// Data buffer
-#[derive(Debug, Copy, Clone)]
-pub struct qr_code_data_buffer {
-    pub buf: *mut c_uchar,
-    pub len: c_int,
+#[derive(Clone)]
+pub(crate) enum qr_code_data_payload {
+    /// Numeric digits ('0'...'9')
+    Numeric(Vec<u8>),
+    /// Alphanumeric characters ('0'...'9', 'A'...'Z', plus punctuation ' ', '$', '%', '*', '+', '-', '.', '/', ':')
+    Alphanumeric(Vec<u8>),
+    /// Structured-append header
+    #[allow(dead_code)]
+    StructuredAppendedHeaderData(qr_code_data_sa),
+    /// Raw 8-bit bytes
+    Bytes(Vec<u8>),
+    /// FNC1 marker in first position (GS1 formatting)
+    Fnc1FirstPositionMarker,
+    /// Extended Channel Interpretation code
+    ExtendedChannelInterpretation(c_uint),
+    /// SJIS kanji characters
+    Kanji(Vec<u8>),
+    /// FNC1 marker in second position (industry application)
+    ApplicationIndicator(c_int),
 }
 
 /// Structured-append data
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct qr_code_data_sa {
     pub sa_index: c_uchar,
     pub sa_size: c_uchar,
@@ -4452,18 +4433,16 @@ pub struct qr_code_data_sa {
 }
 
 /// A single QR code data entry
-pub struct qr_code_data_entry {
-    /// The mode of this data block
-    pub mode: qr_mode,
-    /// The payload (union)
+pub(crate) struct qr_code_data_entry {
+    /// The payload
     pub payload: qr_code_data_payload,
 }
 
 /// Low-level QR code data
-pub struct qr_code_data {
+#[derive(Default)]
+pub(crate) struct qr_code_data {
     /// The decoded data entries
-    pub entries: *mut qr_code_data_entry,
-    pub nentries: c_int,
+    pub entries: Vec<qr_code_data_entry>,
     /// The code version (1...40)
     pub version: c_uchar,
     /// The ECC level (0...3, corresponding to 'L', 'M', 'Q', and 'H')
@@ -4481,58 +4460,25 @@ pub struct qr_code_data {
 }
 
 /// List of QR code data
-pub struct qr_code_data_list {
-    pub qrdata: *mut qr_code_data,
-    pub nqrdata: c_int,
-    pub cqrdata: c_int,
+#[derive(Default)]
+pub(crate) struct qr_code_data_list {
+    pub qrdata: Vec<qr_code_data>,
 }
 
-/// Clear a QR code data structure, freeing all allocated memory
-pub unsafe fn qr_code_data_clear(qrdata: *mut qr_code_data) {
-    for i in 0..(*qrdata).nentries {
-        let entry = (*qrdata).entries.offset(i as isize);
-        if qr_mode_has_data((*entry).mode) {
-            qr_free_bytes((*entry).payload.data.buf);
+/// Clear a QR code data structure.
+pub(crate) unsafe fn qr_code_data_clear(qrdata: &mut qr_code_data) {
+    for entry in qrdata.entries.iter_mut() {
+        match &mut entry.payload {
+            qr_code_data_payload::Numeric(items)
+            | qr_code_data_payload::Alphanumeric(items)
+            | qr_code_data_payload::Bytes(items)
+            | qr_code_data_payload::Kanji(items) => items.clear(),
+            qr_code_data_payload::StructuredAppendedHeaderData(_)
+            | qr_code_data_payload::Fnc1FirstPositionMarker
+            | qr_code_data_payload::ExtendedChannelInterpretation(_)
+            | qr_code_data_payload::ApplicationIndicator(_) => {}
         }
     }
-    qr_free_array((*qrdata).entries);
-}
-
-/// Initialize a QR code data list
-pub unsafe fn qr_code_data_list_init(qrlist: *mut qr_code_data_list) {
-    (*qrlist).qrdata = null_mut();
-    (*qrlist).nqrdata = 0;
-    (*qrlist).cqrdata = 0;
-}
-
-/// Clear a QR code data list, freeing all allocated memory
-pub unsafe fn qr_code_data_list_clear(qrlist: *mut qr_code_data_list) {
-    for i in 0..(*qrlist).nqrdata {
-        qr_code_data_clear((*qrlist).qrdata.offset(i as isize));
-    }
-    qr_free_array((*qrlist).qrdata);
-    qr_code_data_list_init(qrlist);
-}
-
-/// Add a QR code data to the list
-pub unsafe fn qr_code_data_list_add(qrlist: *mut qr_code_data_list, qrdata: *const qr_code_data) {
-    if (*qrlist).nqrdata >= (*qrlist).cqrdata {
-        let previous_capacity = (*qrlist).cqrdata;
-        (*qrlist).cqrdata = ((*qrlist).cqrdata << 1) | 1;
-        let new_qrdata =
-            qr_realloc_array::<qr_code_data>((*qrlist).qrdata, (*qrlist).cqrdata as usize);
-        if new_qrdata.is_null() {
-            (*qrlist).cqrdata = previous_capacity;
-            return;
-        }
-        (*qrlist).qrdata = new_qrdata;
-    }
-    memcpy(
-        (*qrlist).qrdata.offset((*qrlist).nqrdata as isize) as *mut c_void,
-        qrdata as *const c_void,
-        std::mem::size_of::<qr_code_data>(),
-    );
-    (*qrlist).nqrdata += 1;
 }
 
 /// Try to decode a QR code with the given configuration of three finder patterns.
@@ -4542,9 +4488,9 @@ pub unsafe fn qr_code_data_list_add(qrlist: *mut qr_code_data_list, qrdata: *con
 /// fits a homography transformation, and attempts to decode the QR code.
 ///
 /// Returns the version number if successful, -1 otherwise.
-pub unsafe fn qr_reader_try_configuration(
+pub(crate) unsafe fn qr_reader_try_configuration(
     _reader: *mut qr_reader,
-    _qrdata: *mut qr_code_data,
+    qrdata: &mut qr_code_data,
     _img: *const c_uchar,
     _width: c_int,
     _height: c_int,
@@ -4664,7 +4610,7 @@ pub unsafe fn qr_reader_try_configuration(
         }
 
         memcpy(
-            (*_qrdata).bbox.as_mut_ptr() as *mut c_void,
+            qrdata.bbox.as_mut_ptr() as *mut c_void,
             bbox.as_ptr() as *const c_void,
             size_of::<[qr_point; 4]>(),
         );
@@ -4751,7 +4697,7 @@ pub unsafe fn qr_reader_try_configuration(
         fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, _img, _width, _height);
         if fmt_info < 0
             || qr_code_decode(
-                _qrdata,
+                qrdata,
                 &(*ul.c).pos,
                 &(*ur.c).pos,
                 &(*dl.c).pos,
@@ -4796,13 +4742,13 @@ pub unsafe fn qr_reader_try_configuration(
             bbox[1][1] = bbox[2][1];
             bbox[2][1] = t;
             memcpy(
-                (*_qrdata).bbox.as_mut_ptr() as *mut c_void,
+                qrdata.bbox.as_mut_ptr() as *mut c_void,
                 bbox.as_ptr() as *const c_void,
                 size_of::<[qr_point; 4]>(),
             );
 
             if qr_code_decode(
-                _qrdata,
+                qrdata,
                 &(*ul.c).pos,
                 &(*dl.c).pos,
                 &(*ur.c).pos,
@@ -4835,9 +4781,9 @@ pub unsafe fn _zbar_qr_found_line(
 }
 
 /// Match finder centers and decode QR codes
-pub unsafe fn qr_reader_match_centers(
+unsafe fn qr_reader_match_centers(
     _reader: *mut qr_reader,
-    _qrlist: *mut qr_code_data_list,
+    _qrlist: &mut qr_code_data_list,
     _centers: *mut qr_finder_center,
     _ncenters: c_int,
     _img: *const c_uchar,
@@ -4866,7 +4812,7 @@ pub unsafe fn qr_reader_match_centers(
                         _centers.add(j as usize),
                         _centers.add(k as usize),
                     ];
-                    let mut qrdata: qr_code_data = std::mem::zeroed();
+                    let mut qrdata = qr_code_data::default();
                     let version = qr_reader_try_configuration(
                         _reader,
                         &mut qrdata,
@@ -4879,16 +4825,11 @@ pub unsafe fn qr_reader_match_centers(
                     if version >= 0 {
                         let mut ninside: c_int;
 
-                        // Add the data to the list
-                        qr_code_data_list_add(_qrlist, &qrdata);
-
                         // Convert the bounding box we're returning to the user to normal
                         // image coordinates
-                        for l in 0..4 {
-                            (*(*_qrlist).qrdata.add(((*_qrlist).nqrdata - 1) as usize)).bbox[l]
-                                [0] >>= QR_FINDER_SUBPREC;
-                            (*(*_qrlist).qrdata.add(((*_qrlist).nqrdata - 1) as usize)).bbox[l]
-                                [1] >>= QR_FINDER_SUBPREC;
+                        for point in qrdata.bbox.as_mut_slice() {
+                            point[0] >>= QR_FINDER_SUBPREC;
+                            point[1] >>= QR_FINDER_SUBPREC;
                         }
 
                         // Mark these centers as used
@@ -4957,6 +4898,9 @@ pub unsafe fn qr_reader_match_centers(
                         }
 
                         nfailures = 0;
+
+                        // Add the data to the list
+                        _qrlist.qrdata.push(qrdata);
                     } else {
                         nfailures += 1;
                         if nfailures > nfailures_max {
@@ -4977,7 +4921,7 @@ pub unsafe fn qr_reader_match_centers(
 }
 
 /// Decode QR codes from an image
-pub unsafe fn _zbar_qr_decode(
+pub unsafe fn qr_decode(
     reader: &mut qr_reader,
     iscn: &mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
@@ -4995,8 +4939,7 @@ pub unsafe fn _zbar_qr_decode(
     if ncenters >= 3 {
         let bin = binarize(&img.data, img.width as usize, img.height as usize);
 
-        let mut qrlist: qr_code_data_list = std::mem::zeroed();
-        qr_code_data_list_init(&mut qrlist);
+        let mut qrlist = qr_code_data_list::default();
 
         qr_reader_match_centers(
             reader,
@@ -5008,13 +4951,13 @@ pub unsafe fn _zbar_qr_decode(
             img.height as c_int,
         );
 
-        nqrdata = if qrlist.nqrdata > 0 {
+        nqrdata = if !qrlist.qrdata.is_empty() {
             qr_code_data_list_extract_text(&qrlist, iscn)
         } else {
             0
         };
 
-        qr_code_data_list_clear(&mut qrlist);
+        qrlist.qrdata.clear();
     } else {
         nqrdata = 0;
     }
