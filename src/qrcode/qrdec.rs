@@ -8,6 +8,7 @@ use std::{
     ffi::c_void,
     mem::{size_of, swap},
     ptr::null_mut,
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 
 use libc::{c_int, c_uchar, c_uint, memcpy, memset, size_t};
@@ -98,16 +99,15 @@ fn qr_signmask(x: i64) -> i64 {
 /// Given three corners and an alignment pattern center, compute the fourth corner
 /// by geometric projection. Returns 0 on success, -1 if projection fails.
 unsafe fn qr_hom_project_alignment_to_corner(
-    brx: *mut c_int,
-    bry: *mut c_int,
-    p: *const qr_point,
-    p3: *const qr_point,
+    brx: &mut c_int,
+    bry: &mut c_int,
+    p: &[qr_point],
+    p3: &qr_point,
     dim: c_int,
 ) -> c_int {
-    let p0 = &*p.offset(0);
-    let p1 = &*p.offset(1);
-    let p2 = &*p.offset(2);
-    let p3 = &*p3;
+    let p0 = &p[0];
+    let p1 = &p[1];
+    let p2 = &p[2];
 
     let c21 = p2[0] * p1[1] - p2[1] * p1[0];
     let dx21 = p2[0] - p1[0];
@@ -165,9 +165,9 @@ unsafe fn qr_hom_project_alignment_to_corner(
 /// collecting sample points. If we don't get enough points (> 1), we fall back to an
 /// axis-aligned line in the affine coordinate system.
 unsafe fn qr_hom_fit_edge_line(
-    line: *mut qr_line,
-    pts: *mut qr_point,
-    npts: c_int,
+    line: &mut qr_line,
+    pts: &mut [qr_point],
+    npts: usize,
     finder: *const qr_finder,
     aff: *const qr_aff,
     edge_axis: c_int,
@@ -356,6 +356,7 @@ pub struct qr_finder_edge_pt {
 /// The center of a finder pattern obtained from the crossing of one or more
 /// clusters of horizontal finder lines with one or more clusters of vertical
 /// finder lines.
+#[derive(Copy, Clone, Default)]
 pub struct qr_finder_center {
     /// The estimated location of the finder center.
     pos: qr_point,
@@ -386,11 +387,9 @@ pub unsafe fn qr_finder_lines_are_crossing(
 /// Translate a point by the given offsets
 ///
 /// Adds dx to the x coordinate and dy to the y coordinate.
-pub unsafe fn qr_point_translate(point: *mut c_int, dx: c_int, dy: c_int) {
-    if !point.is_null() {
-        *point.offset(0) += dx;
-        *point.offset(1) += dy;
-    }
+pub unsafe fn qr_point_translate(point: &mut qr_point, dx: c_int, dy: c_int) {
+    point[0] += dx;
+    point[1] += dy;
 }
 
 /// Calculate the squared distance between two points
@@ -436,7 +435,7 @@ pub unsafe fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
     }
 }
 
-pub unsafe fn qr_line_isect(_p: *mut qr_point, _l0: *const qr_line, _l1: *const qr_line) -> c_int {
+pub unsafe fn qr_line_isect(_p: &mut qr_point, _l0: &qr_line, _l1: &qr_line) -> c_int {
     let mut d = (*_l0)[0]
         .wrapping_mul((*_l1)[1])
         .wrapping_sub((*_l0)[1].wrapping_mul((*_l1)[0]));
@@ -454,8 +453,8 @@ pub unsafe fn qr_line_isect(_p: *mut qr_point, _l0: *const qr_line, _l1: *const 
         y = -y;
         d = -d;
     }
-    (*_p)[0] = qr_divround(x, d);
-    (*_p)[1] = qr_divround(y, d);
+    _p[0] = qr_divround(x, d);
+    _p[1] = qr_divround(y, d);
     0
 }
 
@@ -505,7 +504,7 @@ pub unsafe fn qr_line_fit(
 /// - `_p`: Array of points
 /// - `_np`: Number of points
 /// - `_res`: Resolution bits for scaling
-pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int, _res: c_int) {
+pub unsafe fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usize, _res: c_int) {
     let mut sx: c_int = 0;
     let mut sy: c_int = 0;
     let mut xmin = c_int::MAX;
@@ -514,9 +513,9 @@ pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int
     let mut ymax = c_int::MIN;
 
     // Compute centroid and bounds
-    for i in 0.._np {
-        let px = (*_p.offset(i as isize))[0];
-        let py = (*_p.offset(i as isize))[1];
+    for point in _p.iter() {
+        let px = point[0];
+        let py = point[1];
         sx = sx.wrapping_add(px);
         xmin = xmin.min(px);
         xmax = xmax.max(px);
@@ -525,8 +524,8 @@ pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int
         ymax = ymax.max(py);
     }
 
-    let xbar = (sx + (_np >> 1)) / _np;
-    let ybar = (sy + (_np >> 1)) / _np;
+    let xbar = (sx + (_np >> 1) as c_int) / _np as c_int;
+    let ybar = (sy + (_np >> 1) as c_int) / _np as c_int;
 
     // Compute shift to prevent overflow in covariance calculation
     let sshift = 0.max(
@@ -545,9 +544,9 @@ pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int
     let mut sxx: c_int = 0;
     let mut sxy: c_int = 0;
     let mut syy: c_int = 0;
-    for i in 0.._np {
-        let dx = ((*_p.offset(i as isize))[0] - xbar + sround) >> sshift;
-        let dy = ((*_p.offset(i as isize))[1] - ybar + sround) >> sshift;
+    for point in _p.iter().take(_np) {
+        let dx = (point[0] - xbar + sround) >> sshift;
+        let dy = (point[1] - ybar + sround) >> sshift;
         sxx = sxx.wrapping_add(dx.wrapping_mul(dx));
         sxy = sxy.wrapping_add(dx.wrapping_mul(dy));
         syy = syy.wrapping_add(dy.wrapping_mul(dy));
@@ -559,7 +558,7 @@ pub unsafe fn qr_line_fit_points(_l: *mut qr_line, _p: *mut qr_point, _np: c_int
 /// An affine homography.
 /// This maps from the image (at subpel resolution) to a square domain with
 /// power-of-two sides (of res bits) and back.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct qr_aff {
     /// Forward transformation matrix [2][2]
     pub fwd: [[c_int; 2]; 2],
@@ -604,17 +603,17 @@ pub unsafe fn qr_aff_init(
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
-pub unsafe fn qr_aff_unproject(_q: *mut qr_point, _aff: *const qr_aff, _x: c_int, _y: c_int) {
-    (*_q)[0] = ((*_aff).inv[0][0]
-        .wrapping_mul(_x.wrapping_sub((*_aff).x0))
-        .wrapping_add((*_aff).inv[0][1].wrapping_mul(_y.wrapping_sub((*_aff).y0)))
-        .wrapping_add((1 << (*_aff).ires) >> 1))
-        >> (*_aff).ires;
-    (*_q)[1] = ((*_aff).inv[1][0]
-        .wrapping_mul(_x.wrapping_sub((*_aff).x0))
-        .wrapping_add((*_aff).inv[1][1].wrapping_mul(_y.wrapping_sub((*_aff).y0)))
-        .wrapping_add((1 << (*_aff).ires) >> 1))
-        >> (*_aff).ires;
+pub unsafe fn qr_aff_unproject(_q: &mut qr_point, _aff: &qr_aff, _x: c_int, _y: c_int) {
+    _q[0] = (_aff.inv[0][0]
+        .wrapping_mul(_x.wrapping_sub(_aff.x0))
+        .wrapping_add(_aff.inv[0][1].wrapping_mul(_y.wrapping_sub(_aff.y0)))
+        .wrapping_add((1 << _aff.ires) >> 1))
+        >> _aff.ires;
+    _q[1] = (_aff.inv[1][0]
+        .wrapping_mul(_x.wrapping_sub(_aff.x0))
+        .wrapping_add(_aff.inv[1][1].wrapping_mul(_y.wrapping_sub(_aff.y0)))
+        .wrapping_add((1 << _aff.ires) >> 1))
+        >> _aff.ires;
 }
 
 /// Map from the square domain into the image (at subpel resolution).
@@ -636,7 +635,7 @@ pub unsafe fn qr_aff_project(_p: *mut qr_point, _aff: *const qr_aff, _u: c_int, 
 /// A full homography.
 /// Like the affine homography, this maps from the image (at subpel resolution)
 /// to a square domain with power-of-two sides (of res bits) and back.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct qr_hom {
     fwd: [[c_int; 2]; 3],
     inv: [[c_int; 2]; 3],
@@ -656,7 +655,7 @@ pub struct qr_hom {
 /// This function is unsafe because it dereferences the raw _hom pointer.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn qr_hom_init(
-    _hom: *mut qr_hom,
+    _hom: &mut qr_hom,
     _x0: c_int,
     _y0: c_int,
     _x1: c_int,
@@ -695,15 +694,15 @@ pub unsafe fn qr_hom_init(
 
     // Compute the final coefficients of the forward transform
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
-    (*_hom).fwd[0][0] = qr_fixmul(dx10, a20 + a22, r1, s1);
-    (*_hom).fwd[0][1] = qr_fixmul(dx20, a21 + a22, r1, s1);
-    (*_hom).x0 = _x0;
-    (*_hom).fwd[1][0] = qr_fixmul(dy10, a20 + a22, r1, s1);
-    (*_hom).fwd[1][1] = qr_fixmul(dy20, a21 + a22, r1, s1);
-    (*_hom).y0 = _y0;
-    (*_hom).fwd[2][0] = (a20 + r1 as c_int) >> s1;
-    (*_hom).fwd[2][1] = (a21 + r1 as c_int) >> s1;
-    (*_hom).fwd22 = if s1 > _res {
+    _hom.fwd[0][0] = qr_fixmul(dx10, a20 + a22, r1, s1);
+    _hom.fwd[0][1] = qr_fixmul(dx20, a21 + a22, r1, s1);
+    _hom.x0 = _x0;
+    _hom.fwd[1][0] = qr_fixmul(dy10, a20 + a22, r1, s1);
+    _hom.fwd[1][1] = qr_fixmul(dy20, a21 + a22, r1, s1);
+    _hom.y0 = _y0;
+    _hom.fwd[2][0] = (a20 + r1 as c_int) >> s1;
+    _hom.fwd[2][1] = (a21 + r1 as c_int) >> s1;
+    _hom.fwd22 = if s1 > _res {
         (a22 + ((r1 >> _res) as c_int)) >> (s1 - _res)
     } else {
         a22 << (_res - s1)
@@ -711,9 +710,9 @@ pub unsafe fn qr_hom_init(
 
     // Now compute the inverse transform
     let b0 = qr_ilog(c_int::max(c_int::max(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
-        + qr_ilog(c_int::max((*_hom).fwd[0][0].abs(), (*_hom).fwd[1][0].abs()) as u32);
+        + qr_ilog(c_int::max(_hom.fwd[0][0].abs(), _hom.fwd[1][0].abs()) as u32);
     let b1 = qr_ilog(c_int::max(c_int::max(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
-        + qr_ilog(c_int::max((*_hom).fwd[0][1].abs(), (*_hom).fwd[1][1].abs()) as u32);
+        + qr_ilog(c_int::max(_hom.fwd[0][1].abs(), _hom.fwd[1][1].abs()) as u32);
     let b2 = qr_ilog(a22.unsigned_abs()) - s1;
     let s2 = c_int::max(0, c_int::max(b0, b1) + b2 - (QR_INT_BITS - 3));
     let r2 = (1i64 << s2) >> 1;
@@ -721,29 +720,29 @@ pub unsafe fn qr_hom_init(
     let r1 = r1 << s2;
 
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
-    (*_hom).inv[0][0] = qr_fixmul((*_hom).fwd[1][1], a22, r1, s1);
-    (*_hom).inv[0][1] = qr_fixmul(-(*_hom).fwd[0][1], a22, r1, s1);
-    (*_hom).inv[1][0] = qr_fixmul(-(*_hom).fwd[1][0], a22, r1, s1);
-    (*_hom).inv[1][1] = qr_fixmul((*_hom).fwd[0][0], a22, r1, s1);
-    (*_hom).inv[2][0] = qr_fixmul(
-        (*_hom).fwd[1][0],
-        (*_hom).fwd[2][1],
-        -qr_extmul((*_hom).fwd[1][1], (*_hom).fwd[2][0], r2),
+    _hom.inv[0][0] = qr_fixmul(_hom.fwd[1][1], a22, r1, s1);
+    _hom.inv[0][1] = qr_fixmul(-_hom.fwd[0][1], a22, r1, s1);
+    _hom.inv[1][0] = qr_fixmul(-_hom.fwd[1][0], a22, r1, s1);
+    _hom.inv[1][1] = qr_fixmul(_hom.fwd[0][0], a22, r1, s1);
+    _hom.inv[2][0] = qr_fixmul(
+        _hom.fwd[1][0],
+        _hom.fwd[2][1],
+        -qr_extmul(_hom.fwd[1][1], _hom.fwd[2][0], r2),
         s2,
     );
-    (*_hom).inv[2][1] = qr_fixmul(
-        (*_hom).fwd[0][1],
-        (*_hom).fwd[2][0],
-        -qr_extmul((*_hom).fwd[0][0], (*_hom).fwd[2][1], r2),
+    _hom.inv[2][1] = qr_fixmul(
+        _hom.fwd[0][1],
+        _hom.fwd[2][0],
+        -qr_extmul(_hom.fwd[0][0], _hom.fwd[2][1], r2),
         s2,
     );
-    (*_hom).inv22 = qr_fixmul(
-        (*_hom).fwd[0][0],
-        (*_hom).fwd[1][1],
-        -qr_extmul((*_hom).fwd[0][1], (*_hom).fwd[1][0], r2),
+    _hom.inv22 = qr_fixmul(
+        _hom.fwd[0][0],
+        _hom.fwd[1][1],
+        -qr_extmul(_hom.fwd[0][1], _hom.fwd[1][0], r2),
         s2,
     );
-    (*_hom).res = _res;
+    _hom.res = _res;
 }
 
 /// Fit a homography to correct large-scale perspective distortion
@@ -752,12 +751,12 @@ pub unsafe fn qr_hom_init(
 /// to the edges of the QR code area and then building a homography transformation.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn qr_hom_fit(
-    _hom: *mut qr_hom,
-    _ul: *mut qr_finder,
-    _ur: *mut qr_finder,
-    _dl: *mut qr_finder,
-    _p: *mut qr_point,
-    _aff: *const qr_aff,
+    _hom: &mut qr_hom,
+    _ul: &mut qr_finder,
+    _ur: &mut qr_finder,
+    _dl: &mut qr_finder,
+    _p: &mut [qr_point],
+    _aff: &qr_aff,
     rng: &mut ChaCha8Rng,
     img: &[u8],
     _width: c_int,
@@ -777,13 +776,13 @@ pub unsafe fn qr_hom_fit(
     qr_line_fit_finder_pair(&mut l[0], _aff, _ul, _dl, 0);
     if qr_line_eval(
         &l[0],
-        (*_dl).c.as_ref().unwrap().pos[0],
-        (*_dl).c.as_ref().unwrap().pos[1],
+        _dl.c.as_ref().unwrap().pos[0],
+        _dl.c.as_ref().unwrap().pos[1],
     ) < 0
         || qr_line_eval(
             &l[0],
-            (*_ur).c.as_ref().unwrap().pos[0],
-            (*_ur).c.as_ref().unwrap().pos[1],
+            _ur.c.as_ref().unwrap().pos[0],
+            _ur.c.as_ref().unwrap().pos[1],
         ) < 0
     {
         return -1;
@@ -793,32 +792,32 @@ pub unsafe fn qr_hom_fit(
     qr_line_fit_finder_pair(&mut l[2], _aff, _ul, _ur, 2);
     if qr_line_eval(
         &l[2],
-        (*_dl).c.as_ref().unwrap().pos[0],
-        (*_dl).c.as_ref().unwrap().pos[1],
+        _dl.c.as_ref().unwrap().pos[0],
+        _dl.c.as_ref().unwrap().pos[1],
     ) < 0
         || qr_line_eval(
             &l[2],
-            (*_ur).c.as_ref().unwrap().pos[0],
-            (*_ur).c.as_ref().unwrap().pos[1],
+            _ur.c.as_ref().unwrap().pos[0],
+            _ur.c.as_ref().unwrap().pos[1],
         ) < 0
     {
         return -1;
     }
 
     // The edges which only have one finder pattern are more difficult.
-    let drv = (*_ur).size[1] >> 1;
+    let drv = _ur.size[1] >> 1;
     qr_finder_ransac(_ur, _aff, rng, 1);
     let mut dru = 0;
-    if qr_line_fit_finder_edge(&mut l[1], _ur, 1, (*_aff).res) >= 0 {
+    if qr_line_fit_finder_edge(&mut l[1], _ur, 1, _aff.res) >= 0 {
         if qr_line_eval(
             &l[1],
-            (*_ul).c.as_ref().unwrap().pos[0],
-            (*_ul).c.as_ref().unwrap().pos[1],
+            _ul.c.as_ref().unwrap().pos[0],
+            _ul.c.as_ref().unwrap().pos[1],
         ) < 0
             || qr_line_eval(
                 &l[1],
-                (*_dl).c.as_ref().unwrap().pos[0],
-                (*_dl).c.as_ref().unwrap().pos[1],
+                _dl.c.as_ref().unwrap().pos[0],
+                _dl.c.as_ref().unwrap().pos[1],
             ) < 0
         {
             return -1;
@@ -828,22 +827,22 @@ pub unsafe fn qr_hom_fit(
             return -1;
         }
     }
-    let mut ru = (*_ur).o[0] + 3 * (*_ur).size[0] - 2 * dru;
-    let mut rv = (*_ur).o[1] - 2 * drv;
+    let mut ru = _ur.o[0] + 3 * _ur.size[0] - 2 * dru;
+    let mut rv = _ur.o[1] - 2 * drv;
 
-    let dbu = (*_dl).size[0] >> 1;
+    let dbu = _dl.size[0] >> 1;
     qr_finder_ransac(_dl, _aff, rng, 3);
     let mut dbv = 0;
-    if qr_line_fit_finder_edge(&mut l[3], _dl, 3, (*_aff).res) >= 0 {
+    if qr_line_fit_finder_edge(&mut l[3], _dl, 3, _aff.res) >= 0 {
         if qr_line_eval(
             &l[3],
-            (*_ul).c.as_ref().unwrap().pos[0],
-            (*_ul).c.as_ref().unwrap().pos[1],
+            _ul.c.as_ref().unwrap().pos[0],
+            _ul.c.as_ref().unwrap().pos[1],
         ) < 0
             || qr_line_eval(
                 &l[3],
-                (*_ur).c.as_ref().unwrap().pos[0],
-                (*_ur).c.as_ref().unwrap().pos[1],
+                _ur.c.as_ref().unwrap().pos[0],
+                _ur.c.as_ref().unwrap().pos[1],
             ) < 0
         {
             return -1;
@@ -853,54 +852,54 @@ pub unsafe fn qr_hom_fit(
             return -1;
         }
     }
-    let mut bu = (*_dl).o[0] - 2 * dbu;
-    let mut bv = (*_dl).o[1] + 3 * (*_dl).size[1] - 2 * dbv;
+    let mut bu = _dl.o[0] - 2 * dbu;
+    let mut bv = _dl.o[1] + 3 * _dl.size[1] - 2 * dbv;
 
     // Set up the initial point lists
-    let mut nr = (*_ur).ninliers[1];
+    let mut nr = _ur.ninliers[1];
     let mut rlastfit = nr;
-    let mut cr = nr + ((*_dl).o[1] - rv + drv - 1) / drv;
+    let mut cr = nr + (_dl.o[1] - rv + drv - 1) / drv;
     let mut r: Vec<qr_point> = Vec::with_capacity(cr as usize);
-    for i in 0..(*_ur).ninliers[1] {
-        r.push((*(*_ur).edge_pts[1].add(i as usize)).pos);
+    for i in 0.._ur.ninliers[1] {
+        r.push((*_ur.edge_pts[1].add(i as usize)).pos);
     }
 
-    let mut nb = (*_dl).ninliers[3];
+    let mut nb = _dl.ninliers[3];
     let mut blastfit = nb;
-    let mut cb = nb + ((*_ur).o[0] - bu + dbu - 1) / dbu;
+    let mut cb = nb + (_ur.o[0] - bu + dbu - 1) / dbu;
     let mut b: Vec<qr_point> = Vec::with_capacity(cb as usize);
-    for i in 0..(*_dl).ninliers[3] {
-        b.push((*(*_dl).edge_pts[3].add(i as usize)).pos);
+    for i in 0.._dl.ninliers[3] {
+        b.push((*_dl.edge_pts[3].add(i as usize)).pos);
     }
 
     // Set up the step parameters for the affine projection
-    let ox = ((*_aff).x0 << (*_aff).res) + (1 << ((*_aff).res - 1));
-    let oy = ((*_aff).y0 << (*_aff).res) + (1 << ((*_aff).res - 1));
-    let mut rx = (*_aff).fwd[0][0] * ru + (*_aff).fwd[0][1] * rv + ox;
-    let mut ry = (*_aff).fwd[1][0] * ru + (*_aff).fwd[1][1] * rv + oy;
-    let mut drxi = (*_aff).fwd[0][0] * dru + (*_aff).fwd[0][1] * drv;
-    let mut dryi = (*_aff).fwd[1][0] * dru + (*_aff).fwd[1][1] * drv;
-    let drxj = (*_aff).fwd[0][0] * (*_ur).size[0];
-    let dryj = (*_aff).fwd[1][0] * (*_ur).size[0];
-    let mut bx = (*_aff).fwd[0][0] * bu + (*_aff).fwd[0][1] * bv + ox;
-    let mut by = (*_aff).fwd[1][0] * bu + (*_aff).fwd[1][1] * bv + oy;
-    let mut dbxi = (*_aff).fwd[0][0] * dbu + (*_aff).fwd[0][1] * dbv;
-    let mut dbyi = (*_aff).fwd[1][0] * dbu + (*_aff).fwd[1][1] * dbv;
-    let dbxj = (*_aff).fwd[0][1] * (*_dl).size[1];
-    let dbyj = (*_aff).fwd[1][1] * (*_dl).size[1];
+    let ox = (_aff.x0 << _aff.res) + (1 << (_aff.res - 1));
+    let oy = (_aff.y0 << _aff.res) + (1 << (_aff.res - 1));
+    let mut rx = _aff.fwd[0][0] * ru + _aff.fwd[0][1] * rv + ox;
+    let mut ry = _aff.fwd[1][0] * ru + _aff.fwd[1][1] * rv + oy;
+    let mut drxi = _aff.fwd[0][0] * dru + _aff.fwd[0][1] * drv;
+    let mut dryi = _aff.fwd[1][0] * dru + _aff.fwd[1][1] * drv;
+    let drxj = _aff.fwd[0][0] * _ur.size[0];
+    let dryj = _aff.fwd[1][0] * _ur.size[0];
+    let mut bx = _aff.fwd[0][0] * bu + _aff.fwd[0][1] * bv + ox;
+    let mut by = _aff.fwd[1][0] * bu + _aff.fwd[1][1] * bv + oy;
+    let mut dbxi = _aff.fwd[0][0] * dbu + _aff.fwd[0][1] * dbv;
+    let mut dbyi = _aff.fwd[1][0] * dbu + _aff.fwd[1][1] * dbv;
+    let dbxj = _aff.fwd[0][1] * _dl.size[1];
+    let dbyj = _aff.fwd[1][1] * _dl.size[1];
 
     // Now step along the lines, looking for new sample points
     let mut nrempty = 0;
     let mut nbempty = 0;
     loop {
-        let rdone = rv >= bv.min(((*_dl).o[1] + bv) >> 1) || nrempty > 14;
-        let bdone = bu >= ru.min(((*_ur).o[0] + ru) >> 1) || nbempty > 14;
+        let rdone = rv >= bv.min((_dl.o[1] + bv) >> 1) || nrempty > 14;
+        let bdone = bu >= ru.min((_ur.o[0] + ru) >> 1) || nbempty > 14;
 
         if !rdone && (bdone || rv < bu) {
-            let x0 = (rx + drxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
-            let y0 = (ry + dryj) >> ((*_aff).res + QR_FINDER_SUBPREC);
-            let x1 = (rx - drxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
-            let y1 = (ry - dryj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let x0 = (rx + drxj) >> (_aff.res + QR_FINDER_SUBPREC);
+            let y0 = (ry + dryj) >> (_aff.res + QR_FINDER_SUBPREC);
+            let x1 = (rx - drxj) >> (_aff.res + QR_FINDER_SUBPREC);
+            let y1 = (ry - dryj) >> (_aff.res + QR_FINDER_SUBPREC);
 
             if nr >= cr {
                 cr = (cr << 1) | 1;
@@ -932,15 +931,15 @@ pub unsafe fn qr_hom_fit(
                     if q[1] + drv > rv {
                         rv = (rv + q[1]) >> 1;
                     }
-                    rx = (*_aff).fwd[0][0] * ru + (*_aff).fwd[0][1] * rv + ox;
-                    ry = (*_aff).fwd[1][0] * ru + (*_aff).fwd[1][1] * rv + oy;
+                    rx = _aff.fwd[0][0] * ru + _aff.fwd[0][1] * rv + ox;
+                    ry = _aff.fwd[1][0] * ru + _aff.fwd[1][1] * rv + oy;
                     nr += 1;
                     // Re-fit the line to update the step direction periodically
                     if nr > 1.max(rlastfit + (rlastfit >> 2)) {
-                        qr_line_fit_points(&mut l[1], r.as_mut_ptr(), nr, (*_aff).res);
+                        qr_line_fit_points(&mut l[1], &mut r, nr as usize, _aff.res);
                         if qr_aff_line_step(_aff, l[1].as_ptr(), 1, drv, &mut dru) >= 0 {
-                            drxi = (*_aff).fwd[0][0] * dru + (*_aff).fwd[0][1] * drv;
-                            dryi = (*_aff).fwd[1][0] * dru + (*_aff).fwd[1][1] * drv;
+                            drxi = _aff.fwd[0][0] * dru + _aff.fwd[0][1] * drv;
+                            dryi = _aff.fwd[1][0] * dru + _aff.fwd[1][1] * drv;
                         }
                         rlastfit = nr;
                     }
@@ -959,10 +958,10 @@ pub unsafe fn qr_hom_fit(
             rx += drxi;
             ry += dryi;
         } else if !bdone {
-            let x0 = (bx + dbxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
-            let y0 = (by + dbyj) >> ((*_aff).res + QR_FINDER_SUBPREC);
-            let x1 = (bx - dbxj) >> ((*_aff).res + QR_FINDER_SUBPREC);
-            let y1 = (by - dbyj) >> ((*_aff).res + QR_FINDER_SUBPREC);
+            let x0 = (bx + dbxj) >> (_aff.res + QR_FINDER_SUBPREC);
+            let y0 = (by + dbyj) >> (_aff.res + QR_FINDER_SUBPREC);
+            let x1 = (bx - dbxj) >> (_aff.res + QR_FINDER_SUBPREC);
+            let y1 = (by - dbyj) >> (_aff.res + QR_FINDER_SUBPREC);
 
             if nb >= cb {
                 cb = (cb << 1) | 1;
@@ -994,15 +993,15 @@ pub unsafe fn qr_hom_fit(
                         bu = (bu + q[0]) >> 1;
                     }
                     bv = (bv + q[1]) >> 1;
-                    bx = (*_aff).fwd[0][0] * bu + (*_aff).fwd[0][1] * bv + ox;
-                    by = (*_aff).fwd[1][0] * bu + (*_aff).fwd[1][1] * bv + oy;
+                    bx = _aff.fwd[0][0] * bu + _aff.fwd[0][1] * bv + ox;
+                    by = _aff.fwd[1][0] * bu + _aff.fwd[1][1] * bv + oy;
                     nb += 1;
                     // Re-fit the line to update the step direction periodically
                     if nb > 1.max(blastfit + (blastfit >> 2)) {
-                        qr_line_fit_points(&mut l[3], b.as_mut_ptr(), nb, (*_aff).res);
+                        qr_line_fit_points(&mut l[3], &mut b, nb as usize, _aff.res);
                         if qr_aff_line_step(_aff, l[3].as_ptr(), 0, dbu, &mut dbv) >= 0 {
-                            dbxi = (*_aff).fwd[0][0] * dbu + (*_aff).fwd[0][1] * dbv;
-                            dbyi = (*_aff).fwd[1][0] * dbu + (*_aff).fwd[1][1] * dbv;
+                            dbxi = _aff.fwd[0][0] * dbu + _aff.fwd[0][1] * dbv;
+                            dbyi = _aff.fwd[1][0] * dbu + _aff.fwd[1][1] * dbv;
                         }
                         blastfit = nb;
                     }
@@ -1026,17 +1025,17 @@ pub unsafe fn qr_hom_fit(
     }
 
     // Fit the new lines
-    qr_hom_fit_edge_line(&mut l[1], r.as_mut_ptr(), nr, _ur, _aff, 1);
-    qr_hom_fit_edge_line(&mut l[3], b.as_mut_ptr(), nb, _dl, _aff, 3);
+    qr_hom_fit_edge_line(&mut l[1], &mut r, nr as usize, _ur, _aff, 1);
+    qr_hom_fit_edge_line(&mut l[3], &mut b, nb as usize, _dl, _aff, 3);
 
     // Compute line intersections
     for i in 0..4 {
-        if qr_line_isect(_p.add(i), &l[i & 1], &l[2 + (i >> 1)]) < 0 {
+        if qr_line_isect(&mut _p[i], &l[i & 1], &l[2 + (i >> 1)]) < 0 {
             return -1;
         }
         // It's plausible for points to be somewhat outside the image, but too far
         // and too much of the pattern will be gone for it to be decodable
-        let p_i = &*_p.add(i);
+        let p_i = &_p[i];
         if p_i[0] < (-_width << QR_FINDER_SUBPREC)
             || p_i[0] >= ((_width << QR_FINDER_SUBPREC) + 1)
             || p_i[1] < (-_height << QR_FINDER_SUBPREC)
@@ -1047,12 +1046,11 @@ pub unsafe fn qr_hom_fit(
     }
 
     // By default, use the edge intersection point for the bottom-right corner
-    let mut brx = (*_p.add(3))[0];
-    let mut bry = (*_p.add(3))[1];
+    let mut brx = _p[3][0];
+    let mut bry = _p[3][1];
 
     // However, if our average version estimate is greater than 1, try to search for an alignment pattern
-    let version4 =
-        (*_ul).eversion[0] + (*_ul).eversion[1] + (*_ur).eversion[0] + (*_dl).eversion[1];
+    let version4 = _ul.eversion[0] + _ul.eversion[1] + _ur.eversion[0] + _dl.eversion[1];
     if version4 > 4 {
         let mut cell: qr_hom_cell = std::mem::zeroed();
         let mut p3: qr_point = [0; 2];
@@ -1067,14 +1065,14 @@ pub unsafe fn qr_hom_fit(
             dim - 1,
             dim - 1,
             dim - 1,
-            (*_p.add(0))[0],
-            (*_p.add(0))[1],
-            (*_p.add(1))[0],
-            (*_p.add(1))[1],
-            (*_p.add(2))[0],
-            (*_p.add(2))[1],
-            (*_p.add(3))[0],
-            (*_p.add(3))[1],
+            _p[0][0],
+            _p[0][1],
+            _p[1][0],
+            _p[1][1],
+            _p[2][0],
+            _p[2][1],
+            _p[3][0],
+            _p[3][1],
         );
         if qr_alignment_pattern_search(&mut p3, &cell, dim - 7, dim - 7, 4, img, _width, _height)
             >= 0
@@ -1090,12 +1088,12 @@ pub unsafe fn qr_hom_fit(
     // Now we have four points that map to a square: initialize the projection
     qr_hom_init(
         _hom,
-        (*_p.add(0))[0],
-        (*_p.add(0))[1],
-        (*_p.add(1))[0],
-        (*_p.add(1))[1],
-        (*_p.add(2))[0],
-        (*_p.add(2))[1],
+        _p[0][0],
+        _p[0][1],
+        _p[1][0],
+        _p[1][1],
+        _p[2][0],
+        _p[2][1],
         brx,
         bry,
         QR_HOM_BITS,
@@ -1109,28 +1107,29 @@ pub unsafe fn qr_hom_fit(
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.
 pub unsafe fn qr_hom_fproject(
-    _p: *mut qr_point,
-    _hom: *const qr_hom,
+    _p: &mut qr_point,
+    _hom: &qr_hom,
     mut _x: c_int,
     mut _y: c_int,
     mut _w: c_int,
 ) {
     if _w == 0 {
-        (*_p)[0] = if _x < 0 { c_int::MIN } else { c_int::MAX };
-        (*_p)[1] = if _y < 0 { c_int::MIN } else { c_int::MAX };
+        _p[0] = if _x < 0 { c_int::MIN } else { c_int::MAX };
+        _p[1] = if _y < 0 { c_int::MIN } else { c_int::MAX };
     } else {
         if _w < 0 {
             _x = -_x;
             _y = -_y;
             _w = -_w;
         }
-        (*_p)[0] = qr_divround(_x, _w) + (*_hom).x0;
-        (*_p)[1] = qr_divround(_y, _w) + (*_hom).y0;
+        _p[0] = qr_divround(_x, _w) + _hom.x0;
+        _p[1] = qr_divround(_y, _w) + _hom.y0;
     }
 }
 
 /// All the information we've collected about a finder pattern in the current
 /// configuration.
+#[derive(Default)]
 pub struct qr_finder {
     /// The module size along each axis (in the square domain).
     size: [c_int; 2],
@@ -1164,7 +1163,7 @@ pub struct qr_finder {
 /// # Safety
 /// This function is unsafe because it dereferences the raw _f pointer.
 pub unsafe fn qr_finder_estimate_module_size_and_version(
-    _f: *mut qr_finder,
+    _f: &mut qr_finder,
     _width: c_int,
     _height: c_int,
 ) -> c_int {
@@ -1173,9 +1172,9 @@ pub unsafe fn qr_finder_estimate_module_size_and_version(
     let mut nsums: [c_int; 4] = [0; 4];
 
     for e in 0..4 {
-        if (*_f).nedge_pts[e] > 0 {
-            let edge_pts = (*_f).edge_pts[e];
-            let mut n = (*_f).nedge_pts[e];
+        if _f.nedge_pts[e] > 0 {
+            let edge_pts = _f.edge_pts[e];
+            let mut n = _f.nedge_pts[e];
 
             // Average the samples for this edge, dropping the top and bottom 25%
             let mut sum: c_int = 0;
@@ -1195,13 +1194,13 @@ pub unsafe fn qr_finder_estimate_module_size_and_version(
 
     // If we have samples on both sides of an axis, refine our idea of where the
     // unprojected finder center is located.
-    if (*_f).nedge_pts[0] > 0 && (*_f).nedge_pts[1] > 0 {
-        (*_f).o[0] = (*_f).o[0].wrapping_sub(offs[0] >> 1);
+    if _f.nedge_pts[0] > 0 && _f.nedge_pts[1] > 0 {
+        _f.o[0] = _f.o[0].wrapping_sub(offs[0] >> 1);
         sums[0] = sums[0].wrapping_sub((offs[0].wrapping_mul(nsums[0])) >> 1);
         sums[1] = sums[1].wrapping_sub((offs[0].wrapping_mul(nsums[1])) >> 1);
     }
-    if (*_f).nedge_pts[2] > 0 && (*_f).nedge_pts[3] > 0 {
-        (*_f).o[1] = (*_f).o[1].wrapping_sub(offs[1] >> 1);
+    if _f.nedge_pts[2] > 0 && _f.nedge_pts[3] > 0 {
+        _f.o[1] = _f.o[1].wrapping_sub(offs[1] >> 1);
         sums[2] = sums[2].wrapping_sub((offs[1].wrapping_mul(nsums[2])) >> 1);
         sums[3] = sums[3].wrapping_sub((offs[1].wrapping_mul(nsums[3])) >> 1);
     }
@@ -1259,15 +1258,15 @@ pub unsafe fn qr_finder_estimate_module_size_and_version(
         return -1;
     }
 
-    (*_f).size[0] = usize;
-    (*_f).size[1] = vsize;
+    _f.size[0] = usize;
+    _f.size[1] = vsize;
 
     // We intentionally do not compute an average version from the sizes along
     // both axes.
     // In the presence of projective distortion, one of them will be much more
     // accurate than the other.
-    (*_f).eversion[0] = uversion;
-    (*_f).eversion[1] = vversion;
+    _f.eversion[0] = uversion;
+    _f.eversion[1] = vversion;
 
     0
 }
@@ -1279,14 +1278,9 @@ pub unsafe fn qr_finder_estimate_module_size_and_version(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-pub unsafe fn qr_finder_ransac(
-    _f: *mut qr_finder,
-    _hom: *const qr_aff,
-    rng: &mut ChaCha8Rng,
-    _e: c_int,
-) {
-    let edge_pts = (*_f).edge_pts[_e as usize];
-    let n = (*_f).nedge_pts[_e as usize];
+pub unsafe fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e: c_int) {
+    let edge_pts = _f.edge_pts[_e as usize];
+    let n = _f.nedge_pts[_e as usize];
     let mut best_ninliers = 0;
 
     if n > 1 {
@@ -1314,10 +1308,10 @@ pub unsafe fn qr_finder_ransac(
             // orientation in the square domain, reject it outright.
             // This can happen, e.g., when highly skewed orientations cause points to
             // be misclassified into the wrong edge.
-            qr_aff_unproject(&mut q0 as *mut _, _hom, p0[0], p0[1]);
-            qr_aff_unproject(&mut q1 as *mut _, _hom, p1[0], p1[1]);
-            qr_point_translate(&mut q0 as *mut _, -(*_f).o[0], -(*_f).o[1]);
-            qr_point_translate(&mut q1 as *mut _, -(*_f).o[0], -(*_f).o[1]);
+            qr_aff_unproject(&mut q0, _hom, p0[0], p0[1]);
+            qr_aff_unproject(&mut q1, _hom, p1[0], p1[1]);
+            qr_point_translate(&mut q0, -_f.o[0], -_f.o[1]);
+            qr_point_translate(&mut q1, -_f.o[0], -_f.o[1]);
 
             if (q0[(_e >> 1) as usize] - q1[(_e >> 1) as usize]).abs()
                 > (q0[(1 - (_e >> 1)) as usize] - q1[(1 - (_e >> 1)) as usize]).abs()
@@ -1390,7 +1384,7 @@ pub unsafe fn qr_finder_ransac(
         }
     }
 
-    (*_f).ninliers[_e as usize] = best_ninliers;
+    _f.ninliers[_e as usize] = best_ninliers;
 }
 
 /// Perform a least-squares line fit to an edge of a finder pattern using the inliers found by RANSAC.
@@ -1398,35 +1392,30 @@ pub unsafe fn qr_finder_ransac(
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
 pub unsafe fn qr_line_fit_finder_edge(
-    _l: *mut qr_line,
-    _f: *const qr_finder,
+    _l: &mut qr_line,
+    _f: &qr_finder,
     _e: c_int,
     _res: c_int,
 ) -> c_int {
-    let npts = (*_f).ninliers[_e as usize];
+    let npts = _f.ninliers[_e as usize] as usize;
     if npts < 2 {
         return -1;
     }
 
-    // We could write a custom version of qr_line_fit_points that accesses
-    // edge_pts directly, but this saves on code size and doesn't measurably slow things down.
-    let pts = qr_alloc_array::<qr_point>(npts as usize);
-    if pts.is_null() {
-        return -1;
-    }
-    let edge_pts = (*_f).edge_pts[_e as usize];
+    let mut pts = vec![qr_point::default(); npts];
+    let edge_pts = _f.edge_pts[_e as usize];
+    let edge_pts = from_raw_parts(edge_pts, npts);
 
-    for i in 0..npts {
-        (*pts.offset(i as isize))[0] = (*edge_pts.offset(i as isize)).pos[0];
-        (*pts.offset(i as isize))[1] = (*edge_pts.offset(i as isize)).pos[1];
+    for (point, edge_point) in pts.iter_mut().zip(edge_pts) {
+        point[0] = edge_point.pos[0];
+        point[1] = edge_point.pos[1];
     }
 
-    qr_line_fit_points(_l, pts, npts, _res);
+    qr_line_fit_points(_l, &mut pts, npts, _res);
 
     // Make sure the center of the finder pattern lies in the positive halfspace of the line.
-    qr_line_orient(_l, (*(*_f).c).pos[0], (*(*_f).c).pos[1]);
+    qr_line_orient(_l, (*_f.c).pos[0], (*_f.c).pos[1]);
 
-    qr_free_array(pts);
     0
 }
 
@@ -1438,81 +1427,78 @@ pub unsafe fn qr_line_fit_finder_edge(
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
 pub unsafe fn qr_line_fit_finder_pair(
-    _l: *mut qr_line,
-    _aff: *const qr_aff,
-    _f0: *const qr_finder,
-    _f1: *const qr_finder,
+    _l: &mut qr_line,
+    _aff: &qr_aff,
+    _f0: &qr_finder,
+    _f1: &qr_finder,
     _e: c_int,
 ) {
-    let mut n0 = (*_f0).ninliers[_e as usize];
-    let n1 = (*_f1).ninliers[_e as usize];
+    let mut n0 = _f0.ninliers[_e as usize] as usize;
+    let n1 = _f1.ninliers[_e as usize] as usize;
 
     // We could write a custom version of qr_line_fit_points that accesses
     // edge_pts directly, but this saves on code size and doesn't measurably slow things down.
-    let npts = c_int::max(n0, 1) + c_int::max(n1, 1);
-    let pts = qr_alloc_array::<qr_point>(npts as usize);
-    if pts.is_null() {
-        return;
-    }
+    let npts = usize::max(n0, 1) + usize::max(n1, 1);
+    let mut pts = vec![qr_point::default(); npts];
 
     if n0 > 0 {
-        let edge_pts = (*_f0).edge_pts[_e as usize];
-        for i in 0..n0 {
-            (*pts.offset(i as isize))[0] = (*edge_pts.offset(i as isize)).pos[0];
-            (*pts.offset(i as isize))[1] = (*edge_pts.offset(i as isize)).pos[1];
+        let edge_pts = _f0.edge_pts[_e as usize];
+        let edge_pts = from_raw_parts(edge_pts, n0);
+        for (point, edge_point) in pts.iter_mut().zip(edge_pts).take(n0) {
+            point[0] = edge_point.pos[0];
+            point[1] = edge_point.pos[1];
         }
     } else {
-        let mut q: qr_point = [(*_f0).o[0], (*_f0).o[1]];
-        q[(_e >> 1) as usize] += (*_f0).size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
-        qr_aff_project(&mut (*pts.offset(0)), _aff, q[0], q[1]);
+        let mut q: qr_point = [_f0.o[0], _f0.o[1]];
+        q[(_e >> 1) as usize] += _f0.size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
+        qr_aff_project(&mut pts[0], _aff, q[0], q[1]);
         n0 += 1;
     }
 
     if n1 > 0 {
-        let edge_pts = (*_f1).edge_pts[_e as usize];
-        for i in 0..n1 {
-            (*pts.offset((n0 + i) as isize))[0] = (*edge_pts.offset(i as isize)).pos[0];
-            (*pts.offset((n0 + i) as isize))[1] = (*edge_pts.offset(i as isize)).pos[1];
+        let edge_pts = _f1.edge_pts[_e as usize];
+        let edge_pts = from_raw_parts(edge_pts, n1);
+        for (point, edge_point) in pts[n0..].iter_mut().zip(edge_pts).take(n1) {
+            point[0] = edge_point.pos[0];
+            point[1] = edge_point.pos[1];
         }
     } else {
-        let mut q: qr_point = [(*_f1).o[0], (*_f1).o[1]];
-        q[(_e >> 1) as usize] += (*_f1).size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
-        qr_aff_project(&mut (*pts.offset(n0 as isize)), _aff, q[0], q[1]);
+        let mut q: qr_point = [_f1.o[0], _f1.o[1]];
+        q[(_e >> 1) as usize] += _f1.size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
+        qr_aff_project(&mut pts[n0], _aff, q[0], q[1]);
     }
 
-    qr_line_fit_points(_l, pts, npts, (*_aff).res);
+    qr_line_fit_points(_l, &mut pts, npts, _aff.res);
 
     // Make sure at least one finder center lies in the positive halfspace.
-    qr_line_orient(_l, (*(*_f0).c).pos[0], (*(*_f0).c).pos[1]);
-
-    qr_free_array(pts);
+    qr_line_orient(_l, (*_f0.c).pos[0], (*_f0.c).pos[1]);
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
 /// Returns a negative value if the point went to infinity.
 pub unsafe fn qr_hom_unproject(
-    _q: *mut qr_point,
-    _hom: *const qr_hom,
+    _q: &mut qr_point,
+    _hom: &qr_hom,
     mut _x: c_int,
     mut _y: c_int,
 ) -> c_int {
-    _x = _x.wrapping_sub((*_hom).x0);
-    _y = _y.wrapping_sub((*_hom).y0);
-    let mut x = (*_hom).inv[0][0]
+    _x = _x.wrapping_sub(_hom.x0);
+    _y = _y.wrapping_sub(_hom.y0);
+    let mut x = _hom.inv[0][0]
         .wrapping_mul(_x)
-        .wrapping_add((*_hom).inv[0][1].wrapping_mul(_y));
-    let mut y = (*_hom).inv[1][0]
+        .wrapping_add(_hom.inv[0][1].wrapping_mul(_y));
+    let mut y = _hom.inv[1][0]
         .wrapping_mul(_x)
-        .wrapping_add((*_hom).inv[1][1].wrapping_mul(_y));
-    let mut w = ((*_hom).inv[2][0]
+        .wrapping_add(_hom.inv[1][1].wrapping_mul(_y));
+    let mut w = (_hom.inv[2][0]
         .wrapping_mul(_x)
-        .wrapping_add((*_hom).inv[2][1].wrapping_mul(_y))
-        .wrapping_add((*_hom).inv22)
-        .wrapping_add(1 << ((*_hom).res - 1)))
-        >> (*_hom).res;
+        .wrapping_add(_hom.inv[2][1].wrapping_mul(_y))
+        .wrapping_add(_hom.inv22)
+        .wrapping_add(1 << (_hom.res - 1)))
+        >> _hom.res;
     if w == 0 {
-        (*_q)[0] = if x < 0 { c_int::MIN } else { c_int::MAX };
-        (*_q)[1] = if y < 0 { c_int::MIN } else { c_int::MAX };
+        _q[0] = if x < 0 { c_int::MIN } else { c_int::MAX };
+        _q[1] = if y < 0 { c_int::MIN } else { c_int::MAX };
         return -1;
     } else {
         if w < 0 {
@@ -1520,8 +1506,8 @@ pub unsafe fn qr_hom_unproject(
             y = -y;
             w = -w;
         }
-        (*_q)[0] = qr_divround(x, w);
-        (*_q)[1] = qr_divround(y, w);
+        _q[0] = qr_divround(x, w);
+        _q[1] = qr_divround(y, w);
     }
     0
 }
@@ -1538,11 +1524,11 @@ pub struct qr_pack_buf {
 }
 
 /// Initialize a pack buffer for reading bits from data
-pub unsafe fn qr_pack_buf_init(_b: *mut qr_pack_buf, _data: *const c_uchar, _ndata: c_int) {
-    (*_b).buf = _data;
-    (*_b).storage = _ndata;
-    (*_b).endbyte = 0;
-    (*_b).endbit = 0;
+pub unsafe fn qr_pack_buf_init(_b: &mut qr_pack_buf, _data: *const c_uchar, _ndata: c_int) {
+    _b.buf = _data;
+    _b.storage = _ndata;
+    _b.endbyte = 0;
+    _b.endbit = 0;
 }
 
 /// Read bits from the pack buffer
@@ -1634,26 +1620,26 @@ pub unsafe fn qr_finder_cluster_lines(
     _v: c_int,
 ) -> c_int {
     // Allocate mark array to track which lines have been clustered
-    let mark = qr_calloc_array::<c_uchar>(_nlines as usize);
+    let mut mark = vec![0u8; _nlines as usize];
     let mut neighbors = _neighbors;
     let mut nclusters = 0;
 
-    for i in 0..(_nlines - 1) {
-        if *mark.offset(i as isize) != 0 {
+    for i in 0..(_nlines as usize - 1) {
+        if mark[i] != 0 {
             continue;
         }
 
         let mut nneighbors = 1;
-        *neighbors.offset(0) = _lines.offset(i as isize);
-        let mut len = (*_lines.offset(i as isize)).len;
+        *neighbors.offset(0) = _lines.add(i);
+        let mut len = (*_lines.add(i)).len;
 
-        for j in (i + 1).._nlines {
-            if *mark.offset(j as isize) != 0 {
+        for (j, mj) in mark.iter().enumerate().take(_nlines as usize).skip(i + 1) {
+            if *mj != 0 {
                 continue;
             }
 
             let a = *neighbors.offset((nneighbors - 1) as isize);
-            let b = _lines.offset(j as isize);
+            let b = _lines.add(j);
 
             // The clustering threshold is proportional to the size of the lines,
             // since minor noise in large areas can interrupt patterns more easily
@@ -1698,7 +1684,7 @@ pub unsafe fn qr_finder_cluster_lines(
                 continue;
             }
 
-            *neighbors.offset(nneighbors as isize) = _lines.offset(j as isize);
+            *neighbors.offset(nneighbors as isize) = _lines.add(j);
             nneighbors += 1;
             len += (*b).len;
         }
@@ -1721,7 +1707,7 @@ pub unsafe fn qr_finder_cluster_lines(
 
             for j in 0..nneighbors {
                 let line_offset = (*neighbors.offset(j as isize)).offset_from(_lines);
-                *mark.offset(line_offset) = 1;
+                mark[line_offset as usize] = 1;
             }
 
             neighbors = neighbors.offset(nneighbors as isize);
@@ -1729,7 +1715,6 @@ pub unsafe fn qr_finder_cluster_lines(
         }
     }
 
-    qr_free_bytes(mark);
     nclusters
 }
 
@@ -2167,33 +2152,28 @@ pub fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering 
 /// (in the square domain).
 /// The resulting list of edge points is sorted by edge index, with ties broken
 /// by extent.
-pub unsafe fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _aff: *const qr_aff) {
-    let c = (*_f).c;
-    for item in (*_f).nedge_pts.iter_mut() {
+pub unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &qr_aff) {
+    let c = _f.c;
+    for item in _f.nedge_pts.iter_mut() {
         *item = 0;
     }
     for i in 0..(*c).nedge_pts {
         let mut q = qr_point::default();
-        let edge_pt = (*c).edge_pts.add(i as usize);
-        qr_aff_unproject(
-            (&mut q) as *mut _,
-            _aff,
-            (*edge_pt).pos[0],
-            (*edge_pt).pos[1],
-        );
-        qr_point_translate(q.as_mut_ptr(), -(*_f).o[0], -(*_f).o[1]);
+        let edge_pt = &mut *(*c).edge_pts.add(i as usize);
+        qr_aff_unproject(&mut q, _aff, edge_pt.pos[0], edge_pt.pos[1]);
+        qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
         let d = c_int::from(q[1].abs() > q[0].abs());
         let e = d << 1 | c_int::from(q[d as usize] >= 0);
-        (*_f).nedge_pts[e as usize] += 1;
-        (*edge_pt).edge = e;
-        (*edge_pt).extent = q[d as usize];
+        _f.nedge_pts[e as usize] += 1;
+        edge_pt.edge = e;
+        edge_pt.extent = q[d as usize];
     }
 
     let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
     edge_pts.sort_by(qr_cmp_edge_pt);
-    (*_f).edge_pts[0] = (*c).edge_pts;
-    for e in 1..(*_f).edge_pts.len() {
-        (*_f).edge_pts[e] = (*_f).edge_pts[e - 1].add((*_f).nedge_pts[e - 1] as usize);
+    _f.edge_pts[0] = (*c).edge_pts;
+    for e in 1.._f.edge_pts.len() {
+        _f.edge_pts[e] = _f.edge_pts[e - 1].add(_f.nedge_pts[e - 1] as usize);
     }
 }
 
@@ -2207,27 +2187,21 @@ pub unsafe fn qr_finder_edge_pts_aff_classify(_f: *mut qr_finder, _aff: *const q
 ///
 /// The resulting list of edge points is sorted by edge index, with ties broken
 /// by extent.
-pub unsafe fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _hom: *const qr_hom) {
-    let c = (*_f).c;
-    for item in (*_f).nedge_pts.iter_mut() {
+pub unsafe fn qr_finder_edge_pts_hom_classify(_f: &mut qr_finder, _hom: &qr_hom) {
+    let c = _f.c;
+    for item in _f.nedge_pts.iter_mut() {
         *item = 0;
     }
     for i in 0..(*c).nedge_pts {
         let mut q = qr_point::default();
         let edge_pt = (*c).edge_pts.add(i as usize);
 
-        if qr_hom_unproject(
-            (&mut q) as *mut _,
-            _hom,
-            (*edge_pt).pos[0],
-            (*edge_pt).pos[1],
-        ) >= 0
-        {
+        if qr_hom_unproject(&mut q, _hom, (*edge_pt).pos[0], (*edge_pt).pos[1]) >= 0 {
             // Successful projection
-            qr_point_translate(q.as_mut_ptr(), -(*_f).o[0], -(*_f).o[1]);
+            qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
             let d = c_int::from(q[1].abs() > q[0].abs());
             let e = d << 1 | c_int::from(q[d as usize] >= 0);
-            (*_f).nedge_pts[e as usize] += 1;
+            _f.nedge_pts[e as usize] += 1;
             (*edge_pt).edge = e;
             (*edge_pt).extent = q[d as usize];
         } else {
@@ -2239,9 +2213,9 @@ pub unsafe fn qr_finder_edge_pts_hom_classify(_f: *mut qr_finder, _hom: *const q
 
     let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
     edge_pts.sort_by(qr_cmp_edge_pt);
-    (*_f).edge_pts[0] = (*c).edge_pts;
-    for e in 1..(*_f).edge_pts.len() {
-        (*_f).edge_pts[e] = (*_f).edge_pts[e - 1].add((*_f).nedge_pts[e - 1] as usize);
+    _f.edge_pts[0] = (*c).edge_pts;
+    for e in 1.._f.edge_pts.len() {
+        _f.edge_pts[e] = _f.edge_pts[e - 1].add(_f.nedge_pts[e - 1] as usize);
     }
 }
 
@@ -2384,8 +2358,8 @@ const BCH18_6_CODES: [c_uint; 34] = [
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
 pub unsafe fn qr_finder_version_decode(
-    _f: *const qr_finder,
-    _hom: *const qr_hom,
+    _f: &qr_finder,
+    _hom: &qr_hom,
     _img: &[u8],
     _width: c_int,
     _height: c_int,
@@ -2395,21 +2369,21 @@ pub unsafe fn qr_finder_version_decode(
     let mut v: c_uint = 0;
 
     // Calculate starting point for version info block
-    q[_dir as usize] = (*_f).o[_dir as usize] - 7 * (*_f).size[_dir as usize];
-    q[(1 - _dir) as usize] = (*_f).o[(1 - _dir) as usize] - 3 * (*_f).size[(1 - _dir) as usize];
+    q[_dir as usize] = _f.o[_dir as usize] - 7 * _f.size[_dir as usize];
+    q[(1 - _dir) as usize] = _f.o[(1 - _dir) as usize] - 3 * _f.size[(1 - _dir) as usize];
 
     // Project the starting point through the homography
-    let mut x0 = (*_hom).fwd[0][0] * q[0] + (*_hom).fwd[0][1] * q[1];
-    let mut y0 = (*_hom).fwd[1][0] * q[0] + (*_hom).fwd[1][1] * q[1];
-    let mut w0 = (*_hom).fwd[2][0] * q[0] + (*_hom).fwd[2][1] * q[1] + (*_hom).fwd22;
+    let mut x0 = _hom.fwd[0][0] * q[0] + _hom.fwd[0][1] * q[1];
+    let mut y0 = _hom.fwd[1][0] * q[0] + _hom.fwd[1][1] * q[1];
+    let mut w0 = _hom.fwd[2][0] * q[0] + _hom.fwd[2][1] * q[1] + _hom.fwd22;
 
     // Calculate increments for stepping through version info grid
-    let dxi = (*_hom).fwd[0][(1 - _dir) as usize] * (*_f).size[(1 - _dir) as usize];
-    let dyi = (*_hom).fwd[1][(1 - _dir) as usize] * (*_f).size[(1 - _dir) as usize];
-    let dwi = (*_hom).fwd[2][(1 - _dir) as usize] * (*_f).size[(1 - _dir) as usize];
-    let dxj = (*_hom).fwd[0][_dir as usize] * (*_f).size[_dir as usize];
-    let dyj = (*_hom).fwd[1][_dir as usize] * (*_f).size[_dir as usize];
-    let dwj = (*_hom).fwd[2][_dir as usize] * (*_f).size[_dir as usize];
+    let dxi = _hom.fwd[0][(1 - _dir) as usize] * _f.size[(1 - _dir) as usize];
+    let dyi = _hom.fwd[1][(1 - _dir) as usize] * _f.size[(1 - _dir) as usize];
+    let dwi = _hom.fwd[2][(1 - _dir) as usize] * _f.size[(1 - _dir) as usize];
+    let dxj = _hom.fwd[0][_dir as usize] * _f.size[_dir as usize];
+    let dyj = _hom.fwd[1][_dir as usize] * _f.size[_dir as usize];
+    let dwj = _hom.fwd[2][_dir as usize] * _f.size[_dir as usize];
 
     // Read the 6x3 = 18 bits of version information
     let mut k = 0;
@@ -2453,10 +2427,10 @@ pub unsafe fn qr_finder_version_decode(
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
 pub unsafe fn qr_finder_fmt_info_decode(
-    _ul: *const qr_finder,
-    _ur: *const qr_finder,
-    _dl: *const qr_finder,
-    _hom: *const qr_hom,
+    _ul: &qr_finder,
+    _ur: &qr_finder,
+    _dl: &qr_finder,
+    _hom: &qr_hom,
     _img: &[u8],
     _width: c_int,
     _height: c_int,
@@ -2466,14 +2440,14 @@ pub unsafe fn qr_finder_fmt_info_decode(
 
     // Read the bits around the UL corner
     lo[0] = 0;
-    let mut u = (*_ul).o[0] + 5 * (*_ul).size[0];
-    let mut v = (*_ul).o[1] - 3 * (*_ul).size[1];
-    let mut x = (*_hom).fwd[0][0] * u + (*_hom).fwd[0][1] * v;
-    let mut y = (*_hom).fwd[1][0] * u + (*_hom).fwd[1][1] * v;
-    let mut w = (*_hom).fwd[2][0] * u + (*_hom).fwd[2][1] * v + (*_hom).fwd22;
-    let mut dx = (*_hom).fwd[0][1] * (*_ul).size[1];
-    let mut dy = (*_hom).fwd[1][1] * (*_ul).size[1];
-    let mut dw = (*_hom).fwd[2][1] * (*_ul).size[1];
+    let mut u = _ul.o[0] + 5 * _ul.size[0];
+    let mut v = _ul.o[1] - 3 * _ul.size[1];
+    let mut x = _hom.fwd[0][0] * u + _hom.fwd[0][1] * v;
+    let mut y = _hom.fwd[1][0] * u + _hom.fwd[1][1] * v;
+    let mut w = _hom.fwd[2][0] * u + _hom.fwd[2][1] * v + _hom.fwd22;
+    let mut dx = _hom.fwd[0][1] * _ul.size[1];
+    let mut dy = _hom.fwd[1][1] * _ul.size[1];
+    let mut dw = _hom.fwd[2][1] * _ul.size[1];
 
     let mut k = 0;
     let mut i = 0;
@@ -2497,9 +2471,9 @@ pub unsafe fn qr_finder_fmt_info_decode(
     }
 
     hi[0] = 0;
-    dx = -(*_hom).fwd[0][0] * (*_ul).size[0];
-    dy = -(*_hom).fwd[1][0] * (*_ul).size[0];
-    dw = -(*_hom).fwd[2][0] * (*_ul).size[0];
+    dx = -_hom.fwd[0][0] * _ul.size[0];
+    dy = -_hom.fwd[1][0] * _ul.size[0];
+    dw = -_hom.fwd[2][0] * _ul.size[0];
     while i > 0 {
         i -= 1;
         x += dx;
@@ -2516,14 +2490,14 @@ pub unsafe fn qr_finder_fmt_info_decode(
 
     // Read the bits next to the UR corner
     lo[1] = 0;
-    u = (*_ur).o[0] + 3 * (*_ur).size[0];
-    v = (*_ur).o[1] + 5 * (*_ur).size[1];
-    x = (*_hom).fwd[0][0] * u + (*_hom).fwd[0][1] * v;
-    y = (*_hom).fwd[1][0] * u + (*_hom).fwd[1][1] * v;
-    w = (*_hom).fwd[2][0] * u + (*_hom).fwd[2][1] * v + (*_hom).fwd22;
-    dx = -(*_hom).fwd[0][0] * (*_ur).size[0];
-    dy = -(*_hom).fwd[1][0] * (*_ur).size[0];
-    dw = -(*_hom).fwd[2][0] * (*_ur).size[0];
+    u = _ur.o[0] + 3 * _ur.size[0];
+    v = _ur.o[1] + 5 * _ur.size[1];
+    x = _hom.fwd[0][0] * u + _hom.fwd[0][1] * v;
+    y = _hom.fwd[1][0] * u + _hom.fwd[1][1] * v;
+    w = _hom.fwd[2][0] * u + _hom.fwd[2][1] * v + _hom.fwd22;
+    dx = -_hom.fwd[0][0] * _ur.size[0];
+    dy = -_hom.fwd[1][0] * _ur.size[0];
+    dw = -_hom.fwd[2][0] * _ur.size[0];
     for k in 0..8 {
         let mut p: qr_point = [0, 0];
         qr_hom_fproject(&mut p, _hom, x, y, w);
@@ -2535,14 +2509,14 @@ pub unsafe fn qr_finder_fmt_info_decode(
 
     // Read the bits next to the DL corner
     hi[1] = 0;
-    u = (*_dl).o[0] + 5 * (*_dl).size[0];
-    v = (*_dl).o[1] - 3 * (*_dl).size[1];
-    x = (*_hom).fwd[0][0] * u + (*_hom).fwd[0][1] * v;
-    y = (*_hom).fwd[1][0] * u + (*_hom).fwd[1][1] * v;
-    w = (*_hom).fwd[2][0] * u + (*_hom).fwd[2][1] * v + (*_hom).fwd22;
-    dx = (*_hom).fwd[0][1] * (*_dl).size[1];
-    dy = (*_hom).fwd[1][1] * (*_dl).size[1];
-    dw = (*_hom).fwd[2][1] * (*_dl).size[1];
+    u = _dl.o[0] + 5 * _dl.size[0];
+    v = _dl.o[1] - 3 * _dl.size[1];
+    x = _hom.fwd[0][0] * u + _hom.fwd[0][1] * v;
+    y = _hom.fwd[1][0] * u + _hom.fwd[1][1] * v;
+    w = _hom.fwd[2][0] * u + _hom.fwd[2][1] * v + _hom.fwd22;
+    dx = _hom.fwd[0][1] * _dl.size[1];
+    dy = _hom.fwd[1][1] * _dl.size[1];
+    dw = _hom.fwd[2][1] * _dl.size[1];
     for k in 8..15 {
         let mut p: qr_point = [0, 0];
         qr_hom_fproject(&mut p, _hom, x, y, w);
@@ -2964,7 +2938,7 @@ unsafe fn qr_sampling_grid_init(
                     // We need a cell that has the target point at a known (u,v) location
                     let cell_ptr = (*_grid).cells[(i - 1) as usize].add((j - 1) as usize);
                     qr_hom_cell_init(
-                        cell_ptr,
+                        &mut *cell_ptr,
                         (*q.offset((k_idx - nalign - 1) as isize))[0],
                         (*q.offset((k_idx - nalign - 1) as isize))[1],
                         (*q.offset((k_idx - nalign) as isize))[0],
@@ -3005,7 +2979,7 @@ unsafe fn qr_sampling_grid_init(
 
                 if i > 0 && j > 0 {
                     qr_hom_cell_init(
-                        (*_grid).cells[(i - 1) as usize].add((j - 1) as usize),
+                        &mut *(*_grid).cells[(i - 1) as usize].add((j - 1) as usize),
                         (*q.offset((k_idx - nalign - 1) as isize))[0],
                         (*q.offset((k_idx - nalign - 1) as isize))[1],
                         (*q.offset((k_idx - nalign) as isize))[0],
@@ -3765,7 +3739,7 @@ pub unsafe fn bch18_6_correct(y: *mut c_uint) -> c_int {
 /// attention to numerical stability through dynamic range scaling.
 #[allow(clippy::too_many_arguments)]
 unsafe fn qr_hom_cell_init(
-    cell: *mut qr_hom_cell,
+    cell: &mut qr_hom_cell,
     u0: c_int,
     v0: c_int,
     u1: c_int,
@@ -3917,52 +3891,52 @@ unsafe fn qr_hom_cell_init(
     let a11 = qr_fixmul(dy20, a21 + a22, round, shift);
 
     // Compose the two transforms (divide by inverted coefficients)
-    (*cell).fwd[0][0] = (if i00 != 0 { qr_divround(a00, i00) } else { 0 })
+    cell.fwd[0][0] = (if i00 != 0 { qr_divround(a00, i00) } else { 0 })
         + (if i10 != 0 { qr_divround(a01, i10) } else { 0 });
-    (*cell).fwd[0][1] = (if i01 != 0 { qr_divround(a00, i01) } else { 0 })
+    cell.fwd[0][1] = (if i01 != 0 { qr_divround(a00, i01) } else { 0 })
         + (if i11 != 0 { qr_divround(a01, i11) } else { 0 });
-    (*cell).fwd[1][0] = (if i00 != 0 { qr_divround(a10, i00) } else { 0 })
+    cell.fwd[1][0] = (if i00 != 0 { qr_divround(a10, i00) } else { 0 })
         + (if i10 != 0 { qr_divround(a11, i10) } else { 0 });
-    (*cell).fwd[1][1] = (if i01 != 0 { qr_divround(a10, i01) } else { 0 })
+    cell.fwd[1][1] = (if i01 != 0 { qr_divround(a10, i01) } else { 0 })
         + (if i11 != 0 { qr_divround(a11, i11) } else { 0 });
-    (*cell).fwd[2][0] = ((if i00 != 0 { qr_divround(a20, i00) } else { 0 })
+    cell.fwd[2][0] = ((if i00 != 0 { qr_divround(a20, i00) } else { 0 })
         + (if i10 != 0 { qr_divround(a21, i10) } else { 0 })
         + (if i20 != 0 { qr_divround(a22, i20) } else { 0 })
         + round as c_int) as c_int
         >> shift;
-    (*cell).fwd[2][1] = ((if i01 != 0 { qr_divround(a20, i01) } else { 0 })
+    cell.fwd[2][1] = ((if i01 != 0 { qr_divround(a20, i01) } else { 0 })
         + (if i11 != 0 { qr_divround(a21, i11) } else { 0 })
         + (if i21 != 0 { qr_divround(a22, i21) } else { 0 })
         + round as c_int) as c_int
         >> shift;
-    (*cell).fwd[2][2] = ((a22 + round as c_int) >> shift) as c_int;
+    cell.fwd[2][2] = ((a22 + round as c_int) >> shift) as c_int;
 
     // Compute offsets to distribute rounding error over whole range
     // (instead of concentrating it in the (u3,v3) corner)
-    let mut x = (*cell).fwd[0][0] * du10 + (*cell).fwd[0][1] * dv10;
-    let mut y = (*cell).fwd[1][0] * du10 + (*cell).fwd[1][1] * dv10;
-    let mut w = (*cell).fwd[2][0] * du10 + (*cell).fwd[2][1] * dv10 + (*cell).fwd[2][2];
+    let mut x = cell.fwd[0][0] * du10 + cell.fwd[0][1] * dv10;
+    let mut y = cell.fwd[1][0] * du10 + cell.fwd[1][1] * dv10;
+    let mut w = cell.fwd[2][0] * du10 + cell.fwd[2][1] * dv10 + cell.fwd[2][2];
     let mut a02 = dx10 * w - x;
     let mut a12 = dy10 * w - y;
 
-    x = (*cell).fwd[0][0] * du20 + (*cell).fwd[0][1] * dv20;
-    y = (*cell).fwd[1][0] * du20 + (*cell).fwd[1][1] * dv20;
-    w = (*cell).fwd[2][0] * du20 + (*cell).fwd[2][1] * dv20 + (*cell).fwd[2][2];
+    x = cell.fwd[0][0] * du20 + cell.fwd[0][1] * dv20;
+    y = cell.fwd[1][0] * du20 + cell.fwd[1][1] * dv20;
+    w = cell.fwd[2][0] * du20 + cell.fwd[2][1] * dv20 + cell.fwd[2][2];
     a02 += dx20 * w - x;
     a12 += dy20 * w - y;
 
-    x = (*cell).fwd[0][0] * du30 + (*cell).fwd[0][1] * dv30;
-    y = (*cell).fwd[1][0] * du30 + (*cell).fwd[1][1] * dv30;
-    w = (*cell).fwd[2][0] * du30 + (*cell).fwd[2][1] * dv30 + (*cell).fwd[2][2];
+    x = cell.fwd[0][0] * du30 + cell.fwd[0][1] * dv30;
+    y = cell.fwd[1][0] * du30 + cell.fwd[1][1] * dv30;
+    w = cell.fwd[2][0] * du30 + cell.fwd[2][1] * dv30 + cell.fwd[2][2];
     a02 += dx30 * w - x;
     a12 += dy30 * w - y;
 
-    (*cell).fwd[0][2] = (a02 + 2) >> 2;
-    (*cell).fwd[1][2] = (a12 + 2) >> 2;
-    (*cell).x0 = x0;
-    (*cell).y0 = y0;
-    (*cell).u0 = u0;
-    (*cell).v0 = v0;
+    cell.fwd[0][2] = (a02 + 2) >> 2;
+    cell.fwd[1][2] = (a12 + 2) >> 2;
+    cell.x0 = x0;
+    cell.y0 = y0;
+    cell.u0 = u0;
+    cell.v0 = v0;
 }
 
 /// Get a bit from a binarized image
@@ -4538,12 +4512,12 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     // However, try all three possible orderings, just to be sure (a severely
     // skewed projection could move opposite corners closer than adjacent)
     for i in i0..i0 + 3 {
-        let mut aff: qr_aff = std::mem::zeroed();
-        let mut hom: qr_hom = std::mem::zeroed();
-        let mut ul: qr_finder = std::mem::zeroed();
-        let mut ur: qr_finder = std::mem::zeroed();
-        let mut dl: qr_finder = std::mem::zeroed();
-        let mut bbox: [qr_point; 4] = [[0; 2]; 4];
+        let mut aff = qr_aff::default();
+        let mut hom = qr_hom::default();
+        let mut ul = qr_finder::default();
+        let mut ur = qr_finder::default();
+        let mut dl = qr_finder::default();
+        let mut bbox: [qr_point; 4] = Default::default();
 
         let ur_version: c_int;
         let mut fmt_info: c_int;
@@ -4596,7 +4570,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             &mut ul,
             &mut ur,
             &mut dl,
-            bbox.as_mut_ptr(),
+            &mut bbox,
             &aff,
             &mut reader.rng,
             img,
@@ -4607,25 +4581,21 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             continue;
         }
 
-        memcpy(
-            qrdata.bbox.as_mut_ptr() as *mut c_void,
-            bbox.as_ptr() as *const c_void,
-            size_of::<[qr_point; 4]>(),
-        );
+        qrdata.bbox = bbox;
 
         qr_hom_unproject(&mut ul.o, &hom, (*ul.c).pos[0], (*ul.c).pos[1]);
         qr_hom_unproject(&mut ur.o, &hom, (*ur.c).pos[0], (*ur.c).pos[1]);
         qr_hom_unproject(&mut dl.o, &hom, (*dl.c).pos[0], (*dl.c).pos[1]);
         qr_finder_edge_pts_hom_classify(&mut ur, &hom);
-        if qr_finder_estimate_module_size_and_version(&mut ur, ur.o[0] - ul.o[0], ur.o[0] - ul.o[0])
-            < 0
-        {
+        let width = ur.o[0] - ul.o[0];
+        let height = ur.o[0] - ul.o[0];
+        if qr_finder_estimate_module_size_and_version(&mut ur, width, height) < 0 {
             continue;
         }
         qr_finder_edge_pts_hom_classify(&mut dl, &hom);
-        if qr_finder_estimate_module_size_and_version(&mut dl, dl.o[1] - ul.o[1], dl.o[1] - ul.o[1])
-            < 0
-        {
+        let width = dl.o[1] - ul.o[1];
+        let height = dl.o[1] - ul.o[1];
+        if qr_finder_estimate_module_size_and_version(&mut dl, width, height) < 0 {
             continue;
         }
 
@@ -4684,8 +4654,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
         }
 
         qr_finder_edge_pts_hom_classify(&mut ul, &hom);
-        if qr_finder_estimate_module_size_and_version(&mut ul, ur.o[0] - dl.o[0], dl.o[1] - ul.o[1])
-            < 0
+        let width = ur.o[0] - dl.o[0];
+        let height = dl.o[1] - ul.o[1];
+        if qr_finder_estimate_module_size_and_version(&mut ul, width, height) < 0
             || (ul.eversion[1] - ur.eversion[1]).abs() > QR_SMALL_VERSION_SLACK
             || (ul.eversion[0] - dl.eversion[0]).abs() > QR_SMALL_VERSION_SLACK
         {
@@ -4739,11 +4710,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             let t = bbox[1][1];
             bbox[1][1] = bbox[2][1];
             bbox[2][1] = t;
-            memcpy(
-                qrdata.bbox.as_mut_ptr() as *mut c_void,
-                bbox.as_ptr() as *const c_void,
-                size_of::<[qr_point; 4]>(),
-            );
+            qrdata.bbox = bbox;
 
             if qr_code_decode(
                 qrdata,
@@ -4782,7 +4749,7 @@ pub unsafe fn _zbar_qr_found_line(
 unsafe fn qr_reader_match_centers(
     reader: &mut qr_reader,
     _qrlist: &mut qr_code_data_list,
-    _centers: *mut qr_finder_center,
+    _centers: &mut [qr_finder_center],
     _ncenters: c_int,
     img: &[u8],
     _width: c_int,
@@ -4806,9 +4773,9 @@ unsafe fn qr_reader_match_centers(
             while j < _ncenters && *mark_ptr.add(j as usize) == 0 && k < _ncenters {
                 if *mark_ptr.add(k as usize) == 0 {
                     let mut c: [*mut qr_finder_center; 3] = [
-                        _centers.add(i as usize),
-                        _centers.add(j as usize),
-                        _centers.add(k as usize),
+                        &mut _centers[i as usize],
+                        &mut _centers[j as usize],
+                        &mut _centers[k as usize],
                     ];
                     let mut qrdata = qr_code_data::default();
                     let version = qr_reader_try_configuration(
@@ -4842,22 +4809,22 @@ unsafe fn qr_reader_match_centers(
                                 && qr_point_ccw(
                                     qrdata.bbox[0].as_ptr(),
                                     qrdata.bbox[1].as_ptr(),
-                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                    _centers[l as usize].pos.as_ptr(),
                                 ) >= 0
                                 && qr_point_ccw(
                                     qrdata.bbox[1].as_ptr(),
                                     qrdata.bbox[3].as_ptr(),
-                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                    _centers[l as usize].pos.as_ptr(),
                                 ) >= 0
                                 && qr_point_ccw(
                                     qrdata.bbox[3].as_ptr(),
                                     qrdata.bbox[2].as_ptr(),
-                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                    _centers[l as usize].pos.as_ptr(),
                                 ) >= 0
                                 && qr_point_ccw(
                                     qrdata.bbox[2].as_ptr(),
                                     qrdata.bbox[0].as_ptr(),
-                                    (*_centers.add(l as usize)).pos.as_ptr(),
+                                    _centers[l as usize].pos.as_ptr(),
                                 ) >= 0
                             {
                                 *mark_ptr.add(l as usize) = 2;
@@ -4869,23 +4836,22 @@ unsafe fn qr_reader_match_centers(
                             // We might have a "Double QR": a code inside a code.
                             // Copy the relevant centers to a new array and do a search confined
                             // to that subset.
-                            let inside: *mut qr_finder_center =
-                                qr_alloc_array::<qr_finder_center>(ninside as usize);
-                            ninside = 0;
+                            let mut inside = vec![];
                             for l in 0.._ncenters {
                                 if *mark_ptr.add(l as usize) == 2 {
-                                    std::ptr::copy_nonoverlapping(
-                                        _centers.add(l as usize),
-                                        inside.add(ninside as usize),
-                                        1,
-                                    );
-                                    ninside += 1;
+                                    inside.push(_centers[l as usize]);
                                 }
                             }
+                            ninside = inside.len() as i32;
                             qr_reader_match_centers(
-                                reader, _qrlist, inside, ninside, img, _width, _height,
+                                reader,
+                                _qrlist,
+                                &mut inside,
+                                ninside,
+                                img,
+                                _width,
+                                _height,
                             );
-                            qr_free_array(inside);
                         }
 
                         // Mark _all_ such centers used: codes cannot partially overlap
@@ -4942,7 +4908,7 @@ pub unsafe fn qr_decode(
         qr_reader_match_centers(
             reader,
             &mut qrlist,
-            centers,
+            from_raw_parts_mut(centers, ncenters as usize),
             ncenters,
             &bin,
             img.width as c_int,
