@@ -357,7 +357,7 @@ pub unsafe fn qr_finder_lines_are_crossing(
 /// Translate a point by the given offsets
 ///
 /// Adds dx to the x coordinate and dy to the y coordinate.
-pub unsafe fn qr_point_translate(point: &mut qr_point, dx: c_int, dy: c_int) {
+pub fn qr_point_translate(point: &mut qr_point, dx: c_int, dy: c_int) {
     point[0] += dx;
     point[1] += dy;
 }
@@ -366,9 +366,9 @@ pub unsafe fn qr_point_translate(point: &mut qr_point, dx: c_int, dy: c_int) {
 ///
 /// Returns the squared Euclidean distance, which avoids the need for
 /// expensive square root calculations when only relative distances matter.
-pub unsafe fn qr_point_distance2(p1: *const c_int, p2: *const c_int) -> c_uint {
-    let dx = *p1.offset(0) - *p2.offset(0);
-    let dy = *p1.offset(1) - *p2.offset(1);
+pub fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> c_uint {
+    let dx = p1[0] - p2[0];
+    let dy = p1[1] - p2[1];
     (dx * dx + dy * dy) as c_uint
 }
 
@@ -1297,7 +1297,7 @@ pub unsafe fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaC
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
             let thresh = qr_isqrt(
-                qr_point_distance2(p0.as_ptr(), p1.as_ptr()) << (2 * QR_FINDER_SUBPREC + 1),
+                qr_point_distance2(p0, p1) << (2 * QR_FINDER_SUBPREC + 1),
             ) as c_int;
             let mut ninliers = 0;
 
@@ -4448,12 +4448,12 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
     // Assume the points farthest from each other are the opposite corners,
     // and find the top-left point
-    maxd = qr_point_distance2((**_c.add(1)).pos.as_ptr(), (**_c.add(2)).pos.as_ptr());
+    maxd = qr_point_distance2(&(**_c.add(1)).pos, &(**_c.add(2)).pos);
     i0 = 0;
     for i in 1..3 {
         let d = qr_point_distance2(
-            (**_c.add(ci[i + 1])).pos.as_ptr(),
-            (**_c.add(ci[i + 2])).pos.as_ptr(),
+            &(**_c.add(ci[i + 1])).pos,
+            &(**_c.add(ci[i + 2])).pos,
         );
         if d > maxd {
             i0 = i;
