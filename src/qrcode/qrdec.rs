@@ -294,12 +294,13 @@ pub unsafe fn _zbar_qr_reset(reader: &mut qr_reader) {
 }
 
 /// A cluster of lines crossing a finder pattern (all in the same direction).
+#[derive(Copy, Clone, Default)]
 pub struct qr_finder_cluster {
     /// Pointers to the lines crossing the pattern.
     lines: *mut *mut qr_finder_line,
 
     /// The number of lines in the cluster.
-    nlines: c_int,
+    nlines: usize,
 }
 
 /// A point on the edge of a finder pattern. These are obtained from the
@@ -334,7 +335,7 @@ pub struct qr_finder_center {
     edge_pts: *mut qr_finder_edge_pt,
 
     /// The number of edge points from the crossing lines.
-    nedge_pts: c_int,
+    nedge_pts: usize,
 }
 
 /*Determine if a horizontal line crosses a vertical line.
@@ -1581,7 +1582,7 @@ pub unsafe fn qr_finder_vline_cmp(_a: *const c_void, _b: *const c_void) -> c_int
 ///
 /// # Returns
 /// The number of clusters found.
-pub unsafe fn qr_finder_cluster_lines(
+unsafe fn qr_finder_cluster_lines(
     _clusters: *mut qr_finder_cluster,
     _neighbors: *mut *mut qr_finder_line,
     _lines: *mut qr_finder_line,
@@ -1598,16 +1599,16 @@ pub unsafe fn qr_finder_cluster_lines(
             continue;
         }
 
-        let mut nneighbors = 1;
+        let mut nneighbors = 1usize;
         *neighbors.offset(0) = _lines.add(i);
-        let mut len = (*_lines.add(i)).len;
+        let mut len = (*_lines.add(i)).len as usize;
 
         for (j, mj) in mark.iter().enumerate().take(_nlines).skip(i + 1) {
             if *mj != 0 {
                 continue;
             }
 
-            let a = *neighbors.offset((nneighbors - 1) as isize);
+            let a = *neighbors.add(nneighbors - 1);
             let b = _lines.add(j);
 
             // The clustering threshold is proportional to the size of the lines,
@@ -1653,9 +1654,9 @@ pub unsafe fn qr_finder_cluster_lines(
                 continue;
             }
 
-            *neighbors.offset(nneighbors as isize) = _lines.add(j);
+            *neighbors.add(nneighbors) = _lines.add(j);
             nneighbors += 1;
-            len += (*b).len;
+            len += (*b).len as usize;
         }
 
         // We require at least three lines to form a cluster, which eliminates a
@@ -1675,11 +1676,11 @@ pub unsafe fn qr_finder_cluster_lines(
             (*_clusters.add(nclusters)).nlines = nneighbors;
 
             for j in 0..nneighbors {
-                let line_offset = (*neighbors.offset(j as isize)).offset_from(_lines);
+                let line_offset = (*neighbors.add(j)).offset_from(_lines);
                 mark[line_offset as usize] = 1;
             }
 
-            neighbors = neighbors.offset(nneighbors as isize);
+            neighbors = neighbors.add(nneighbors);
             nclusters += 1;
         }
     }
@@ -1711,18 +1712,16 @@ enum Direction {
 unsafe fn qr_finder_edge_pts_fill(
     _edge_pts: *mut qr_finder_edge_pt,
     mut _nedge_pts: usize,
-    _neighbors: *mut *mut qr_finder_cluster,
-    _nneighbors: usize,
+    _neighbors: &mut [qr_finder_cluster],
     _v: Direction,
 ) -> usize {
     let _v = match _v {
         Direction::Horizontal => 0,
         Direction::Vertical => 1,
     };
-    for i in 0.._nneighbors {
-        let c = *_neighbors.add(i);
-        for j in 0..(*c).nlines as usize {
-            let l = *(*c).lines.add(j);
+    for c in _neighbors.iter() {
+        for j in 0..c.nlines {
+            let l = *c.lines.add(j);
 
             // Add beginning offset edge point if present
             if (*l).boffs > 0 {
@@ -1765,17 +1764,8 @@ pub unsafe fn qr_finder_find_crossings(
     _vclusters: *mut qr_finder_cluster,
     _nvclusters: usize,
 ) -> usize {
-    let hneighbors = qr_alloc_array::<*mut qr_finder_cluster>(_nhclusters);
-    let vneighbors = qr_alloc_array::<*mut qr_finder_cluster>(_nvclusters);
-    let hmark = qr_calloc_array::<c_uchar>(_nhclusters);
-    let vmark = qr_calloc_array::<c_uchar>(_nvclusters);
-    if hneighbors.is_null() || vneighbors.is_null() || hmark.is_null() || vmark.is_null() {
-        qr_free_array(hneighbors);
-        qr_free_array(vneighbors);
-        qr_free_bytes(hmark);
-        qr_free_bytes(vmark);
-        return 0;
-    }
+    let mut hmark = vec![0u8; _nhclusters];
+    let mut vmark = vec![0u8; _nvclusters];
     let mut ncenters: usize = 0;
 
     // TODO: This may need some re-working.
@@ -1790,101 +1780,83 @@ pub unsafe fn qr_finder_find_crossings(
     // to prevent false positives.
 
     for i in 0.._nhclusters {
-        if *hmark.add(i) != 0 {
+        if hmark[i] != 0 {
             continue;
         }
 
         let a = *(*_hclusters.add(i))
             .lines
-            .offset(((*_hclusters.add(i)).nlines >> 1) as isize);
+            .add((*_hclusters.add(i)).nlines >> 1);
         let mut y = 0;
-        let mut nvneighbors = 0;
+        let mut vneighbors = vec![];
 
         // Find vertical clusters that cross this horizontal cluster
-        for j in 0.._nvclusters {
-            if *vmark.add(j) != 0 {
+        for (j, vj) in vmark.iter_mut().enumerate() {
+            if *vj != 0 {
                 continue;
             }
 
             let b = *(*_vclusters.add(j))
                 .lines
-                .offset(((*_vclusters.add(j)).nlines >> 1) as isize);
+                .add((*_vclusters.add(j)).nlines >> 1);
 
             if qr_finder_lines_are_crossing(a, b) != 0 {
-                *vmark.add(j) = 1;
+                *vj = 1;
                 y += ((*b).pos[1] << 1) + (*b).len;
                 if (*b).boffs > 0 && (*b).eoffs > 0 {
                     y += (*b).eoffs - (*b).boffs;
                 }
-                *vneighbors.add(nvneighbors) = _vclusters.add(j);
-                nvneighbors += 1;
+                vneighbors.push(*_vclusters.add(j));
             }
         }
 
-        if nvneighbors > 0 {
+        if !vneighbors.is_empty() {
             let mut x = ((*a).pos[0] << 1) + (*a).len;
             if (*a).boffs > 0 && (*a).eoffs > 0 {
                 x += (*a).eoffs - (*a).boffs;
             }
-            *hneighbors.offset(0) = _hclusters.add(i);
-            let mut nhneighbors = 1;
+            let mut hneighbors = vec![];
+            hneighbors.push(*_hclusters.add(i));
 
-            let j_mid = nvneighbors >> 1;
-            let b = *(*(*vneighbors.add(j_mid)))
-                .lines
-                .offset(((*(*vneighbors.add(j_mid))).nlines >> 1) as isize);
+            let j_mid = vneighbors.len() >> 1;
+            let b = *vneighbors[j_mid].lines.add(vneighbors[j_mid].nlines >> 1);
 
             // Find additional horizontal clusters that cross the vertical clusters
-            for j in (i + 1).._nhclusters {
-                if *hmark.add(j) != 0 {
+            for (j, hj) in hmark.iter_mut().enumerate().take(_nhclusters).skip(i + 1) {
+                if *hj != 0 {
                     continue;
                 }
 
                 let a = *(*_hclusters.add(j))
                     .lines
-                    .offset(((*_hclusters.add(j)).nlines >> 1) as isize);
+                    .add((*_hclusters.add(j)).nlines >> 1);
 
                 if qr_finder_lines_are_crossing(a, b) != 0 {
-                    *hmark.add(j) = 1;
+                    *hj = 1;
                     x += ((*a).pos[0] << 1) + (*a).len;
                     if (*a).boffs > 0 && (*a).eoffs > 0 {
                         x += (*a).eoffs - (*a).boffs;
                     }
-                    *hneighbors.add(nhneighbors) = _hclusters.add(j);
-                    nhneighbors += 1;
+                    hneighbors.push(*_hclusters.add(j));
                 }
             }
 
             let c = _centers.add(ncenters);
             ncenters += 1;
 
-            (*c).pos[0] = ((x as usize + nhneighbors) / (nhneighbors << 1)) as i32;
-            (*c).pos[1] = ((y as usize + nvneighbors) / (nvneighbors << 1)) as i32;
+            (*c).pos[0] = ((x as usize + hneighbors.len()) / (hneighbors.len() << 1)) as i32;
+            (*c).pos[1] = ((y as usize + vneighbors.len()) / (vneighbors.len() << 1)) as i32;
             (*c).edge_pts = _edge_pts;
 
-            let mut nedge_pts = qr_finder_edge_pts_fill(
-                _edge_pts,
-                0,
-                hneighbors,
-                nhneighbors,
-                Direction::Horizontal,
-            );
-            nedge_pts = qr_finder_edge_pts_fill(
-                _edge_pts,
-                nedge_pts,
-                vneighbors,
-                nvneighbors,
-                Direction::Vertical,
-            );
+            let mut nedge_pts =
+                qr_finder_edge_pts_fill(_edge_pts, 0, &mut hneighbors, Direction::Horizontal);
+            nedge_pts =
+                qr_finder_edge_pts_fill(_edge_pts, nedge_pts, &mut vneighbors, Direction::Vertical);
 
-            (*c).nedge_pts = nedge_pts as i32;
+            (*c).nedge_pts = nedge_pts;
             _edge_pts = _edge_pts.add(nedge_pts);
         }
     }
-    qr_free_array(hneighbors);
-    qr_free_array(vneighbors);
-    qr_free_bytes(hmark);
-    qr_free_bytes(vmark);
     if ncenters > 1 && !_centers.is_null() {
         let centers_slice = std::slice::from_raw_parts_mut(_centers, ncenters);
         centers_slice.sort_by(|a, b| {
@@ -2148,7 +2120,7 @@ pub unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &qr_aff)
     }
     for i in 0..(*c).nedge_pts {
         let mut q = qr_point::default();
-        let edge_pt = &mut *(*c).edge_pts.add(i as usize);
+        let edge_pt = &mut *(*c).edge_pts.add(i);
         qr_aff_unproject(&mut q, _aff, edge_pt.pos[0], edge_pt.pos[1]);
         qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
         let d = c_int::from(q[1].abs() > q[0].abs());
@@ -2158,7 +2130,7 @@ pub unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &qr_aff)
         edge_pt.extent = q[d as usize];
     }
 
-    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
+    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts);
     edge_pts.sort_by(qr_cmp_edge_pt);
     _f.edge_pts[0] = (*c).edge_pts;
     for e in 1.._f.edge_pts.len() {
@@ -2183,7 +2155,7 @@ pub unsafe fn qr_finder_edge_pts_hom_classify(_f: &mut qr_finder, _hom: &qr_hom)
     }
     for i in 0..(*c).nedge_pts {
         let mut q = qr_point::default();
-        let edge_pt = (*c).edge_pts.add(i as usize);
+        let edge_pt = (*c).edge_pts.add(i);
 
         if qr_hom_unproject(&mut q, _hom, (*edge_pt).pos[0], (*edge_pt).pos[1]) >= 0 {
             // Successful projection
@@ -2200,7 +2172,7 @@ pub unsafe fn qr_finder_edge_pts_hom_classify(_f: &mut qr_finder, _hom: &qr_hom)
         }
     }
 
-    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts as usize);
+    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts);
     edge_pts.sort_by(qr_cmp_edge_pt);
     _f.edge_pts[0] = (*c).edge_pts;
     for e in 1.._f.edge_pts.len() {
