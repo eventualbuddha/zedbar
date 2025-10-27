@@ -18,8 +18,8 @@ use crate::{
     img_scanner::zbar_symbol_set_t,
     refcnt,
 };
-use libc::{c_int, c_uint, c_void};
-use std::{mem::size_of, ptr};
+use libc::{c_int, c_uint};
+use std::ptr;
 
 const NUM_SYMS: usize = 20;
 
@@ -118,15 +118,16 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
     h as i32
 }
 
+// Point storage for location data (two consecutive c_int values)
+type Point = [c_int; 2];
+
 #[derive(Default)]
 pub struct zbar_symbol_t {
     pub(crate) symbol_type: c_int,
     pub(crate) configs: c_uint,
     pub(crate) modifiers: c_uint,
     pub(crate) data: Vec<u8>,
-    pub(crate) pts_alloc: c_uint,
-    pub(crate) npts: c_uint,
-    pub(crate) pts: *mut c_void,
+    pub(crate) pts: Vec<Point>,
     pub(crate) orient: c_int,
     pub(crate) refcnt: c_int,
     pub(crate) next: *mut zbar_symbol_t,
@@ -141,11 +142,6 @@ impl Drop for zbar_symbol_t {
                 zbar_symbol_set_ref(self.syms, -1);
             }
             self.syms = ptr::null_mut();
-        }
-        if !self.pts.is_null() {
-            unsafe {
-                libc::free(self.pts);
-            }
         }
     }
 }
@@ -201,37 +197,6 @@ pub(crate) unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
     Box::into_raw(symbol)
 }
 
-/// Ensure the symbol point array can store at least `capacity` points.
-/// Returns `true` on success and leaves the buffer unchanged on failure.
-pub(crate) unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> bool {
-    if sym.is_null() {
-        return false;
-    }
-    let sym = &mut *sym;
-
-    if capacity == 0 {
-        if !sym.pts.is_null() {
-            libc::free(sym.pts);
-            sym.pts = ptr::null_mut();
-        }
-        sym.pts_alloc = 0;
-        return true;
-    }
-    if sym.pts_alloc >= capacity {
-        return true;
-    }
-
-    let new_size = capacity as usize * size_of::<Point>();
-    let new_ptr = libc::realloc(sym.pts, new_size);
-    if new_ptr.is_null() {
-        return false;
-    }
-
-    sym.pts = new_ptr;
-    sym.pts_alloc = capacity;
-    true
-}
-
 pub(crate) unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_t {
     if sym.is_null() {
         ptr::null()
@@ -252,29 +217,12 @@ pub(crate) unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_
     }
 }
 
-// Point storage for location data (two consecutive c_int values)
-type Point = [c_int; 2];
-
 pub(crate) unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
     if sym.is_null() {
         return;
     }
     let sym = &mut *sym;
-
-    let i = sym.npts as usize;
-    sym.npts += 1;
-
-    if sym.npts >= sym.pts_alloc {
-        let new_capacity = sym.pts_alloc + 1;
-        if !symbol_reserve_points(sym as *mut _, new_capacity) {
-            sym.npts -= 1;
-            return;
-        }
-    }
-
-    let pts = sym.pts as *mut Point;
-    (*pts.add(i))[0] = x;
-    (*pts.add(i))[1] = y;
+    sym.pts.push([x, y]);
 }
 
 // High-level Rust API types

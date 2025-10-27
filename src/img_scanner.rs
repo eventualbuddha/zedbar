@@ -446,7 +446,6 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     let sym_ref = &mut *sym;
     sym_ref.symbol_type = sym_type;
     sym_ref.quality = 1;
-    sym_ref.npts = 0;
     sym_ref.orient = ZBAR_ORIENT_UNKNOWN;
     c_assert!(sym_ref.syms.is_null());
 
