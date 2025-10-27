@@ -3377,9 +3377,6 @@ pub(crate) unsafe fn qr_code_data_parse(
             qr_mode::STRUCT => {
                 // Structured-append header
                 let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else { return -1; };
-                if bits < 0 {
-                    return -1;
-                }
 
                 let mut sa = qr_code_data_sa::default();
 
@@ -3424,9 +3421,6 @@ pub(crate) unsafe fn qr_code_data_parse(
             qr_mode::ECI => {
                 // Extended Channel Interpretation
                 let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
-                if bits < 0 {
-                    return -1;
-                }
 
                 let val = if (bits & 0x80) == 0 {
                     // One byte
@@ -3435,18 +3429,12 @@ pub(crate) unsafe fn qr_code_data_parse(
                     // Two bytes
                     let mut val = ((bits & 0x3F) as c_uint) << 8;
                     let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
-                    if bits < 0 {
-                        return -1;
-                    }
                     val |= bits as c_uint;
                     val
                 } else if (bits & 0x20) == 0 {
                     // Three bytes
                     let mut val = ((bits & 0x1F) as c_uint) << 16;
                     let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else { return -1; };
-                    if bits < 0 {
-                        return -1;
-                    }
                     val |= bits as c_uint;
                     if val >= 1000000 {
                         return -1;
