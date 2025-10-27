@@ -28,12 +28,12 @@ unsafe fn feed_bits(
     d: &mut u64,
     bit_count: &mut i32,
     len: &mut i32,
-    data_ptr: &mut *mut i32,
+    mut data_ptr: &mut [i32],
     required: i32,
 ) {
     while *bit_count < required && *len > 0 {
-        let next = (**data_ptr as u32 & 0x0fff) as u64;
-        *data_ptr = (*data_ptr).add(1);
+        let next = (data_ptr[0] as u32 & 0x0fff) as u64;
+        data_ptr = &mut data_ptr[1..];
         *d = (*d << 12) | next;
         *bit_count += 12;
         *len -= 1;
@@ -41,10 +41,10 @@ unsafe fn feed_bits(
 }
 
 #[inline]
-unsafe fn segment_index(seg: *mut crate::decoder_types::databar_segment_t) -> i32 {
-    (((*seg).finder() as i32) << 2)
-        | (((*seg).color() as i32) << 1)
-        | ((((*seg).color() as u8 ^ (*seg).side()) as i32) & 1)
+unsafe fn segment_index(seg: &databar_segment_t) -> i32 {
+    ((seg.finder() as i32) << 2)
+        | ((seg.color() as i32) << 1)
+        | (((seg.color() as u8 ^ seg.side()) as i32) & 1)
 }
 
 /// DataBar finder pattern hash table
@@ -171,28 +171,24 @@ static GROUPS: [GroupS; 14] = [
 ///
 /// # Safety
 /// Buffer must contain at least 14 bytes, with first 13 being ASCII digits '0'-'9'
-pub unsafe fn _zbar_databar_append_check14(buf: *mut u8) {
-    if buf.is_null() {
-        return;
-    }
-
+pub unsafe fn _zbar_databar_append_check14(buf: &mut [u8]) {
     let mut chk: u8 = 0;
     let mut ptr = buf;
 
     for i in (0..13).rev() {
-        let d = *ptr - b'0';
+        let d = ptr[0] - b'0';
         chk = chk.wrapping_add(d);
         if (i & 1) == 0 {
             chk = chk.wrapping_add(d << 1);
         }
-        ptr = ptr.add(1);
+        ptr = &mut ptr[1..];
     }
 
     chk %= 10;
     if chk != 0 {
         chk = 10 - chk;
     }
-    *ptr = chk + b'0';
+    ptr[0] = chk + b'0';
 }
 
 /// Decode a number into decimal digits
@@ -224,19 +220,19 @@ pub unsafe fn _zbar_databar_decode10(buf: *mut u8, mut n: u64, i: c_int) {
     }
 }
 
-unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) -> c_int {
-    if dcode.is_null() || data.is_null() {
+unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) -> c_int {
+    if dcode.is_null() {
         return -1;
     }
 
     let dcode = &mut *dcode;
     let mut data_ptr = data;
-    let first = *data_ptr as u64;
-    data_ptr = data_ptr.add(1);
+    let first = data_ptr[0] as u64;
+    data_ptr = &mut data_ptr[1..];
     let mut len = (first / 211 + 4) as i32;
 
-    let mut d = *data_ptr as u64;
-    data_ptr = data_ptr.add(1);
+    let mut d = data_ptr[0] as u64;
+    data_ptr = &mut data_ptr[1..];
 
     let mut i_bits: i32;
     let enc: i32;
@@ -318,7 +314,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 
     if enc != 0 {
         for _ in 0..4 {
-            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 10);
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 10);
             i_bits -= 10;
             if i_bits < 0 {
                 return -1;
@@ -330,13 +326,13 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 3);
             buf_idx += 3;
         }
-        _zbar_databar_append_check14(buf.as_mut_ptr().add(buf_idx - 13));
+        _zbar_databar_append_check14(&mut buf[..buf_idx - 13]);
         buf_idx += 1;
     }
 
     match enc {
         2 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 2);
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 2);
             i_bits -= 2;
             let val = ((d >> i_bits) & 0x3) as u8;
             buf[buf_idx] = b'3';
@@ -346,7 +342,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             buf_idx += 4;
         }
         3 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 12);
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 12);
             i_bits -= 2;
             let val = ((d >> i_bits) & 0x3) as u8;
             buf[buf_idx] = b'3';
@@ -366,7 +362,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             buf_idx += 3;
         }
         4 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 15);
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
             i_bits -= 15;
             if i_bits < 0 {
                 return -1;
@@ -381,7 +377,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
             buf_idx += 6;
         }
         5 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 15);
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
             i_bits -= 15;
             if i_bits < 0 {
                 return -1;
@@ -413,7 +409,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
         buf[buf_idx + 3] = b'x';
         buf_idx += 4;
 
-        feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 20);
+        feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 20);
         i_bits -= 20;
         if i_bits < 0 {
             return -1;
@@ -427,7 +423,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
         buf[buf_idx] = b'0';
         buf_idx += 6;
 
-        feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 16);
+        feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 16);
         i_bits -= 16;
         if i_bits < 0 {
             return -1;
@@ -458,7 +454,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
     if enc < 4 {
         let mut scheme = SCH_NUM;
         while i_bits > 0 || len > 0 {
-            feed_bits(&mut d, &mut i_bits, &mut len, &mut data_ptr, 8);
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 8);
 
             if scheme == SCH_NUM {
                 i_bits -= 4;
@@ -587,9 +583,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: *mut i32) ->
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-pub unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, d: *mut c_uint) {
-    let mut d_array = [*d.offset(0), *d.offset(1), *d.offset(2), *d.offset(3)];
-
+pub unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, mut d: [c_uint; 4]) {
     // Get config before borrowing buffer
     let emit_check = ((dcode.databar.config >> ZBAR_CFG_EMIT_CHECK) & 1) != 0;
 
@@ -613,14 +607,14 @@ pub unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, d: *mut c_ui
     buf_idx -= 1;
 
     // First conversion
-    let mut r = (d_array[0] as u64) * 1597 + (d_array[1] as u64);
-    d_array[1] = (r / 10000) as c_uint;
+    let mut r = (d[0] as u64) * 1597 + (d[1] as u64);
+    d[1] = (r / 10000) as c_uint;
     r %= 10000;
-    r = r * 2841 + (d_array[2] as u64);
-    d_array[2] = (r / 10000) as c_uint;
+    r = r * 2841 + (d[2] as u64);
+    d[2] = (r / 10000) as c_uint;
     r %= 10000;
-    r = r * 1597 + (d_array[3] as u64);
-    d_array[3] = (r / 10000) as c_uint;
+    r = r * 1597 + (d[3] as u64);
+    d[3] = (r / 10000) as c_uint;
 
     // Extract 4 decimal digits
     for i in (0..4).rev() {
@@ -637,11 +631,11 @@ pub unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, d: *mut c_ui
     }
 
     // Second conversion
-    r = (d_array[1] as u64) * 2841 + (d_array[2] as u64);
-    d_array[2] = (r / 10000) as c_uint;
+    r = (d[1] as u64) * 2841 + (d[2] as u64);
+    d[2] = (r / 10000) as c_uint;
     r %= 10000;
-    r = r * 1597 + (d_array[3] as u64);
-    d_array[3] = (r / 10000) as c_uint;
+    r = r * 1597 + (d[3] as u64);
+    d[3] = (r / 10000) as c_uint;
 
     // Extract 4 more decimal digits
     for i in (0..4).rev() {
@@ -658,7 +652,7 @@ pub unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, d: *mut c_ui
     }
 
     // Third conversion
-    r = (d_array[2] as u64) * 1597 + (d_array[3] as u64);
+    r = (d[2] as u64) * 1597 + (d[3] as u64);
 
     // Extract 5 decimal digits
     for i in (0..5).rev() {
@@ -769,13 +763,13 @@ pub unsafe fn _zbar_databar_merge_segment(
 /// Match DataBar segment to find complete symbol
 pub unsafe fn match_segment(
     dcode: &mut zbar_decoder_t,
-    seg: *mut crate::decoder_types::databar_segment_t,
+    seg: *mut databar_segment_t,
 ) -> zbar_symbol_type_t {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
     let mut maxcnt = 0;
-    let mut smax: [*mut crate::decoder_types::databar_segment_t; 3] = [std::ptr::null_mut(); 3];
+    let mut smax: [*mut databar_segment_t; 3] = [std::ptr::null_mut(); 3];
     let mut d = [0u32; 4];
 
     if (*seg).partial() && (*seg).count() < 4 {
@@ -883,7 +877,7 @@ pub unsafe fn match_segment(
         return ZBAR_PARTIAL;
     }
 
-    _zbar_databar_postprocess(dcode, d.as_mut_ptr());
+    _zbar_databar_postprocess(dcode, d);
     dcode.modifiers = 1 << ZBAR_MOD_GS1;
     dcode.direction = 1 - 2 * (((*seg).side() as i32) ^ ((*seg).color() as i32) ^ 1);
     ZBAR_DATABAR
@@ -892,9 +886,9 @@ pub unsafe fn match_segment(
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
 pub unsafe fn lookup_sequence(
-    seg: *mut crate::decoder_types::databar_segment_t,
+    seg: *mut databar_segment_t,
     fixed: i32,
-    seq: *mut i32,
+    seq: &mut [i32],
     maxsize: usize,
 ) -> i32 {
     let mut n = ((*seg).data as u32 / 211) as usize;
@@ -911,8 +905,8 @@ pub unsafe fn lookup_sequence(
     }
 
     let mut fixed = fixed >> 1;
-    *seq.offset(0) = 0;
-    *seq.offset(1) = 1;
+    seq[0] = 0;
+    seq[1] = 1;
     let mut i = 2;
     let mut p_idx = 0;
     while i < n {
@@ -927,13 +921,13 @@ pub unsafe fn lookup_sequence(
             fixed = -1;
         }
         s <<= 1;
-        *seq.add(i) = s;
+        seq[i] = s;
         i += 1;
         s += 1;
-        *seq.add(i) = s;
+        seq[i] = s;
         i += 1;
     }
-    *seq.add(n) = -1;
+    seq[n] = -1;
     if fixed < 1 {
         1
     } else {
@@ -953,7 +947,7 @@ pub unsafe fn match_segment_exp(
     }
 
     let ifixed = seg.offset_from(db.segs) as usize;
-    let fixed = segment_index(seg);
+    let fixed = segment_index(&*seg);
     let mut bestsegs = [-1i32; 22];
     let mut segs_idx = [-1i32; 22];
     let mut seq = [-1i32; 22];
@@ -971,7 +965,7 @@ pub unsafe fn match_segment_exp(
         let s = db.segs.add(j);
         iseg[j] =
             if (*s).exp() && (*s).finder() >= 0 && (!(*s).partial() || (*s).count() as i32 >= 4) {
-                segment_index(s)
+                segment_index(&*s)
             } else {
                 -1
             };
@@ -1025,7 +1019,8 @@ pub unsafe fn match_segment_exp(
                 }
 
                 if idx == 0 {
-                    let lu = lookup_sequence(candidate, fixed, seq.as_mut_ptr(), seq.len());
+                    let maxsize = seq.len();
+                    let lu = lookup_sequence(candidate, fixed, &mut seq, maxsize);
                     if lu == 0 {
                         i -= 1;
                         continue;
@@ -1110,7 +1105,7 @@ pub unsafe fn match_segment_exp(
         count += 1;
     }
 
-    if databar_postprocess_exp(dcode, data_vals.as_mut_ptr()) != 0 {
+    if databar_postprocess_exp(dcode, &mut data_vals) != 0 {
         (*dcode)._zbar_decoder_release_lock(ZBAR_DATABAR_EXP);
         return ZBAR_PARTIAL;
     }
@@ -1315,7 +1310,7 @@ pub fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uin
 /// Decode a DataBar character from width measurements
 pub unsafe fn decode_char(
     dcode: &mut zbar_decoder_t,
-    seg: *mut crate::decoder_types::databar_segment_t,
+    seg: *mut databar_segment_t,
     off: c_int,
     dir: c_int,
 ) -> zbar_symbol_type_t {
@@ -1735,7 +1730,7 @@ mod tests {
             let mut buf = [
                 b'9', b'7', b'8', b'0', b'1', b'4', b'3', b'0', b'0', b'7', b'2', b'3', b'0', 0,
             ];
-            _zbar_databar_append_check14(buf.as_mut_ptr());
+            _zbar_databar_append_check14(&mut buf);
             // Check digit: (9+7+8+0+1+4+3+0+0+7+2+3) + (9+8+1+3+0+2)*2 = 44 + 46 = 90, 90%10=0, check=0
             assert_eq!(buf[13], b'0');
 
@@ -1743,7 +1738,7 @@ mod tests {
             let mut buf2 = [
                 b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2', b'0', 0,
             ];
-            _zbar_databar_append_check14(buf2.as_mut_ptr());
+            _zbar_databar_append_check14(&mut buf2);
             // Check: (1+2+3+4+5+6+7+8+9+0+1+2) + (1+3+5+7+9+1)*2 = 48 + 52 = 100, 100%10=0, check=0
             assert_eq!(buf2[13], b'0');
         }
