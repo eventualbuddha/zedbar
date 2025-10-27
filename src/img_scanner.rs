@@ -26,13 +26,12 @@ use crate::{
     refcnt,
     sqcode::{sq_decode, SqReader},
     symbol::{
-        _zbar_symbol_add_point, get_symbol_hash, symbol_alloc_zeroed, symbol_clear_data,
+        _zbar_symbol_add_point, get_symbol_hash, symbol_alloc_zeroed,
         symbol_free, symbol_refcnt, symbol_set_create, symbol_set_free,
         zbar_symbol_set_ref, zbar_symbol_t,
     },
 };
 
-const RECYCLE_BUCKETS: usize = 5;
 const NUM_SCN_CFGS: usize = 2; // ZBAR_CFG_Y_DENSITY - ZBAR_CFG_X_DENSITY + 1
 const NUM_SYMS: usize = 25; // Number of symbol types
 
@@ -138,12 +137,6 @@ impl Drop for zbar_symbol_set_t {
 pub(crate) type zbar_image_data_handler_t =
     unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
 
-#[derive(Default)]
-pub struct recycle_bucket_t {
-    nsyms: c_int,
-    head: *mut zbar_symbol_t,
-}
-
 /// image scanner state
 #[derive(Default)]
 pub struct zbar_image_scanner_t {
@@ -171,8 +164,6 @@ pub struct zbar_image_scanner_t {
 
     /// previous decode results
     syms: Option<NonNull<zbar_symbol_set_t>>,
-    /// recycled symbols in 4^n size buckets
-    recycle: [recycle_bucket_t; RECYCLE_BUCKETS],
 
     // configuration settings
     /// config flags
@@ -378,13 +369,13 @@ pub unsafe fn zbar_image_scanner_get_config(
 /// Recycle symbols from the image scanner
 ///
 /// Recursively processes a linked list of symbols, either unlinking referenced
-/// symbols or recycling unreferenced ones into the appropriate size bucket.
+/// symbols or freeing unreferenced ones.
 ///
 /// # Arguments
 /// * `iscn` - The image scanner instance
-/// * `sym` - Head of the symbol list to recycle
+/// * `sym` - Head of the symbol list to process
 pub unsafe fn _zbar_image_scanner_recycle_syms(
-    iscn: &mut zbar_image_scanner_t,
+    _iscn: &mut zbar_image_scanner_t,
     mut sym: *mut zbar_symbol_t,
 ) {
     while !sym.is_null() {
@@ -396,43 +387,19 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
             c_assert!((*sym).data.capacity() != 0);
             (*sym).next = null_mut();
         } else {
-            // Recycle unreferenced symbol
-            if (*sym).data.capacity() == 0 {
-                symbol_clear_data(sym);
-            }
-
+            // Free unreferenced symbol
             if !(*sym).syms.is_null() {
                 let syms = (*sym).syms;
                 if refcnt!((*syms).refcnt, -1) != 0 {
                     c_assert!(false);
                 }
-                _zbar_image_scanner_recycle_syms(iscn, (*syms).head);
+                _zbar_image_scanner_recycle_syms(_iscn, (*syms).head);
                 (*syms).head = null_mut();
-                {
-                    symbol_set_free(syms);
-                };
+                symbol_set_free(syms);
                 (*sym).syms = null_mut();
             }
 
-            // Find appropriate bucket based on data allocation size
-            let mut i = 0;
-            while i < RECYCLE_BUCKETS {
-                if (*sym).data.capacity() < (1 << (i * 2)) {
-                    break;
-                }
-                i += 1;
-            }
-
-            if i == RECYCLE_BUCKETS {
-                symbol_clear_data(sym);
-                i = 0;
-            }
-
-            let bucket = &mut iscn.recycle[i];
-            // FIXME cap bucket fill
-            bucket.nsyms += 1;
-            (*sym).next = bucket.head;
-            bucket.head = sym;
+            symbol_free(sym);
         }
 
         sym = next;
@@ -459,57 +426,21 @@ pub unsafe fn _zbar_image_scanner_quiet_border(iscn: &mut zbar_image_scanner_t) 
     scanner_new_scan(scn);
 }
 
-/// Allocate a symbol from the recycling pool or allocate a new one
-///
-/// Attempts to recycle a symbol from the appropriate size bucket,
-/// or allocates a new one if no suitable recycled symbol is available.
+/// Allocate a new symbol
 ///
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym_type` - The type of symbol to allocate
-/// * `datalen` - The length of data to allocate (including null terminator)
+/// * `datalen` - The length of data to allocate
 ///
 /// # Returns
 /// Pointer to the allocated symbol
 pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
-    iscn: &mut zbar_image_scanner_t,
+    _iscn: &mut zbar_image_scanner_t,
     sym_type: c_int,
     datalen: c_int,
 ) -> *mut zbar_symbol_t {
-    // Recycle old or alloc new symbol
-    let mut sym: *mut zbar_symbol_t = null_mut();
-
-    // Find appropriate bucket based on datalen
-    let mut i: i32 = 0;
-    while i < (RECYCLE_BUCKETS - 1) as i32 {
-        if datalen <= (1 << (i * 2)) {
-            break;
-        }
-        i += 1;
-    }
-
-    // Try to get a symbol from this bucket or larger buckets
-    let mut bucket_idx: Option<usize> = None;
-    while i >= 0 {
-        sym = iscn.recycle[i as usize].head;
-        if !sym.is_null() {
-            bucket_idx = Some(i as usize);
-            break;
-        }
-        i -= 1;
-    }
-
-    if let Some(idx) = bucket_idx {
-        // Found a recycled symbol
-        let sym_ref = &mut *sym;
-        iscn.recycle[idx].head = sym_ref.next;
-        sym_ref.next = null_mut();
-        c_assert!(iscn.recycle[idx].nsyms > 0);
-        iscn.recycle[idx].nsyms -= 1;
-    } else {
-        // Allocate a new symbol
-        sym = symbol_alloc_zeroed();
-    }
+    let sym = symbol_alloc_zeroed();
 
     // Initialize the symbol
     let sym_ref = &mut *sym;
@@ -669,22 +600,6 @@ pub unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t) {
             symbol_set_free(syms_ptr);
         }
     }
-
-    // Scanner is now owned and will be dropped automatically
-
-    // Free recycled symbols
-    for i in 0..RECYCLE_BUCKETS {
-        let mut sym = scanner.recycle[i].head;
-        while !sym.is_null() {
-            let sym_ref = &*sym;
-            let next = sym_ref.next;
-            symbol_free(sym);
-            sym = next;
-        }
-    }
-
-    // qr is owned, so it will be dropped automatically when scanner is dropped
-    // No need to call _zbar_qr_destroy
 
     image_scanner_free(iscn);
 }

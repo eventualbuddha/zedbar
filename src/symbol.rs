@@ -201,16 +201,6 @@ pub(crate) unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
     Box::into_raw(symbol)
 }
 
-/// Release any allocated symbol data buffer and reset metadata.
-pub(crate) unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
-    if sym.is_null() {
-        return;
-    }
-    let sym = &mut *sym;
-
-    sym.data.clear();
-}
-
 /// Ensure the symbol point array can store at least `capacity` points.
 /// Returns `true` on success and leaves the buffer unchanged on failure.
 pub(crate) unsafe fn symbol_reserve_points(sym: *mut zbar_symbol_t, capacity: u32) -> bool {
