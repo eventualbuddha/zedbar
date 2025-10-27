@@ -405,12 +405,12 @@ pub unsafe fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
     }
 }
 
-pub unsafe fn qr_line_isect(_p: &mut qr_point, _l0: &qr_line, _l1: &qr_line) -> c_int {
+pub unsafe fn qr_line_isect(_l0: &qr_line, _l1: &qr_line) -> Option<qr_point> {
     let mut d = (*_l0)[0]
         .wrapping_mul((*_l1)[1])
         .wrapping_sub((*_l0)[1].wrapping_mul((*_l1)[0]));
     if d == 0 {
-        return -1;
+        return None;
     }
     let mut x = (*_l0)[1]
         .wrapping_mul((*_l1)[2])
@@ -423,9 +423,7 @@ pub unsafe fn qr_line_isect(_p: &mut qr_point, _l0: &qr_line, _l1: &qr_line) -> 
         y = -y;
         d = -d;
     }
-    _p[0] = qr_divround(x, d);
-    _p[1] = qr_divround(y, d);
-    0
+    Some([qr_divround(x, d), qr_divround(y, d)])
 }
 
 /// Fit a line to covariance data using least-squares
@@ -1000,9 +998,10 @@ pub unsafe fn qr_hom_fit(
 
     // Compute line intersections
     for i in 0..4 {
-        if qr_line_isect(&mut _p[i], &l[i & 1], &l[2 + (i >> 1)]) < 0 {
-            return -1;
-        }
+        _p[i] = match qr_line_isect(&l[i & 1], &l[2 + (i >> 1)]) {
+            Some(p) => p,
+            None => return -1,
+        };
         // It's plausible for points to be somewhat outside the image, but too far
         // and too much of the pattern will be gone for it to be decodable
         let p_i = &_p[i];
@@ -2360,14 +2359,9 @@ pub unsafe fn qr_finder_version_decode(
     }
 
     // Use BCH error correction to decode the version
-    let ret = bch18_6_correct(&mut v);
-
-    // TODO: Some images may have version bits in a different order (transposed).
-    // If this is really needed, we should re-order the bits.
-    if ret >= 0 {
-        (v >> 12) as c_int
-    } else {
-        ret
+    match bch18_6_correct(v) {
+        Ok((corrected, _nerrs)) => (corrected >> 12) as c_int,
+        Err(Bch18_6CorrectError::Unrecoverable) => -1,
     }
 }
 
@@ -3652,39 +3646,38 @@ unsafe fn qr_code_decode(
     ret
 }
 
+enum Bch18_6CorrectError {
+    Unrecoverable,
+}
+
 /// Correct a BCH(18,6,3) code word
 ///
 /// Takes a code word and attempts to correct errors using the BCH(18,6,3) code.
-/// The corrected value is written back to the input pointer.
 ///
 /// Returns:
-/// - The number of errors corrected (0-3)
-/// - A negative value if more than 3 errors were detected (no correction performed)
-pub unsafe fn bch18_6_correct(y: *mut c_uint) -> c_int {
-    let y_val = *y;
-
+/// - `Ok((corrected_value, num_errors))` where `num_errors` is 0-3
+/// - `Err(Bch18_6CorrectError::Unrecoverable)` if more than 3 errors were detected
+fn bch18_6_correct(y: c_uint) -> Result<(c_uint, c_int), Bch18_6CorrectError> {
     // Check the easy case first: see if the data bits were uncorrupted
-    let x = y_val >> 12;
+    let x = y >> 12;
     if (7..=40).contains(&x) {
-        let nerrs = qr_hamming_dist(y_val, BCH18_6_CODES[(x - 7) as usize], 4);
+        let nerrs = qr_hamming_dist(y, BCH18_6_CODES[(x - 7) as usize], 4);
         if nerrs < 4 {
-            *y = BCH18_6_CODES[(x - 7) as usize];
-            return nerrs;
+            return Ok((BCH18_6_CODES[(x - 7) as usize], nerrs));
         }
     }
 
     // Exhaustive search is faster than field operations in GF(19)
     for (i, &code) in BCH18_6_CODES.iter().enumerate() {
-        if i + 7 != (y_val >> 12) as usize {
-            let nerrs = qr_hamming_dist(y_val, code, 4);
+        if i + 7 != (y >> 12) as usize {
+            let nerrs = qr_hamming_dist(y, code, 4);
             if nerrs < 4 {
-                *y = code;
-                return nerrs;
+                return Ok((code, nerrs));
             }
         }
     }
 
-    -1
+    Err(Bch18_6CorrectError::Unrecoverable)
 }
 
 /// Initialize a homography cell for mapping between code and image space
