@@ -182,7 +182,7 @@ unsafe fn qr_hom_fit_edge_line(
             // Right edge: project from UR finder, extending 3 modules to the right
             qr_aff_project(
                 &mut p,
-                aff,
+                &*aff,
                 (*finder).o[0] + 3 * (*finder).size[0],
                 (*finder).o[1],
             );
@@ -190,7 +190,7 @@ unsafe fn qr_hom_fit_edge_line(
             // Bottom edge (axis 3): project from DL finder, extending 3 modules down
             qr_aff_project(
                 &mut p,
-                aff,
+                &*aff,
                 (*finder).o[0],
                 (*finder).o[1] + 3 * (*finder).size[1],
             );
@@ -571,7 +571,7 @@ pub unsafe fn qr_aff_init(
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
-pub unsafe fn qr_aff_unproject(_q: &mut qr_point, _aff: &qr_aff, _x: c_int, _y: c_int) {
+pub fn qr_aff_unproject(_q: &mut qr_point, _aff: &qr_aff, _x: c_int, _y: c_int) {
     _q[0] = (_aff.inv[0][0]
         .wrapping_mul(_x.wrapping_sub(_aff.x0))
         .wrapping_add(_aff.inv[0][1].wrapping_mul(_y.wrapping_sub(_aff.y0)))
@@ -585,19 +585,19 @@ pub unsafe fn qr_aff_unproject(_q: &mut qr_point, _aff: &qr_aff, _x: c_int, _y: 
 }
 
 /// Map from the square domain into the image (at subpel resolution).
-pub unsafe fn qr_aff_project(_p: *mut qr_point, _aff: *const qr_aff, _u: c_int, _v: c_int) {
-    (*_p)[0] = (((*_aff).fwd[0][0]
+pub fn qr_aff_project(_p: &mut qr_point, _aff: &qr_aff, _u: c_int, _v: c_int) {
+    _p[0] = ((_aff.fwd[0][0]
         .wrapping_mul(_u)
-        .wrapping_add((*_aff).fwd[0][1].wrapping_mul(_v))
-        .wrapping_add(1 << ((*_aff).res - 1)))
-        >> (*_aff).res)
-        .wrapping_add((*_aff).x0);
-    (*_p)[1] = (((*_aff).fwd[1][0]
+        .wrapping_add(_aff.fwd[0][1].wrapping_mul(_v))
+        .wrapping_add(1 << (_aff.res - 1)))
+        >> _aff.res)
+        .wrapping_add(_aff.x0);
+    _p[1] = ((_aff.fwd[1][0]
         .wrapping_mul(_u)
-        .wrapping_add((*_aff).fwd[1][1].wrapping_mul(_v))
-        .wrapping_add(1 << ((*_aff).res - 1)))
-        >> (*_aff).res)
-        .wrapping_add((*_aff).y0);
+        .wrapping_add(_aff.fwd[1][1].wrapping_mul(_v))
+        .wrapping_add(1 << (_aff.res - 1)))
+        >> _aff.res)
+        .wrapping_add(_aff.y0);
 }
 
 /// A full homography.
