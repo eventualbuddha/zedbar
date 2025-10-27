@@ -378,13 +378,13 @@ pub unsafe fn qr_point_distance2(p1: *const c_int, p2: *const c_int) -> c_uint {
 /// - Positive: points are in CCW order (in right-handed coordinate system)
 /// - Zero: points are collinear
 /// - Negative: points are in CW order
-pub unsafe fn qr_point_ccw(p0: *const c_int, p1: *const c_int, p2: *const c_int) -> c_int {
-    let p0x = *p0.offset(0);
-    let p0y = *p0.offset(1);
-    let p1x = *p1.offset(0);
-    let p1y = *p1.offset(1);
-    let p2x = *p2.offset(0);
-    let p2y = *p2.offset(1);
+pub fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> c_int {
+    let p0x = p0[0];
+    let p0y = p0[1];
+    let p1x = p1[0];
+    let p1y = p1[1];
+    let p2x = p2[0];
+    let p2y = p2[1];
 
     (p1x - p0x) * (p2y - p0y) - (p1y - p0y) * (p2x - p0x)
 }
@@ -393,12 +393,12 @@ pub unsafe fn qr_point_ccw(p0: *const c_int, p1: *const c_int, p2: *const c_int)
 ///
 /// Given a line defined by the equation A*x + B*y + C = 0,
 /// this returns the value A*x + B*y + C for the given coordinates.
-pub unsafe fn qr_line_eval(line: *const qr_line, x: c_int, y: c_int) -> c_int {
-    (*line)[0] * x + (*line)[1] * y + (*line)[2]
+pub fn qr_line_eval(line: &qr_line, x: c_int, y: c_int) -> c_int {
+    line[0] * x + line[1] * y + line[2]
 }
 
 pub unsafe fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
-    if qr_line_eval(_l, _x, _y) < 0 {
+    if qr_line_eval(&*_l, _x, _y) < 0 {
         (*_l)[0] = -(*_l)[0];
         (*_l)[1] = -(*_l)[1];
         (*_l)[2] = -(*_l)[2];
@@ -1303,9 +1303,9 @@ pub unsafe fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaC
 
             for j in 0..n {
                 if qr_point_ccw(
-                    p0.as_ptr(),
-                    p1.as_ptr(),
-                    (*edge_pts.offset(j as isize)).pos.as_ptr(),
+                    p0,
+                    p1,
+                    &(*edge_pts.offset(j as isize)).pos,
                 )
                 .abs()
                     <= thresh
@@ -4439,9 +4439,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
     // Sort the points in counter-clockwise order
     let ccw: c_int = qr_point_ccw(
-        (**_c.add(0)).pos.as_ptr(),
-        (**_c.add(1)).pos.as_ptr(),
-        (**_c.add(2)).pos.as_ptr(),
+        &(**_c.add(0)).pos,
+        &(**_c.add(1)).pos,
+        &(**_c.add(2)).pos,
     );
 
     // Colinear points can't be the corners of a quadrilateral
@@ -4772,24 +4772,24 @@ unsafe fn qr_reader_match_centers(
                         for l in 0.._ncenters {
                             if mark[l] == 0
                                 && qr_point_ccw(
-                                    qrdata.bbox[0].as_ptr(),
-                                    qrdata.bbox[1].as_ptr(),
-                                    _centers[l].pos.as_ptr(),
+                                    &qrdata.bbox[0],
+                                    &qrdata.bbox[1],
+                                    &_centers[l].pos,
                                 ) >= 0
                                 && qr_point_ccw(
-                                    qrdata.bbox[1].as_ptr(),
-                                    qrdata.bbox[3].as_ptr(),
-                                    _centers[l].pos.as_ptr(),
+                                    &qrdata.bbox[1],
+                                    &qrdata.bbox[3],
+                                    &_centers[l].pos,
                                 ) >= 0
                                 && qr_point_ccw(
-                                    qrdata.bbox[3].as_ptr(),
-                                    qrdata.bbox[2].as_ptr(),
-                                    _centers[l].pos.as_ptr(),
+                                    &qrdata.bbox[3],
+                                    &qrdata.bbox[2],
+                                    &_centers[l].pos,
                                 ) >= 0
                                 && qr_point_ccw(
-                                    qrdata.bbox[2].as_ptr(),
-                                    qrdata.bbox[0].as_ptr(),
-                                    _centers[l].pos.as_ptr(),
+                                    &qrdata.bbox[2],
+                                    &qrdata.bbox[0],
+                                    &_centers[l].pos,
                                 ) >= 0
                             {
                                 mark[l] = 2;
