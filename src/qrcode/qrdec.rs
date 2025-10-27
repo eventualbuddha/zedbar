@@ -1494,38 +1494,38 @@ pub struct qr_pack_buf<'a> {
 /// Read bits from the pack buffer
 ///
 /// Assumes 0 <= _bits <= 16
-/// Returns the read value, or -1 if there aren't enough bits available
-pub unsafe fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
+/// Returns the read value, or `None` if there aren't enough bits available
+pub fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: c_int) -> Option<c_int> {
     let m = 16 - _bits;
-    let bits = _bits + (*_b).endbit;
-    let storage = (&*_b).buf.len() as c_int;
-    let d = storage - (*_b).endbyte;
+    let bits = _bits + _b.endbit;
+    let storage = _b.buf.len() as c_int;
+    let d = storage - _b.endbyte;
 
     if d <= 2 {
         // Not the main path
         if d * 8 < bits {
-            (*_b).endbyte += bits >> 3;
-            (*_b).endbit = bits & 7;
-            return -1;
+            _b.endbyte += bits >> 3;
+            _b.endbit = bits & 7;
+            return None;
         }
         // Special case to avoid reading p[0] below, which might be past the end of
         // the buffer; also skips some useless accounting
         else if bits == 0 {
-            return 0;
+            return Some(0);
         }
     }
 
-    let p = (*_b).buf.as_ptr().add((*_b).endbyte as usize);
-    let mut ret = (c_uint::from(*p) << (8 + (*_b).endbit)) as c_uint;
+    let idx = _b.endbyte as usize;
+    let mut ret = (c_uint::from(_b.buf[idx]) << (8 + _b.endbit)) as c_uint;
     if bits > 8 {
-        ret |= c_uint::from(*p.add(1)) << (*_b).endbit;
+        ret |= c_uint::from(_b.buf[idx + 1]) << _b.endbit;
         if bits > 16 {
-            ret |= c_uint::from(*p.add(2)) >> (8 - (*_b).endbit);
+            ret |= c_uint::from(_b.buf[idx + 2]) >> (8 - _b.endbit);
         }
     }
-    (*_b).endbyte += bits >> 3;
-    (*_b).endbit = bits & 7;
-    ((ret & 0xFFFF) >> m) as c_int
+    _b.endbyte += bits >> 3;
+    _b.endbit = bits & 7;
+    Some(((ret & 0xFFFF) >> m) as c_int)
 }
 
 /// Get the number of bits available to read from the pack buffer
@@ -3239,7 +3239,9 @@ pub(crate) unsafe fn qr_code_data_parse(
 
     // While we have enough bits to read a mode...
     while qr_pack_buf_avail(&qpb) >= 4 {
-        let mode = qr_pack_buf_read(&mut qpb, 4);
+        let Some(mode) = qr_pack_buf_read(&mut qpb, 4) else {
+            return -1;
+        };
 
         // Mode 0 is a terminator
         if mode == 0 {
@@ -3253,10 +3255,9 @@ pub(crate) unsafe fn qr_code_data_parse(
 
         let payload = match mode {
             qr_mode::NUM => {
-                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]);
-                if len < 0 {
+                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]) else {
                     return -1;
-                }
+                };
 
                 let count = len / 3;
                 let rem = len % 3;
@@ -3269,7 +3270,10 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Read groups of 3 digits encoded in 10 bits
                 for _ in 0..count {
-                    let bits = qr_pack_buf_read(&mut qpb, 10) as c_uint;
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 10) else {
+                        return -1;
+                    };
+                    let bits = bits as c_uint;
                     if bits >= 1000 {
                         return -1;
                     }
@@ -3292,7 +3296,10 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Read the last two digits encoded in 7 bits
                 if rem > 1 {
-                    let bits = qr_pack_buf_read(&mut qpb, 7) as c_uint;
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 7) else {
+                        return -1;
+                    };
+                    let bits = bits as c_uint;
                     if bits >= 100 {
                         return -1;
                     }
@@ -3307,7 +3314,10 @@ pub(crate) unsafe fn qr_code_data_parse(
                 }
                 // Or the last one digit encoded in 4 bits
                 else if rem != 0 {
-                    let bits = qr_pack_buf_read(&mut qpb, 4) as c_uint;
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 4) else {
+                        return -1;
+                    };
+                    let bits = bits as c_uint;
                     if bits >= 10 {
                         return -1;
                     }
@@ -3319,10 +3329,9 @@ pub(crate) unsafe fn qr_code_data_parse(
                 qr_code_data_payload::Numeric(data)
             }
             qr_mode::ALNUM => {
-                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]);
-                if len < 0 {
+                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]) else {
                     return -1;
-                }
+                };
 
                 let count = len >> 1;
                 let rem = len & 1;
@@ -3335,7 +3344,8 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Read groups of two characters encoded in 11 bits
                 for _ in 0..count {
-                    let bits = qr_pack_buf_read(&mut qpb, 11) as c_uint;
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 11) else { return -1; };
+                    let bits = bits as c_uint;
                     if bits >= 2025 {
                         return -1;
                     }
@@ -3352,7 +3362,8 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Read the last character encoded in 6 bits
                 if rem != 0 {
-                    let bits = qr_pack_buf_read(&mut qpb, 6) as c_uint;
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 6) else { return -1; };
+                    let bits = bits as c_uint;
                     if bits >= 45 {
                         return -1;
                     }
@@ -3365,7 +3376,7 @@ pub(crate) unsafe fn qr_code_data_parse(
             }
             qr_mode::STRUCT => {
                 // Structured-append header
-                let bits = qr_pack_buf_read(&mut qpb, 16);
+                let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else { return -1; };
                 if bits < 0 {
                     return -1;
                 }
@@ -3385,7 +3396,7 @@ pub(crate) unsafe fn qr_code_data_parse(
                 qr_code_data_payload::StructuredAppendedHeaderData(sa)
             }
             qr_mode::BYTE => {
-                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]);
+                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]) else { return -1; };
                 if len < 0 {
                     return -1;
                 }
@@ -3397,7 +3408,8 @@ pub(crate) unsafe fn qr_code_data_parse(
                 let mut data = vec![0; len as usize];
 
                 for b in data.iter_mut() {
-                    let c = qr_pack_buf_read(&mut qpb, 8) as c_uchar;
+                    let Some(c) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
+                    let c = c as c_uchar;
                     self_parity ^= c as c_uint;
                     *b = c;
                 }
@@ -3411,7 +3423,7 @@ pub(crate) unsafe fn qr_code_data_parse(
             }
             qr_mode::ECI => {
                 // Extended Channel Interpretation
-                let bits = qr_pack_buf_read(&mut qpb, 8);
+                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
                 if bits < 0 {
                     return -1;
                 }
@@ -3422,7 +3434,7 @@ pub(crate) unsafe fn qr_code_data_parse(
                 } else if (bits & 0x40) == 0 {
                     // Two bytes
                     let mut val = ((bits & 0x3F) as c_uint) << 8;
-                    let bits = qr_pack_buf_read(&mut qpb, 8);
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
                     if bits < 0 {
                         return -1;
                     }
@@ -3431,7 +3443,7 @@ pub(crate) unsafe fn qr_code_data_parse(
                 } else if (bits & 0x20) == 0 {
                     // Three bytes
                     let mut val = ((bits & 0x1F) as c_uint) << 16;
-                    let bits = qr_pack_buf_read(&mut qpb, 16);
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else { return -1; };
                     if bits < 0 {
                         return -1;
                     }
@@ -3448,7 +3460,7 @@ pub(crate) unsafe fn qr_code_data_parse(
                 qr_code_data_payload::ExtendedChannelInterpretation(val)
             }
             qr_mode::KANJI => {
-                let len = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]);
+                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]) else { return -1; };
                 if len < 0 {
                     return -1;
                 }
@@ -3461,7 +3473,8 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Decode 2-byte SJIS characters encoded in 13 bits
                 for i in 0..(len as usize) {
-                    let mut bits = qr_pack_buf_read(&mut qpb, 13) as c_uint;
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 13) else { return -1; };
+                    let mut bits = bits as c_uint;
                     bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
                     if bits >= 0xA000 {
                         bits += 0x4000;
@@ -3475,7 +3488,7 @@ pub(crate) unsafe fn qr_code_data_parse(
             }
             qr_mode::FNC1_2ND => {
                 // FNC1 second position marker
-                let bits = qr_pack_buf_read(&mut qpb, 8);
+                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
                 if !((0..100).contains(&bits)
                     || (165..191).contains(&bits)
                     || (197..223).contains(&bits))
