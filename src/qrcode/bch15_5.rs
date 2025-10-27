@@ -140,14 +140,10 @@ fn bch15_5_calc_epos(epos: &mut [u32; 3], s: &[u32; 3]) -> i32 {
 /// The original data is located in the top five bits.
 /// Returns the number of errors corrected, or a negative value if decoding
 /// failed due to too many bit errors, in which case y is left unchanged.
-///
-/// # Safety
-///
-/// `y` must be a valid pointer to a u32
-pub unsafe fn bch15_5_correct(y: *mut u32) -> i32 {
+pub(crate) fn bch15_5_correct(y: &mut u32) -> i32 {
     let mut s = [0u32; 3];
     let mut epos = [0u32; 3];
-    let mut y_val = y.read();
+    let mut y_val = *y;
 
     if !bch15_5_calc_syndrome(&mut s, y_val) {
         return 0;
@@ -166,7 +162,7 @@ pub unsafe fn bch15_5_correct(y: *mut u32) -> i32 {
         // just to check that we have a valid codeword
         if bch15_5_encode(y_val >> 10) == y_val {
             // Decoding succeeded
-            y.write(y_val);
+            *y = y_val;
             return nerrors;
         }
     }
@@ -204,60 +200,50 @@ mod tests {
 
     #[test]
     fn test_bch15_5_correct_no_errors() {
-        unsafe {
-            let mut y = bch15_5_encode(15);
-            let nerrors = bch15_5_correct(&mut y);
-            assert_eq!(nerrors, 0);
-            assert_eq!(y, bch15_5_encode(15));
-        }
+        let mut y = bch15_5_encode(15);
+        let nerrors = bch15_5_correct(&mut y);
+        assert_eq!(nerrors, 0);
+        assert_eq!(y, bch15_5_encode(15));
     }
 
     #[test]
     fn test_bch15_5_correct_single_error() {
-        unsafe {
-            let original = bch15_5_encode(10);
-            // Introduce a single bit error
-            let mut corrupted = original ^ (1 << 3);
-            let nerrors = bch15_5_correct(&mut corrupted);
-            assert_eq!(nerrors, 1);
-            assert_eq!(corrupted, original);
-        }
+        let original = bch15_5_encode(10);
+        // Introduce a single bit error
+        let mut corrupted = original ^ (1 << 3);
+        let nerrors = bch15_5_correct(&mut corrupted);
+        assert_eq!(nerrors, 1);
+        assert_eq!(corrupted, original);
     }
 
     #[test]
     fn test_bch15_5_correct_two_errors() {
-        unsafe {
-            let original = bch15_5_encode(5);
-            // Introduce two bit errors
-            let mut corrupted = original ^ (1 << 1) ^ (1 << 7);
-            let nerrors = bch15_5_correct(&mut corrupted);
-            assert_eq!(nerrors, 2);
-            assert_eq!(corrupted, original);
-        }
+        let original = bch15_5_encode(5);
+        // Introduce two bit errors
+        let mut corrupted = original ^ (1 << 1) ^ (1 << 7);
+        let nerrors = bch15_5_correct(&mut corrupted);
+        assert_eq!(nerrors, 2);
+        assert_eq!(corrupted, original);
     }
 
     #[test]
     fn test_bch15_5_correct_three_errors() {
-        unsafe {
-            let original = bch15_5_encode(20);
-            // Introduce three bit errors
-            let mut corrupted = original ^ (1 << 0) ^ (1 << 5) ^ (1 << 10);
-            let nerrors = bch15_5_correct(&mut corrupted);
-            assert_eq!(nerrors, 3);
-            assert_eq!(corrupted, original);
-        }
+        let original = bch15_5_encode(20);
+        // Introduce three bit errors
+        let mut corrupted = original ^ (1 << 0) ^ (1 << 5) ^ (1 << 10);
+        let nerrors = bch15_5_correct(&mut corrupted);
+        assert_eq!(nerrors, 3);
+        assert_eq!(corrupted, original);
     }
 
     #[test]
     fn test_bch15_5_correct_too_many_errors() {
-        unsafe {
-            let original = bch15_5_encode(7);
-            // Introduce four bit errors (too many to correct)
-            let mut corrupted = original ^ (1 << 0) ^ (1 << 3) ^ (1 << 6) ^ (1 << 9);
-            let nerrors = bch15_5_correct(&mut corrupted);
-            // Should fail to correct
-            assert!(nerrors < 0);
-        }
+        let original = bch15_5_encode(7);
+        // Introduce four bit errors (too many to correct)
+        let mut corrupted = original ^ (1 << 0) ^ (1 << 3) ^ (1 << 6) ^ (1 << 9);
+        let nerrors = bch15_5_correct(&mut corrupted);
+        // Should fail to correct
+        assert!(nerrors < 0);
     }
 
     #[test]

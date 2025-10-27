@@ -8,7 +8,7 @@ pub mod qrdec;
 pub mod qrdectxt;
 pub mod util;
 
-pub use bch15_5::{bch15_5_correct, bch15_5_encode};
+pub use bch15_5::bch15_5_encode;
 pub use qrdec::{
     bch18_6_correct, qr_aff_line_step, qr_finder_edge_pts_aff_classify,
     qr_finder_edge_pts_hom_classify, qr_finder_locate_crossing, qr_hamming_dist, qr_img_get_bit,
