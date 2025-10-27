@@ -397,11 +397,11 @@ pub fn qr_line_eval(line: &qr_line, x: c_int, y: c_int) -> c_int {
     line[0] * x + line[1] * y + line[2]
 }
 
-pub unsafe fn qr_line_orient(_l: *mut qr_line, _x: c_int, _y: c_int) {
-    if qr_line_eval(&*_l, _x, _y) < 0 {
-        (*_l)[0] = -(*_l)[0];
-        (*_l)[1] = -(*_l)[1];
-        (*_l)[2] = -(*_l)[2];
+pub fn qr_line_orient(_l: &mut qr_line, _x: c_int, _y: c_int) {
+    if qr_line_eval(_l, _x, _y) < 0 {
+        _l[0] = -_l[0];
+        _l[1] = -_l[1];
+        _l[2] = -_l[2];
     }
 }
 
