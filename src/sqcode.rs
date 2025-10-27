@@ -101,7 +101,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 
 /// Extract text from buffer and add to scanner results
 unsafe fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
-    let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_SQCODE, 0);
+    let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_SQCODE);
     if sym.is_null() {
         return true;
     }

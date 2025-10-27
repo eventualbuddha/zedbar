@@ -431,14 +431,12 @@ pub unsafe fn _zbar_image_scanner_quiet_border(iscn: &mut zbar_image_scanner_t) 
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym_type` - The type of symbol to allocate
-/// * `datalen` - The length of data to allocate
 ///
 /// # Returns
 /// Pointer to the allocated symbol
 pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     _iscn: &mut zbar_image_scanner_t,
     sym_type: c_int,
-    datalen: usize,
 ) -> *mut zbar_symbol_t {
     let sym = symbol_alloc_zeroed();
 
@@ -448,11 +446,6 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     sym_ref.quality = 1;
     sym_ref.orient = ZBAR_ORIENT_UNKNOWN;
     c_assert!(sym_ref.syms.is_null());
-
-    // Reserve capacity for the data (no null terminator needed in Rust)
-    if datalen > 0 {
-        sym_ref.data.reserve_exact(datalen);
-    }
 
     sym
 }
@@ -653,8 +646,8 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
         return;
     }
 
-    // Allocate new symbol (no null terminator needed in Rust)
-    let sym = _zbar_image_scanner_alloc_sym(&mut *iscn, type_ as c_int, data.len());
+    // Allocate new symbol
+    let sym = _zbar_image_scanner_alloc_sym(&mut *iscn, type_ as c_int);
     let sym_ref = &mut *sym;
     sym_ref.configs = zbar_decoder_get_configs(&*dcode, type_);
     sym_ref.modifiers = zbar_decoder_get_modifiers(dcode);
@@ -990,10 +983,9 @@ pub unsafe fn _zbar_scan_image(
             c_assert!(!ean.is_null());
             c_assert!(!addon.is_null());
 
-            // Create composite symbol (no null terminator needed in Rust)
-            let datalen = (*ean).data.len() + (*addon).data.len();
+            // Create composite symbol
             let ean_sym =
-                _zbar_image_scanner_alloc_sym(&mut *iscn, ZBAR_COMPOSITE, datalen);
+                _zbar_image_scanner_alloc_sym(&mut *iscn, ZBAR_COMPOSITE);
             (*ean_sym).orient = (*ean).orient;
             (*ean_sym).syms = symbol_set_create();
 

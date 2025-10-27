@@ -172,7 +172,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 if err {
                     break;
                 }
-                let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
+                let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE);
                 *sym_cur = sym;
                 let sym_ref = &mut *sym;
 
@@ -187,7 +187,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                         break;
                     }
                     sym_cur = &mut sym_ref.next;
-                    let next_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
+                    let next_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE);
                     *sym_cur = next_sym;
                 }
 
@@ -349,7 +349,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     sym_ref.modifiers = fnc1 as u32;
                     iscn.add_symbol(&mut *sym);
                 } else {
-                    let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
+                    let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE);
                     let sa_sym_ref = &mut *sa_sym;
                     sa_sym_ref.syms = symbol_set_create();
                     sa_sym_ref.data = sa_text;
