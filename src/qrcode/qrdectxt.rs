@@ -4,7 +4,7 @@
 */
 
 use std::collections::VecDeque;
-use std::os::raw::{c_int, c_uchar, c_uint};
+use std::os::raw::{c_int, c_uchar};
 use std::ptr::null_mut;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
@@ -18,19 +18,6 @@ use crate::img_scanner::{
 };
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
 use crate::symbol::{_zbar_symbol_add_point, symbol_set_create, zbar_symbol_t};
-
-pub union qr_code_data_entry_payload {
-    pub data: qr_code_data_entry_data,
-    pub eci: c_uint,
-    pub ai: c_int,
-    pub sa: qr_code_data_entry_sa,
-}
-
-#[derive(Clone, Copy)]
-pub struct qr_code_data_entry_data {
-    pub buf: *mut c_uchar,
-    pub len: c_int,
-}
 
 #[derive(Clone, Copy)]
 pub struct qr_code_data_entry_sa {
