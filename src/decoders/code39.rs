@@ -480,7 +480,7 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 }
 
 /// Main Code 39 decode function
-pub unsafe fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Update latest character width
     let w9 = get_width(dcode, 9);
     let w0 = get_width(dcode, 0);

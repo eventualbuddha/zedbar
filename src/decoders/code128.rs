@@ -364,12 +364,7 @@ fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
 
 /// Expand and decode character set C
 #[inline]
-unsafe fn postprocess_c(
-    dcode: &mut zbar_decoder_t,
-    start: usize,
-    end: usize,
-    dst: usize,
-) -> c_uint {
+fn postprocess_c(dcode: &mut zbar_decoder_t, start: usize, end: usize, dst: usize) -> c_uint {
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
     let old_len = dcode.code128.character() as usize;
@@ -434,7 +429,7 @@ unsafe fn postprocess_c(
 
 /// Resolve scan direction and convert to ASCII
 #[inline]
-unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
+fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
     dcode.modifiers = 0;
     dcode.direction = 1 - 2 * (dcode.code128.direction() as c_int);
     let character_count = dcode.code128.character() as usize;
@@ -637,7 +632,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 128 decode function
-pub unsafe fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Update latest character width
     dcode.code128.s6 = dcode
         .code128
