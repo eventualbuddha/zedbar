@@ -1529,16 +1529,16 @@ pub fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: c_int) -> Option<c_int> {
 }
 
 /// Get the number of bits available to read from the pack buffer
-pub unsafe fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
-    let storage = (&*_b).buf.len() as c_int;
-    ((storage - (*_b).endbyte) << 3) - (*_b).endbit
+pub fn qr_pack_buf_avail(_b: &qr_pack_buf) -> c_int {
+    let storage = _b.buf.len() as c_int;
+    ((storage - _b.endbyte) << 3) - _b.endbit
 }
 
 /// Calculate the number of codewords in a QR code of a given version
 ///
 /// This is a compact calculation that avoids a lookup table.
 /// Returns the total number of data and error correction codewords.
-pub unsafe fn qr_code_ncodewords(_version: c_uint) -> c_int {
+pub fn qr_code_ncodewords(_version: c_uint) -> c_int {
     if _version == 1 {
         return 26;
     }
