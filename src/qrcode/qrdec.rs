@@ -571,17 +571,18 @@ pub unsafe fn qr_aff_init(
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
-pub fn qr_aff_unproject(_q: &mut qr_point, _aff: &qr_aff, _x: c_int, _y: c_int) {
-    _q[0] = (_aff.inv[0][0]
+pub fn qr_aff_unproject(_aff: &qr_aff, _x: c_int, _y: c_int) -> qr_point {
+    let x = (_aff.inv[0][0]
         .wrapping_mul(_x.wrapping_sub(_aff.x0))
         .wrapping_add(_aff.inv[0][1].wrapping_mul(_y.wrapping_sub(_aff.y0)))
         .wrapping_add((1 << _aff.ires) >> 1))
         >> _aff.ires;
-    _q[1] = (_aff.inv[1][0]
+    let y = (_aff.inv[1][0]
         .wrapping_mul(_x.wrapping_sub(_aff.x0))
         .wrapping_add(_aff.inv[1][1].wrapping_mul(_y.wrapping_sub(_aff.y0)))
         .wrapping_add((1 << _aff.ires) >> 1))
         >> _aff.ires;
+    [x, y]
 }
 
 /// Map from the square domain into the image (at subpel resolution).
@@ -731,7 +732,6 @@ pub unsafe fn qr_hom_fit(
     _height: c_int,
 ) -> c_int {
     let mut l: [qr_line; 4] = [[0; 3]; 4];
-    let mut q: qr_point = [0; 2];
 
     // We attempt to correct large-scale perspective distortion by fitting lines
     // to the edge of the code area.
@@ -892,7 +892,7 @@ pub unsafe fn qr_hom_fit(
 
             if ret >= 0 {
                 if ret == 0 {
-                    qr_aff_unproject(&mut q, _aff, r[nr as usize][0], r[nr as usize][1]);
+                    let q = qr_aff_unproject(_aff, r[nr as usize][0], r[nr as usize][1]);
                     // Move the current point halfway towards the crossing
                     ru = (ru + q[0]) >> 1;
                     // But ensure that rv monotonically increases
@@ -954,7 +954,7 @@ pub unsafe fn qr_hom_fit(
 
             if ret >= 0 {
                 if ret == 0 {
-                    qr_aff_unproject(&mut q, _aff, b[nb as usize][0], b[nb as usize][1]);
+                    let q = qr_aff_unproject(_aff, b[nb as usize][0], b[nb as usize][1]);
                     // Move the current point halfway towards the crossing
                     // But ensure that bu monotonically increases
                     if q[0] + dbu > bu {
@@ -1260,8 +1260,6 @@ pub unsafe fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaC
 
         while iter_count < max_iters {
             iter_count += 1;
-            let mut q0: qr_point = [0, 0];
-            let mut q1: qr_point = [0, 0];
 
             // Pick two random points on this edge
             let p0i = rng.random_range(0..n) as usize;
@@ -1277,8 +1275,8 @@ pub unsafe fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaC
             // orientation in the square domain, reject it outright.
             // This can happen, e.g., when highly skewed orientations cause points to
             // be misclassified into the wrong edge.
-            qr_aff_unproject(&mut q0, _hom, p0[0], p0[1]);
-            qr_aff_unproject(&mut q1, _hom, p1[0], p1[1]);
+            let mut q0 = qr_aff_unproject(_hom, p0[0], p0[1]);
+            let mut q1 = qr_aff_unproject(_hom, p1[0], p1[1]);
             qr_point_translate(&mut q0, -_f.o[0], -_f.o[1]);
             qr_point_translate(&mut q1, -_f.o[0], -_f.o[1]);
 
@@ -2111,9 +2109,8 @@ pub unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &qr_aff)
         *item = 0;
     }
     for i in 0..(*c).nedge_pts {
-        let mut q = qr_point::default();
         let edge_pt = &mut *(*c).edge_pts.add(i);
-        qr_aff_unproject(&mut q, _aff, edge_pt.pos[0], edge_pt.pos[1]);
+        let mut q = qr_aff_unproject(_aff, edge_pt.pos[0], edge_pt.pos[1]);
         qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
         let d = c_int::from(q[1].abs() > q[0].abs());
         let e = d << 1 | c_int::from(q[d as usize] >= 0);
@@ -4489,12 +4486,12 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             - QR_FINDER_SUBPREC
             - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
         qr_aff_init(&mut aff, &(*ul.c).pos, &(*ur.c).pos, &(*dl.c).pos, res);
-        qr_aff_unproject(&mut ur.o, &aff, (*ur.c).pos[0], (*ur.c).pos[1]);
+        ur.o = qr_aff_unproject(&aff, (*ur.c).pos[0], (*ur.c).pos[1]);
         qr_finder_edge_pts_aff_classify(&mut ur, &aff);
         if qr_finder_estimate_module_size_and_version(&mut ur, 1 << res, 1 << res) < 0 {
             continue;
         }
-        qr_aff_unproject(&mut dl.o, &aff, (*dl.c).pos[0], (*dl.c).pos[1]);
+        dl.o = qr_aff_unproject(&aff, (*dl.c).pos[0], (*dl.c).pos[1]);
         qr_finder_edge_pts_aff_classify(&mut dl, &aff);
         if qr_finder_estimate_module_size_and_version(&mut dl, 1 << res, 1 << res) < 0 {
             continue;
@@ -4506,7 +4503,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             continue;
         }
 
-        qr_aff_unproject(&mut ul.o, &aff, (*ul.c).pos[0], (*ul.c).pos[1]);
+        ul.o = qr_aff_unproject(&aff, (*ul.c).pos[0], (*ul.c).pos[1]);
         qr_finder_edge_pts_aff_classify(&mut ul, &aff);
         if qr_finder_estimate_module_size_and_version(&mut ul, 1 << res, 1 << res) < 0
             || (ul.eversion[1] - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK
