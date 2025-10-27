@@ -4,7 +4,7 @@
 */
 
 use std::collections::VecDeque;
-use std::os::raw::{c_char, c_int, c_uchar, c_uint};
+use std::os::raw::{c_int, c_uchar, c_uint};
 use std::ptr::null_mut;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
@@ -188,7 +188,6 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
                 *sym_cur = sym;
                 let sym_ref = &mut *sym;
-                sym_ref.datalen = sa_text.len() as u32;
 
                 if sa[j] < 0 {
                     sym_ref.symbol_type = ZBAR_PARTIAL;
@@ -200,8 +199,6 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     if j >= sa_size {
                         break;
                     }
-                    sa_text.push(0);
-                    sym_ref.datalen = sa_text.len() as u32;
                     sym_cur = &mut sym_ref.next;
                     let next_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
                     *sym_cur = next_sym;
@@ -356,30 +353,19 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
             }
 
             if !err {
-                sa_text.push(0);
                 sa_text.shrink_to_fit();
-                let len = sa_text.len();
-                let ptr = sa_text.as_mut_ptr();
-                std::mem::forget(sa_text);
 
                 if sa_size == 1 {
                     let sym = syms_head;
                     let sym_ref = &mut *sym;
-                    sym_ref.data = ptr as *mut c_char;
-                    sym_ref.datalen = (len - 1) as u32;
-                    sym_ref.data_alloc = len as u32;
+                    sym_ref.data = sa_text;
                     sym_ref.modifiers = fnc1 as u32;
                     iscn.add_symbol(&mut *sym);
                 } else {
                     let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE, 0);
                     let sa_sym_ref = &mut *sa_sym;
                     sa_sym_ref.syms = symbol_set_create();
-                    // This part is complex, involving restructuring the symbol set.
-                    // For now, we just add the combined text to a single symbol.
-                    // A full port would need to replicate the logic from the C code.
-                    sa_sym_ref.data = ptr as *mut c_char;
-                    sa_sym_ref.datalen = (len - 1) as u32;
-                    sa_sym_ref.data_alloc = len as u32;
+                    sa_sym_ref.data = sa_text;
                     sa_sym_ref.modifiers = fnc1 as u32;
                     iscn.add_symbol(&mut *sa_sym);
                     _zbar_image_scanner_recycle_syms(iscn, syms_head);

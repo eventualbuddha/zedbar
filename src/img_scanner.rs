@@ -1,9 +1,9 @@
 use std::{
     ffi::c_void,
-    ptr::{copy_nonoverlapping, null_mut, NonNull},
+    ptr::{null_mut, NonNull},
 };
 
-use libc::{c_int, c_uint, memcmp, size_t};
+use libc::{c_int, c_uint};
 
 use crate::{
     decoder::zbar_decoder_get_config,
@@ -27,7 +27,7 @@ use crate::{
     sqcode::{sq_decode, SqReader},
     symbol::{
         _zbar_symbol_add_point, get_symbol_hash, symbol_alloc_zeroed, symbol_clear_data,
-        symbol_free, symbol_refcnt, symbol_reserve_data, symbol_set_create, symbol_set_free,
+        symbol_free, symbol_refcnt, symbol_set_create, symbol_set_free,
         zbar_symbol_set_ref, zbar_symbol_t,
     },
 };
@@ -214,7 +214,6 @@ impl zbar_image_scanner_t {
     pub(crate) unsafe fn find_duplicate_symbol(
         &mut self,
         type_: c_int,
-        datalen: usize,
         data: &[u8],
     ) -> *mut zbar_symbol_t {
         let syms = self.syms_ptr();
@@ -225,14 +224,7 @@ impl zbar_image_scanner_t {
         };
         while !sym.is_null() {
             let sym_ref = &mut *sym;
-            if sym_ref.symbol_type == type_
-                && sym_ref.datalen == datalen as c_uint
-                && memcmp(
-                    sym_ref.data as *const c_void,
-                    data.as_ptr() as *const c_void,
-                    datalen as size_t,
-                ) == 0
-            {
+            if sym_ref.symbol_type == type_ && sym_ref.data == data {
                 return sym;
             }
             sym = sym_ref.next;
@@ -401,11 +393,11 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
         if (*sym).refcnt != 0 && refcnt!((*sym).refcnt, -1) != 0 {
             // Unlink referenced symbol
             // FIXME handle outstanding component refs (currently unsupported)
-            c_assert!((*sym).data_alloc != 0);
+            c_assert!((*sym).data.capacity() != 0);
             (*sym).next = null_mut();
         } else {
             // Recycle unreferenced symbol
-            if (*sym).data_alloc == 0 {
+            if (*sym).data.capacity() == 0 {
                 symbol_clear_data(sym);
             }
 
@@ -425,14 +417,13 @@ pub unsafe fn _zbar_image_scanner_recycle_syms(
             // Find appropriate bucket based on data allocation size
             let mut i = 0;
             while i < RECYCLE_BUCKETS {
-                if ((*sym).data_alloc as c_int) < (1 << (i * 2)) {
+                if (*sym).data.capacity() < (1 << (i * 2)) {
                     break;
                 }
                 i += 1;
             }
 
             if i == RECYCLE_BUCKETS {
-                c_assert!(!(*sym).data.is_null());
                 symbol_clear_data(sym);
                 i = 0;
             }
@@ -528,14 +519,9 @@ pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
     sym_ref.orient = ZBAR_ORIENT_UNKNOWN;
     c_assert!(sym_ref.syms.is_null());
 
+    // Reserve capacity for the data (no null terminator needed in Rust)
     if datalen > 0 {
-        if symbol_reserve_data(sym, datalen as usize) {
-            sym_ref.datalen = (datalen - 1) as c_uint;
-        } else {
-            symbol_clear_data(sym);
-        }
-    } else {
-        symbol_clear_data(sym);
+        sym_ref.data.reserve_exact(datalen as usize);
     }
 
     sym
@@ -744,9 +730,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     }
 
     let data = (*dcode).buffer_slice();
-    let datalen = data.len();
-
-    let sym = iscn_ref.find_duplicate_symbol(type_, datalen, data);
+    let sym = iscn_ref.find_duplicate_symbol(type_, data);
     if !sym.is_null() {
         (*sym).quality += 1;
         if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
@@ -755,14 +739,14 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
         return;
     }
 
-    // Allocate new symbol
-    let sym = _zbar_image_scanner_alloc_sym(&mut *iscn, type_ as c_int, (datalen + 1) as c_int);
+    // Allocate new symbol (no null terminator needed in Rust)
+    let sym = _zbar_image_scanner_alloc_sym(&mut *iscn, type_ as c_int, data.len() as c_int);
     let sym_ref = &mut *sym;
     sym_ref.configs = zbar_decoder_get_configs(&*dcode, type_);
     sym_ref.modifiers = zbar_decoder_get_modifiers(dcode);
 
     // Copy data
-    copy_nonoverlapping(data.as_ptr(), sym_ref.data as *mut u8, datalen + 1);
+    sym_ref.data.extend_from_slice(data);
 
     // Initialize position
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
@@ -1092,24 +1076,16 @@ pub unsafe fn _zbar_scan_image(
             c_assert!(!ean.is_null());
             c_assert!(!addon.is_null());
 
-            // Create composite symbol
-            let datalen = (*ean).datalen + (*addon).datalen + 1;
+            // Create composite symbol (no null terminator needed in Rust)
+            let datalen = (*ean).data.len() + (*addon).data.len();
             let ean_sym =
                 _zbar_image_scanner_alloc_sym(&mut *iscn, ZBAR_COMPOSITE, datalen as c_int);
             (*ean_sym).orient = (*ean).orient;
             (*ean_sym).syms = symbol_set_create();
 
             // Copy data
-            copy_nonoverlapping(
-                (*ean).data as *const u8,
-                (*ean_sym).data as *mut u8,
-                (*ean).datalen as usize,
-            );
-            copy_nonoverlapping(
-                (*addon).data as *const u8,
-                ((*ean_sym).data as *mut u8).offset((*ean).datalen as isize),
-                ((*addon).datalen + 1) as usize,
-            );
+            (*ean_sym).data.extend_from_slice(&(*ean).data);
+            (*ean_sym).data.extend_from_slice(&(*addon).data);
 
             // Link symbols
             (*(*ean_sym).syms).head = ean;

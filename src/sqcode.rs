@@ -9,13 +9,8 @@ use crate::{
         _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_t,
     },
 };
-use libc::{c_char, c_int, c_uint, size_t};
+use libc::{c_int, size_t};
 use std::io::Write;
-
-#[inline]
-unsafe fn sq_alloc_c_string(len: usize) -> *mut c_char {
-    libc::malloc(len) as *mut c_char
-}
 
 const ZBAR_SQCODE: i32 = 0x80; // SQCODE symbol type
 
@@ -106,8 +101,6 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 
 /// Extract text from buffer and add to scanner results
 unsafe fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
-    let b64_len = len.div_ceil(3) * 4;
-
     let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_SQCODE, 0);
     if sym.is_null() {
         return true;
@@ -121,19 +114,8 @@ unsafe fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size
         }
     };
 
-    // Allocate C string
-    let data_ptr = sq_alloc_c_string(encoded.len());
-    if data_ptr.is_null() {
-        _zbar_image_scanner_recycle_syms(iscn, sym);
-        return true;
-    }
-
-    std::ptr::copy_nonoverlapping(encoded.as_ptr(), data_ptr as *mut u8, encoded.len());
-
     let sym = &mut *sym;
-    sym.data = data_ptr;
-    sym.data_alloc = (b64_len + 1) as c_uint;
-    sym.datalen = b64_len as c_uint;
+    sym.data = encoded;
 
     iscn.add_symbol(&mut *sym);
     false

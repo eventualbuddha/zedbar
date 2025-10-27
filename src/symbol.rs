@@ -18,7 +18,7 @@ use crate::{
     img_scanner::zbar_symbol_set_t,
     refcnt,
 };
-use libc::{c_char, c_int, c_uint, c_void};
+use libc::{c_int, c_uint, c_void};
 use std::{mem::size_of, ptr};
 
 const NUM_SYMS: usize = 20;
@@ -123,9 +123,7 @@ pub struct zbar_symbol_t {
     pub(crate) symbol_type: c_int,
     pub(crate) configs: c_uint,
     pub(crate) modifiers: c_uint,
-    pub(crate) data_alloc: c_uint,
-    pub(crate) datalen: c_uint,
-    pub(crate) data: *mut c_char,
+    pub(crate) data: Vec<u8>,
     pub(crate) pts_alloc: c_uint,
     pub(crate) npts: c_uint,
     pub(crate) pts: *mut c_void,
@@ -147,11 +145,6 @@ impl Drop for zbar_symbol_t {
         if !self.pts.is_null() {
             unsafe {
                 libc::free(self.pts);
-            }
-        }
-        if self.data_alloc != 0 && !self.data.is_null() {
-            unsafe {
-                libc::free(self.data as *mut c_void);
             }
         }
     }
@@ -215,38 +208,7 @@ pub(crate) unsafe fn symbol_clear_data(sym: *mut zbar_symbol_t) {
     }
     let sym = &mut *sym;
 
-    if !sym.data.is_null() {
-        libc::free(sym.data as *mut c_void);
-    }
-    sym.data = ptr::null_mut();
-    sym.datalen = 0;
-    sym.data_alloc = 0;
-}
-
-/// Ensure the symbol data buffer can hold at least `capacity` bytes (including null terminator).
-/// Returns `true` on success and leaves the buffer unchanged on failure.
-pub(crate) unsafe fn symbol_reserve_data(sym: *mut zbar_symbol_t, capacity: usize) -> bool {
-    if sym.is_null() {
-        return false;
-    }
-    let sym = &mut *sym;
-
-    if capacity == 0 {
-        symbol_clear_data(sym as *mut _);
-        return true;
-    }
-    if sym.data_alloc as usize >= capacity {
-        return true;
-    }
-
-    let new_ptr = libc::realloc(sym.data as *mut c_void, capacity) as *mut c_char;
-    if new_ptr.is_null() {
-        return false;
-    }
-
-    sym.data = new_ptr;
-    sym.data_alloc = capacity as c_uint;
-    true
+    sym.data.clear();
 }
 
 /// Ensure the symbol point array can store at least `capacity` points.
@@ -401,15 +363,7 @@ impl Symbol {
 
     /// Get the decoded data as bytes
     pub fn data(&self) -> &[u8] {
-        unsafe {
-            let data_ptr = (*self.ptr).data;
-            let data_len = (*self.ptr).datalen as usize;
-            if data_ptr.is_null() || data_len == 0 {
-                &[]
-            } else {
-                std::slice::from_raw_parts(data_ptr as *const u8, data_len)
-            }
-        }
+        unsafe { &(*self.ptr).data }
     }
 
     /// Get the decoded data as a string (if valid UTF-8)
