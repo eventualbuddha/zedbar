@@ -1486,19 +1486,10 @@ pub unsafe fn qr_hom_unproject(
 ///
 /// Bit reading code adapted from libogg/libtheora
 /// Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.
-pub struct qr_pack_buf {
-    buf: *const c_uchar,
+pub struct qr_pack_buf<'a> {
+    buf: &'a [c_uchar],
     endbyte: c_int,
     endbit: c_int,
-    storage: c_int,
-}
-
-/// Initialize a pack buffer for reading bits from data
-pub unsafe fn qr_pack_buf_init(_b: &mut qr_pack_buf, _data: *const c_uchar, _ndata: c_int) {
-    _b.buf = _data;
-    _b.storage = _ndata;
-    _b.endbyte = 0;
-    _b.endbit = 0;
 }
 
 /// Read bits from the pack buffer
@@ -1508,7 +1499,8 @@ pub unsafe fn qr_pack_buf_init(_b: &mut qr_pack_buf, _data: *const c_uchar, _nda
 pub unsafe fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
     let m = 16 - _bits;
     let bits = _bits + (*_b).endbit;
-    let d = (*_b).storage - (*_b).endbyte;
+    let storage = (&*_b).buf.len() as c_int;
+    let d = storage - (*_b).endbyte;
 
     if d <= 2 {
         // Not the main path
@@ -1524,7 +1516,7 @@ pub unsafe fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
         }
     }
 
-    let p = (*_b).buf.add((*_b).endbyte as usize);
+    let p = (*_b).buf.as_ptr().add((*_b).endbyte as usize);
     let mut ret = (c_uint::from(*p) << (8 + (*_b).endbit)) as c_uint;
     if bits > 8 {
         ret |= c_uint::from(*p.add(1)) << (*_b).endbit;
@@ -1539,7 +1531,8 @@ pub unsafe fn qr_pack_buf_read(_b: *mut qr_pack_buf, _bits: c_int) -> c_int {
 
 /// Get the number of bits available to read from the pack buffer
 pub unsafe fn qr_pack_buf_avail(_b: *const qr_pack_buf) -> c_int {
-    (((*_b).storage - (*_b).endbyte) << 3) - (*_b).endbit
+    let storage = (&*_b).buf.len() as c_int;
+    ((storage - (*_b).endbyte) << 3) - (*_b).endbit
 }
 
 /// Calculate the number of codewords in a QR code of a given version
@@ -3234,7 +3227,6 @@ pub(crate) unsafe fn qr_code_data_parse(
         [14, 13, 16, 12], // Versions 27-40
     ];
 
-    let mut qpb: qr_pack_buf = std::mem::zeroed();
     let mut self_parity: c_uint = 0;
 
     // Entries are stored directly in the struct during parsing
@@ -3244,7 +3236,12 @@ pub(crate) unsafe fn qr_code_data_parse(
     // The versions are divided into 3 ranges that each use a different number of bits for length fields
     let len_bits_idx = (if _version > 9 { 1 } else { 0 }) + (if _version > 26 { 1 } else { 0 });
 
-    qr_pack_buf_init(&mut qpb, _data, _ndata);
+    let data_slice = std::slice::from_raw_parts(_data, _ndata as usize);
+    let mut qpb = qr_pack_buf {
+        buf: data_slice,
+        endbyte: 0,
+        endbit: 0,
+    };
 
     // While we have enough bits to read a mode...
     while qr_pack_buf_avail(&qpb) >= 4 {
