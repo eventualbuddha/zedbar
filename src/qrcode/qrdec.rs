@@ -236,7 +236,7 @@ struct qr_sampling_grid {
     /// Array of homography cells for mapping between code and image space
     pub cells: [*mut qr_hom_cell; 6],
     /// Mask indicating which modules are part of function patterns
-    pub fpmask: *mut c_uint,
+    pub fpmask: Vec<c_uint>,
     /// Limits for each cell region
     pub cell_limits: [c_int; 6],
     /// Number of cells in use
@@ -251,11 +251,6 @@ pub struct qr_finder_lines {
 
 unsafe fn qr_alloc_array<T>(count: usize) -> *mut T {
     libc::malloc(count * size_of::<T>()) as *mut T
-}
-
-#[inline]
-unsafe fn qr_calloc_array<T>(count: usize) -> *mut T {
-    libc::calloc(count, size_of::<T>()) as *mut T
 }
 
 #[inline]
@@ -1081,12 +1076,7 @@ pub unsafe fn qr_hom_fit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.
-pub fn qr_hom_fproject(
-    _hom: &qr_hom,
-    mut _x: c_int,
-    mut _y: c_int,
-    mut _w: c_int,
-) -> qr_point {
+pub fn qr_hom_fproject(_hom: &qr_hom, mut _x: c_int, mut _y: c_int, mut _w: c_int) -> qr_point {
     if _w == 0 {
         [
             if _x < 0 { c_int::MIN } else { c_int::MAX },
@@ -1098,10 +1088,7 @@ pub fn qr_hom_fproject(
             _y = -_y;
             _w = -_w;
         }
-        [
-            qr_divround(_x, _w) + _hom.x0,
-            qr_divround(_y, _w) + _hom.y0,
-        ]
+        [qr_divround(_x, _w) + _hom.x0, qr_divround(_y, _w) + _hom.y0]
     }
 }
 
@@ -1303,20 +1290,12 @@ pub unsafe fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaC
             // We grossly approximate the standard deviation as 1 pixel in one
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
-            let thresh = qr_isqrt(
-                qr_point_distance2(p0, p1) << (2 * QR_FINDER_SUBPREC + 1),
-            ) as c_int;
+            let thresh =
+                qr_isqrt(qr_point_distance2(p0, p1) << (2 * QR_FINDER_SUBPREC + 1)) as c_int;
             let mut ninliers = 0;
 
             for j in 0..n {
-                if qr_point_ccw(
-                    p0,
-                    p1,
-                    &(*edge_pts.offset(j as isize)).pos,
-                )
-                .abs()
-                    <= thresh
-                {
+                if qr_point_ccw(p0, p1, &(*edge_pts.offset(j as isize)).pos).abs() <= thresh {
                     (*edge_pts.offset(j as isize)).extent |= 1;
                     ninliers += 1;
                 } else {
@@ -1453,11 +1432,7 @@ pub unsafe fn qr_line_fit_finder_pair(
 /// Map from the image (at subpel resolution) into the square domain.
 /// Returns `Err(point)` with infinity values if the point went to infinity,
 /// otherwise returns `Ok(point)` with the projected coordinates.
-pub fn qr_hom_unproject(
-    _hom: &qr_hom,
-    mut _x: c_int,
-    mut _y: c_int,
-) -> Result<qr_point, qr_point> {
+pub fn qr_hom_unproject(_hom: &qr_hom, mut _x: c_int, mut _y: c_int) -> Result<qr_point, qr_point> {
     _x = _x.wrapping_sub(_hom.x0);
     _y = _y.wrapping_sub(_hom.y0);
     let mut x = _hom.inv[0][0]
@@ -2001,10 +1976,8 @@ unsafe fn qr_sampling_grid_fp_mask_rect(
     let stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
     for j in _u..(_u + _w) {
         for i in _v..(_v + _h) {
-            *_grid
-                .fpmask
-                .offset((j * stride + (i >> QR_INT_LOGBITS)) as isize) |=
-                1 << (i & (QR_INT_BITS - 1));
+            let idx = (j * stride + (i >> QR_INT_LOGBITS)) as usize;
+            _grid.fpmask[idx] |= 1 << (i & (QR_INT_BITS - 1));
         }
     }
 }
@@ -2018,10 +1991,9 @@ unsafe fn qr_sampling_grid_is_in_fp(
     _u: c_int,
     _v: c_int,
 ) -> c_int {
-    ((*(*_grid).fpmask.offset(
-        (_u * ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) + (_v >> QR_INT_LOGBITS)) as isize,
-    )) >> (_v & (QR_INT_BITS - 1))
-        & 1) as c_int
+    let idx = (_u * ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) + (_v >> QR_INT_LOGBITS)) as usize;
+    let grid_ref = &*_grid;
+    ((grid_ref.fpmask[idx]) >> (_v & (QR_INT_BITS - 1)) & 1) as c_int
 }
 
 /// The spacing between alignment patterns after the second for versions >= 7
@@ -2234,12 +2206,7 @@ pub unsafe fn qr_finder_quick_crossing_check(
 /// # Returns
 /// - `Ok(dv)` with the computed step in v direction on success
 /// - `Err(-1)` if the line is too steep (>45 degrees from horizontal/vertical)
-pub fn qr_aff_line_step(
-    aff: &qr_aff,
-    line: &qr_line,
-    v: c_int,
-    du: c_int,
-) -> Result<c_int, c_int> {
+pub fn qr_aff_line_step(aff: &qr_aff, line: &qr_line, v: c_int, du: c_int) -> Result<c_int, c_int> {
     let l0 = line[0];
     let l1 = line[1];
 
@@ -2689,7 +2656,7 @@ pub unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int
 /// This function is unsafe because it frees raw pointers.
 unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
     if !_grid.is_null() {
-        qr_free_array((*_grid).fpmask);
+        // fpmask is now a Vec and will be automatically deallocated
         qr_free_array((*_grid).cells[0]);
     }
 }
@@ -2757,7 +2724,7 @@ unsafe fn qr_sampling_grid_init(
 
     // Initialize the function pattern mask
     let stride = ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
-    (*_grid).fpmask = qr_calloc_array::<c_uint>(dim as usize * stride);
+    (*_grid).fpmask = vec![0; dim as usize * stride];
 
     // Mask out the finder patterns (and separators and format info bits)
     qr_sampling_grid_fp_mask_rect(&mut *_grid, dim, 0, 0, 9, 9);
@@ -3342,7 +3309,9 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Read groups of two characters encoded in 11 bits
                 for _ in 0..count {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 11) else { return -1; };
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 11) else {
+                        return -1;
+                    };
                     let bits = bits as c_uint;
                     if bits >= 2025 {
                         return -1;
@@ -3360,7 +3329,9 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Read the last character encoded in 6 bits
                 if rem != 0 {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 6) else { return -1; };
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 6) else {
+                        return -1;
+                    };
                     let bits = bits as c_uint;
                     if bits >= 45 {
                         return -1;
@@ -3374,7 +3345,9 @@ pub(crate) unsafe fn qr_code_data_parse(
             }
             qr_mode::STRUCT => {
                 // Structured-append header
-                let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else { return -1; };
+                let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
+                    return -1;
+                };
 
                 let mut sa = qr_code_data_sa::default();
 
@@ -3391,7 +3364,9 @@ pub(crate) unsafe fn qr_code_data_parse(
                 qr_code_data_payload::StructuredAppendedHeaderData(sa)
             }
             qr_mode::BYTE => {
-                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]) else { return -1; };
+                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]) else {
+                    return -1;
+                };
                 if len < 0 {
                     return -1;
                 }
@@ -3403,7 +3378,9 @@ pub(crate) unsafe fn qr_code_data_parse(
                 let mut data = vec![0; len as usize];
 
                 for b in data.iter_mut() {
-                    let Some(c) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
+                    let Some(c) = qr_pack_buf_read(&mut qpb, 8) else {
+                        return -1;
+                    };
                     let c = c as c_uchar;
                     self_parity ^= c as c_uint;
                     *b = c;
@@ -3418,7 +3395,9 @@ pub(crate) unsafe fn qr_code_data_parse(
             }
             qr_mode::ECI => {
                 // Extended Channel Interpretation
-                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
+                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
+                    return -1;
+                };
 
                 let val = if (bits & 0x80) == 0 {
                     // One byte
@@ -3426,13 +3405,17 @@ pub(crate) unsafe fn qr_code_data_parse(
                 } else if (bits & 0x40) == 0 {
                     // Two bytes
                     let mut val = ((bits & 0x3F) as c_uint) << 8;
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
+                        return -1;
+                    };
                     val |= bits as c_uint;
                     val
                 } else if (bits & 0x20) == 0 {
                     // Three bytes
                     let mut val = ((bits & 0x1F) as c_uint) << 16;
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else { return -1; };
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
+                        return -1;
+                    };
                     val |= bits as c_uint;
                     if val >= 1000000 {
                         return -1;
@@ -3446,7 +3429,9 @@ pub(crate) unsafe fn qr_code_data_parse(
                 qr_code_data_payload::ExtendedChannelInterpretation(val)
             }
             qr_mode::KANJI => {
-                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]) else { return -1; };
+                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]) else {
+                    return -1;
+                };
                 if len < 0 {
                     return -1;
                 }
@@ -3459,7 +3444,9 @@ pub(crate) unsafe fn qr_code_data_parse(
 
                 // Decode 2-byte SJIS characters encoded in 13 bits
                 for i in 0..(len as usize) {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 13) else { return -1; };
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 13) else {
+                        return -1;
+                    };
                     let mut bits = bits as c_uint;
                     bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
                     if bits >= 0xA000 {
@@ -3474,7 +3461,9 @@ pub(crate) unsafe fn qr_code_data_parse(
             }
             qr_mode::FNC1_2ND => {
                 // FNC1 second position marker
-                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else { return -1; };
+                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
+                    return -1;
+                };
                 if !((0..100).contains(&bits)
                     || (165..191).contains(&bits)
                     || (197..223).contains(&bits))
@@ -3517,7 +3506,12 @@ unsafe fn qr_code_decode(
     _width: c_int,
     _height: c_int,
 ) -> c_int {
-    let mut grid: qr_sampling_grid = std::mem::zeroed();
+    let mut grid: qr_sampling_grid = qr_sampling_grid {
+        cells: [null_mut(); 6],
+        fpmask: Vec::new(),
+        cell_limits: [0; 6],
+        ncells: 0,
+    };
 
     // Read the bits out of the image
     qr_sampling_grid_init(
@@ -3562,7 +3556,7 @@ unsafe fn qr_code_decode(
         block_sz - npar,
         nshort_blocks,
         data_bits,
-        grid.fpmask,
+        grid.fpmask.as_ptr(),
         dim,
     );
 
@@ -4424,11 +4418,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     let mut i0: usize;
 
     // Sort the points in counter-clockwise order
-    let ccw: c_int = qr_point_ccw(
-        &(**_c.add(0)).pos,
-        &(**_c.add(1)).pos,
-        &(**_c.add(2)).pos,
-    );
+    let ccw: c_int = qr_point_ccw(&(**_c.add(0)).pos, &(**_c.add(1)).pos, &(**_c.add(2)).pos);
 
     // Colinear points can't be the corners of a quadrilateral
     if ccw == 0 {
@@ -4449,10 +4439,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     maxd = qr_point_distance2(&(**_c.add(1)).pos, &(**_c.add(2)).pos);
     i0 = 0;
     for i in 1..3 {
-        let d = qr_point_distance2(
-            &(**_c.add(ci[i + 1])).pos,
-            &(**_c.add(ci[i + 2])).pos,
-        );
+        let d = qr_point_distance2(&(**_c.add(ci[i + 1])).pos, &(**_c.add(ci[i + 2])).pos);
         if d > maxd {
             i0 = i;
             maxd = d;
@@ -4757,26 +4744,14 @@ unsafe fn qr_reader_match_centers(
                         ninside = 0;
                         for l in 0.._ncenters {
                             if mark[l] == 0
-                                && qr_point_ccw(
-                                    &qrdata.bbox[0],
-                                    &qrdata.bbox[1],
-                                    &_centers[l].pos,
-                                ) >= 0
-                                && qr_point_ccw(
-                                    &qrdata.bbox[1],
-                                    &qrdata.bbox[3],
-                                    &_centers[l].pos,
-                                ) >= 0
-                                && qr_point_ccw(
-                                    &qrdata.bbox[3],
-                                    &qrdata.bbox[2],
-                                    &_centers[l].pos,
-                                ) >= 0
-                                && qr_point_ccw(
-                                    &qrdata.bbox[2],
-                                    &qrdata.bbox[0],
-                                    &_centers[l].pos,
-                                ) >= 0
+                                && qr_point_ccw(&qrdata.bbox[0], &qrdata.bbox[1], &_centers[l].pos)
+                                    >= 0
+                                && qr_point_ccw(&qrdata.bbox[1], &qrdata.bbox[3], &_centers[l].pos)
+                                    >= 0
+                                && qr_point_ccw(&qrdata.bbox[3], &qrdata.bbox[2], &_centers[l].pos)
+                                    >= 0
+                                && qr_point_ccw(&qrdata.bbox[2], &qrdata.bbox[0], &_centers[l].pos)
+                                    >= 0
                             {
                                 mark[l] = 2;
                                 ninside += 1;
