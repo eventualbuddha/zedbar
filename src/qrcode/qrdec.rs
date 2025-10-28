@@ -97,14 +97,12 @@ fn qr_signmask(x: i64) -> i64 {
 /// Project alignment pattern center to corner of QR code
 ///
 /// Given three corners and an alignment pattern center, compute the fourth corner
-/// by geometric projection. Returns 0 on success, -1 if projection fails.
-unsafe fn qr_hom_project_alignment_to_corner(
-    brx: &mut c_int,
-    bry: &mut c_int,
+/// by geometric projection. Returns `Ok((brx, bry))` on success, `Err(-1)` if projection fails.
+fn qr_hom_project_alignment_to_corner(
     p: &[qr_point],
     p3: &qr_point,
     dim: c_int,
-) -> c_int {
+) -> Result<(c_int, c_int), c_int> {
     let p0 = &p[0];
     let p1 = &p[1];
     let p2 = &p[2];
@@ -125,7 +123,7 @@ unsafe fn qr_hom_project_alignment_to_corner(
 
     // The projection failed: invalid geometry
     if w == 0 {
-        return -1;
+        return Err(-1);
     }
 
     let mask = qr_signmask(w);
@@ -142,7 +140,7 @@ unsafe fn qr_hom_project_alignment_to_corner(
         ),
     ) + mask)
         ^ mask;
-    *brx = ((brx_num + brx_num.signum() * (w >> 1)) / w) as c_int;
+    let brx = ((brx_num + brx_num.signum() * (w >> 1)) / w) as c_int;
 
     let bry_num = (qr_extmul(
         (dim - 7) * p0[1],
@@ -154,9 +152,9 @@ unsafe fn qr_hom_project_alignment_to_corner(
         ),
     ) + mask)
         ^ mask;
-    *bry = ((bry_num + bry_num.signum() * (w >> 1)) / w) as c_int;
+    let bry = ((bry_num + bry_num.signum() * (w >> 1)) / w) as c_int;
 
-    0
+    Ok((brx, bry))
 }
 
 /// Fit a line to collected edge points, or use axis-aligned fallback if insufficient points
@@ -175,26 +173,22 @@ unsafe fn qr_hom_fit_edge_line(
     if npts > 1 {
         qr_line_fit_points(line, pts, npts, (*aff).res);
     } else {
-        let mut p: qr_point = [0; 2];
-
         // Project reference point from the finder pattern
-        if edge_axis == 1 {
+        let p = if edge_axis == 1 {
             // Right edge: project from UR finder, extending 3 modules to the right
             qr_aff_project(
-                &mut p,
                 &*aff,
                 (*finder).o[0] + 3 * (*finder).size[0],
                 (*finder).o[1],
-            );
+            )
         } else {
             // Bottom edge (axis 3): project from DL finder, extending 3 modules down
             qr_aff_project(
-                &mut p,
                 &*aff,
                 (*finder).o[0],
                 (*finder).o[1] + 3 * (*finder).size[1],
-            );
-        }
+            )
+        };
 
         // Calculate normalization shift (always uses column 1 of affine matrix)
         let shift = 0.max(
@@ -429,19 +423,20 @@ pub unsafe fn qr_line_isect(_l0: &qr_line, _l1: &qr_line) -> Option<qr_point> {
 /// Fit a line to covariance data using least-squares
 ///
 /// # Parameters
-/// - `_l`: Output line (Ax + By + C = 0)
 /// - `_x0`, `_y0`: Centroid coordinates
 /// - `_sxx`, `_sxy`, `_syy`: Covariance matrix values
 /// - `_res`: Resolution bits for scaling
-pub unsafe fn qr_line_fit(
-    _l: *mut qr_line,
+///
+/// # Returns
+/// Line equation (Ax + By + C = 0)
+pub fn qr_line_fit(
     _x0: c_int,
     _y0: c_int,
     _sxx: c_int,
     _sxy: c_int,
     _syy: c_int,
     _res: c_int,
-) {
+) -> qr_line {
     let u = (_sxx - _syy).abs();
     let v = -_sxy << 1;
     let w = qr_ihypot(u, v) as c_int;
@@ -451,16 +446,18 @@ pub unsafe fn qr_line_fit(
     let dshift = 0.max(qr_ilog(u.max(v.abs()) as u32) + 1 - ((_res + 1) >> 1));
     let dround = (1 << dshift) >> 1;
 
+    let mut line = qr_line::default();
     if _sxx > _syy {
-        (*_l)[0] = (v + dround) >> dshift;
-        (*_l)[1] = (u + w + dround) >> dshift;
+        line[0] = (v + dround) >> dshift;
+        line[1] = (u + w + dround) >> dshift;
     } else {
-        (*_l)[0] = (u + w + dround) >> dshift;
-        (*_l)[1] = (v + dround) >> dshift;
+        line[0] = (u + w + dround) >> dshift;
+        line[1] = (v + dround) >> dshift;
     }
-    (*_l)[2] = -(_x0
-        .wrapping_mul((*_l)[0])
-        .wrapping_add(_y0.wrapping_mul((*_l)[1])));
+    line[2] = -(_x0
+        .wrapping_mul(line[0])
+        .wrapping_add(_y0.wrapping_mul(line[1])));
+    line
 }
 
 /// Perform a least-squares line fit to a list of points
@@ -520,7 +517,7 @@ pub unsafe fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usi
         syy = syy.wrapping_add(dy.wrapping_mul(dy));
     }
 
-    qr_line_fit(_l, xbar, ybar, sxx, sxy, syy, _res);
+    *_l = qr_line_fit(xbar, ybar, sxx, sxy, syy, _res);
 }
 
 /// An affine homography.
@@ -586,19 +583,20 @@ pub fn qr_aff_unproject(_aff: &qr_aff, _x: c_int, _y: c_int) -> qr_point {
 }
 
 /// Map from the square domain into the image (at subpel resolution).
-pub fn qr_aff_project(_p: &mut qr_point, _aff: &qr_aff, _u: c_int, _v: c_int) {
-    _p[0] = ((_aff.fwd[0][0]
+pub fn qr_aff_project(_aff: &qr_aff, _u: c_int, _v: c_int) -> qr_point {
+    let x = ((_aff.fwd[0][0]
         .wrapping_mul(_u)
         .wrapping_add(_aff.fwd[0][1].wrapping_mul(_v))
         .wrapping_add(1 << (_aff.res - 1)))
         >> _aff.res)
         .wrapping_add(_aff.x0);
-    _p[1] = ((_aff.fwd[1][0]
+    let y = ((_aff.fwd[1][0]
         .wrapping_mul(_u)
         .wrapping_add(_aff.fwd[1][1].wrapping_mul(_v))
         .wrapping_add(1 << (_aff.res - 1)))
         >> _aff.res)
         .wrapping_add(_aff.y0);
+    [x, y]
 }
 
 /// A full homography.
@@ -791,9 +789,10 @@ pub unsafe fn qr_hom_fit(
             return -1;
         }
         // Figure out the change in ru for a given change in rv when stepping along the fitted line
-        if qr_aff_line_step(_aff, l[1].as_ptr(), 1, drv, &mut dru) < 0 {
-            return -1;
-        }
+        dru = match qr_aff_line_step(_aff, &l[1], 1, drv) {
+            Ok(v) => v,
+            Err(_) => return -1,
+        };
     }
     let mut ru = _ur.o[0] + 3 * _ur.size[0] - 2 * dru;
     let mut rv = _ur.o[1] - 2 * drv;
@@ -816,9 +815,10 @@ pub unsafe fn qr_hom_fit(
             return -1;
         }
         // Figure out the change in bv for a given change in bu when stepping along the fitted line
-        if qr_aff_line_step(_aff, l[3].as_ptr(), 0, dbu, &mut dbv) < 0 {
-            return -1;
-        }
+        dbv = match qr_aff_line_step(_aff, &l[3], 0, dbu) {
+            Ok(v) => v,
+            Err(_) => return -1,
+        };
     }
     let mut bu = _dl.o[0] - 2 * dbu;
     let mut bv = _dl.o[1] + 3 * _dl.size[1] - 2 * dbv;
@@ -905,7 +905,8 @@ pub unsafe fn qr_hom_fit(
                     // Re-fit the line to update the step direction periodically
                     if nr > 1.max(rlastfit + (rlastfit >> 2)) {
                         qr_line_fit_points(&mut l[1], &mut r, nr as usize, _aff.res);
-                        if qr_aff_line_step(_aff, l[1].as_ptr(), 1, drv, &mut dru) >= 0 {
+                        if let Ok(new_dru) = qr_aff_line_step(_aff, &l[1], 1, drv) {
+                            dru = new_dru;
                             drxi = _aff.fwd[0][0] * dru + _aff.fwd[0][1] * drv;
                             dryi = _aff.fwd[1][0] * dru + _aff.fwd[1][1] * drv;
                         }
@@ -967,7 +968,8 @@ pub unsafe fn qr_hom_fit(
                     // Re-fit the line to update the step direction periodically
                     if nb > 1.max(blastfit + (blastfit >> 2)) {
                         qr_line_fit_points(&mut l[3], &mut b, nb as usize, _aff.res);
-                        if qr_aff_line_step(_aff, l[3].as_ptr(), 0, dbu, &mut dbv) >= 0 {
+                        if let Ok(new_dbv) = qr_aff_line_step(_aff, &l[3], 0, dbu) {
+                            dbv = new_dbv;
                             dbxi = _aff.fwd[0][0] * dbu + _aff.fwd[0][1] * dbv;
                             dbyi = _aff.fwd[1][0] * dbu + _aff.fwd[1][1] * dbv;
                         }
@@ -1048,8 +1050,12 @@ pub unsafe fn qr_hom_fit(
         {
             // We do need four points in a square to initialize our homography,
             // so project the point from the alignment center to the corner of the code area
-            if qr_hom_project_alignment_to_corner(&mut brx, &mut bry, _p, &p3, dim) < 0 {
-                return -1;
+            match qr_hom_project_alignment_to_corner(_p, &p3, dim) {
+                Ok((x, y)) => {
+                    brx = x;
+                    bry = y;
+                }
+                Err(_) => return -1,
             }
         }
     }
@@ -1075,24 +1081,27 @@ pub unsafe fn qr_hom_fit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.
-pub unsafe fn qr_hom_fproject(
-    _p: &mut qr_point,
+pub fn qr_hom_fproject(
     _hom: &qr_hom,
     mut _x: c_int,
     mut _y: c_int,
     mut _w: c_int,
-) {
+) -> qr_point {
     if _w == 0 {
-        _p[0] = if _x < 0 { c_int::MIN } else { c_int::MAX };
-        _p[1] = if _y < 0 { c_int::MIN } else { c_int::MAX };
+        [
+            if _x < 0 { c_int::MIN } else { c_int::MAX },
+            if _y < 0 { c_int::MIN } else { c_int::MAX },
+        ]
     } else {
         if _w < 0 {
             _x = -_x;
             _y = -_y;
             _w = -_w;
         }
-        _p[0] = qr_divround(_x, _w) + _hom.x0;
-        _p[1] = qr_divround(_y, _w) + _hom.y0;
+        [
+            qr_divround(_x, _w) + _hom.x0,
+            qr_divround(_y, _w) + _hom.y0,
+        ]
     }
 }
 
@@ -1418,7 +1427,7 @@ pub unsafe fn qr_line_fit_finder_pair(
     } else {
         let mut q: qr_point = [_f0.o[0], _f0.o[1]];
         q[(_e >> 1) as usize] += _f0.size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
-        qr_aff_project(&mut pts[0], _aff, q[0], q[1]);
+        pts[0] = qr_aff_project(_aff, q[0], q[1]);
         n0 += 1;
     }
 
@@ -1432,7 +1441,7 @@ pub unsafe fn qr_line_fit_finder_pair(
     } else {
         let mut q: qr_point = [_f1.o[0], _f1.o[1]];
         q[(_e >> 1) as usize] += _f1.size[(_e >> 1) as usize] * (2 * (_e & 1) - 1);
-        qr_aff_project(&mut pts[n0], _aff, q[0], q[1]);
+        pts[n0] = qr_aff_project(_aff, q[0], q[1]);
     }
 
     qr_line_fit_points(_l, &mut pts, npts, _aff.res);
@@ -1442,13 +1451,13 @@ pub unsafe fn qr_line_fit_finder_pair(
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
-/// Returns a negative value if the point went to infinity.
-pub unsafe fn qr_hom_unproject(
-    _q: &mut qr_point,
+/// Returns `Err(point)` with infinity values if the point went to infinity,
+/// otherwise returns `Ok(point)` with the projected coordinates.
+pub fn qr_hom_unproject(
     _hom: &qr_hom,
     mut _x: c_int,
     mut _y: c_int,
-) -> c_int {
+) -> Result<qr_point, qr_point> {
     _x = _x.wrapping_sub(_hom.x0);
     _y = _y.wrapping_sub(_hom.y0);
     let mut x = _hom.inv[0][0]
@@ -1464,19 +1473,18 @@ pub unsafe fn qr_hom_unproject(
         .wrapping_add(1 << (_hom.res - 1)))
         >> _hom.res;
     if w == 0 {
-        _q[0] = if x < 0 { c_int::MIN } else { c_int::MAX };
-        _q[1] = if y < 0 { c_int::MIN } else { c_int::MAX };
-        return -1;
+        Err([
+            if x < 0 { c_int::MIN } else { c_int::MAX },
+            if y < 0 { c_int::MIN } else { c_int::MAX },
+        ])
     } else {
         if w < 0 {
             x = -x;
             y = -y;
             w = -w;
         }
-        _q[0] = qr_divround(x, w);
-        _q[1] = qr_divround(y, w);
+        Ok([qr_divround(x, w), qr_divround(y, w)])
     }
-    0
 }
 
 /// Bit reading buffer for QR code data
@@ -2143,21 +2151,23 @@ pub unsafe fn qr_finder_edge_pts_hom_classify(_f: &mut qr_finder, _hom: &qr_hom)
         *item = 0;
     }
     for i in 0..(*c).nedge_pts {
-        let mut q = qr_point::default();
         let edge_pt = (*c).edge_pts.add(i);
 
-        if qr_hom_unproject(&mut q, _hom, (*edge_pt).pos[0], (*edge_pt).pos[1]) >= 0 {
-            // Successful projection
-            qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
-            let d = c_int::from(q[1].abs() > q[0].abs());
-            let e = d << 1 | c_int::from(q[d as usize] >= 0);
-            _f.nedge_pts[e as usize] += 1;
-            (*edge_pt).edge = e;
-            (*edge_pt).extent = q[d as usize];
-        } else {
-            // Projection failed (went to infinity)
-            (*edge_pt).edge = 4;
-            (*edge_pt).extent = q[0];
+        match qr_hom_unproject(_hom, (*edge_pt).pos[0], (*edge_pt).pos[1]) {
+            Ok(mut q) => {
+                // Successful projection
+                qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
+                let d = c_int::from(q[1].abs() > q[0].abs());
+                let e = d << 1 | c_int::from(q[d as usize] >= 0);
+                _f.nedge_pts[e as usize] += 1;
+                (*edge_pt).edge = e;
+                (*edge_pt).extent = q[d as usize];
+            }
+            Err(q) => {
+                // Projection failed (went to infinity)
+                (*edge_pt).edge = 4;
+                (*edge_pt).extent = q[0];
+            }
         }
     }
 
@@ -2220,21 +2230,18 @@ pub unsafe fn qr_finder_quick_crossing_check(
 /// - `line`: The line equation coefficients [A, B, C]
 /// - `v`: The coordinate index (0 for x, 1 for y)
 /// - `du`: The step amount in the u direction
-/// - `dv`: Output pointer for the computed step in v direction
 ///
 /// # Returns
-/// - 0 on success
-/// - -1 if the line is too steep (>45 degrees from horizontal/vertical)
-pub unsafe fn qr_aff_line_step(
-    aff: *const qr_aff,
-    line: *const c_int,
+/// - `Ok(dv)` with the computed step in v direction on success
+/// - `Err(-1)` if the line is too steep (>45 degrees from horizontal/vertical)
+pub fn qr_aff_line_step(
+    aff: &qr_aff,
+    line: &qr_line,
     v: c_int,
     du: c_int,
-    dv: *mut c_int,
-) -> c_int {
-    let aff = &*aff;
-    let l0 = *line.offset(0);
-    let l1 = *line.offset(1);
+) -> Result<c_int, c_int> {
+    let l0 = line[0];
+    let l1 = line[1];
 
     // Compute n and d for the step calculation
     let mut n = aff.fwd[0][v as usize] * l0 + aff.fwd[1][v as usize] * l1;
@@ -2259,18 +2266,17 @@ pub unsafe fn qr_aff_line_step(
     // The line should not be outside 45 degrees of horizontal/vertical
     // This helps ensure loop termination and avoids division by zero
     if n.abs() >= d {
-        return -1;
+        return Err(-1);
     }
 
     n *= -du;
     let dv_result = qr_divround(n, d);
 
     if dv_result.abs() >= du {
-        return -1;
+        return Err(-1);
     }
 
-    *dv = dv_result;
-    0
+    Ok(dv_result)
 }
 
 /// Calculate Hamming distance between two values
@@ -2342,8 +2348,7 @@ pub unsafe fn qr_finder_version_decode(
         let mut y = y0;
         let mut w = w0;
         for _j in 0..3 {
-            let mut p: qr_point = [0, 0];
-            qr_hom_fproject(&mut p, _hom, x, y, w);
+            let p = qr_hom_fproject(_hom, x, y, w);
             v |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
             k += 1;
             x += dxj;
@@ -2399,8 +2404,7 @@ pub unsafe fn qr_finder_fmt_info_decode(
     loop {
         // Skip the timing pattern row
         if i != 6 {
-            let mut p: qr_point = [0, 0];
-            qr_hom_fproject(&mut p, _hom, x, y, w);
+            let p = qr_hom_fproject(_hom, x, y, w);
             lo[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
             k += 1;
             // Don't advance q in the last iteration... we'll start the next loop from
@@ -2426,8 +2430,7 @@ pub unsafe fn qr_finder_fmt_info_decode(
         w += dw;
         // Skip the timing pattern column
         if i != 6 {
-            let mut p: qr_point = [0, 0];
-            qr_hom_fproject(&mut p, _hom, x, y, w);
+            let p = qr_hom_fproject(_hom, x, y, w);
             hi[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
             k += 1;
         }
@@ -2444,8 +2447,7 @@ pub unsafe fn qr_finder_fmt_info_decode(
     dy = -_hom.fwd[1][0] * _ur.size[0];
     dw = -_hom.fwd[2][0] * _ur.size[0];
     for k in 0..8 {
-        let mut p: qr_point = [0, 0];
-        qr_hom_fproject(&mut p, _hom, x, y, w);
+        let p = qr_hom_fproject(_hom, x, y, w);
         lo[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
         x += dx;
         y += dy;
@@ -2463,8 +2465,7 @@ pub unsafe fn qr_finder_fmt_info_decode(
     dy = _hom.fwd[1][1] * _dl.size[1];
     dw = _hom.fwd[2][1] * _dl.size[1];
     for k in 8..15 {
-        let mut p: qr_point = [0, 0];
-        qr_hom_fproject(&mut p, _hom, x, y, w);
+        let p = qr_hom_fproject(_hom, x, y, w);
         hi[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
         x += dx;
         y += dy;
@@ -4532,9 +4533,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
         qrdata.bbox = bbox;
 
-        qr_hom_unproject(&mut ul.o, &hom, (*ul.c).pos[0], (*ul.c).pos[1]);
-        qr_hom_unproject(&mut ur.o, &hom, (*ur.c).pos[0], (*ur.c).pos[1]);
-        qr_hom_unproject(&mut dl.o, &hom, (*dl.c).pos[0], (*dl.c).pos[1]);
+        ul.o = qr_hom_unproject(&hom, (*ul.c).pos[0], (*ul.c).pos[1]).unwrap_or_default();
+        ur.o = qr_hom_unproject(&hom, (*ur.c).pos[0], (*ur.c).pos[1]).unwrap_or_default();
+        dl.o = qr_hom_unproject(&hom, (*dl.c).pos[0], (*dl.c).pos[1]).unwrap_or_default();
         qr_finder_edge_pts_hom_classify(&mut ur, &hom);
         let width = ur.o[0] - ul.o[0];
         let height = ur.o[0] - ul.o[0];
