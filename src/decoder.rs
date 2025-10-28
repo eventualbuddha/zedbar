@@ -123,51 +123,46 @@ pub unsafe fn zbar_decoder_get_modifiers(dcode: *const zbar_decoder_t) -> c_uint
 /// - Appropriate symbol type if width completes decode of a symbol (data is available for retrieval)
 /// - ZBAR_PARTIAL as a hint if part of a symbol was decoded
 /// - ZBAR_NONE (0) if no new symbol data is available
-pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_symbol_type_t {
-    if dcode.is_null() {
-        return ZBAR_NONE;
-    }
-
-    let dcode_ref = &mut *dcode;
-    let mut sym = 0; // ZBAR_NONE
+pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> zbar_symbol_type_t {
+    let mut sym = ZBAR_NONE;
 
     // Store width in circular buffer
-    dcode_ref.w[(dcode_ref.idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
+    dcode.w[(dcode.idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
 
     // Update shared character width
-    dcode_ref.s6 = dcode_ref.s6.wrapping_sub(dcode_ref.get_width(7));
-    dcode_ref.s6 = dcode_ref.s6.wrapping_add(dcode_ref.get_width(1));
+    dcode.s6 = dcode.s6.wrapping_sub(dcode.get_width(7));
+    dcode.s6 = dcode.s6.wrapping_add(dcode.get_width(1));
 
     // Each decoder processes width stream in parallel
-    if test_cfg(dcode_ref.qrf.config, ZBAR_CFG_ENABLE) {
-        let tmp = find_qr(dcode_ref);
+    if test_cfg(dcode.qrf.config, ZBAR_CFG_ENABLE) {
+        let tmp = find_qr(dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
-    if dcode_ref.ean.enable != 0 {
+    if dcode.ean.enable != 0 {
         let tmp = _zbar_decode_ean(&mut *dcode);
         if tmp != 0 {
             sym = tmp;
         }
     }
 
-    if test_cfg(dcode_ref.code39.config, ZBAR_CFG_ENABLE) {
+    if test_cfg(dcode.code39.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_code39(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
-    if test_cfg(dcode_ref.code93.config, ZBAR_CFG_ENABLE) {
+    if test_cfg(dcode.code93.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_code93(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
-    if test_cfg(dcode_ref.code128.config, ZBAR_CFG_ENABLE) {
+    if test_cfg(dcode.code128.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_code128(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
@@ -175,7 +170,7 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
     }
 
     if test_cfg(
-        dcode_ref.databar.config | dcode_ref.databar.config_exp,
+        dcode.databar.config | dcode.databar.config_exp,
         ZBAR_CFG_ENABLE,
     ) {
         let tmp = _zbar_decode_databar(&mut *dcode);
@@ -184,28 +179,28 @@ pub unsafe fn zbar_decode_width(dcode: *mut zbar_decoder_t, w: c_uint) -> zbar_s
         }
     }
 
-    if test_cfg(dcode_ref.codabar.config, ZBAR_CFG_ENABLE) {
+    if test_cfg(dcode.codabar.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_codabar(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
-    if test_cfg(dcode_ref.i25.config, ZBAR_CFG_ENABLE) {
+    if test_cfg(dcode.i25.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_i25(&mut *dcode);
         if tmp > ZBAR_PARTIAL {
             sym = tmp;
         }
     }
 
-    dcode_ref.idx = dcode_ref.idx.wrapping_add(1);
-    dcode_ref.type_ = sym;
+    dcode.idx = dcode.idx.wrapping_add(1);
+    dcode.type_ = sym;
 
     if sym != 0 {
-        if dcode_ref.lock != 0 && sym > ZBAR_PARTIAL && sym != ZBAR_QRCODE {
-            dcode_ref._zbar_decoder_release_lock(sym);
+        if dcode.lock != 0 && sym > ZBAR_PARTIAL && sym != ZBAR_QRCODE {
+            dcode._zbar_decoder_release_lock(sym);
         }
-        if let Some(handler) = dcode_ref.handler {
+        if let Some(handler) = dcode.handler {
             handler(dcode);
         }
     }

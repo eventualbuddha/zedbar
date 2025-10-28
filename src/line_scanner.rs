@@ -3,8 +3,6 @@
 //! This module provides the line scanner functionality that processes 1D scan lines
 //! to detect bar/space transitions and widths.
 
-use std::ptr;
-
 use libc::{c_int, c_uint};
 
 use crate::decoder::zbar_decode_width;
@@ -129,29 +127,10 @@ pub fn scanner_get_edge(scn: &zbar_scanner_t, offset: c_uint, prec: c_int) -> c_
     }
 }
 
-/// Destroy a scanner instance
-///
-/// Frees all resources associated with the scanner.
-pub unsafe fn zbar_scanner_destroy(scn: *mut zbar_scanner_t) {
-    if !scn.is_null() {
-        ptr::drop_in_place(scn);
-    }
-}
-
-/// Create a new scanner instance
-///
-/// Allocates and initializes a new scanner with the specified decoder.
-pub unsafe fn zbar_scanner_create(dcode: *mut zbar_decoder_t) -> *mut zbar_scanner_t {
-    let mut scn = Box::new(zbar_scanner_t::default());
-    scn.set_decoder(dcode);
-    scn.y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
-    Box::into_raw(scn)
-}
-
 /// Create a new scanner instance (owned version)
 ///
 /// Initializes a new scanner with the specified decoder.
-pub fn zbar_scanner_new(dcode: *mut zbar_decoder_t) -> zbar_scanner_t {
+pub(crate) fn zbar_scanner_new(dcode: *mut zbar_decoder_t) -> zbar_scanner_t {
     let mut scn = zbar_scanner_t::default();
     scn.set_decoder(dcode);
     scn.y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
@@ -174,8 +153,9 @@ fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
     scn.last_edge = scn.cur_edge;
 
     // pass to decoder
+    let width = scn.width;
     if let Some(decoder) = scn.decoder_mut() {
-        unsafe { zbar_decode_width(decoder, scn.width) }
+        unsafe { zbar_decode_width(&mut *decoder, width) }
     } else {
         ZBAR_PARTIAL
     }

@@ -203,29 +203,19 @@ pub unsafe fn _zbar_databar_append_check14(buf: &mut [u8]) {
 ///
 /// # Safety
 /// Buffer must have at least `i` bytes available
-pub unsafe fn _zbar_databar_decode10(buf: *mut u8, mut n: u64, i: c_int) {
-    if buf.is_null() || i <= 0 {
-        return;
-    }
-
-    let mut pos = buf.add(i as usize);
+pub unsafe fn _zbar_databar_decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     let mut remaining = i;
 
     while remaining > 0 {
         let d = (n % 10) as u8;
         n /= 10;
-        pos = pos.sub(1);
-        *pos = b'0' + d;
+        i -= 1;
+        buf[i] = b'0' + d;
         remaining -= 1;
     }
 }
 
-unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) -> c_int {
-    if dcode.is_null() {
-        return -1;
-    }
-
-    let dcode = &mut *dcode;
+unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
     let mut data_ptr = data;
     let first = data_ptr[0] as u64;
     data_ptr = &mut data_ptr[1..];
@@ -323,7 +313,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) 
             if n >= 1000 {
                 return -1;
             }
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 3);
+            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 3);
             buf_idx += 3;
         }
         _zbar_databar_append_check14(&mut buf[..buf_idx - 13]);
@@ -358,7 +348,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) 
             if n >= 1000 {
                 return -1;
             }
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 3);
+            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 3);
             buf_idx += 3;
         }
         4 => {
@@ -373,7 +363,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) 
             buf[buf_idx + 2] = b'0';
             buf[buf_idx + 3] = b'3';
             buf_idx += 4;
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 6);
+            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 6);
             buf_idx += 6;
         }
         5 => {
@@ -395,7 +385,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) 
             if n >= 10000 {
                 n -= 10000;
             }
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 6);
+            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 6);
             buf_idx += 6;
         }
         _ => {}
@@ -418,7 +408,7 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) 
         if n >= 1_000_000 {
             return -1;
         }
-        _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), n as u64, 6);
+        _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 6);
         buf[buf_idx - 1] = buf[buf_idx];
         buf[buf_idx] = b'0';
         buf_idx += 6;
@@ -440,11 +430,11 @@ unsafe fn databar_postprocess_exp(dcode: *mut zbar_decoder_t, data: &mut [i32]) 
             temp_enc = enc - 6;
             buf[buf_idx] = b'0' + ((temp_enc | 1) as u8);
             buf_idx += 1;
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), yy as u64, 2);
+            _zbar_databar_decode10(&mut buf[buf_idx..], yy as u64, 2);
             buf_idx += 2;
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), mm as u64, 2);
+            _zbar_databar_decode10(&mut buf[buf_idx..], mm as u64, 2);
             buf_idx += 2;
-            _zbar_databar_decode10(buf.as_mut_ptr().add(buf_idx), dd as u64, 2);
+            _zbar_databar_decode10(&mut buf[buf_idx..], dd as u64, 2);
             buf_idx += 2;
         } else if n > 38400 {
             return -1;
@@ -710,51 +700,49 @@ pub fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
 }
 
 /// Merge or update a DataBar segment with existing segments
-pub unsafe fn _zbar_databar_merge_segment(
-    db: *mut databar_decoder_t,
-    seg: *mut crate::decoder_types::databar_segment_t,
-) {
-    let csegs = (*db).csegs() as isize;
+pub unsafe fn _zbar_databar_merge_segment(db: &mut databar_decoder_t, seg: &mut databar_segment_t) {
+    let csegs = db.csegs() as isize;
 
     for i in 0..csegs {
-        let s = ((*db).segs).offset(i);
+        let s = db.segs.offset(i);
 
         // Skip if this is the same segment
         if s == seg {
             continue;
         }
 
+        let s = &mut *s;
         // Check if this segment matches and should be merged
-        if (*s).finder() == (*seg).finder()
-            && (*s).exp() == (*seg).exp()
-            && (*s).color() == (*seg).color()
-            && (*s).side() == (*seg).side()
-            && (*s).data == (*seg).data
-            && (*s).check() == (*seg).check()
-            && _zbar_databar_check_width((*seg).width as u32, (*s).width as u32, 14) != 0
+        if s.finder() == seg.finder()
+            && s.exp() == seg.exp()
+            && s.color() == seg.color()
+            && s.side() == seg.side()
+            && s.data == seg.data
+            && s.check() == seg.check()
+            && _zbar_databar_check_width(seg.width as u32, s.width as u32, 14) != 0
         {
             // Found a matching segment - merge with it
-            let mut cnt = (*s).count();
+            let mut cnt = s.count();
             if cnt < 0x7F {
                 cnt += 1;
             }
-            (*seg).set_count(cnt);
+            seg.set_count(cnt);
 
             // Merge partial flags (bitwise AND)
-            let new_partial = (*seg).partial() && (*s).partial();
-            (*seg).set_partial(new_partial);
+            let new_partial = seg.partial() && s.partial();
+            seg.set_partial(new_partial);
 
             // Average the widths (weighted average favoring new measurement)
-            let new_width = (3 * (*seg).width + (*s).width + 2) / 4;
-            (*seg).width = new_width;
+            let new_width = (3 * seg.width + s.width + 2) / 4;
+            seg.width = new_width;
 
             // Mark old segment as unused
-            (*s).set_finder(-1);
-        } else if (*s).finder() >= 0 {
+            s.set_finder(-1);
+        } else if s.finder() >= 0 {
             // Not a match, check if we should age it out
-            let age = (*db).epoch().wrapping_sub((*s).epoch());
-            if age >= 248 || (age >= 128 && (*s).count() < 2) {
-                (*s).set_finder(-1);
+            let age = db.epoch().wrapping_sub(s.epoch());
+            if age >= 248 || (age >= 128 && s.count() < 2) {
+                s.set_finder(-1);
             }
         }
     }
@@ -1105,7 +1093,7 @@ pub unsafe fn match_segment_exp(
         count += 1;
     }
 
-    if databar_postprocess_exp(dcode, &mut data_vals) != 0 {
+    if databar_postprocess_exp(&mut *dcode, &mut data_vals) != 0 {
         (*dcode)._zbar_decoder_release_lock(ZBAR_DATABAR_EXP);
         return ZBAR_PARTIAL;
     }
@@ -1451,7 +1439,7 @@ pub unsafe fn decode_char(
     (*seg).set_check(chk as u8);
     (*seg).data = v as i16;
 
-    _zbar_databar_merge_segment(&mut dcode.databar, seg);
+    _zbar_databar_merge_segment(&mut dcode.databar, &mut *seg);
 
     if (*seg).exp() {
         return match_segment_exp(dcode, seg, dir);
@@ -1710,15 +1698,15 @@ mod tests {
             let mut buf = [0u8; 10];
 
             // Test simple number
-            _zbar_databar_decode10(buf.as_mut_ptr(), 123, 3);
+            _zbar_databar_decode10(&mut buf, 123, 3);
             assert_eq!(&buf[0..3], b"123");
 
             // Test with leading zeros
-            _zbar_databar_decode10(buf.as_mut_ptr(), 45, 6);
+            _zbar_databar_decode10(&mut buf, 45, 6);
             assert_eq!(&buf[0..6], b"000045");
 
             // Test zero
-            _zbar_databar_decode10(buf.as_mut_ptr(), 0, 3);
+            _zbar_databar_decode10(&mut buf, 0, 3);
             assert_eq!(&buf[0..3], b"000");
         }
     }

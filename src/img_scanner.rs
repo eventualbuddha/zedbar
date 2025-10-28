@@ -26,9 +26,8 @@ use crate::{
     refcnt,
     sqcode::{sq_decode, SqReader},
     symbol::{
-        _zbar_symbol_add_point, get_symbol_hash, symbol_alloc_zeroed,
-        symbol_free, symbol_refcnt, symbol_set_create, symbol_set_free,
-        zbar_symbol_set_ref, zbar_symbol_t,
+        get_symbol_hash, symbol_alloc_zeroed, symbol_free, symbol_refcnt, symbol_set_create,
+        symbol_set_free, zbar_symbol_set_ref, zbar_symbol_t,
     },
 };
 
@@ -109,7 +108,7 @@ pub struct qr_reader {
 }
 
 #[derive(Default)]
-pub struct zbar_symbol_set_t {
+pub(crate) struct zbar_symbol_set_t {
     pub refcnt: c_int,
     pub nsyms: c_int,
     pub head: *mut zbar_symbol_t,
@@ -125,7 +124,7 @@ impl Drop for zbar_symbol_set_t {
                 (*sym).next = std::ptr::null_mut();
             }
             unsafe {
-                symbol_refcnt(sym, -1);
+                symbol_refcnt(&mut *sym, -1);
             }
             sym = next;
         }
@@ -224,22 +223,17 @@ impl zbar_image_scanner_t {
     }
 
     #[inline]
-    pub fn syms_ptr(&self) -> *mut zbar_symbol_set_t {
+    pub(crate) fn syms_ptr(&self) -> *mut zbar_symbol_set_t {
         self.syms.map_or(null_mut(), NonNull::as_ptr)
     }
 
     #[inline]
-    pub fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
+    pub(crate) fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
         self.syms = NonNull::new(ptr);
     }
 
     #[inline]
-    pub fn clear_syms(&mut self) {
-        self.syms = None;
-    }
-
-    #[inline]
-    pub fn take_syms(&mut self) -> Option<NonNull<zbar_symbol_set_t>> {
+    pub(crate) fn take_syms(&mut self) -> Option<NonNull<zbar_symbol_set_t>> {
         self.syms.take()
     }
 
@@ -369,7 +363,7 @@ pub fn zbar_image_scanner_get_config(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - Head of the symbol list to process
-pub unsafe fn _zbar_image_scanner_recycle_syms(
+pub(crate) unsafe fn _zbar_image_scanner_recycle_syms(
     _iscn: &mut zbar_image_scanner_t,
     mut sym: *mut zbar_symbol_t,
 ) {
@@ -636,7 +630,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     if !sym.is_null() {
         (*sym).quality += 1;
         if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-            _zbar_symbol_add_point(sym, x, y);
+            (*sym).add_point(x, y);
         }
         return;
     }
@@ -652,7 +646,7 @@ pub unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
 
     // Initialize position
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-        _zbar_symbol_add_point(sym, x, y);
+        sym_ref.add_point(x, y);
     }
 
     // Set orientation
@@ -750,7 +744,7 @@ pub(crate) unsafe fn zbar_image_scanner_set_config(
 ///
 /// # Returns
 /// Pointer to symbol set on success, null on error
-pub unsafe fn _zbar_scan_image(
+pub(crate) unsafe fn _zbar_scan_image(
     iscn: *mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
 ) -> *mut zbar_symbol_set_t {
@@ -979,8 +973,7 @@ pub unsafe fn _zbar_scan_image(
             c_assert!(!addon.is_null());
 
             // Create composite symbol
-            let ean_sym =
-                _zbar_image_scanner_alloc_sym(&mut *iscn, ZBAR_COMPOSITE);
+            let ean_sym = _zbar_image_scanner_alloc_sym(&mut *iscn, ZBAR_COMPOSITE);
             (*ean_sym).orient = (*ean).orient;
             (*ean_sym).syms = symbol_set_create();
 

@@ -16,6 +16,7 @@ use crate::{
         ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
     },
     img_scanner::zbar_symbol_set_t,
+    qrcode::qr_point,
     refcnt,
 };
 use libc::{c_int, c_uint};
@@ -118,21 +119,24 @@ pub fn get_symbol_hash(sym: i32) -> i32 {
     h as i32
 }
 
-// Point storage for location data (two consecutive c_int values)
-type Point = [c_int; 2];
-
 #[derive(Default)]
-pub struct zbar_symbol_t {
+pub(crate) struct zbar_symbol_t {
     pub(crate) symbol_type: c_int,
     pub(crate) configs: c_uint,
     pub(crate) modifiers: c_uint,
     pub(crate) data: Vec<u8>,
-    pub(crate) pts: Vec<Point>,
+    pub(crate) pts: Vec<qr_point>,
     pub(crate) orient: c_int,
     pub(crate) refcnt: c_int,
     pub(crate) next: *mut zbar_symbol_t,
     pub(crate) syms: *mut zbar_symbol_set_t,
     pub(crate) quality: c_int,
+}
+
+impl zbar_symbol_t {
+    pub(crate) fn add_point(&mut self, x: c_int, y: c_int) {
+        self.pts.push([x, y]);
+    }
 }
 
 impl Drop for zbar_symbol_t {
@@ -156,16 +160,7 @@ pub(crate) unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
 }
 
 /// Adjust symbol reference count
-///
-/// # Safety
-///
-/// The symbol pointer must be valid.
-pub(crate) unsafe fn symbol_refcnt(sym: *mut zbar_symbol_t, delta: c_int) {
-    if sym.is_null() {
-        return;
-    }
-    let sym = &mut *sym;
-
+pub(crate) unsafe fn symbol_refcnt(sym: &mut zbar_symbol_t, delta: c_int) {
     if refcnt!(sym.refcnt, delta) == 0 && delta <= 0 {
         symbol_free(sym as *mut _);
     }
@@ -215,14 +210,6 @@ pub(crate) unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_
     if refcnt!(syms_ref.refcnt, delta) == 0 && delta <= 0 {
         symbol_set_free(syms);
     }
-}
-
-pub(crate) unsafe fn _zbar_symbol_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
-    if sym.is_null() {
-        return;
-    }
-    let sym = &mut *sym;
-    sym.pts.push([x, y]);
 }
 
 // High-level Rust API types

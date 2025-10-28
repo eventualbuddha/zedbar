@@ -17,7 +17,7 @@ use crate::img_scanner::{
     zbar_image_scanner_t,
 };
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
-use crate::symbol::{_zbar_symbol_add_point, symbol_set_create, zbar_symbol_t};
+use crate::symbol::{symbol_set_create, zbar_symbol_t};
 
 #[derive(Clone, Copy)]
 pub struct qr_code_data_entry_sa {
@@ -60,8 +60,8 @@ fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encodi
     }
 }
 
-unsafe fn sym_add_point(sym: *mut zbar_symbol_t, x: c_int, y: c_int) {
-    _zbar_symbol_add_point(sym, x, y);
+unsafe fn sym_add_point(sym: &mut zbar_symbol_t, x: c_int, y: c_int) {
+    sym.pts.push([x, y]);
 }
 
 /// # Safety
@@ -192,10 +192,10 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 }
 
                 let qrdataj = &qrdata[sa[j] as usize];
-                sym_add_point(sym, qrdataj.bbox[0][0], qrdataj.bbox[0][1]);
-                sym_add_point(sym, qrdataj.bbox[2][0], qrdataj.bbox[2][1]);
-                sym_add_point(sym, qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
-                sym_add_point(sym, qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
+                sym_add_point(&mut *sym, qrdataj.bbox[0][0], qrdataj.bbox[0][1]);
+                sym_add_point(&mut *sym, qrdataj.bbox[2][0], qrdataj.bbox[2][1]);
+                sym_add_point(&mut *sym, qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
+                sym_add_point(&mut *sym, qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
 
                 let entries = &qrdataj.entries;
                 for entry in entries.iter() {
