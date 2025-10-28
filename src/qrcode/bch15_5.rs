@@ -51,9 +51,13 @@ fn gf16_hmul(a: u32, logb: u32) -> u32 {
 /// Calculate syndrome values
 ///
 /// The syndrome normally has five values, S_1 ... S_5.
-/// We only calculate and store the odd ones in s, since S_2=S_1**2 and S_4=S_2**2.
-/// Returns true if any syndrome values are non-zero
-fn bch15_5_calc_syndrome(s: &mut [u32; 3], y: u32) -> bool {
+/// We only calculate and store the odd ones, since S_2=S_1**2 and S_4=S_2**2.
+///
+/// # Returns
+/// A tuple of (syndrome values, has_errors) where has_errors is true if any syndrome values are non-zero
+fn bch15_5_calc_syndrome(y: u32) -> ([u32; 3], bool) {
+    let mut s = [0u32; 3];
+
     let mut p = 0;
     for (i, &exp) in GF16_EXP.iter().enumerate() {
         if (y & (1 << i)) != 0 {
@@ -82,12 +86,16 @@ fn bch15_5_calc_syndrome(s: &mut [u32; 3], y: u32) -> bool {
     }
     s[2] = p;
 
-    s[0] != 0 || s[1] != 0 || s[2] != 0
+    let has_errors = s[0] != 0 || s[1] != 0 || s[2] != 0;
+    (s, has_errors)
 }
 
 /// Compute the coefficients of the error-locator polynomial
-/// Returns the number of errors (the degree of the polynomial)
-fn bch15_5_calc_omega(o: &mut [u32; 3], s: &[u32; 3]) -> i32 {
+///
+/// # Returns
+/// A tuple of (error-locator polynomial coefficients, degree) where degree is the number of errors
+fn bch15_5_calc_omega(s: &[u32; 3]) -> ([u32; 3], i32) {
+    let mut o = [0u32; 3];
     o[0] = s[0];
     let s02 = gf16_mul(s[0], s[0]);
     let dd = s[1] ^ gf16_mul(s[0], s02);
@@ -99,16 +107,17 @@ fn bch15_5_calc_omega(o: &mut [u32; 3], s: &[u32; 3]) -> i32 {
     while d > 0 && o[d - 1] == 0 {
         d -= 1;
     }
-    d as i32
+    (o, d as i32)
 }
 
 /// Find the roots of the error polynomial
 ///
-/// Returns the number of roots found, or a negative value if the polynomial did
+/// # Returns
+/// `Ok((error_positions, error_count))` on success, or `Err(-1)` if the polynomial did
 /// not have enough roots, indicating a decoding error
-fn bch15_5_calc_epos(epos: &mut [u32; 3], s: &[u32; 3]) -> i32 {
-    let mut o = [0u32; 3];
-    let d = bch15_5_calc_omega(&mut o, s);
+fn bch15_5_calc_epos(s: &[u32; 3]) -> Result<([u32; 3], i32), i32> {
+    let (o, d) = bch15_5_calc_omega(s);
+    let mut epos = [0u32; 3];
     let mut nerrors = 0i32;
 
     if d == 1 {
@@ -128,11 +137,11 @@ fn bch15_5_calc_epos(epos: &mut [u32; 3], s: &[u32; 3]) -> i32 {
             }
         }
         if nerrors < d {
-            return -1;
+            return Err(-1);
         }
     }
 
-    nerrors
+    Ok((epos, nerrors))
 }
 
 /// Corrects the received code, if possible
@@ -141,34 +150,37 @@ fn bch15_5_calc_epos(epos: &mut [u32; 3], s: &[u32; 3]) -> i32 {
 /// Returns the number of errors corrected, or a negative value if decoding
 /// failed due to too many bit errors, in which case y is left unchanged.
 pub(crate) fn bch15_5_correct(y: &mut u32) -> i32 {
-    let mut s = [0u32; 3];
-    let mut epos = [0u32; 3];
     let mut y_val = *y;
 
-    if !bch15_5_calc_syndrome(&mut s, y_val) {
+    let (s, has_errors) = bch15_5_calc_syndrome(y_val);
+    if !has_errors {
         return 0;
     }
 
-    let nerrors = bch15_5_calc_epos(&mut epos, &s);
-    if nerrors > 0 {
-        // If we had a non-zero syndrome value, we should always find at least one
-        // error location, or we've got a decoding error
-        for i in 0..nerrors {
-            y_val ^= 1 << epos[i as usize];
-        }
+    match bch15_5_calc_epos(&s) {
+        Ok((epos, nerrors)) if nerrors > 0 => {
+            // If we had a non-zero syndrome value, we should always find at least one
+            // error location, or we've got a decoding error
+            for i in 0..nerrors {
+                y_val ^= 1 << epos[i as usize];
+            }
 
-        // If there were too many errors, we may not find enough roots to reduce the
-        // syndrome to zero. We could recompute it to check, but it's much faster
-        // just to check that we have a valid codeword
-        if bch15_5_encode(y_val >> 10) == y_val {
-            // Decoding succeeded
-            *y = y_val;
-            return nerrors;
+            // If there were too many errors, we may not find enough roots to reduce the
+            // syndrome to zero. We could recompute it to check, but it's much faster
+            // just to check that we have a valid codeword
+            if bch15_5_encode(y_val >> 10) == y_val {
+                // Decoding succeeded
+                *y = y_val;
+                return nerrors;
+            }
+            // Decoding failed due to too many bit errors
+            -1
+        }
+        _ => {
+            // Decoding failed due to too many bit errors
+            -1
         }
     }
-
-    // Decoding failed due to too many bit errors
-    -1
 }
 
 /// Encodes a raw 5-bit value into a 15-bit BCH(15,5) code
