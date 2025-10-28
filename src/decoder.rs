@@ -350,45 +350,38 @@ fn decoder_set_config_int(
 }
 
 /// Get decoder configuration value
-pub unsafe fn zbar_decoder_get_config(
+pub fn zbar_decoder_get_config(
     dcode: &mut zbar_decoder_t,
     sym: zbar_symbol_type_t,
     cfg: c_int,
-    val: *mut c_int,
-) -> c_int {
-    if val.is_null() {
-        return 1;
-    }
-
+) -> Result<c_int, c_int> {
     let config = match decoder_get_config(dcode, sym) {
         Some(c) => c,
-        None => return 1,
+        None => return Err(1),
     };
 
     // Return error if symbol doesn't have config
     if sym <= ZBAR_PARTIAL || sym > ZBAR_CODE128 || sym == ZBAR_COMPOSITE {
-        return 1;
+        return Err(1);
     }
 
     // Return decoder boolean configs
     if cfg < ZBAR_CFG_NUM {
-        *val = if (*config & (1 << cfg)) != 0 { 1 } else { 0 };
-        return 0;
+        return Ok(if (*config & (1 << cfg)) != 0 { 1 } else { 0 });
     }
 
     // Return decoder integer configs
     if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
-        *val = match sym {
+        Ok(match sym {
             ZBAR_I25 => dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
             ZBAR_CODABAR => dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
             ZBAR_CODE39 => dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
             ZBAR_CODE93 => dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
             ZBAR_CODE128 => dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            _ => return 1,
-        };
-        0
+            _ => return Err(1),
+        })
     } else {
-        1
+        Err(1)
     }
 }
 

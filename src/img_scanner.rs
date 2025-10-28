@@ -310,60 +310,55 @@ pub unsafe fn zbar_image_scanner_set_data_handler(
 /// * `iscn` - The image scanner instance
 /// * `sym` - The symbology type to query
 /// * `cfg` - The configuration parameter to query
-/// * `val` - Pointer to store the retrieved value
 ///
 /// # Returns
-/// 0 on success, 1 on error
-pub unsafe fn zbar_image_scanner_get_config(
+/// `Ok(value)` on success, `Err(1)` on error
+pub fn zbar_image_scanner_get_config(
     iscn: &mut zbar_image_scanner_t,
     sym: c_int,
     cfg: c_int,
-    val: *mut c_int,
-) -> c_int {
+) -> Result<c_int, c_int> {
     // Return error if symbol doesn't have config
     if !(ZBAR_PARTIAL..=ZBAR_CODE128).contains(&sym) || sym == ZBAR_COMPOSITE {
-        return 1;
+        return Err(1);
     }
 
     if cfg < ZBAR_CFG_UNCERTAINTY {
         if let Some(dcode) = &mut iscn.dcode.as_mut() {
-            return zbar_decoder_get_config(dcode, sym, cfg, val);
+            return zbar_decoder_get_config(dcode, sym, cfg);
         } else {
-            return 1;
+            return Err(1);
         }
     }
 
     if cfg < ZBAR_CFG_POSITION {
         if sym == ZBAR_PARTIAL {
-            return 1;
+            return Err(1);
         }
 
         let i = get_symbol_hash(sym);
-        *val = iscn.sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize];
-        return 0;
+        return Ok(iscn.sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize]);
     }
 
     // Image scanner parameters apply only to ZBAR_PARTIAL
     if sym > ZBAR_PARTIAL {
-        return 1;
+        return Err(1);
     }
 
     if cfg < ZBAR_CFG_X_DENSITY {
-        *val = if (iscn.config & (1 << (cfg - ZBAR_CFG_POSITION))) != 0 {
+        return Ok(if (iscn.config & (1 << (cfg - ZBAR_CFG_POSITION))) != 0 {
             1
         } else {
             0
-        };
-        return 0;
+        });
     }
 
     if cfg <= ZBAR_CFG_Y_DENSITY {
         // CFG macro: ((iscn)->configs[(cfg) - ZBAR_CFG_X_DENSITY])
-        *val = iscn.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize];
-        return 0;
+        return Ok(iscn.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize]);
     }
 
-    1
+    Err(1)
 }
 
 /// Recycle symbols from the image scanner

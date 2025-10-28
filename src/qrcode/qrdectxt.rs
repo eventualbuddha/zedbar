@@ -73,8 +73,8 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
     qrlist: &qr_code_data_list,
     iscn: &mut zbar_image_scanner_t,
 ) -> c_int {
-    let mut raw_binary: c_int = 0;
-    zbar_image_scanner_get_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY, &mut raw_binary);
+    let raw_binary: c_int =
+        zbar_image_scanner_get_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY).unwrap_or(0);
 
     let qrdata = &qrlist.qrdata;
     let mut mark = vec![0u8; qrdata.len()];
