@@ -47,23 +47,4 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<i32> for Error {
-    fn from(code: i32) -> Self {
-        match code {
-            1 => Self::OutOfMemory,
-            2 => Self::Internal,
-            3 => Self::Unsupported,
-            4 => Self::Invalid,
-            5 => Self::System,
-            6 => Self::Locking,
-            7 => Self::Busy,
-            8 => Self::XDisplay,
-            9 => Self::XProto,
-            10 => Self::Closed,
-            11 => Self::WinApi,
-            _ => Self::Unknown(code),
-        }
-    }
-}
+pub type Result<T, E = Error> = std::result::Result<T, E>;

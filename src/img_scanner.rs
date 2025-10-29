@@ -26,7 +26,7 @@ use crate::{
         symbol_alloc_zeroed, symbol_free, symbol_refcnt, symbol_set_create, symbol_set_free,
         zbar_symbol_set_ref, zbar_symbol_t,
     },
-    SymbolType,
+    Error, Result, SymbolType,
 };
 
 const NUM_SCN_CFGS: usize = 2; // ZBAR_CFG_Y_DENSITY - ZBAR_CFG_X_DENSITY + 1
@@ -971,10 +971,10 @@ pub(crate) unsafe fn _zbar_scan_image(
 pub(crate) unsafe fn zbar_scan_image(
     iscn: *mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
-) -> c_int {
+) -> Result<c_int> {
     let mut syms = _zbar_scan_image(iscn, img);
     if syms.is_null() {
-        return -1;
+        return Err(Error::Unknown(-1));
     }
 
     // Try inverted image if no symbols found and TEST_INVERTED is enabled
@@ -992,5 +992,5 @@ pub(crate) unsafe fn zbar_scan_image(
         }
     }
 
-    (*syms).nsyms as c_int
+    Ok((*syms).nsyms as c_int)
 }
