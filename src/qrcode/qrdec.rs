@@ -11,7 +11,7 @@ use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
-use libc::{c_int, c_uchar, c_uint, memcpy, memset, size_t};
+use libc::{c_int, c_uchar, c_uint, memcpy, size_t};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
@@ -1995,11 +1995,12 @@ unsafe fn qr_sampling_grid_fp_mask_rect(
 /// Returns 1 if the location (_u, _v) is part of a function pattern, 0 otherwise.
 unsafe fn qr_sampling_grid_is_in_fp(
     _grid: *const qr_sampling_grid,
-    _dim: c_int,
+    _dim: usize,
     _u: c_int,
     _v: c_int,
 ) -> c_int {
-    let idx = (_u * ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) + (_v >> QR_INT_LOGBITS)) as usize;
+    let idx = _u as usize * ((_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize)
+        + (_v as usize >> QR_INT_LOGBITS as usize);
     let grid_ref = &*_grid;
     ((grid_ref.fpmask[idx]) >> (_v & (QR_INT_BITS - 1)) & 1) as c_int
 }
@@ -2513,11 +2514,8 @@ pub(crate) unsafe fn qr_finder_fmt_info_decode(
 ///
 /// Fills a buffer with the specified data mask pattern. The mask is stored
 /// column-wise since that's how bits are read out of the QR code grid.
-///
-/// # Safety
-/// This function is unsafe because it writes to a raw pointer buffer.
-pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern: c_int) {
-    let stride = ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
+pub(crate) fn qr_data_mask_fill(_mask: &mut [c_uint], _dim: usize, _pattern: c_int) {
+    let stride = (_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize;
 
     // Note that we store bits column-wise, since that's how they're read out of the grid.
     match _pattern {
@@ -2528,11 +2526,9 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
         0 => {
             let mut m: c_uint = 0x55;
             for j in 0.._dim {
-                memset(
-                    _mask.add((j as usize) * stride) as *mut c_void,
-                    m as i32,
-                    stride * size_of::<c_uint>(),
-                );
+                // Replicate byte value across all bytes of c_uint (like memset does)
+                let replicated = m * 0x01010101;
+                _mask[j * stride..][..stride].fill(replicated);
                 m ^= 0xFF;
             }
         }
@@ -2541,11 +2537,8 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
         //            11111111
         //            00000000
         1 => {
-            memset(
-                _mask as *mut c_void,
-                0x55,
-                (_dim as usize) * stride * size_of::<c_uint>(),
-            );
+            // Replicate byte value across all bytes of c_uint (like memset does)
+            _mask[.._dim * stride].fill(0x55555555);
         }
         // Pattern 2: 10010010 ((j+1)%3&1)
         //            10010010
@@ -2554,11 +2547,9 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
         2 => {
             let mut m: c_uint = 0xFF;
             for j in 0.._dim {
-                memset(
-                    _mask.add((j as usize) * stride) as *mut c_void,
-                    (m & 0xFF) as i32,
-                    stride * size_of::<c_uint>(),
-                );
+                // Replicate byte value across all bytes of c_uint (like memset does)
+                let replicated = (m & 0xFF) * 0x01010101;
+                _mask[j * stride..][..stride].fill(replicated);
                 m = (m << 8) | (m >> 16);
             }
         }
@@ -2574,7 +2565,7 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
             for j in 0.._dim {
                 let mut mi = mj;
                 for i in 0..stride {
-                    *_mask.add((j as usize) * stride + i) = mi;
+                    _mask[j * stride + i] = mi;
                     mi = (mi >> (QR_INT_BITS % 3)) | (mi << (3 - (QR_INT_BITS % 3)));
                 }
                 mj = (mj >> 1) | (mj << 2);
@@ -2587,11 +2578,9 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
         4 => {
             let mut m: c_uint = 7;
             for j in 0.._dim {
-                memset(
-                    _mask.add((j as usize) * stride) as *mut c_void,
-                    ((0xCC ^ (m & 1).wrapping_neg()) & 0xFF) as i32,
-                    stride * size_of::<c_uint>(),
-                );
+                // Replicate byte value across all bytes of c_uint (like memset does)
+                let replicated = ((0xCC ^ (m & 1).wrapping_neg()) & 0xFF) * 0x01010101;
+                _mask[j * stride..][..stride].fill(replicated);
                 m = (m >> 1) | (m << 5);
             }
         }
@@ -2611,7 +2600,7 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
                     i <<= 1;
                 }
                 for i in 0..stride {
-                    *_mask.add((j as usize) * stride + i) = m;
+                    _mask[j * stride + i] = m;
                     m = (m >> (QR_INT_BITS % 6)) | (m << (6 - (QR_INT_BITS % 6)));
                 }
             }
@@ -2632,7 +2621,7 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
                     i <<= 1;
                 }
                 for i in 0..stride {
-                    *_mask.add((j as usize) * stride + i) = m;
+                    _mask[j * stride + i] = m;
                     m = (m >> (QR_INT_BITS % 6)) | (m << (6 - (QR_INT_BITS % 6)));
                 }
             }
@@ -2653,7 +2642,7 @@ pub(crate) unsafe fn qr_data_mask_fill(_mask: *mut c_uint, _dim: c_int, _pattern
                     i <<= 1;
                 }
                 for i in 0..stride {
-                    *_mask.add((j as usize) * stride + i) = m;
+                    _mask[j * stride + i] = m;
                     m = (m >> (QR_INT_BITS % 6)) | (m << (6 - (QR_INT_BITS % 6)));
                 }
             }
@@ -2984,8 +2973,8 @@ unsafe fn qr_sampling_grid_init(
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
 unsafe fn qr_sampling_grid_sample(
     _grid: &qr_sampling_grid,
-    _data_bits: *mut c_uint,
-    _dim: c_int,
+    _data_bits: &mut [c_uint],
+    _dim: usize,
     _fmt_info: c_int,
     _img: &[u8],
     _width: c_int,
@@ -2994,7 +2983,7 @@ unsafe fn qr_sampling_grid_sample(
     // We initialize the buffer with the data mask and XOR bits into it as we read
     // them out of the image instead of unmasking in a separate step
     qr_data_mask_fill(_data_bits, _dim, _fmt_info & 7);
-    let stride = ((_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
+    let stride = (_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize;
     let mut u0 = 0;
 
     // We read data cell-by-cell to avoid having to constantly change which
@@ -3022,8 +3011,7 @@ unsafe fn qr_sampling_grid_sample(
                     if qr_sampling_grid_is_in_fp(_grid, _dim, u, v) == 0 {
                         let mut p: qr_point = [0, 0];
                         qr_hom_cell_fproject(&mut p, cell, x, y, w);
-                        *_data_bits
-                            .add((u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)) ^=
+                        _data_bits[(u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)] ^=
                             (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint)
                                 << (v & (QR_INT_BITS - 1));
                     }
@@ -3054,11 +3042,11 @@ pub(crate) unsafe fn qr_samples_unpack(
     _nblocks: c_int,
     _nshort_data: c_int,
     mut _nshort_blocks: c_int,
-    _data_bits: *const c_uint,
-    _fp_mask: *const c_uint,
-    _dim: c_int,
+    _data_bits: &[c_uint],
+    _fp_mask: &[c_uint],
+    _dim: usize,
 ) {
-    let stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
+    let stride = (_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize;
 
     // If _all_ the blocks are short, don't skip anything
     if _nshort_blocks >= _nblocks {
@@ -3074,16 +3062,14 @@ pub(crate) unsafe fn qr_samples_unpack(
     // Scan columns in pairs from right to left
     while j > 0 {
         // Scan up a pair of columns
-        let mut nbits = ((_dim - 1) & (QR_INT_BITS - 1)) + 1;
-        let l = (j * stride) as usize;
-        let mut i = stride;
+        let mut nbits = ((_dim - 1) & (QR_INT_BITS as usize - 1)) + 1;
+        let l = j * stride;
 
-        while i > 0 {
-            i -= 1;
-            let data1 = *_data_bits.add(l + i as usize);
-            let fp_mask1 = *_fp_mask.add(l + i as usize);
-            let data2 = *_data_bits.add(l + i as usize - stride as usize);
-            let fp_mask2 = *_fp_mask.add(l + i as usize - stride as usize);
+        for i in (0..stride).rev() {
+            let data1 = _data_bits[l + i];
+            let fp_mask1 = _fp_mask[l + i];
+            let data2 = _data_bits[l + i - stride];
+            let fp_mask2 = _fp_mask[l + i - stride];
 
             let mut nbits_inner = nbits;
             while nbits_inner > 0 {
@@ -3116,9 +3102,12 @@ pub(crate) unsafe fn qr_samples_unpack(
                     }
                 }
             }
-            nbits = QR_INT_BITS;
+            nbits = QR_INT_BITS as usize;
         }
 
+        if j < 2 {
+            break;
+        }
         j -= 2;
         // Skip the column with the vertical timing pattern
         if j == 6 {
@@ -3126,13 +3115,13 @@ pub(crate) unsafe fn qr_samples_unpack(
         }
 
         // Scan down a pair of columns
-        let l = (j * stride) as usize;
+        let l = j * stride;
         for i in 0..stride {
-            let mut data1 = *_data_bits.add(l + i as usize);
-            let mut fp_mask1 = *_fp_mask.add(l + i as usize);
-            let mut data2 = *_data_bits.add(l + i as usize - stride as usize);
-            let mut fp_mask2 = *_fp_mask.add(l + i as usize - stride as usize);
-            let mut nbits = c_int::min(_dim - (i << QR_INT_LOGBITS), QR_INT_BITS);
+            let mut data1 = _data_bits[l + i];
+            let mut fp_mask1 = _fp_mask[l + i];
+            let mut data2 = _data_bits[l + i - stride];
+            let mut fp_mask2 = _fp_mask[l + i - stride];
+            let mut nbits = usize::min(_dim - (i << QR_INT_LOGBITS as usize), QR_INT_BITS as usize);
 
             while nbits > 0 {
                 nbits -= 1;
@@ -3172,6 +3161,9 @@ pub(crate) unsafe fn qr_samples_unpack(
             }
         }
 
+        if j < 2 {
+            break;
+        }
         j -= 2;
     }
 }
@@ -3539,11 +3531,11 @@ unsafe fn qr_code_decode(
         _height,
     );
 
-    let dim = 17 + (_version << 2);
-    let data_word_count = (dim * ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS)) as usize;
-    let data_bits = qr_alloc_array::<c_uint>(data_word_count);
+    let dim = 17 + (_version << 2) as usize;
+    let data_word_count = dim * ((dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize);
+    let mut data_bits = vec![0; data_word_count];
 
-    qr_sampling_grid_sample(&grid, data_bits, dim, _fmt_info, _img, _width, _height);
+    qr_sampling_grid_sample(&grid, &mut data_bits, dim, _fmt_info, _img, _width, _height);
 
     // Group those bits into Reed-Solomon codewords
     let ecc_level = (_fmt_info >> 3) ^ 1;
@@ -3568,14 +3560,13 @@ unsafe fn qr_code_decode(
         nblocks,
         block_sz - npar,
         nshort_blocks,
-        data_bits,
-        grid.fpmask.as_ptr(),
+        &data_bits,
+        &grid.fpmask,
         dim,
     );
 
     qr_sampling_grid_clear(&mut grid);
     qr_free_array(blocks);
-    qr_free_array(data_bits);
 
     // Perform the error correction using reed-solomon crate
     let mut ndata = 0;
