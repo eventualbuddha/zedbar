@@ -2752,13 +2752,8 @@ unsafe fn qr_sampling_grid_init(
             size_of::<qr_hom_cell>(),
         );
     } else {
-        let q = qr_alloc_array::<qr_point>((nalign * nalign) as usize);
-        let p = qr_alloc_array::<qr_point>((nalign * nalign) as usize);
-        if q.is_null() || p.is_null() {
-            qr_free_array(q);
-            qr_free_array(p);
-            return;
-        }
+        let mut q = vec![qr_point::default(); (nalign * nalign) as usize];
+        let mut p = vec![qr_point::default(); (nalign * nalign) as usize];
 
         // Initialize the alignment pattern position list
         align_pos[0] = 6;
@@ -2771,18 +2766,18 @@ unsafe fn qr_sampling_grid_init(
         }
 
         // Three of the corners use a finder pattern instead of a separate alignment pattern
-        (*q.offset(0))[0] = 3;
-        (*q.offset(0))[1] = 3;
-        (*p.offset(0))[0] = _ul_pos[0];
-        (*p.offset(0))[1] = _ul_pos[1];
-        (*q.offset((nalign - 1) as isize))[0] = dim - 4;
-        (*q.offset((nalign - 1) as isize))[1] = 3;
-        (*p.offset((nalign - 1) as isize))[0] = _ur_pos[0];
-        (*p.offset((nalign - 1) as isize))[1] = _ur_pos[1];
-        (*q.offset(((nalign - 1) * nalign) as isize))[0] = 3;
-        (*q.offset(((nalign - 1) * nalign) as isize))[1] = dim - 4;
-        (*p.offset(((nalign - 1) * nalign) as isize))[0] = _dl_pos[0];
-        (*p.offset(((nalign - 1) * nalign) as isize))[1] = _dl_pos[1];
+        q[0][0] = 3;
+        q[0][1] = 3;
+        p[0][0] = _ul_pos[0];
+        p[0][1] = _ul_pos[1];
+        q[(nalign - 1) as usize][0] = dim - 4;
+        q[(nalign - 1) as usize][1] = 3;
+        p[(nalign - 1) as usize][0] = _ur_pos[0];
+        p[(nalign - 1) as usize][1] = _ur_pos[1];
+        q[((nalign - 1) * nalign) as usize][0] = 3;
+        q[((nalign - 1) * nalign) as usize][1] = dim - 4;
+        p[((nalign - 1) * nalign) as usize][0] = _dl_pos[0];
+        p[((nalign - 1) * nalign) as usize][1] = _dl_pos[1];
 
         // Scan for alignment patterns using a diagonal sweep
         for k in 1..(2 * nalign - 1) {
@@ -2793,8 +2788,8 @@ unsafe fn qr_sampling_grid_init(
                 let k_idx = i * nalign + j;
                 let u = align_pos[j as usize];
                 let v = align_pos[i as usize];
-                (*q.offset(k_idx as isize))[0] = u;
-                (*q.offset(k_idx as isize))[1] = v;
+                q[k_idx as usize][0] = u;
+                q[k_idx as usize][1] = v;
 
                 // Mask out the alignment pattern
                 qr_sampling_grid_fp_mask_rect(&mut *_grid, dim, u - 2, v - 2, 5, 5);
@@ -2854,20 +2849,20 @@ unsafe fn qr_sampling_grid_init(
                     let cell_ptr = _grid.cells[(i - 1) as usize].add((j - 1) as usize);
                     qr_hom_cell_init(
                         &mut *cell_ptr,
-                        (*q.offset((k_idx - nalign - 1) as isize))[0],
-                        (*q.offset((k_idx - nalign - 1) as isize))[1],
-                        (*q.offset((k_idx - nalign) as isize))[0],
-                        (*q.offset((k_idx - nalign) as isize))[1],
-                        (*q.offset((k_idx - 1) as isize))[0],
-                        (*q.offset((k_idx - 1) as isize))[1],
-                        (*q.offset(k_idx as isize))[0],
-                        (*q.offset(k_idx as isize))[1],
-                        (*p.offset((k_idx - nalign - 1) as isize))[0],
-                        (*p.offset((k_idx - nalign - 1) as isize))[1],
-                        (*p.offset((k_idx - nalign) as isize))[0],
-                        (*p.offset((k_idx - nalign) as isize))[1],
-                        (*p.offset((k_idx - 1) as isize))[0],
-                        (*p.offset((k_idx - 1) as isize))[1],
+                        q[(k_idx - nalign - 1) as usize][0],
+                        q[(k_idx - nalign - 1) as usize][1],
+                        q[(k_idx - nalign) as usize][0],
+                        q[(k_idx - nalign) as usize][1],
+                        q[(k_idx - 1) as usize][0],
+                        q[(k_idx - 1) as usize][1],
+                        q[k_idx as usize][0],
+                        q[k_idx as usize][1],
+                        p[(k_idx - nalign - 1) as usize][0],
+                        p[(k_idx - nalign - 1) as usize][1],
+                        p[(k_idx - nalign) as usize][0],
+                        p[(k_idx - nalign) as usize][1],
+                        p[(k_idx - 1) as usize][0],
+                        p[(k_idx - 1) as usize][1],
                         p1[0],
                         p1[1],
                     );
@@ -2882,7 +2877,7 @@ unsafe fn qr_sampling_grid_init(
 
                 // Use a very small search radius
                 qr_alignment_pattern_search(
-                    p.add(k_idx as usize),
+                    &mut p[k_idx as usize],
                     cell,
                     u,
                     v,
@@ -2895,28 +2890,26 @@ unsafe fn qr_sampling_grid_init(
                 if i > 0 && j > 0 {
                     qr_hom_cell_init(
                         &mut *_grid.cells[(i - 1) as usize].add((j - 1) as usize),
-                        (*q.offset((k_idx - nalign - 1) as isize))[0],
-                        (*q.offset((k_idx - nalign - 1) as isize))[1],
-                        (*q.offset((k_idx - nalign) as isize))[0],
-                        (*q.offset((k_idx - nalign) as isize))[1],
-                        (*q.offset((k_idx - 1) as isize))[0],
-                        (*q.offset((k_idx - 1) as isize))[1],
-                        (*q.offset(k_idx as isize))[0],
-                        (*q.offset(k_idx as isize))[1],
-                        (*p.offset((k_idx - nalign - 1) as isize))[0],
-                        (*p.offset((k_idx - nalign - 1) as isize))[1],
-                        (*p.offset((k_idx - nalign) as isize))[0],
-                        (*p.offset((k_idx - nalign) as isize))[1],
-                        (*p.offset((k_idx - 1) as isize))[0],
-                        (*p.offset((k_idx - 1) as isize))[1],
-                        (*p.offset(k_idx as isize))[0],
-                        (*p.offset(k_idx as isize))[1],
+                        q[(k_idx - nalign - 1) as usize][0],
+                        q[(k_idx - nalign - 1) as usize][1],
+                        q[(k_idx - nalign) as usize][0],
+                        q[(k_idx - nalign) as usize][1],
+                        q[(k_idx - 1) as usize][0],
+                        q[(k_idx - 1) as usize][1],
+                        q[k_idx as usize][0],
+                        q[k_idx as usize][1],
+                        p[(k_idx - nalign - 1) as usize][0],
+                        p[(k_idx - nalign - 1) as usize][1],
+                        p[(k_idx - nalign) as usize][0],
+                        p[(k_idx - nalign) as usize][1],
+                        p[(k_idx - 1) as usize][0],
+                        p[(k_idx - 1) as usize][1],
+                        p[k_idx as usize][0],
+                        p[k_idx as usize][1],
                     );
                 }
             }
         }
-        qr_free_array(q);
-        qr_free_array(p);
     }
 
     // Set the limits over which each cell is used
