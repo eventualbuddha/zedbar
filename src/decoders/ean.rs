@@ -4,10 +4,7 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    decoder::{
-        ean_decoder_t, ean_pass_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_EMIT_CHECK,
-        ZBAR_CFG_ENABLE,
-    },
+    decoder::{ean_decoder_t, ean_pass_t, zbar_decoder_t, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -77,18 +74,12 @@ static PARITY_DECODE: [u8; 64] = [
 // Helper functions
 // ============================================================================
 
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
-
 /// Calculate total character width "s"
 #[inline]
 fn calc_s(dcode: &zbar_decoder_t, mut offset: u8, mut n: u8) -> c_uint {
     let mut s = 0;
     while n > 0 {
-        s += get_width(dcode, offset);
+        s += dcode.get_width(offset);
         offset += 1;
         n -= 1;
     }
@@ -149,14 +140,14 @@ fn aux_end(dcode: &zbar_decoder_t, fwd: u8) -> i8 {
     let s = calc_s(dcode, 4 + fwd, 4);
 
     // check quiet zone
-    let qz = get_width(dcode, 0);
+    let qz = dcode.get_width(0);
     if fwd == 0 && qz != 0 && qz <= s * 3 / 4 {
         return -1;
     }
 
     let mut code: i8 = 0;
     for i in (1 - fwd)..(3 + fwd) {
-        let e = get_width(dcode, i) + get_width(dcode, i + 1);
+        let e = dcode.get_width(i) + dcode.get_width(i + 1);
         let e_code = decode_e(e, s, 7);
         if e_code < 0 {
             return -1;
@@ -169,7 +160,7 @@ fn aux_end(dcode: &zbar_decoder_t, fwd: u8) -> i8 {
 /// Determine possible auxiliary pattern using current 4 as possible character
 fn aux_start(dcode: &zbar_decoder_t) -> i8 {
     // FIXME NB add-on has no guard in reverse
-    let e2 = get_width(dcode, 5) + get_width(dcode, 6);
+    let e2 = dcode.get_width(5) + dcode.get_width(6);
 
     if dcode.ean.s4 < 6 {
         return -1;
@@ -180,12 +171,12 @@ fn aux_start(dcode: &zbar_decoder_t) -> i8 {
         return -1;
     }
 
-    let e1 = get_width(dcode, 4) + get_width(dcode, 5);
+    let e1 = dcode.get_width(4) + dcode.get_width(5);
     let e1_code = decode_e(e1, dcode.ean.s4, 7);
 
     if dcode.color() == zbar_color_t::ZBAR_BAR {
         // check for quiet-zone
-        let qz = get_width(dcode, 7);
+        let qz = dcode.get_width(7);
         if qz == 0 || qz > dcode.ean.s4 * 3 / 4 {
             if e1_code == 0 {
                 return 0; // normal symbol start
@@ -198,8 +189,8 @@ fn aux_start(dcode: &zbar_decoder_t) -> i8 {
 
     if e1_code == 0 {
         // attempting decode from SPACE => validate center guard
-        let e3 = get_width(dcode, 6) + get_width(dcode, 7);
-        let e4 = get_width(dcode, 7) + get_width(dcode, 8);
+        let e3 = dcode.get_width(6) + dcode.get_width(7);
+        let e4 = dcode.get_width(7) + dcode.get_width(8);
         if decode_e(e3, dcode.ean.s4, 7) == 0 && decode_e(e4, dcode.ean.s4, 7) == 0 {
             return 0; // start after center guard
         }
@@ -210,7 +201,7 @@ fn aux_start(dcode: &zbar_decoder_t) -> i8 {
 /// Check addon delimiter using current 4 as character
 #[inline]
 fn aux_mid(dcode: &zbar_decoder_t) -> i8 {
-    let e = get_width(dcode, 4) + get_width(dcode, 5);
+    let e = dcode.get_width(4) + dcode.get_width(5);
     decode_e(e, dcode.ean.s4, 7)
 }
 
@@ -218,11 +209,11 @@ fn aux_mid(dcode: &zbar_decoder_t) -> i8 {
 fn decode4(dcode: &zbar_decoder_t) -> i8 {
     // calculate similar edge measurements
     let e1 = if dcode.color() == zbar_color_t::ZBAR_BAR {
-        get_width(dcode, 0) + get_width(dcode, 1)
+        dcode.get_width(0) + dcode.get_width(1)
     } else {
-        get_width(dcode, 2) + get_width(dcode, 3)
+        dcode.get_width(2) + dcode.get_width(3)
     };
-    let e2 = get_width(dcode, 1) + get_width(dcode, 2);
+    let e2 = dcode.get_width(1) + dcode.get_width(2);
 
     if dcode.ean.s4 < 6 {
         return -1;
@@ -244,9 +235,9 @@ fn decode4(dcode: &zbar_decoder_t) -> i8 {
     if ((1 << code) & 0x0660) != 0 {
         // use sum of bar widths
         let d2 = if dcode.color() == zbar_color_t::ZBAR_BAR {
-            get_width(dcode, 0) + get_width(dcode, 2)
+            dcode.get_width(0) + dcode.get_width(2)
         } else {
-            get_width(dcode, 1) + get_width(dcode, 3)
+            dcode.get_width(1) + dcode.get_width(3)
         } * 7;
 
         let mid = if ((1 << code) & 0x0420) != 0 {
@@ -805,7 +796,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> PartialSymb
     if dcode.color() == zbar_color_t::ZBAR_SPACE {
         if (pass.state & STATE_ADDON) != 0 {
             if idx == 0x09 || idx == 0x21 {
-                let qz = get_width(dcode, 0);
+                let qz = dcode.get_width(0);
                 let s = calc_s(dcode, 1, 4);
                 let part = if qz == 0 || qz >= s * 3 / 4 {
                     if idx == 0x09 {
@@ -910,8 +901,8 @@ pub(crate) unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType 
     let pass_idx = (dcode.idx & 3) as usize;
 
     // update latest character width
-    dcode.ean.s4 = dcode.ean.s4.wrapping_sub(get_width(dcode, 4));
-    dcode.ean.s4 = dcode.ean.s4.wrapping_add(get_width(dcode, 0));
+    dcode.ean.s4 = dcode.ean.s4.wrapping_sub(dcode.get_width(4));
+    dcode.ean.s4 = dcode.ean.s4.wrapping_add(dcode.get_width(0));
 
     for i in 0..4 {
         let pass = unsafe { &mut *(&mut dcode.ean.pass[i] as *mut ean_pass_t) };

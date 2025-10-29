@@ -3,7 +3,7 @@
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
 use crate::{
-    decoder::{i25_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
+    decoder::{i25_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -21,12 +21,6 @@ macro_rules! zassert {
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
 
 /// Fixed character width decode assist
 #[inline]
@@ -102,7 +96,7 @@ fn i25_decode10(dcode: &zbar_decoder_t, offset: u8) -> u8 {
             } else {
                 8 - i as u8
             };
-        enc = i25_decode1(enc, get_width(dcode, j), dcode25.s10);
+        enc = i25_decode1(enc, dcode.get_width(j), dcode25.s10);
         if enc == 0xff {
             return 0xff;
         }
@@ -145,17 +139,17 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     let mut enc: u8 = 0;
     let mut i: u8 = 10;
 
-    enc = i25_decode1(enc, get_width(dcode, i), s10);
+    enc = i25_decode1(enc, dcode.get_width(i), s10);
     i += 1;
-    enc = i25_decode1(enc, get_width(dcode, i), s10);
+    enc = i25_decode1(enc, dcode.get_width(i), s10);
     i += 1;
-    enc = i25_decode1(enc, get_width(dcode, i), s10);
+    enc = i25_decode1(enc, dcode.get_width(i), s10);
     i += 1;
 
     let valid = if dcode.color() == zbar_color_t::ZBAR_BAR {
         enc == 4
     } else {
-        enc = i25_decode1(enc, get_width(dcode, i), s10);
+        enc = i25_decode1(enc, dcode.get_width(i), s10);
         i += 1;
         enc == 0
     };
@@ -166,7 +160,7 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
 
     // Check leading quiet zone - spec is 10n(?)
     // we require 5.25n for w=2n to 6.75n for w=3n
-    let quiet = get_width(dcode, i);
+    let quiet = dcode.get_width(i);
     if quiet != 0 && quiet < s10 * 3 / 8 {
         return SymbolType::None;
     }
@@ -199,20 +193,20 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
     let character = dcode.i25.character();
 
     // Check trailing quiet zone
-    let quiet = get_width(dcode, 0);
+    let quiet = dcode.get_width(0);
     if (quiet != 0 && quiet < width * 3 / 8)
-        || decode_e(get_width(dcode, 1), width, 45) > 2
-        || decode_e(get_width(dcode, 2), width, 45) > 2
+        || decode_e(dcode.get_width(1), width, 45) > 2
+        || decode_e(dcode.get_width(2), width, 45) > 2
     {
         return SymbolType::None;
     }
 
     // Check exit condition
-    let e = decode_e(get_width(dcode, 3), width, 45);
+    let e = decode_e(dcode.get_width(3), width, 45);
     let valid = if !direction {
         (e as u32).wrapping_sub(3) <= 4
     } else {
-        e <= 2 && decode_e(get_width(dcode, 4), width, 45) <= 2
+        e <= 2 && decode_e(dcode.get_width(4), width, 45) <= 2
     };
 
     if !valid {
@@ -259,8 +253,8 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
 /// Main I25 decode function
 pub(crate) unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
-    let w10 = get_width(dcode, 10);
-    let w0 = get_width(dcode, 0);
+    let w10 = dcode.get_width(10);
+    let w0 = dcode.get_width(0);
     dcode.i25.s10 = dcode.i25.s10.wrapping_sub(w10).wrapping_add(w0);
 
     if dcode.i25.character() < 0 && i25_decode_start(dcode) == SymbolType::None {

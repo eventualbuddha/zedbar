@@ -4,7 +4,7 @@
 
 use crate::{
     decoder::{
-        codabar_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK,
+        codabar_decoder_t, zbar_decoder_t, ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK,
         ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
@@ -38,18 +38,12 @@ static CODABAR_CHARACTERS: &[u8; 20] = b"0123456789-$:/.+ABCD";
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
-
 /// Sort 3 like-colored elements and return ordering
 #[inline]
 fn decode_sort3(dcode: &zbar_decoder_t, i0: u8) -> c_uint {
-    let w0 = get_width(dcode, i0);
-    let w2 = get_width(dcode, i0 + 2);
-    let w4 = get_width(dcode, i0 + 4);
+    let w0 = dcode.get_width(i0);
+    let w2 = dcode.get_width(i0 + 2);
+    let w4 = dcode.get_width(i0 + 4);
 
     if w0 < w2 {
         if w2 < w4 {
@@ -82,7 +76,7 @@ fn decode_sortn(dcode: &zbar_decoder_t, n: i32, i0: u8) -> c_uint {
             if (mask >> j) & 1 != 0 {
                 continue;
             }
-            let w = get_width(dcode, i0 + (j as u8) * 2);
+            let w = dcode.get_width(i0 + (j as u8) * 2);
             if wmin >= w {
                 wmin = w;
                 jmin = j;
@@ -138,14 +132,14 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
     // Extract min/max bar
     let ibar = decode_sortn(dcode, 4, 1);
 
-    let wbmax = get_width(dcode, (ibar & 0xf) as u8);
-    let wbmin = get_width(dcode, (ibar >> 12) as u8);
+    let wbmax = dcode.get_width((ibar & 0xf) as u8);
+    let wbmin = dcode.get_width((ibar >> 12) as u8);
     if 8 * wbmin < wbmax || 3 * wbmin > 2 * wbmax {
         return -1;
     }
 
-    let wb1 = get_width(dcode, ((ibar >> 8) & 0xf) as u8);
-    let wb2 = get_width(dcode, ((ibar >> 4) & 0xf) as u8);
+    let wb1 = dcode.get_width(((ibar >> 8) & 0xf) as u8);
+    let wb2 = dcode.get_width(((ibar >> 4) & 0xf) as u8);
     let b0b3 = wbmin * wbmax;
     let b1b2 = wb1 * wb2;
 
@@ -175,9 +169,9 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
 
     let ispc = decode_sort3(dcode, 2);
 
-    let wsmax = get_width(dcode, (ispc & 0xf) as u8);
-    let wsmid = get_width(dcode, ((ispc >> 4) & 0xf) as u8);
-    let wsmin = get_width(dcode, ((ispc >> 8) & 0xf) as u8);
+    let wsmax = dcode.get_width((ispc & 0xf) as u8);
+    let wsmid = dcode.get_width(((ispc >> 4) & 0xf) as u8);
+    let wsmin = dcode.get_width(((ispc >> 8) & 0xf) as u8);
 
     if ibar >> 2 != 0 {
         // Verify no wide spaces
@@ -241,8 +235,8 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     }
 
     // Check leading quiet zone - spec is 10x
-    let qz = get_width(dcode, 8);
-    if (qz != 0 && qz * 2 < s) || 4 * get_width(dcode, 0) > 3 * s {
+    let qz = dcode.get_width(8);
+    if (qz != 0 && qz * 2 < s) || 4 * dcode.get_width(0) > 3 * s {
         return SymbolType::None;
     }
 
@@ -253,9 +247,9 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     }
 
     // Require 2 wide and 1 narrow spaces
-    let wsmax = get_width(dcode, (ispc & 0xf) as u8);
-    let wsmin = get_width(dcode, (ispc >> 8) as u8);
-    let wsmid = get_width(dcode, ((ispc >> 4) & 0xf) as u8);
+    let wsmax = dcode.get_width((ispc & 0xf) as u8);
+    let wsmin = dcode.get_width((ispc >> 8) as u8);
+    let wsmid = dcode.get_width(((ispc >> 4) & 0xf) as u8);
     if 8 * wsmin < wsmax
         || 3 * wsmin > 2 * wsmax
         || 4 * wsmin > 3 * wsmid
@@ -269,15 +263,15 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Check bar ratios
     let ibar = decode_sortn(dcode, 4, 1);
 
-    let wbmax = get_width(dcode, (ibar & 0xf) as u8);
-    let wbmin = get_width(dcode, (ibar >> 12) as u8);
+    let wbmax = dcode.get_width((ibar & 0xf) as u8);
+    let wbmin = dcode.get_width((ibar >> 12) as u8);
     if 8 * wbmin < wbmax || 3 * wbmin > 2 * wbmax {
         return SymbolType::None;
     }
 
     // Require 1 wide & 3 narrow bars
-    let wb1 = get_width(dcode, ((ibar >> 8) & 0xf) as u8);
-    let wb2 = get_width(dcode, ((ibar >> 4) & 0xf) as u8);
+    let wb1 = dcode.get_width(((ibar >> 8) & 0xf) as u8);
+    let wb2 = dcode.get_width(((ibar >> 4) & 0xf) as u8);
     if 8 * wbmin < 5 * wb1
         || 8 * wb1 < 5 * wb2
         || 4 * wb2 > 3 * wbmax
@@ -371,8 +365,8 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> SymbolType {
 /// Main Codabar decode function
 pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
-    let w8 = get_width(dcode, 8);
-    let w1 = get_width(dcode, 1);
+    let w8 = dcode.get_width(8);
+    let w1 = dcode.get_width(1);
     dcode.codabar.s7 = dcode.codabar.s7.wrapping_sub(w8).wrapping_add(w1);
 
     if dcode.color() != zbar_color_t::ZBAR_SPACE {
@@ -430,7 +424,7 @@ pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
 
     let s = dcode.codabar.s7;
     if (c & 0x10) != 0 {
-        let qz = get_width(dcode, 0);
+        let qz = dcode.get_width(0);
         if qz != 0 && qz * 2 < s {
             // goto reset
             let character = dcode.codabar.character();
@@ -465,7 +459,7 @@ pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
             dcode.codabar.set_character(-1);
         }
         return sym;
-    } else if 4 * get_width(dcode, 0) > 3 * s {
+    } else if 4 * dcode.get_width(0) > 3 * s {
         // goto reset
         let character = dcode.codabar.character();
         if character >= NIBUF as i16 {

@@ -3,9 +3,7 @@
 //! This module implements decoding for Code 39 barcodes.
 
 use crate::{
-    decoder::{
-        code39_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
-    },
+    decoder::{code39_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -297,12 +295,6 @@ static CODE39_CHARACTERS: &[u8; NUM_CHARS] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVW
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
-
 /// Fixed character width decode assist
 #[inline]
 fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> u8 {
@@ -351,7 +343,7 @@ fn code39_decode9(dcode: &mut zbar_decoder_t) -> i8 {
 
     // Threshold bar width ratios for first 5 elements
     for i in 0..5 {
-        enc = code39_decode1(enc, get_width(dcode, i), s9);
+        enc = code39_decode1(enc, dcode.get_width(i), s9);
         if enc == 0xff {
             return -1;
         }
@@ -366,7 +358,7 @@ fn code39_decode9(dcode: &mut zbar_decoder_t) -> i8 {
 
     // Encode remaining widths (NB first encoded width is lost)
     for i in 5..9 {
-        enc = code39_decode1(enc, get_width(dcode, i), s9);
+        enc = code39_decode1(enc, dcode.get_width(i), s9);
         if enc == 0xff {
             return -1;
         }
@@ -413,7 +405,7 @@ fn code39_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
         .set_direction(dcode.code39.direction() ^ (c == 0x19));
 
     // Check leading quiet zone - spec is 10x
-    let quiet = get_width(dcode, 9);
+    let quiet = dcode.get_width(9);
     if quiet != 0 && quiet < dcode.code39.s9 / 2 {
         return SymbolType::None;
     }
@@ -464,8 +456,8 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 /// Main Code 39 decode function
 pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
-    let w9 = get_width(dcode, 9);
-    let w0 = get_width(dcode, 0);
+    let w9 = dcode.get_width(9);
+    let w0 = dcode.get_width(0);
     dcode.code39.s9 = dcode.code39.s9.wrapping_sub(w9).wrapping_add(w0);
 
     if dcode.code39.character() < 0 {
@@ -483,7 +475,7 @@ pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
     }
 
     if dcode.code39.element() == 10 {
-        let space = get_width(dcode, 0);
+        let space = dcode.get_width(0);
         let character = dcode.code39.character();
 
         // Check if STOP character is in the buffer

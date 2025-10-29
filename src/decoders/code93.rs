@@ -3,9 +3,7 @@
 //! This module implements decoding for Code 93 barcodes.
 
 use crate::{
-    decoder::{
-        code93_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
-    },
+    decoder::{code93_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -41,16 +39,10 @@ static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
-
 /// Retrieve i-th previous pair width
 #[inline]
 fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    get_width(dcode, offset) + get_width(dcode, offset + 1)
+    dcode.get_width(offset) + dcode.get_width(offset + 1)
 }
 
 /// Fixed character width decode assist
@@ -182,9 +174,9 @@ fn decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
         if decode_e(pair_width(dcode, 0), s, 9) != 0 {
             return SymbolType::None;
         }
-        get_width(dcode, 8)
+        dcode.get_width(8)
     } else {
-        get_width(dcode, 7)
+        dcode.get_width(7)
     };
 
     if qz != 0 && qz < (s * 3) / 4 {
@@ -221,7 +213,7 @@ fn check_stop(dcode: &zbar_decoder_t) -> bool {
     }
 
     if dcode.code93.direction() {
-        let qz = get_width(dcode, 0);
+        let qz = dcode.get_width(0);
         if qz != 0 && qz < (s * 3) / 4 {
             return false;
         }

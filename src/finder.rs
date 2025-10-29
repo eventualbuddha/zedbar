@@ -3,7 +3,7 @@
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
 use crate::{
-    decoder::{qr_finder_line, zbar_decoder_t, DECODE_WINDOW},
+    decoder::{qr_finder_line, zbar_decoder_t},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -13,16 +13,10 @@ use libc::c_uint;
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
-
 /// Retrieve bar+space pair width starting at offset i
 #[inline]
 fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    get_width(dcode, offset) + get_width(dcode, offset + 1)
+    dcode.get_width(offset) + dcode.get_width(offset + 1)
 }
 
 /// Fixed character width decode assist
@@ -68,8 +62,8 @@ pub(crate) fn decoder_get_qr_finder_line(dcode: &mut zbar_decoder_t) -> &mut qr_
 /// Searches for the 1:1:3:1:1 ratio pattern characteristic of QR code finders.
 pub(crate) fn find_qr(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest finder pattern width
-    dcode.qrf.s5 -= get_width(dcode, 6);
-    dcode.qrf.s5 += get_width(dcode, 1);
+    dcode.qrf.s5 -= dcode.get_width(6);
+    dcode.qrf.s5 += dcode.get_width(1);
     let s = dcode.qrf.s5;
 
     // TODO: The 2005 standard allows reflectance-reversed codes (light on dark
@@ -103,17 +97,17 @@ pub(crate) fn find_qr(dcode: &mut zbar_decoder_t) -> SymbolType {
 
     // Valid QR finder symbol - mark positions needed by decoder
     // Calculate all values first before modifying the line structure
-    let qz = get_width(dcode, 0);
-    let w1 = get_width(dcode, 1);
-    let w2 = get_width(dcode, 2);
-    let w3 = get_width(dcode, 3);
-    let w4 = get_width(dcode, 4);
-    let w5 = get_width(dcode, 5);
+    let qz = dcode.get_width(0);
+    let w1 = dcode.get_width(1);
+    let w2 = dcode.get_width(2);
+    let w3 = dcode.get_width(3);
+    let w4 = dcode.get_width(4);
+    let w5 = dcode.get_width(5);
 
     let eoffs = (qz + w1.div_ceil(2)) as i32;
     let len = (qz + w1 + w2) as i32;
-    let pos = (len + w3 as i32) as i32;
-    let boffs = (pos + w4 as i32 + w5.div_ceil(2) as i32) as i32;
+    let pos = len + w3 as i32;
+    let boffs = pos + w4 as i32 + w5.div_ceil(2) as i32;
 
     // Now update the line structure
     dcode.qrf.line.eoffs = eoffs;

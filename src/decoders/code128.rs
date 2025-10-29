@@ -4,8 +4,8 @@
 
 use crate::{
     decoder::{
-        code128_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
-        ZBAR_MOD_AIM, ZBAR_MOD_GS1,
+        code128_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_MOD_AIM,
+        ZBAR_MOD_GS1,
     },
     line_scanner::zbar_color_t,
     SymbolType,
@@ -101,12 +101,6 @@ static LO_OFFSET: [u8; 0x80] = [
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Retrieve i-th previous element width
-#[inline]
-fn get_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.w[((dcode.idx.wrapping_sub(offset)) & (DECODE_WINDOW as u8 - 1)) as usize]
-}
 
 /// Fixed character width decode assist
 #[inline]
@@ -237,15 +231,15 @@ fn decode6(dcode: &zbar_decoder_t) -> i8 {
 
     // Build edge signature of character
     let sig = if dcode.color() == zbar_color_t::ZBAR_BAR {
-        (decode_e(get_width(dcode, 0) + get_width(dcode, 1), s, 11) << 12)
-            | (decode_e(get_width(dcode, 1) + get_width(dcode, 2), s, 11) << 8)
-            | (decode_e(get_width(dcode, 2) + get_width(dcode, 3), s, 11) << 4)
-            | decode_e(get_width(dcode, 3) + get_width(dcode, 4), s, 11)
+        (decode_e(dcode.get_width(0) + dcode.get_width(1), s, 11) << 12)
+            | (decode_e(dcode.get_width(1) + dcode.get_width(2), s, 11) << 8)
+            | (decode_e(dcode.get_width(2) + dcode.get_width(3), s, 11) << 4)
+            | decode_e(dcode.get_width(3) + dcode.get_width(4), s, 11)
     } else {
-        (decode_e(get_width(dcode, 5) + get_width(dcode, 4), s, 11) << 12)
-            | (decode_e(get_width(dcode, 4) + get_width(dcode, 3), s, 11) << 8)
-            | (decode_e(get_width(dcode, 3) + get_width(dcode, 2), s, 11) << 4)
-            | decode_e(get_width(dcode, 2) + get_width(dcode, 1), s, 11)
+        (decode_e(dcode.get_width(5) + dcode.get_width(4), s, 11) << 12)
+            | (decode_e(dcode.get_width(4) + dcode.get_width(3), s, 11) << 8)
+            | (decode_e(dcode.get_width(3) + dcode.get_width(2), s, 11) << 4)
+            | decode_e(dcode.get_width(2) + dcode.get_width(1), s, 11)
     };
 
     if sig < 0 {
@@ -265,9 +259,9 @@ fn decode6(dcode: &zbar_decoder_t) -> i8 {
 
     // Character validation
     let bars = if dcode.color() == zbar_color_t::ZBAR_BAR {
-        get_width(dcode, 0) + get_width(dcode, 2) + get_width(dcode, 4)
+        dcode.get_width(0) + dcode.get_width(2) + dcode.get_width(4)
     } else {
-        get_width(dcode, 1) + get_width(dcode, 3) + get_width(dcode, 5)
+        dcode.get_width(1) + dcode.get_width(3) + dcode.get_width(5)
     };
     let bars = bars * 11 * 4 / s;
     let chk = calc_check(c as u8);
@@ -620,8 +614,8 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
     dcode.code128.s6 = dcode
         .code128
         .s6
-        .wrapping_sub(get_width(dcode, 6))
-        .wrapping_add(get_width(dcode, 0));
+        .wrapping_sub(dcode.get_width(6))
+        .wrapping_add(dcode.get_width(0));
 
     if (dcode.code128.character() < 0 && dcode.color() != zbar_color_t::ZBAR_SPACE)
         || (dcode.code128.character() >= 0
@@ -638,7 +632,7 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
     let c = decode6(dcode);
 
     if dcode.code128.character() < 0 {
-        let qz = get_width(dcode, 6);
+        let qz = dcode.get_width(6);
         if c < START_A as i8 || c > STOP_REV as i8 || c == STOP_FWD as i8 {
             return SymbolType::None;
         }

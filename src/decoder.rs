@@ -755,17 +755,17 @@ impl zbar_decoder_t {
     }
 
     /// Get width of a specific element from the decoder's history window
-    pub(crate) unsafe fn get_width(&self, offset: u8) -> c_uint {
+    pub(crate) fn get_width(&self, offset: u8) -> c_uint {
         self.w[((self.idx as usize).wrapping_sub(offset as usize)) & (DECODE_WINDOW - 1)]
     }
 
     /// Get the combined width of two consecutive elements
-    pub(crate) unsafe fn pair_width(&self, offset: u8) -> c_uint {
+    pub(crate) fn pair_width(&self, offset: u8) -> c_uint {
         self.get_width(offset) + self.get_width(offset + 1)
     }
 
     /// Calculate sum of n consecutive element widths
-    pub(crate) unsafe fn calc_s(&self, mut offset: u8, mut n: u8) -> c_uint {
+    pub(crate) fn calc_s(&self, mut offset: u8, mut n: u8) -> c_uint {
         let mut s = 0;
         while n > 0 {
             s += self.get_width(offset);
