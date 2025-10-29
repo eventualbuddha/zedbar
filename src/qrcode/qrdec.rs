@@ -2673,11 +2673,11 @@ unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
 /// This function is unsafe because it allocates memory and dereferences raw pointers.
 #[allow(clippy::too_many_arguments)]
 unsafe fn qr_sampling_grid_init(
-    _grid: *mut qr_sampling_grid,
+    _grid: &mut qr_sampling_grid,
     _version: c_int,
-    _ul_pos: *const qr_point,
-    _ur_pos: *const qr_point,
-    _dl_pos: *const qr_point,
+    _ul_pos: &qr_point,
+    _ur_pos: &qr_point,
+    _dl_pos: &qr_point,
     _p: &mut [qr_point],
     _img: &[u8],
     _width: c_int,
@@ -2717,16 +2717,16 @@ unsafe fn qr_sampling_grid_init(
     );
 
     // Allocate the array of cells
-    (*_grid).ncells = nalign - 1;
+    _grid.ncells = nalign - 1;
     let cell_count = ((nalign - 1) * (nalign - 1)) as usize;
-    (*_grid).cells[0] = qr_alloc_array::<qr_hom_cell>(cell_count);
-    for i in 1..((*_grid).ncells as usize) {
-        (*_grid).cells[i] = (*_grid).cells[i - 1].add((*_grid).ncells as usize);
+    _grid.cells[0] = qr_alloc_array::<qr_hom_cell>(cell_count);
+    for i in 1..(_grid.ncells as usize) {
+        _grid.cells[i] = _grid.cells[i - 1].add(_grid.ncells as usize);
     }
 
     // Initialize the function pattern mask
     let stride = ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
-    (*_grid).fpmask = vec![0; dim as usize * stride];
+    _grid.fpmask = vec![0; dim as usize * stride];
 
     // Mask out the finder patterns (and separators and format info bits)
     qr_sampling_grid_fp_mask_rect(&mut *_grid, dim, 0, 0, 9, 9);
@@ -2747,7 +2747,7 @@ unsafe fn qr_sampling_grid_init(
     // the base cell and hope it's good enough
     if _version < 2 {
         memcpy(
-            (*_grid).cells[0] as *mut c_void,
+            _grid.cells[0] as *mut c_void,
             &base_cell as *const qr_hom_cell as *const c_void,
             size_of::<qr_hom_cell>(),
         );
@@ -2773,16 +2773,16 @@ unsafe fn qr_sampling_grid_init(
         // Three of the corners use a finder pattern instead of a separate alignment pattern
         (*q.offset(0))[0] = 3;
         (*q.offset(0))[1] = 3;
-        (*p.offset(0))[0] = (*_ul_pos)[0];
-        (*p.offset(0))[1] = (*_ul_pos)[1];
+        (*p.offset(0))[0] = _ul_pos[0];
+        (*p.offset(0))[1] = _ul_pos[1];
         (*q.offset((nalign - 1) as isize))[0] = dim - 4;
         (*q.offset((nalign - 1) as isize))[1] = 3;
-        (*p.offset((nalign - 1) as isize))[0] = (*_ur_pos)[0];
-        (*p.offset((nalign - 1) as isize))[1] = (*_ur_pos)[1];
+        (*p.offset((nalign - 1) as isize))[0] = _ur_pos[0];
+        (*p.offset((nalign - 1) as isize))[1] = _ur_pos[1];
         (*q.offset(((nalign - 1) * nalign) as isize))[0] = 3;
         (*q.offset(((nalign - 1) * nalign) as isize))[1] = dim - 4;
-        (*p.offset(((nalign - 1) * nalign) as isize))[0] = (*_dl_pos)[0];
-        (*p.offset(((nalign - 1) * nalign) as isize))[1] = (*_dl_pos)[1];
+        (*p.offset(((nalign - 1) * nalign) as isize))[0] = _dl_pos[0];
+        (*p.offset(((nalign - 1) * nalign) as isize))[1] = _dl_pos[1];
 
         // Scan for alignment patterns using a diagonal sweep
         for k in 1..(2 * nalign - 1) {
@@ -2809,21 +2809,21 @@ unsafe fn qr_sampling_grid_init(
                     // neighboring alignment patterns
                     qr_hom_cell_project(
                         &mut p0,
-                        (*_grid).cells[(i - 2) as usize].add((j - 1) as usize),
+                        _grid.cells[(i - 2) as usize].add((j - 1) as usize),
                         u,
                         v,
                         0,
                     );
                     qr_hom_cell_project(
                         &mut p1,
-                        (*_grid).cells[(i - 2) as usize].add((j - 2) as usize),
+                        _grid.cells[(i - 2) as usize].add((j - 2) as usize),
                         u,
                         v,
                         0,
                     );
                     qr_hom_cell_project(
                         &mut p2,
-                        (*_grid).cells[(i - 1) as usize].add((j - 2) as usize),
+                        _grid.cells[(i - 1) as usize].add((j - 2) as usize),
                         u,
                         v,
                         0,
@@ -2851,7 +2851,7 @@ unsafe fn qr_sampling_grid_init(
                     }
 
                     // We need a cell that has the target point at a known (u,v) location
-                    let cell_ptr = (*_grid).cells[(i - 1) as usize].add((j - 1) as usize);
+                    let cell_ptr = _grid.cells[(i - 1) as usize].add((j - 1) as usize);
                     qr_hom_cell_init(
                         &mut *cell_ptr,
                         (*q.offset((k_idx - nalign - 1) as isize))[0],
@@ -2873,9 +2873,9 @@ unsafe fn qr_sampling_grid_init(
                     );
                     cell_ptr
                 } else if i > 1 && j > 0 {
-                    (*_grid).cells[(i - 2) as usize].add((j - 1) as usize)
+                    _grid.cells[(i - 2) as usize].add((j - 1) as usize)
                 } else if i > 0 && j > 1 {
-                    (*_grid).cells[(i - 1) as usize].add((j - 2) as usize)
+                    _grid.cells[(i - 1) as usize].add((j - 2) as usize)
                 } else {
                     &base_cell as *const qr_hom_cell as *mut qr_hom_cell
                 };
@@ -2894,7 +2894,7 @@ unsafe fn qr_sampling_grid_init(
 
                 if i > 0 && j > 0 {
                     qr_hom_cell_init(
-                        &mut *(*_grid).cells[(i - 1) as usize].add((j - 1) as usize),
+                        &mut *_grid.cells[(i - 1) as usize].add((j - 1) as usize),
                         (*q.offset((k_idx - nalign - 1) as isize))[0],
                         (*q.offset((k_idx - nalign - 1) as isize))[1],
                         (*q.offset((k_idx - nalign) as isize))[0],
@@ -2921,31 +2921,31 @@ unsafe fn qr_sampling_grid_init(
 
     // Set the limits over which each cell is used
     memcpy(
-        (*_grid).cell_limits.as_mut_ptr() as *mut c_void,
+        _grid.cell_limits.as_mut_ptr() as *mut c_void,
         align_pos.as_ptr().offset(1) as *const c_void,
-        (((*_grid).ncells - 1) * size_of::<c_int>() as c_int) as size_t,
+        ((_grid.ncells - 1) * size_of::<c_int>() as c_int) as size_t,
     );
-    (*_grid).cell_limits[((*_grid).ncells - 1) as usize] = dim;
+    _grid.cell_limits[(_grid.ncells - 1) as usize] = dim;
 
     // Produce a bounding square for the code
-    qr_hom_cell_project(&mut _p[0], (*_grid).cells[0].add(0), -1, -1, 1);
+    qr_hom_cell_project(&mut _p[0], _grid.cells[0].add(0), -1, -1, 1);
     qr_hom_cell_project(
         &mut _p[1],
-        (*_grid).cells[0].add(((*_grid).ncells - 1) as usize),
+        _grid.cells[0].add((_grid.ncells - 1) as usize),
         (dim << 1) - 1,
         -1,
         1,
     );
     qr_hom_cell_project(
         &mut _p[2],
-        (*_grid).cells[((*_grid).ncells - 1) as usize].add(0),
+        _grid.cells[(_grid.ncells - 1) as usize].add(0),
         -1,
         (dim << 1) - 1,
         1,
     );
     qr_hom_cell_project(
         &mut _p[3],
-        (*_grid).cells[((*_grid).ncells - 1) as usize].add(((*_grid).ncells - 1) as usize),
+        _grid.cells[(_grid.ncells - 1) as usize].add((_grid.ncells - 1) as usize),
         (dim << 1) - 1,
         (dim << 1) - 1,
         1,
@@ -3502,9 +3502,9 @@ pub(crate) unsafe fn qr_code_data_parse(
 #[allow(clippy::too_many_arguments)]
 unsafe fn qr_code_decode(
     _qrdata: &mut qr_code_data,
-    _ul_pos: *const qr_point,
-    _ur_pos: *const qr_point,
-    _dl_pos: *const qr_point,
+    _ul_pos: &qr_point,
+    _ur_pos: &qr_point,
+    _dl_pos: &qr_point,
     _version: c_int,
     _fmt_info: c_int,
     _img: &[u8],
