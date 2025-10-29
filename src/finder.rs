@@ -13,12 +13,6 @@ use libc::c_uint;
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Retrieve bar+space pair width starting at offset i
-#[inline]
-fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.get_width(offset) + dcode.get_width(offset + 1)
-}
-
 /// Fixed character width decode assist
 ///
 /// Bar+space width are compared as a fraction of the reference dimension "x"
@@ -29,7 +23,7 @@ fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
 /// Returns encoded number of units - 2 (for use as zero based index)
 /// or -1 if invalid
 #[inline]
-fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
+pub(crate) fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
     let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if e_val >= n - 3 {
         -1
@@ -75,22 +69,22 @@ pub(crate) fn find_qr(dcode: &mut zbar_decoder_t) -> SymbolType {
     }
 
     // Check for 1:1:3:1:1 ratio pattern
-    let mut ei = decode_e(pair_width(dcode, 1), s, 7);
+    let mut ei = decode_e(dcode.pair_width(1), s, 7);
     if ei != 0 {
         return SymbolType::None;
     }
 
-    ei = decode_e(pair_width(dcode, 2), s, 7);
+    ei = decode_e(dcode.pair_width(2), s, 7);
     if ei != 2 {
         return SymbolType::None;
     }
 
-    ei = decode_e(pair_width(dcode, 3), s, 7);
+    ei = decode_e(dcode.pair_width(3), s, 7);
     if ei != 2 {
         return SymbolType::None;
     }
 
-    ei = decode_e(pair_width(dcode, 4), s, 7);
+    ei = decode_e(dcode.pair_width(4), s, 7);
     if ei != 0 {
         return SymbolType::None;
     }

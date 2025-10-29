@@ -39,13 +39,6 @@ unsafe fn feed_bits(
     }
 }
 
-#[inline]
-unsafe fn segment_index(seg: &databar_segment_t) -> i32 {
-    ((seg.finder() as i32) << 2)
-        | ((seg.color() as i32) << 1)
-        | (((seg.color() as u8 ^ seg.side()) as i32) & 1)
-}
-
 /// DataBar finder pattern hash table
 static FINDER_HASH: [i8; 0x20] = [
     0x16, 0x1f, 0x02, 0x00, 0x03, 0x00, 0x06, 0x0b, 0x1f, 0x0e, 0x17, 0x0c, 0x0b, 0x14, 0x11, 0x0c,
@@ -170,7 +163,7 @@ static GROUPS: [GroupS; 14] = [
 ///
 /// # Safety
 /// Buffer must contain at least 14 bytes, with first 13 being ASCII digits '0'-'9'
-pub(crate) unsafe fn _zbar_databar_append_check14(buf: &mut [u8]) {
+fn append_check14(buf: &mut [u8]) {
     let mut chk: u8 = 0;
     let mut ptr = buf;
 
@@ -202,7 +195,7 @@ pub(crate) unsafe fn _zbar_databar_append_check14(buf: &mut [u8]) {
 ///
 /// # Safety
 /// Buffer must have at least `i` bytes available
-pub(crate) unsafe fn _zbar_databar_decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
+fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     let mut remaining = i;
 
     while remaining > 0 {
@@ -215,7 +208,7 @@ pub(crate) unsafe fn _zbar_databar_decode10(buf: &mut [u8], mut n: u64, mut i: u
 }
 
 #[inline]
-unsafe fn decoder_realloc_databar_segments(
+unsafe fn realloc_databar_segments(
     ptr: *mut databar_segment_t,
     count: usize,
 ) -> *mut databar_segment_t {
@@ -223,7 +216,7 @@ unsafe fn decoder_realloc_databar_segments(
         as *mut databar_segment_t
 }
 
-unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
+unsafe fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
     let mut data_ptr = data;
     let first = data_ptr[0] as u64;
     data_ptr = &mut data_ptr[1..];
@@ -321,10 +314,10 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
             if n >= 1000 {
                 return -1;
             }
-            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 3);
+            decode10(&mut buf[buf_idx..], n as u64, 3);
             buf_idx += 3;
         }
-        _zbar_databar_append_check14(&mut buf[..buf_idx - 13]);
+        append_check14(&mut buf[..buf_idx - 13]);
         buf_idx += 1;
     }
 
@@ -356,7 +349,7 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
             if n >= 1000 {
                 return -1;
             }
-            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 3);
+            decode10(&mut buf[buf_idx..], n as u64, 3);
             buf_idx += 3;
         }
         4 => {
@@ -371,7 +364,7 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
             buf[buf_idx + 2] = b'0';
             buf[buf_idx + 3] = b'3';
             buf_idx += 4;
-            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 6);
+            decode10(&mut buf[buf_idx..], n as u64, 6);
             buf_idx += 6;
         }
         5 => {
@@ -393,7 +386,7 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
             if n >= 10000 {
                 n -= 10000;
             }
-            _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 6);
+            decode10(&mut buf[buf_idx..], n as u64, 6);
             buf_idx += 6;
         }
         _ => {}
@@ -416,7 +409,7 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
         if n >= 1_000_000 {
             return -1;
         }
-        _zbar_databar_decode10(&mut buf[buf_idx..], n as u64, 6);
+        decode10(&mut buf[buf_idx..], n as u64, 6);
         buf[buf_idx - 1] = buf[buf_idx];
         buf[buf_idx] = b'0';
         buf_idx += 6;
@@ -438,11 +431,11 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
             temp_enc = enc - 6;
             buf[buf_idx] = b'0' + ((temp_enc | 1) as u8);
             buf_idx += 1;
-            _zbar_databar_decode10(&mut buf[buf_idx..], yy as u64, 2);
+            decode10(&mut buf[buf_idx..], yy as u64, 2);
             buf_idx += 2;
-            _zbar_databar_decode10(&mut buf[buf_idx..], mm as u64, 2);
+            decode10(&mut buf[buf_idx..], mm as u64, 2);
             buf_idx += 2;
-            _zbar_databar_decode10(&mut buf[buf_idx..], dd as u64, 2);
+            decode10(&mut buf[buf_idx..], dd as u64, 2);
             buf_idx += 2;
         } else if n > 38400 {
             return -1;
@@ -581,7 +574,7 @@ unsafe fn databar_postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) 
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-pub(crate) unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, mut d: [c_uint; 4]) {
+fn postprocess(dcode: &mut zbar_decoder_t, mut d: [c_uint; 4]) {
     // Get config before borrowing buffer
     let emit_check = ((dcode.databar.config >> ZBAR_CFG_EMIT_CHECK) & 1) != 0;
 
@@ -691,7 +684,7 @@ pub(crate) unsafe fn _zbar_databar_postprocess(dcode: &mut zbar_decoder_t, mut d
 ///
 /// # Returns
 /// 1 if widths match within tolerance, 0 otherwise
-pub(crate) fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
+fn check_width(wf: u32, wd: u32, n: u32) -> c_int {
     let dwf = wf.wrapping_mul(3);
     let wd = wd.wrapping_mul(14);
     let wf = wf.wrapping_mul(n);
@@ -708,10 +701,7 @@ pub(crate) fn _zbar_databar_check_width(wf: u32, wd: u32, n: u32) -> c_int {
 }
 
 /// Merge or update a DataBar segment with existing segments
-pub(crate) unsafe fn _zbar_databar_merge_segment(
-    db: &mut databar_decoder_t,
-    seg: &mut databar_segment_t,
-) {
+unsafe fn merge_segment(db: &mut databar_decoder_t, seg: &mut databar_segment_t) {
     let csegs = db.csegs() as isize;
 
     for i in 0..csegs {
@@ -730,7 +720,7 @@ pub(crate) unsafe fn _zbar_databar_merge_segment(
             && s.side() == seg.side()
             && s.data == seg.data
             && s.check() == seg.check()
-            && _zbar_databar_check_width(seg.width as u32, s.width as u32, 14) != 0
+            && check_width(seg.width as u32, s.width as u32, 14) != 0
         {
             // Found a matching segment - merge with it
             let mut cnt = s.count();
@@ -760,10 +750,7 @@ pub(crate) unsafe fn _zbar_databar_merge_segment(
 }
 
 /// Match DataBar segment to find complete symbol
-pub(crate) unsafe fn match_segment(
-    dcode: &mut zbar_decoder_t,
-    seg: *mut databar_segment_t,
-) -> SymbolType {
+unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: &mut databar_segment_t) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
@@ -771,19 +758,19 @@ pub(crate) unsafe fn match_segment(
     let mut smax: [*mut databar_segment_t; 3] = [std::ptr::null_mut(); 3];
     let mut d = [0u32; 4];
 
-    if (*seg).partial() && (*seg).count() < 4 {
+    if seg.partial() && seg.count() < 4 {
         return SymbolType::Partial;
     }
 
     for i0 in 0..(csegs as usize) {
         let s0 = db.segs.add(i0);
         if s0 == seg
-            || (*s0).finder() != (*seg).finder()
+            || (*s0).finder() != seg.finder()
             || (*s0).exp()
-            || (*s0).color() != (*seg).color()
-            || (*s0).side() == (*seg).side()
+            || (*s0).color() != seg.color()
+            || (*s0).side() == seg.side()
             || ((*s0).partial() && (*s0).count() < 4)
-            || _zbar_databar_check_width((*seg).width as c_uint, (*s0).width as c_uint, 14) == 0
+            || check_width(seg.width as c_uint, (*s0).width as c_uint, 14) == 0
         {
             continue;
         }
@@ -793,17 +780,17 @@ pub(crate) unsafe fn match_segment(
             if i1 == i0
                 || (*s1).finder() < 0
                 || (*s1).exp()
-                || (*s1).color() == (*seg).color()
+                || (*s1).color() == seg.color()
                 || ((*s1).partial() && (*s1).count() < 4)
-                || _zbar_databar_check_width((*seg).width as c_uint, (*s1).width as c_uint, 14) == 0
+                || check_width(seg.width as c_uint, (*s1).width as c_uint, 14) == 0
             {
                 continue;
             }
 
-            let mut chkf = if (*seg).color() != zbar_color_t::ZBAR_SPACE {
-                (*seg).finder() as i32 + (*s1).finder() as i32 * 9
+            let mut chkf = if seg.color() != zbar_color_t::ZBAR_SPACE {
+                seg.finder() as i32 + (*s1).finder() as i32 * 9
             } else {
-                (*s1).finder() as i32 + (*seg).finder() as i32 * 9
+                (*s1).finder() as i32 + seg.finder() as i32 * 9
             };
             if chkf > 72 {
                 chkf -= 1;
@@ -813,7 +800,7 @@ pub(crate) unsafe fn match_segment(
             }
 
             let chks =
-                (((*seg).check() as i32) + ((*s0).check() as i32) + ((*s1).check() as i32)) % 79;
+                ((seg.check() as i32) + ((*s0).check() as i32) + ((*s1).check() as i32)) % 79;
 
             let chk = if chkf >= chks {
                 chkf - chks
@@ -833,8 +820,7 @@ pub(crate) unsafe fn match_segment(
                     || (*s2).side() == (*s1).side()
                     || (*s2).check() as i32 != chk
                     || ((*s2).partial() && (*s2).count() < 4)
-                    || _zbar_databar_check_width((*seg).width as c_uint, (*s2).width as c_uint, 14)
-                        == 0
+                    || check_width(seg.width as c_uint, (*s2).width as c_uint, 14) == 0
                 {
                     continue;
                 }
@@ -856,7 +842,7 @@ pub(crate) unsafe fn match_segment(
         return SymbolType::Partial;
     }
 
-    d[(((*seg).color() as usize) << 1) | ((*seg).side() as usize)] = (*seg).data as u32;
+    d[((seg.color() as usize) << 1) | (seg.side() as usize)] = seg.data as u32;
     for i0 in 0..3 {
         d[(((*smax[i0]).color() as usize) << 1) | ((*smax[i0]).side() as usize)] =
             (*smax[i0]).data as u32;
@@ -866,7 +852,7 @@ pub(crate) unsafe fn match_segment(
             (*smax[i0]).set_finder(-1);
         }
     }
-    (*seg).set_finder(-1);
+    seg.set_finder(-1);
 
     if dcode.set_buffer_capacity(18).is_err() {
         return SymbolType::Partial;
@@ -876,15 +862,15 @@ pub(crate) unsafe fn match_segment(
         return SymbolType::Partial;
     }
 
-    _zbar_databar_postprocess(dcode, d);
+    postprocess(dcode, d);
     dcode.modifiers = 1 << ZBAR_MOD_GS1;
-    dcode.direction = 1 - 2 * (((*seg).side() as i32) ^ ((*seg).color() as i32) ^ 1);
+    dcode.direction = 1 - 2 * ((seg.side() as i32) ^ (seg.color() as i32) ^ 1);
     SymbolType::Databar
 }
 
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
-pub(crate) unsafe fn lookup_sequence(
+unsafe fn lookup_sequence(
     seg: *mut databar_segment_t,
     fixed: i32,
     seq: &mut [i32],
@@ -934,7 +920,7 @@ pub(crate) unsafe fn lookup_sequence(
     }
 }
 
-pub(crate) unsafe fn match_segment_exp(
+unsafe fn match_segment_exp(
     dcode: *mut zbar_decoder_t,
     seg: *mut databar_segment_t,
     dir: c_int,
@@ -946,7 +932,7 @@ pub(crate) unsafe fn match_segment_exp(
     }
 
     let ifixed = seg.offset_from(db.segs) as usize;
-    let fixed = segment_index(&*seg);
+    let fixed = (*seg).segment_index();
     let mut bestsegs = [-1i32; 22];
     let mut segs_idx = [-1i32; 22];
     let mut seq = [-1i32; 22];
@@ -964,7 +950,7 @@ pub(crate) unsafe fn match_segment_exp(
         let s = db.segs.add(j);
         iseg[j] =
             if (*s).exp() && (*s).finder() >= 0 && (!(*s).partial() || (*s).count() as i32 >= 4) {
-                segment_index(&*s)
+                (*s).segment_index()
             } else {
                 -1
             };
@@ -986,7 +972,7 @@ pub(crate) unsafe fn match_segment_exp(
             if target == fixed {
                 candidate = db.segs.add(ifixed);
                 if segs_idx[idx] < 0
-                    && _zbar_databar_check_width(current_width, (*candidate).width as u32, 14) != 0
+                    && check_width(current_width, (*candidate).width as u32, 14) != 0
                 {
                     found = Some(ifixed);
                 }
@@ -999,10 +985,7 @@ pub(crate) unsafe fn match_segment_exp(
                 while start < csegs {
                     if iseg[start] == target {
                         let cand = db.segs.add(start);
-                        if idx == 0
-                            || _zbar_databar_check_width(current_width, (*cand).width as u32, 14)
-                                != 0
-                        {
+                        if idx == 0 || check_width(current_width, (*cand).width as u32, 14) != 0 {
                             found = Some(start);
                             candidate = cand;
                             break;
@@ -1104,7 +1087,7 @@ pub(crate) unsafe fn match_segment_exp(
         count += 1;
     }
 
-    if databar_postprocess_exp(&mut *dcode, &mut data_vals) != 0 {
+    if postprocess_exp(&mut *dcode, &mut data_vals) != 0 {
         (*dcode).release_lock(SymbolType::DatabarExp);
         return SymbolType::Partial;
     }
@@ -1141,12 +1124,7 @@ pub(crate) unsafe fn match_segment_exp(
 ///
 /// # Returns
 /// Calculated checksum value
-pub(crate) fn _zbar_databar_calc_check(
-    mut sig0: u32,
-    mut sig1: u32,
-    side: u32,
-    mod_val: u32,
-) -> u32 {
+fn calc_check(mut sig0: u32, mut sig1: u32, side: u32, mod_val: u32) -> u32 {
     let mut chk: u32 = 0;
 
     for i in (0..4).rev() {
@@ -1167,7 +1145,7 @@ pub(crate) fn _zbar_databar_calc_check(
 
 /// Calculate DataBar character value from 4-element signature
 /// Returns -1 on error
-pub(crate) fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -> c_int {
+fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -> c_int {
     let mut v = 0u32;
     n = n.wrapping_sub(1);
 
@@ -1333,7 +1311,7 @@ pub(crate) unsafe fn decode_char(
     };
     emin[1] = -(n as i32);
 
-    if s < 13 || _zbar_databar_check_width((*seg).width as c_uint, s, n) == 0 {
+    if s < 13 || check_width((*seg).width as c_uint, s, n) == 0 {
         return SymbolType::None;
     }
 
@@ -1432,7 +1410,7 @@ pub(crate) unsafe fn decode_char(
         if v >= 4096 {
             return SymbolType::None;
         }
-        chk = _zbar_databar_calc_check(sig0, sig1, side as c_uint, 211);
+        chk = calc_check(sig0, sig1, side as c_uint, 211);
         if (*seg).finder() != 0 || (*seg).color() != zbar_color_t::ZBAR_SPACE || (*seg).side() != 0
         {
             let i = ((*seg).finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
@@ -1446,7 +1424,7 @@ pub(crate) unsafe fn decode_char(
             chk = 0;
         }
     } else {
-        chk = _zbar_databar_calc_check(sig0, sig1, (*seg).side() as c_uint, 79);
+        chk = calc_check(sig0, sig1, (*seg).side() as c_uint, 79);
         if (*seg).color() != zbar_color_t::ZBAR_SPACE {
             chk = (chk * 16) % 79;
         }
@@ -1455,12 +1433,12 @@ pub(crate) unsafe fn decode_char(
     (*seg).set_check(chk as u8);
     (*seg).data = v as i16;
 
-    _zbar_databar_merge_segment(&mut dcode.databar, &mut *seg);
+    merge_segment(&mut dcode.databar, &mut *seg);
 
     if (*seg).exp() {
         return match_segment_exp(dcode, seg, dir);
     } else if dir > 0 {
-        return match_segment(dcode, seg);
+        return match_segment(dcode, &mut *seg);
     }
     SymbolType::Partial
 }
@@ -1509,7 +1487,7 @@ pub(crate) unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> 
 
         if new_csegs != csegs {
             // Reallocate segment array
-            let new_ptr = decoder_realloc_databar_segments(db.segs, new_csegs);
+            let new_ptr = realloc_databar_segments(db.segs, new_csegs);
 
             if new_ptr.is_null() {
                 // Allocation failed, fall through to reuse old segment
@@ -1685,88 +1663,84 @@ mod tests {
         // Test exact match: wf=100, wd=100, n=14
         // After scaling: dwf=300, wd=1400, wf=1400
         // Check: (1400-300 <= 1400) && (1400 <= 1400+300) => (1100<=1400) && (1400<=1700) => true
-        assert_eq!(_zbar_databar_check_width(100, 100, 14), 1);
+        assert_eq!(check_width(100, 100, 14), 1);
 
         // Test within tolerance: wf=100, wd=105, n=14
         // After scaling: dwf=300, wd=1470, wf=1400
         // Check: (1400-300 <= 1470) && (1470 <= 1400+300) => (1100<=1470) && (1470<=1700) => true
-        assert_eq!(_zbar_databar_check_width(100, 105, 14), 1);
+        assert_eq!(check_width(100, 105, 14), 1);
 
         // Test within tolerance: wf=100, wd=95, n=14
         // After scaling: dwf=300, wd=1330, wf=1400
         // Check: (1400-300 <= 1330) && (1330 <= 1400+300) => (1100<=1330) && (1330<=1700) => true
-        assert_eq!(_zbar_databar_check_width(100, 95, 14), 1);
+        assert_eq!(check_width(100, 95, 14), 1);
 
         // Test outside tolerance: wf=100, wd=130, n=14
         // After scaling: dwf=300, wd=1820, wf=1400
         // Check: (1400-300 <= 1820) && (1820 <= 1400+300) => (1100<=1820) && (1820<=1700) => false
-        assert_eq!(_zbar_databar_check_width(100, 130, 14), 0);
+        assert_eq!(check_width(100, 130, 14), 0);
 
         // Test outside tolerance: wf=100, wd=70, n=14
         // After scaling: dwf=300, wd=980, wf=1400
         // Check: (1400-300 <= 980) && (980 <= 1400+300) => (1100<=980) && (980<=1700) => false
-        assert_eq!(_zbar_databar_check_width(100, 70, 14), 0);
+        assert_eq!(check_width(100, 70, 14), 0);
     }
 
     #[test]
     fn test_decode10() {
-        unsafe {
-            let mut buf = [0u8; 10];
+        let mut buf = [0u8; 10];
 
-            // Test simple number
-            _zbar_databar_decode10(&mut buf, 123, 3);
-            assert_eq!(&buf[0..3], b"123");
+        // Test simple number
+        decode10(&mut buf, 123, 3);
+        assert_eq!(&buf[0..3], b"123");
 
-            // Test with leading zeros
-            _zbar_databar_decode10(&mut buf, 45, 6);
-            assert_eq!(&buf[0..6], b"000045");
+        // Test with leading zeros
+        decode10(&mut buf, 45, 6);
+        assert_eq!(&buf[0..6], b"000045");
 
-            // Test zero
-            _zbar_databar_decode10(&mut buf, 0, 3);
-            assert_eq!(&buf[0..3], b"000");
-        }
+        // Test zero
+        decode10(&mut buf, 0, 3);
+        assert_eq!(&buf[0..3], b"000");
     }
 
     #[test]
     fn test_append_check14() {
-        unsafe {
-            // Test with 13 ASCII digits
-            let mut buf = [
-                b'9', b'7', b'8', b'0', b'1', b'4', b'3', b'0', b'0', b'7', b'2', b'3', b'0', 0,
-            ];
-            _zbar_databar_append_check14(&mut buf);
-            // Check digit: (9+7+8+0+1+4+3+0+0+7+2+3) + (9+8+1+3+0+2)*2 = 44 + 46 = 90, 90%10=0, check=0
-            assert_eq!(buf[13], b'0');
+        // Test with 13 ASCII digits
+        let mut buf = [
+            b'9', b'7', b'8', b'0', b'1', b'4', b'3', b'0', b'0', b'7', b'2', b'3', b'0', 0,
+        ];
+        append_check14(&mut buf);
+        // Check digit: (9+7+8+0+1+4+3+0+0+7+2+3) + (9+8+1+3+0+2)*2 = 44 + 46 = 90, 90%10=0, check=0
+        assert_eq!(buf[13], b'0');
 
-            // Test another example: 1234567890120
-            let mut buf2 = [
-                b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2', b'0', 0,
-            ];
-            _zbar_databar_append_check14(&mut buf2);
-            // Check: (1+2+3+4+5+6+7+8+9+0+1+2) + (1+3+5+7+9+1)*2 = 48 + 52 = 100, 100%10=0, check=0
-            assert_eq!(buf2[13], b'0');
-        }
+        // Test another example: 1234567890120
+        let mut buf2 = [
+            b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2', b'0', 0,
+        ];
+        append_check14(&mut buf2);
+        // Check: (1+2+3+4+5+6+7+8+9+0+1+2) + (1+3+5+7+9+1)*2 = 48 + 52 = 100, 100%10=0, check=0
+        assert_eq!(buf2[13], b'0');
     }
 
     #[test]
     fn test_calc_check() {
         // Test basic checksum calculation
         // These values are based on understanding the algorithm
-        let chk1 = _zbar_databar_calc_check(0x1234, 0x5678, 0, 211);
+        let chk1 = calc_check(0x1234, 0x5678, 0, 211);
         assert!(chk1 < 211);
 
-        let chk2 = _zbar_databar_calc_check(0x1234, 0x5678, 1, 211);
+        let chk2 = calc_check(0x1234, 0x5678, 1, 211);
         assert!(chk2 < 211);
 
         // Side should affect the result
         assert_ne!(chk1, chk2);
 
         // Test with different modulus
-        let chk3 = _zbar_databar_calc_check(0x1234, 0x5678, 0, 79);
+        let chk3 = calc_check(0x1234, 0x5678, 0, 79);
         assert!(chk3 < 79);
 
         // Same inputs should give same output
-        let chk4 = _zbar_databar_calc_check(0x1234, 0x5678, 0, 211);
+        let chk4 = calc_check(0x1234, 0x5678, 0, 211);
         assert_eq!(chk1, chk4);
     }
 }

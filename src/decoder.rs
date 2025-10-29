@@ -542,6 +542,13 @@ impl databar_segment_t {
     pub(crate) fn set_check(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xFF << 24)) | ((val as c_uint) << 24);
     }
+
+    #[inline]
+    pub(crate) fn segment_index(&self) -> i32 {
+        ((self.finder() as i32) << 2)
+            | ((self.color() as i32) << 1)
+            | (((self.color() as u8 ^ self.side()) as i32) & 1)
+    }
 }
 
 /// DataBar decoder state

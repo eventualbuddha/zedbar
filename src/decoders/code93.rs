@@ -39,12 +39,6 @@ static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Retrieve i-th previous pair width
-#[inline]
-fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
-    dcode.get_width(offset) + dcode.get_width(offset + 1)
-}
-
 /// Fixed character width decode assist
 #[inline]
 fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_uint {
@@ -79,7 +73,7 @@ fn encode6(dcode: &zbar_decoder_t) -> i32 {
 
     let mut sig: i32 = 0;
     for i in (1..6).rev() {
-        let c = decode_e(pair_width(dcode, i), s, 9);
+        let c = decode_e(dcode.pair_width(i), s, 9);
         if c > 3 {
             return -1;
         }
@@ -171,7 +165,7 @@ fn decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     let dir = (c >> 7) != 0;
 
     let qz = if dir {
-        if decode_e(pair_width(dcode, 0), s, 9) != 0 {
+        if decode_e(dcode.pair_width(0), s, 9) != 0 {
             return SymbolType::None;
         }
         dcode.get_width(8)
@@ -217,7 +211,7 @@ fn check_stop(dcode: &zbar_decoder_t) -> bool {
         if qz != 0 && qz < (s * 3) / 4 {
             return false;
         }
-    } else if decode_e(pair_width(dcode, 0), s, 9) != 0 {
+    } else if decode_e(dcode.pair_width(0), s, 9) != 0 {
         return false;
     }
 
