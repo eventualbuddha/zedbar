@@ -4,6 +4,7 @@
 
 use crate::{
     decoder::{code93_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
+    finder::decode_e,
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -39,12 +40,6 @@ static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Fixed character width decode assist
-#[inline]
-fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_uint {
-    ((e * n * 2 + 1) / s).wrapping_sub(3) / 2
-}
-
 /// Access config value by index
 #[inline]
 fn cfg(decoder: &code93_decoder_t, cfg: c_int) -> c_int {
@@ -74,10 +69,10 @@ fn encode6(dcode: &zbar_decoder_t) -> i32 {
     let mut sig: i32 = 0;
     for i in (1..6).rev() {
         let c = decode_e(dcode.pair_width(i), s, 9);
-        if c > 3 {
+        if !(0..=3).contains(&c) {
             return -1;
         }
-        sig = (sig << 2) | (c as i32);
+        sig = (sig << 2) | c;
     }
 
     sig

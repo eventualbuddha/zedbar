@@ -4,6 +4,7 @@
 
 use crate::{
     decoder::{i25_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
+    finder::decode_e,
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -21,17 +22,6 @@ macro_rules! zassert {
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Fixed character width decode assist
-#[inline]
-fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
-    let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    if e_val >= n - 3 {
-        -1
-    } else {
-        e_val as i32
-    }
-}
 
 /// Acquire shared state lock
 #[inline]

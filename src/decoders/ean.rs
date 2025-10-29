@@ -5,6 +5,7 @@
 
 use crate::{
     decoder::{ean_decoder_t, ean_pass_t, zbar_decoder_t, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE},
+    finder::decode_e,
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -86,17 +87,6 @@ fn calc_s(dcode: &zbar_decoder_t, mut offset: u8, mut n: u8) -> c_uint {
     s
 }
 
-/// Fixed character width decode assist
-#[inline]
-fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i8 {
-    let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    if e_val >= n - 3 {
-        -1
-    } else {
-        e_val as i8
-    }
-}
-
 /// Check if two widths are within tolerance
 #[inline]
 fn check_width(w0: c_uint, w1: c_uint) -> c_uint {
@@ -152,7 +142,7 @@ fn aux_end(dcode: &zbar_decoder_t, fwd: u8) -> i8 {
         if e_code < 0 {
             return -1;
         }
-        code = (code << 2) | e_code;
+        code = (code << 2) | (e_code as i8);
     }
     code
 }
@@ -202,7 +192,7 @@ fn aux_start(dcode: &zbar_decoder_t) -> i8 {
 #[inline]
 fn aux_mid(dcode: &zbar_decoder_t) -> i8 {
     let e = dcode.get_width(4) + dcode.get_width(5);
-    decode_e(e, dcode.ean.s4, 7)
+    decode_e(e, dcode.ean.s4, 7) as i8
 }
 
 /// Attempt to decode previous 4 widths (2 bars and 2 spaces) as a character
@@ -225,7 +215,7 @@ fn decode4(dcode: &zbar_decoder_t) -> i8 {
     if e1_code < 0 || e2_code < 0 {
         return -1;
     }
-    let mut code = (e1_code << 2) | e2_code;
+    let mut code = ((e1_code << 2) | e2_code) as i8;
 
     // 4 combinations require additional determinant (D2)
     // E1E2 == 34 (0110)

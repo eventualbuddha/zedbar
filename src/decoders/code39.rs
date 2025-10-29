@@ -4,6 +4,7 @@
 
 use crate::{
     decoder::{code39_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
+    finder::decode_e,
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -295,17 +296,6 @@ static CODE39_CHARACTERS: &[u8; NUM_CHARS] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVW
 // Helper functions from decoder.h
 // ============================================================================
 
-/// Fixed character width decode assist
-#[inline]
-fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> u8 {
-    let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    if e_val >= n - 3 {
-        0xff
-    } else {
-        e_val as u8
-    }
-}
-
 /// Access config value by index
 #[inline]
 fn cfg(decoder: &code39_decoder_t, cfg: c_int) -> c_int {
@@ -320,7 +310,7 @@ fn cfg(decoder: &code39_decoder_t, cfg: c_int) -> c_int {
 #[inline]
 fn code39_decode1(enc: u8, e: c_uint, s: c_uint) -> u8 {
     let e_val = decode_e(e, s, 72);
-    if e_val > 18 {
+    if !(0..=18).contains(&e_val) {
         return 0xff;
     }
     let mut enc = enc << 1;
