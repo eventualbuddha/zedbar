@@ -5,8 +5,7 @@
 
 use libc::{c_int, c_uint};
 
-use crate::decoder::zbar_decode_width;
-use crate::decoder_types::zbar_decoder_t;
+use crate::decoder::zbar_decoder_t;
 use crate::SymbolType;
 
 // Constants from scanner.c
@@ -82,15 +81,9 @@ pub struct zbar_scanner_t {
 }
 
 impl zbar_scanner_t {
-    /// Get a reference to the decoder (if present)
-    #[inline]
-    pub fn decoder(&self) -> Option<&zbar_decoder_t> {
-        unsafe { self.decoder.as_ref() }
-    }
-
     /// Get a mutable reference to the decoder (if present)
     #[inline]
-    pub fn decoder_mut(&mut self) -> Option<&mut zbar_decoder_t> {
+    pub(crate) fn decoder_mut(&mut self) -> Option<&mut zbar_decoder_t> {
         unsafe { self.decoder.as_mut() }
     }
 
@@ -156,7 +149,7 @@ fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> SymbolType {
     // pass to decoder
     let width = scn.width;
     if let Some(decoder) = scn.decoder_mut() {
-        unsafe { zbar_decode_width(&mut *decoder, width) }
+        unsafe { decoder.zbar_decode_width(width) }
     } else {
         SymbolType::Partial
     }
@@ -185,7 +178,7 @@ pub fn scanner_flush(scn: &mut zbar_scanner_t) -> SymbolType {
     scn.y1_sign = 0;
     scn.width = 0;
     if let Some(decoder) = scn.decoder_mut() {
-        unsafe { zbar_decode_width(decoder, 0) }
+        unsafe { decoder.zbar_decode_width(0) }
     } else {
         SymbolType::Partial
     }

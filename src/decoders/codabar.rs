@@ -3,7 +3,7 @@
 //! This module implements decoding for Codabar barcodes.
 
 use crate::{
-    decoder_types::{
+    decoder::{
         codabar_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK,
         ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
@@ -369,7 +369,7 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> SymbolType {
 }
 
 /// Main Codabar decode function
-pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w8 = get_width(dcode, 8);
     let w1 = get_width(dcode, 1);

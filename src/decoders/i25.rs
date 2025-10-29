@@ -3,9 +3,7 @@
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
 use crate::{
-    decoder_types::{
-        i25_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
-    },
+    decoder::{i25_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -259,7 +257,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
 }
 
 /// Main I25 decode function
-pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w10 = get_width(dcode, 10);
     let w0 = get_width(dcode, 0);

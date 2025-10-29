@@ -4,7 +4,7 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    decoder_types::{
+    decoder::{
         ean_decoder_t, ean_pass_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_EMIT_CHECK,
         ZBAR_CFG_ENABLE,
     },
@@ -904,7 +904,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> PartialSymb
 // ============================================================================
 
 /// Main EAN/UPC decoder entry point
-pub unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType {
     // process up to 4 separate passes
     let mut sym = SymbolType::None;
     let pass_idx = (dcode.idx & 3) as usize;

@@ -1,22 +1,23 @@
-//! Low-level barcode decoder
+//! Decoder type definitions
+//!
+//! This module contains Rust definitions for all the barcode decoder types
+//! that mirror the C struct layouts exactly for FFI compatibility.
+
+use libc::{c_char, c_int, c_short, c_uint, c_void};
+use std::ptr;
 
 use crate::{
-    decoder_types::{
-        databar_segment_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN,
-        ZBAR_CFG_MIN_LEN,
-    },
     decoders::{
         codabar::_zbar_decode_codabar, code128::_zbar_decode_code128, code39::_zbar_decode_code39,
         code93::_zbar_decode_code93, databar::_zbar_decode_databar, ean::_zbar_decode_ean,
         i25::_zbar_decode_i25,
     },
     finder::find_qr,
+    line_scanner::zbar_color_t,
     SymbolType,
 };
-use libc::{c_int, c_uint, c_void};
-use std::mem::size_of;
 
-// Config constant not in decoder_types
+// Config constant
 const ZBAR_CFG_NUM: c_int = 5;
 
 #[inline]
@@ -24,28 +25,30 @@ fn test_cfg(config: c_uint, cfg: c_int) -> bool {
     ((config >> cfg) & 1) != 0
 }
 
+/// Number of integer configs (ZBAR_CFG_MAX_LEN - ZBAR_CFG_MIN_LEN + 1)
+pub(crate) const NUM_CFGS: usize = 2;
+
+/// Window size for bar width history (must be power of 2)
+pub(crate) const DECODE_WINDOW: usize = 16;
+
+// Macro equivalents
 #[inline]
-pub(crate) unsafe fn decoder_alloc_databar_segments(count: usize) -> *mut databar_segment_t {
-    libc::calloc(count, size_of::<databar_segment_t>()) as *mut databar_segment_t
+unsafe fn cfg_set(configs: &mut [c_int; 2], cfg: c_int, val: c_int) {
+    configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
 }
 
-#[inline]
-pub(crate) unsafe fn decoder_free_databar_segments(ptr: *mut databar_segment_t) {
-    libc::free(ptr as *mut c_void);
-}
-
-#[inline]
-pub(crate) unsafe fn decoder_realloc_databar_segments(
-    ptr: *mut databar_segment_t,
-    count: usize,
-) -> *mut databar_segment_t {
-    libc::realloc(ptr as *mut c_void, count * size_of::<databar_segment_t>())
-        as *mut databar_segment_t
+// Assertion macro
+macro_rules! zassert {
+    ($condition:expr, $retval:expr, $($arg:tt)*) => {
+        if !$condition {
+            return $retval;
+        }
+    };
 }
 
 /// Decode element width into a discrete value
 /// Returns -1 if the element width is invalid
-pub unsafe fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
+pub(crate) fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
     let big_e = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if big_e >= n - 3 {
         -1
@@ -55,354 +58,1174 @@ pub unsafe fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
 }
 
 // ============================================================================
-// Decoder accessor functions
+// Configuration constants
 // ============================================================================
 
-/// Set decoder callback handler
-pub unsafe fn zbar_decoder_set_handler(
-    dcode: *mut zbar_decoder_t,
-    handler: Option<crate::decoder_types::zbar_decoder_handler_t>,
-) -> Option<crate::decoder_types::zbar_decoder_handler_t> {
-    if dcode.is_null() {
-        return None;
-    }
-    let dcode = &mut *dcode;
-    let result = dcode.handler;
-    dcode.handler = handler;
-    result
+pub(crate) const ZBAR_CFG_ENABLE: c_int = 0;
+pub(crate) const ZBAR_CFG_ADD_CHECK: c_int = 1;
+pub(crate) const ZBAR_CFG_EMIT_CHECK: c_int = 2;
+pub(crate) const ZBAR_CFG_BINARY: c_int = 4;
+pub(crate) const ZBAR_CFG_MIN_LEN: c_int = 0x20;
+pub(crate) const ZBAR_CFG_MAX_LEN: c_int = 0x21;
+pub(crate) const ZBAR_CFG_UNCERTAINTY: c_int = 64;
+pub(crate) const ZBAR_CFG_POSITION: c_int = 128;
+pub(crate) const ZBAR_CFG_TEST_INVERTED: c_int = 129;
+pub(crate) const ZBAR_CFG_X_DENSITY: c_int = 256;
+pub(crate) const ZBAR_CFG_Y_DENSITY: c_int = 257;
+
+// ============================================================================
+// Modifier constants
+// ============================================================================
+
+pub(crate) const ZBAR_MOD_GS1: c_int = 0;
+pub(crate) const ZBAR_MOD_AIM: c_int = 1;
+
+// ============================================================================
+// Orientation constants
+// ============================================================================
+
+pub(crate) const ZBAR_ORIENT_UNKNOWN: c_int = -1;
+
+// ============================================================================
+// Buffer size constants
+// ============================================================================
+
+pub(crate) const BUFFER_MIN: c_uint = 0x20;
+pub(crate) const BUFFER_MAX: c_uint = 0x100;
+
+// ============================================================================
+// Simple decoder types
+// ============================================================================
+
+/// Interleaved 2 of 5 decoder state
+#[derive(Default)]
+pub(crate) struct i25_decoder_t {
+    // Bitfields packed into first 32 bits:
+    // direction: 1 bit, element: 4 bits, character: 12 bits = 17 bits used
+    // We'll use a u32 and provide accessor methods
+    bitfields: c_uint,
+    pub(crate) s10: c_uint,
+    pub(crate) width: c_uint,
+    pub(crate) buffer: Vec<u8>,
+    pub(crate) config: c_uint,
+    pub(crate) configs: [c_int; NUM_CFGS],
 }
 
-/// Set user data pointer
-pub unsafe fn zbar_decoder_set_userdata(dcode: *mut zbar_decoder_t, userdata: *mut c_void) {
-    if dcode.is_null() {
-        return;
+impl i25_decoder_t {
+    #[inline]
+    pub(crate) fn direction(&self) -> bool {
+        (self.bitfields & 0x1) != 0
     }
-    let dcode = &mut *dcode;
-    dcode.userdata = userdata;
+
+    #[inline]
+    pub(crate) fn set_direction(&mut self, val: bool) {
+        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+    }
+
+    #[inline]
+    pub(crate) fn element(&self) -> u8 {
+        ((self.bitfields >> 1) & 0xF) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_element(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
+    }
+
+    #[inline]
+    pub(crate) fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields >> 5) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_character(&mut self, val: i16) {
+        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+    }
+
+    /// Reset i25 decoder state
+    pub(crate) fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s10 = 0;
+    }
+
+    pub(crate) fn set_byte(&mut self, index: usize, value: u8) {
+        if self.buffer.len() <= index {
+            self.buffer.resize(index + 1, 0);
+        }
+        self.buffer[index] = value;
+    }
 }
 
-/// Get user data pointer
-pub unsafe fn zbar_decoder_get_userdata(dcode: *const zbar_decoder_t) -> *mut c_void {
-    if dcode.is_null() {
-        return std::ptr::null_mut();
-    }
-    let dcode = &*dcode;
-    dcode.userdata
+/// Code 39 decoder state
+#[derive(Default)]
+pub(crate) struct code39_decoder_t {
+    // Bitfields: direction: 1, element: 4, character: 12
+    bitfields: c_uint,
+    pub s9: c_uint,
+    pub width: c_uint,
+    pub config: c_uint,
+    pub configs: [c_int; NUM_CFGS],
+    pub buffer: Vec<u8>,
 }
 
-/// Get decoded symbol type
-pub unsafe fn zbar_decoder_get_type(dcode: *const zbar_decoder_t) -> SymbolType {
-    if dcode.is_null() {
-        return SymbolType::None;
+impl code39_decoder_t {
+    #[inline]
+    pub(crate) fn direction(&self) -> bool {
+        (self.bitfields & 0x1) != 0
     }
-    let dcode = &*dcode;
-    dcode.type_
+
+    #[inline]
+    pub(crate) fn set_direction(&mut self, val: bool) {
+        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+    }
+
+    #[inline]
+    pub(crate) fn element(&self) -> u8 {
+        ((self.bitfields >> 1) & 0xF) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_element(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
+    }
+
+    #[inline]
+    pub(crate) fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields >> 5) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_character(&mut self, val: i16) {
+        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+    }
+
+    /// Reset code39 decoder state
+    pub(crate) fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s9 = 0;
+    }
+
+    pub(crate) fn set_byte(&mut self, index: usize, value: u8) {
+        if self.buffer.len() <= index {
+            self.buffer.resize(index + 1, 0);
+        }
+        self.buffer[index] = value;
+    }
 }
 
-/// Get decoded symbol modifiers
-pub unsafe fn zbar_decoder_get_modifiers(dcode: *const zbar_decoder_t) -> c_uint {
-    if dcode.is_null() {
-        return 0;
+/// Code 93 decoder state
+#[derive(Default)]
+pub(crate) struct code93_decoder_t {
+    // Bitfields: direction: 1, element: 3, character: 12
+    bitfields: c_uint,
+    pub(crate) width: c_uint,
+    pub(crate) buf: u8,
+    pub(crate) config: c_uint,
+    pub(crate) configs: [c_int; NUM_CFGS],
+}
+
+impl code93_decoder_t {
+    #[inline]
+    pub(crate) fn direction(&self) -> bool {
+        (self.bitfields & 0x1) != 0
     }
-    let dcode = &*dcode;
-    dcode.modifiers
+
+    #[inline]
+    pub(crate) fn set_direction(&mut self, val: bool) {
+        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+    }
+
+    #[inline]
+    pub(crate) fn element(&self) -> u8 {
+        ((self.bitfields >> 1) & 0x7) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_element(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
+    }
+
+    #[inline]
+    pub(crate) fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields >> 4) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_character(&mut self, val: i16) {
+        self.bitfields = (self.bitfields & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
+    }
+
+    /// Reset code93 decoder state
+    pub(crate) fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+    }
+}
+
+/// Codabar decoder state
+#[derive(Default)]
+pub(crate) struct codabar_decoder_t {
+    // Bitfields: direction: 1, element: 4, character: 12
+    bitfields: c_uint,
+    pub(crate) s7: c_uint,
+    pub(crate) width: c_uint,
+    pub(crate) buf: [u8; 6],
+    pub(crate) config: c_uint,
+    pub(crate) configs: [c_int; NUM_CFGS],
+}
+
+impl codabar_decoder_t {
+    #[inline]
+    pub(crate) fn direction(&self) -> bool {
+        (self.bitfields & 0x1) != 0
+    }
+
+    #[inline]
+    pub(crate) fn set_direction(&mut self, val: bool) {
+        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+    }
+
+    #[inline]
+    pub(crate) fn element(&self) -> u8 {
+        ((self.bitfields >> 1) & 0xF) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_element(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
+    }
+
+    #[inline]
+    pub(crate) fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields >> 5) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_character(&mut self, val: i16) {
+        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+    }
+
+    /// Reset codabar decoder state
+    pub(crate) fn reset(&mut self) {
+        self.set_direction(false);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s7 = 0;
+    }
+}
+
+/// Code 128 decoder state
+#[derive(Default)]
+pub(crate) struct code128_decoder_t {
+    // Bitfields: direction: 1, element: 3, character: 12 (16 bits)
+    // start: 8 bits - packed into same u32
+    // Total: 24 bits used in first u32
+    bitfields_and_start: c_uint,
+    pub(crate) s6: c_uint,
+    pub(crate) width: c_uint,
+    pub(crate) config: c_uint,
+    pub(crate) configs: [c_int; NUM_CFGS],
+}
+
+impl code128_decoder_t {
+    #[inline]
+    pub(crate) fn direction(&self) -> u8 {
+        (self.bitfields_and_start & 0x1) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_direction(&mut self, val: u8) {
+        self.bitfields_and_start = (self.bitfields_and_start & !0x1) | (val as c_uint & 0x1);
+    }
+
+    #[inline]
+    pub(crate) fn element(&self) -> u8 {
+        ((self.bitfields_and_start >> 1) & 0x7) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_element(&mut self, val: u8) {
+        self.bitfields_and_start =
+            (self.bitfields_and_start & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
+    }
+
+    #[inline]
+    pub(crate) fn character(&self) -> i16 {
+        // Sign extend the 12-bit value
+        let val = ((self.bitfields_and_start >> 4) & 0xFFF) as i16;
+        // If the sign bit (bit 11) is set, extend it
+        if val & 0x800 != 0 {
+            val | !0xFFF
+        } else {
+            val
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_character(&mut self, val: i16) {
+        self.bitfields_and_start =
+            (self.bitfields_and_start & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
+    }
+
+    #[inline]
+    pub(crate) fn start(&self) -> u8 {
+        ((self.bitfields_and_start >> 16) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_start(&mut self, val: u8) {
+        self.bitfields_and_start =
+            (self.bitfields_and_start & !(0xFF << 16)) | ((val as c_uint) << 16);
+    }
+
+    /// Reset code128 decoder state
+    pub(crate) fn reset(&mut self) {
+        self.set_direction(0);
+        self.set_element(0);
+        self.set_character(-1);
+        self.s6 = 0;
+    }
+}
+
+/// SQ Code finder state (already defined but include here for completeness)
+#[derive(Default)]
+pub(crate) struct sq_finder_t {
+    pub(crate) config: c_uint,
 }
 
 // ============================================================================
-// Main decode function
+// Complex decoder types
 // ============================================================================
 
-/// Process next bar/space width from input stream
-///
-/// The width is in arbitrary relative units. First value of a scan
-/// is ZBAR_SPACE width, alternating from there.
-///
-/// # Returns
-/// - Appropriate symbol type if width completes decode of a symbol (data is available for retrieval)
-/// - `SymbolType::Partial` as a hint if part of a symbol was decoded
-/// - `SymbolType::None` if no new symbol data is available
-pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> SymbolType {
-    let mut sym = SymbolType::None;
-
-    // Store width in circular buffer
-    dcode.w[(dcode.idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
-
-    // Update shared character width
-    dcode.s6 = dcode.s6.wrapping_sub(dcode.get_width(7));
-    dcode.s6 = dcode.s6.wrapping_add(dcode.get_width(1));
-
-    // Each decoder processes width stream in parallel
-    if test_cfg(dcode.qrf.config, ZBAR_CFG_ENABLE) {
-        let tmp = find_qr(dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    if dcode.ean.enable != 0 {
-        let tmp = _zbar_decode_ean(&mut *dcode);
-        if tmp != SymbolType::None {
-            sym = tmp;
-        }
-    }
-
-    if test_cfg(dcode.code39.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_code39(&mut *dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    if test_cfg(dcode.code93.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_code93(&mut *dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    if test_cfg(dcode.code128.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_code128(&mut *dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    if test_cfg(
-        dcode.databar.config | dcode.databar.config_exp,
-        ZBAR_CFG_ENABLE,
-    ) {
-        let tmp = _zbar_decode_databar(&mut *dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    if test_cfg(dcode.codabar.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_codabar(&mut *dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    if test_cfg(dcode.i25.config, ZBAR_CFG_ENABLE) {
-        let tmp = _zbar_decode_i25(&mut *dcode);
-        if tmp > SymbolType::Partial {
-            sym = tmp;
-        }
-    }
-
-    dcode.idx = dcode.idx.wrapping_add(1);
-    dcode.type_ = sym;
-
-    if sym != SymbolType::None {
-        if dcode.lock != SymbolType::None && sym > SymbolType::Partial && sym != SymbolType::QrCode
-        {
-            dcode.release_lock(sym);
-        }
-        if let Some(handler) = dcode.handler {
-            handler(dcode);
-        }
-    }
-
-    sym
+/// DataBar segment (partial)
+pub(crate) struct databar_segment_t {
+    // First 32 bits of bitfields:
+    // finder: 5, exp: 1, color: 1, side: 1,
+    // partial: 1, count: 7, epoch: 8, check: 8 = 32 bits
+    bitfields: c_uint,
+    pub(crate) data: c_short,
+    pub(crate) width: c_short,
 }
 
-// ============================================================================
-// Configuration functions
-// ============================================================================
+impl databar_segment_t {
+    #[inline]
+    pub(crate) fn finder(&self) -> i8 {
+        // finder is a signed 5-bit field (bits 0-4)
+        let val = (self.bitfields & 0x1F) as i8;
+        // Sign extend from 5 bits to 8 bits
+        if val & 0x10 != 0 {
+            val | 0xE0_u8 as i8
+        } else {
+            val
+        }
+    }
 
-/// Get configuration reference for a symbology (internal helper)
-fn decoder_get_config(dcode: &zbar_decoder_t, symbol_type: SymbolType) -> Option<&c_uint> {
-    match symbol_type {
-        SymbolType::Ean13 => Some(&dcode.ean.ean13_config),
-        SymbolType::Ean2 => Some(&dcode.ean.ean2_config),
-        SymbolType::Ean5 => Some(&dcode.ean.ean5_config),
-        SymbolType::Ean8 => Some(&dcode.ean.ean8_config),
-        SymbolType::Upca => Some(&dcode.ean.upca_config),
-        SymbolType::Upce => Some(&dcode.ean.upce_config),
-        SymbolType::Isbn10 => Some(&dcode.ean.isbn10_config),
-        SymbolType::Isbn13 => Some(&dcode.ean.isbn13_config),
-        SymbolType::I25 => Some(&dcode.i25.config),
-        SymbolType::Databar => Some(&dcode.databar.config),
-        SymbolType::DatabarExp => Some(&dcode.databar.config_exp),
-        SymbolType::Codabar => Some(&dcode.codabar.config),
-        SymbolType::Code39 => Some(&dcode.code39.config),
-        SymbolType::Code93 => Some(&dcode.code93.config),
-        SymbolType::Code128 => Some(&dcode.code128.config),
-        SymbolType::QrCode => Some(&dcode.qrf.config),
-        SymbolType::SqCode => Some(&dcode.sqf.config),
-        _ => None,
+    #[inline]
+    pub(crate) fn set_finder(&mut self, val: i8) {
+        self.bitfields = (self.bitfields & !0x1F) | ((val as c_uint) & 0x1F);
+    }
+
+    #[inline]
+    pub(crate) fn partial(&self) -> bool {
+        // partial is bit 8
+        (self.bitfields & (1 << 8)) != 0
+    }
+
+    #[inline]
+    pub(crate) fn set_partial(&mut self, val: bool) {
+        if val {
+            self.bitfields |= 1 << 8;
+        } else {
+            self.bitfields &= !(1 << 8);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn exp(&self) -> bool {
+        // exp is bit 5
+        (self.bitfields & (1 << 5)) != 0
+    }
+
+    #[inline]
+    pub(crate) fn set_exp(&mut self, val: bool) {
+        if val {
+            self.bitfields |= 1 << 5;
+        } else {
+            self.bitfields &= !(1 << 5);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn color(&self) -> zbar_color_t {
+        // color is bit 6
+        (((self.bitfields >> 6) & 1) as u8).into()
+    }
+
+    #[inline]
+    pub(crate) fn set_color(&mut self, val: zbar_color_t) {
+        self.bitfields = (self.bitfields & !(1 << 6)) | ((val as c_uint) << 6);
+    }
+
+    #[inline]
+    pub(crate) fn side(&self) -> u8 {
+        // side is bit 7
+        ((self.bitfields >> 7) & 1) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_side(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(1 << 7)) | (((val & 1) as c_uint) << 7);
+    }
+
+    #[inline]
+    pub(crate) fn count(&self) -> u8 {
+        // count is bits 9-15 (7 bits)
+        ((self.bitfields >> 9) & 0x7F) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_count(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0x7F << 9)) | (((val & 0x7F) as c_uint) << 9);
+    }
+
+    #[inline]
+    pub(crate) fn epoch(&self) -> u8 {
+        // epoch is bits 16-23 (8 bits)
+        ((self.bitfields >> 16) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_epoch(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xFF << 16)) | ((val as c_uint) << 16);
+    }
+
+    #[inline]
+    pub(crate) fn check(&self) -> u8 {
+        // check is bits 24-31 (8 bits)
+        ((self.bitfields >> 24) & 0xFF) as u8
+    }
+
+    #[inline]
+    pub(crate) fn set_check(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xFF << 24)) | ((val as c_uint) << 24);
     }
 }
 
-/// Get mutable configuration reference for a symbology (internal helper)
-fn decoder_get_config_mut(dcode: &mut zbar_decoder_t, sym: SymbolType) -> Option<&mut c_uint> {
-    match sym {
-        SymbolType::Ean13 => Some(&mut dcode.ean.ean13_config),
-        SymbolType::Ean2 => Some(&mut dcode.ean.ean2_config),
-        SymbolType::Ean5 => Some(&mut dcode.ean.ean5_config),
-        SymbolType::Ean8 => Some(&mut dcode.ean.ean8_config),
-        SymbolType::Upca => Some(&mut dcode.ean.upca_config),
-        SymbolType::Upce => Some(&mut dcode.ean.upce_config),
-        SymbolType::Isbn10 => Some(&mut dcode.ean.isbn10_config),
-        SymbolType::Isbn13 => Some(&mut dcode.ean.isbn13_config),
-        SymbolType::I25 => Some(&mut dcode.i25.config),
-        SymbolType::Databar => Some(&mut dcode.databar.config),
-        SymbolType::DatabarExp => Some(&mut dcode.databar.config_exp),
-        SymbolType::Codabar => Some(&mut dcode.codabar.config),
-        SymbolType::Code39 => Some(&mut dcode.code39.config),
-        SymbolType::Code93 => Some(&mut dcode.code93.config),
-        SymbolType::Code128 => Some(&mut dcode.code128.config),
-        SymbolType::QrCode => Some(&mut dcode.qrf.config),
-        SymbolType::SqCode => Some(&mut dcode.sqf.config),
-        _ => None,
-    }
+/// DataBar decoder state
+#[derive(Default)]
+pub(crate) struct databar_decoder_t {
+    pub(crate) config: c_uint,
+    pub(crate) config_exp: c_uint,
+    // Bitfields: csegs: 8, epoch: 8 (16 bits in a u32)
+    pub(crate) bitfields: c_uint,
+    pub(crate) segs: *mut databar_segment_t,
+    pub(crate) chars: [c_char; 16],
 }
 
-/// Get all configurations for a symbology
-pub fn zbar_decoder_get_configs(dcode: &zbar_decoder_t, symbol_type: SymbolType) -> c_uint {
-    decoder_get_config(dcode, symbol_type).copied().unwrap_or(0)
-}
-
-/// Set boolean configuration (internal helper)
-fn decoder_set_config_bool(
-    dcode: &mut zbar_decoder_t,
-    sym: SymbolType,
-    cfg: c_int,
-    val: c_int,
-) -> c_int {
-    let config = match decoder_get_config_mut(dcode, sym) {
-        Some(c) => c,
-        None => return 1,
-    };
-
-    if cfg >= ZBAR_CFG_NUM {
-        return 1;
+impl databar_decoder_t {
+    #[inline]
+    pub(crate) fn csegs(&self) -> u8 {
+        (self.bitfields & 0xFF) as u8
     }
 
-    if val == 0 {
-        *config &= !(1 << cfg);
-    } else if val == 1 {
-        *config |= 1 << cfg;
-    } else {
-        return 1;
+    #[inline]
+    pub(crate) fn set_csegs(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !0xFF) | (val as c_uint);
     }
 
-    // Update EAN enable flag
-    dcode.ean.enable = if test_cfg(
-        dcode.ean.ean13_config
-            | dcode.ean.ean2_config
-            | dcode.ean.ean5_config
-            | dcode.ean.ean8_config
-            | dcode.ean.upca_config
-            | dcode.ean.upce_config
-            | dcode.ean.isbn10_config
-            | dcode.ean.isbn13_config,
-        ZBAR_CFG_ENABLE,
-    ) {
-        1
-    } else {
-        0
-    };
+    #[inline]
+    pub(crate) fn epoch(&self) -> u8 {
+        ((self.bitfields >> 8) & 0xFF) as u8
+    }
 
-    0
-}
+    #[inline]
+    pub(crate) fn set_epoch(&mut self, val: u8) {
+        self.bitfields = (self.bitfields & !(0xFF << 8)) | ((val as c_uint) << 8);
+    }
 
-/// Set integer configuration (internal helper)
-fn decoder_set_config_int(
-    dcode: &mut zbar_decoder_t,
-    sym: SymbolType,
-    cfg: c_int,
-    val: c_int,
-) -> c_int {
-    match sym {
-        SymbolType::I25 => {
-            dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
-            0
+    /// Reset DataBar decoder state
+    pub(crate) unsafe fn reset(&mut self) {
+        let n = self.csegs() as isize;
+        self.new_scan();
+        for i in 0..n {
+            let seg = &mut *(self.segs).offset(i);
+            seg.set_finder(-1);
         }
-        SymbolType::Codabar => {
-            dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
-            0
-        }
-        SymbolType::Code39 => {
-            dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
-            0
-        }
-        SymbolType::Code93 => {
-            dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
-            0
-        }
-        SymbolType::Code128 => {
-            dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
-            0
-        }
-        _ => 1,
-    }
-}
-
-/// Get decoder configuration value
-pub fn zbar_decoder_get_config(
-    dcode: &mut zbar_decoder_t,
-    symbol_type: SymbolType,
-    cfg: c_int,
-) -> Result<c_int, c_int> {
-    let config = match decoder_get_config(dcode, symbol_type) {
-        Some(c) => c,
-        None => return Err(1),
-    };
-
-    // Return error if symbol doesn't have config
-    if symbol_type <= SymbolType::Partial
-        || symbol_type > SymbolType::Code128
-        || symbol_type == SymbolType::Composite
-    {
-        return Err(1);
     }
 
-    // Return decoder boolean configs
-    if cfg < ZBAR_CFG_NUM {
-        return Ok(if (*config & (1 << cfg)) != 0 { 1 } else { 0 });
-    }
-
-    // Return decoder integer configs
-    if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
-        Ok(match symbol_type {
-            SymbolType::I25 => dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            SymbolType::Codabar => dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            SymbolType::Code39 => dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            SymbolType::Code93 => dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            SymbolType::Code128 => dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            _ => return Err(1),
-        })
-    } else {
-        Err(1)
-    }
-}
-
-/// Set decoder configuration
-pub unsafe fn zbar_decoder_set_config(
-    dcode: &mut zbar_decoder_t,
-    sym: SymbolType,
-    cfg: c_int,
-    val: c_int,
-) -> c_int {
-    // If ZBAR_NONE, set config for all symbologies
-    if sym == SymbolType::None {
-        for &s in &SymbolType::ALL {
-            // We need to recursively call this, but we can't reborrow dcode
-            // So we need to use the raw pointer API
-            unsafe {
-                zbar_decoder_set_config(dcode, s, cfg, val);
+    /// Prepare DataBar decoder for new scan
+    pub(crate) unsafe fn new_scan(&mut self) {
+        for i in 0..16 {
+            if self.chars[i] >= 0 {
+                let seg = &mut *(self.segs).offset(self.chars[i] as isize);
+                if seg.partial() {
+                    seg.set_finder(-1);
+                }
+                self.chars[i] = -1;
             }
         }
-        return 0;
+    }
+}
+
+/// EAN pass state
+#[derive(Default)]
+pub(crate) struct ean_pass_t {
+    pub(crate) state: c_char,
+    pub(crate) width: c_uint,
+    pub(crate) raw: [u8; 7],
+}
+
+/// EAN/UPC decoder state
+#[derive(Default)]
+pub(crate) struct ean_decoder_t {
+    pub(crate) pass: [ean_pass_t; 4],
+    pub(crate) left: SymbolType,
+    pub(crate) right: SymbolType,
+    pub(crate) direction: c_int,
+    pub(crate) s4: c_uint,
+    pub(crate) width: c_uint,
+    pub(crate) buf: [c_char; 18],
+    pub(crate) enable: c_char,
+    pub(crate) ean13_config: c_uint,
+    pub(crate) ean8_config: c_uint,
+    pub(crate) upca_config: c_uint,
+    pub(crate) upce_config: c_uint,
+    pub(crate) isbn10_config: c_uint,
+    pub(crate) isbn13_config: c_uint,
+    pub(crate) ean5_config: c_uint,
+    pub(crate) ean2_config: c_uint,
+}
+
+impl ean_decoder_t {
+    /// Prepare EAN decoder for new scan
+    pub(crate) fn new_scan(&mut self) {
+        self.pass[0].state = -1;
+        self.pass[1].state = -1;
+        self.pass[2].state = -1;
+        self.pass[3].state = -1;
+        self.s4 = 0;
     }
 
-    if (0..ZBAR_CFG_NUM).contains(&cfg) {
-        decoder_set_config_bool(dcode, sym, cfg, val)
-    } else if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
-        decoder_set_config_int(dcode, sym, cfg, val)
-    } else {
-        1
+    /// Reset EAN decoder state
+    pub(crate) fn reset(&mut self) {
+        self.new_scan();
+        self.left = SymbolType::None;
+        self.right = SymbolType::None;
+    }
+}
+
+/// QR finder line (from qrcode.h)
+#[derive(Default, Copy, Clone)]
+pub(crate) struct qr_finder_line {
+    pub(crate) pos: [c_int; 2], // qr_point
+    pub(crate) len: c_int,
+    pub(crate) boffs: c_int,
+    pub(crate) eoffs: c_int,
+}
+
+/// QR Code finder state
+#[derive(Default)]
+pub(crate) struct qr_finder_t {
+    pub(crate) s5: c_uint,
+    pub(crate) line: qr_finder_line,
+    pub(crate) config: c_uint,
+}
+
+impl qr_finder_t {
+    /// Reset QR finder state
+    pub(crate) fn reset(&mut self) {
+        self.s5 = 0;
+    }
+}
+
+// ============================================================================
+// Main decoder struct
+// ============================================================================
+
+/// Decoder handler callback
+pub(crate) type zbar_decoder_handler_t = unsafe fn(*mut zbar_decoder_t);
+
+/// Main barcode decoder state
+#[derive(Default)]
+pub(crate) struct zbar_decoder_t {
+    // Basic decoder state
+    pub(crate) idx: u8,
+    pub(crate) w: [c_uint; DECODE_WINDOW],
+    pub(crate) type_: SymbolType,
+    pub(crate) lock: SymbolType,
+    pub(crate) modifiers: c_uint,
+    pub(crate) direction: c_int,
+    pub(crate) s6: c_uint,
+
+    // Buffer management (everything above here is reset)
+    buffer: Vec<u8>,
+    pub(crate) userdata: *mut c_void,
+    pub(crate) handler: Option<zbar_decoder_handler_t>,
+
+    // Symbology-specific decoders
+    pub(crate) ean: ean_decoder_t,
+    pub(crate) i25: i25_decoder_t,
+    pub(crate) databar: databar_decoder_t,
+    pub(crate) codabar: codabar_decoder_t,
+    pub(crate) code39: code39_decoder_t,
+    pub(crate) code93: code93_decoder_t,
+    pub(crate) code128: code128_decoder_t,
+    pub(crate) qrf: qr_finder_t,
+    pub(crate) sqf: sq_finder_t,
+}
+
+impl zbar_decoder_t {
+    /// Create a new decoder instance
+    pub(crate) unsafe fn new() -> Option<Self> {
+        let mut decoder = Self::default();
+
+        decoder.buffer = Vec::with_capacity(BUFFER_MIN as usize);
+
+        // Initialize default configs
+        decoder.ean.enable = 1;
+        decoder.ean.ean13_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.ean.ean8_config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.ean.upca_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        decoder.ean.upce_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        decoder.ean.isbn10_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        decoder.ean.isbn13_config = 1 << ZBAR_CFG_EMIT_CHECK;
+        // FIXME_ADDON_SYNC not defined, skip ean2/ean5 config
+
+        decoder.i25.config = 1 << ZBAR_CFG_ENABLE;
+        cfg_set(&mut decoder.i25.configs, ZBAR_CFG_MIN_LEN, 6);
+
+        decoder.databar.config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
+        decoder.databar.set_csegs(4);
+        decoder.databar.segs = libc::calloc(4, size_of::<databar_segment_t>()) as *mut _;
+        if decoder.databar.segs.is_null() {
+            return None;
+        }
+
+        decoder.codabar.config = 1 << ZBAR_CFG_ENABLE;
+        cfg_set(&mut decoder.codabar.configs, ZBAR_CFG_MIN_LEN, 4);
+
+        decoder.code39.config = 1 << ZBAR_CFG_ENABLE;
+        cfg_set(&mut decoder.code39.configs, ZBAR_CFG_MIN_LEN, 1);
+
+        decoder.code93.config = 1 << ZBAR_CFG_ENABLE;
+        decoder.code128.config = 1 << ZBAR_CFG_ENABLE;
+        decoder.qrf.config = 1 << ZBAR_CFG_ENABLE;
+        decoder.sqf.config = 1 << ZBAR_CFG_ENABLE;
+
+        decoder.reset();
+        Some(decoder)
+    }
+
+    pub(crate) fn color(&self) -> zbar_color_t {
+        self.idx.into()
+    }
+
+    /// Get width of a specific element from the decoder's history window
+    pub(crate) unsafe fn get_width(&self, offset: u8) -> c_uint {
+        self.w[((self.idx as usize).wrapping_sub(offset as usize)) & (DECODE_WINDOW - 1)]
+    }
+
+    /// Get the combined width of two consecutive elements
+    pub(crate) unsafe fn pair_width(&self, offset: u8) -> c_uint {
+        self.get_width(offset) + self.get_width(offset + 1)
+    }
+
+    /// Calculate sum of n consecutive element widths
+    pub(crate) unsafe fn calc_s(&self, mut offset: u8, mut n: u8) -> c_uint {
+        let mut s = 0;
+        while n > 0 {
+            s += self.get_width(offset);
+            offset += 1;
+            n -= 1;
+        }
+        s
+    }
+
+    /// Resize the decoder's data buffer if needed.
+    ///
+    /// # Errors
+    /// Returns `Err` on allocation failure or if max size exceeded, `Ok` on success.
+    pub(crate) fn set_buffer_capacity(&mut self, len: c_uint) -> Result<(), ()> {
+        if len <= BUFFER_MIN {
+            return Ok(());
+        }
+        let current_alloc = self.buffer_capacity();
+        if len < current_alloc {
+            // FIXME: size reduction heuristic?
+            return Ok(());
+        }
+        if len > BUFFER_MAX {
+            return Err(());
+        }
+
+        self.buffer.reserve_exact((len - current_alloc) as usize);
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn buffer_capacity(&self) -> c_uint {
+        self.buffer.capacity() as c_uint
+    }
+
+    #[inline]
+    pub(crate) fn set_buffer_len(&mut self, len: c_uint) {
+        debug_assert!(len <= self.buffer_capacity());
+        self.buffer.resize(len as usize, 0);
+    }
+
+    /// Get a mutable slice to the buffer with the specified length.
+    /// This ensures the buffer has sufficient capacity and sets the length appropriately.
+    ///
+    /// # Errors
+    /// Returns `Err` if capacity exceeds max size.
+    #[inline]
+    pub(crate) fn buffer_mut_slice(&mut self, len: usize) -> Result<&mut [u8], ()> {
+        if len > BUFFER_MAX as usize {
+            return Err(());
+        }
+
+        self.buffer.resize(len, 0);
+        Ok(&mut self.buffer[..len])
+    }
+
+    /// Get an immutable slice to the buffer's current contents.
+    #[inline]
+    pub(crate) fn buffer_slice(&self) -> &[u8] {
+        &self.buffer
+    }
+
+    /// Write a byte at the specified position, resizing the buffer if necessary.
+    ///
+    /// # Errors
+    /// Returns `Err` if capacity exceeds max size.
+    #[inline]
+    pub(crate) fn write_buffer_byte(&mut self, pos: usize, value: u8) -> Result<(), ()> {
+        self.buffer_mut_slice(pos + 1)?[pos] = value;
+        Ok(())
+    }
+
+    /// Truncate the buffer to the specified length.
+    ///
+    /// This is a safe operation as it only reduces the buffer size.
+    #[inline]
+    pub(crate) fn truncate_buffer(&mut self, len: usize) {
+        self.buffer.truncate(len);
+    }
+
+    /// Reset decoder to initial state
+    pub(crate) unsafe fn reset(&mut self) {
+        self.idx = 0;
+        self.w.fill(0);
+        self.type_ = SymbolType::None;
+        self.lock = SymbolType::None;
+        self.modifiers = 0;
+        self.direction = 0;
+        self.s6 = 0;
+        self.set_buffer_len(0);
+
+        self.ean.reset();
+        self.i25.reset();
+        self.databar.reset();
+        self.codabar.reset();
+        self.code39.reset();
+        self.code93.reset();
+        self.code128.reset();
+        self.qrf.reset();
+    }
+
+    /// Mark start of a new scan pass
+    ///
+    /// Clears any intra-symbol state and resets color to ZBAR_SPACE.
+    /// Any partially decoded symbol state is retained.
+    pub(crate) unsafe fn new_scan(&mut self) {
+        // Soft reset decoder
+        self.w.fill(0);
+        self.lock = SymbolType::None;
+        self.idx = 0;
+        self.s6 = 0;
+
+        self.ean.new_scan();
+        self.i25.reset();
+        self.databar.reset();
+        self.codabar.reset();
+        self.code39.reset();
+        self.code93.reset();
+        self.code128.reset();
+        self.qrf.reset();
+    }
+
+    /// Acquire shared state lock
+    #[inline]
+    pub(crate) fn acquire_lock(&mut self, req: SymbolType) -> bool {
+        if self.lock != SymbolType::None {
+            return true;
+        }
+        self.lock = req;
+        false
+    }
+
+    /// Check and release shared state lock
+    #[inline]
+    pub(crate) fn release_lock(&mut self, req: SymbolType) -> i8 {
+        zassert!(self.lock == req, 1, "lock={} req={}\n", self.lock, req);
+        self.lock = SymbolType::None;
+        0
+    }
+
+    /// Process next bar/space width from input stream
+    ///
+    /// The width is in arbitrary relative units. First value of a scan
+    /// is ZBAR_SPACE width, alternating from there.
+    ///
+    /// # Returns
+    /// - Appropriate symbol type if width completes decode of a symbol (data is available for retrieval)
+    /// - `SymbolType::Partial` as a hint if part of a symbol was decoded
+    /// - `SymbolType::None` if no new symbol data is available
+    pub(crate) unsafe fn zbar_decode_width(&mut self, w: c_uint) -> SymbolType {
+        let mut sym = SymbolType::None;
+
+        // Store width in circular buffer
+        self.w[(self.idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
+
+        // Update shared character width
+        self.s6 = self.s6.wrapping_sub(self.get_width(7));
+        self.s6 = self.s6.wrapping_add(self.get_width(1));
+
+        // Each decoder processes width stream in parallel
+        if test_cfg(self.qrf.config, ZBAR_CFG_ENABLE) {
+            let tmp = find_qr(self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        if self.ean.enable != 0 {
+            let tmp = _zbar_decode_ean(&mut *self);
+            if tmp != SymbolType::None {
+                sym = tmp;
+            }
+        }
+
+        if test_cfg(self.code39.config, ZBAR_CFG_ENABLE) {
+            let tmp = _zbar_decode_code39(&mut *self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        if test_cfg(self.code93.config, ZBAR_CFG_ENABLE) {
+            let tmp = _zbar_decode_code93(&mut *self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        if test_cfg(self.code128.config, ZBAR_CFG_ENABLE) {
+            let tmp = _zbar_decode_code128(&mut *self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        if test_cfg(
+            self.databar.config | self.databar.config_exp,
+            ZBAR_CFG_ENABLE,
+        ) {
+            let tmp = _zbar_decode_databar(&mut *self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        if test_cfg(self.codabar.config, ZBAR_CFG_ENABLE) {
+            let tmp = _zbar_decode_codabar(&mut *self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        if test_cfg(self.i25.config, ZBAR_CFG_ENABLE) {
+            let tmp = _zbar_decode_i25(&mut *self);
+            if tmp > SymbolType::Partial {
+                sym = tmp;
+            }
+        }
+
+        self.idx = self.idx.wrapping_add(1);
+        self.type_ = sym;
+
+        if sym != SymbolType::None {
+            if self.lock != SymbolType::None
+                && sym > SymbolType::Partial
+                && sym != SymbolType::QrCode
+            {
+                self.release_lock(sym);
+            }
+            if let Some(handler) = self.handler {
+                handler(self);
+            }
+        }
+
+        sym
+    }
+
+    // ============================================================================
+    // Configuration functions
+    // ============================================================================
+
+    /// Get configuration reference for a symbology (internal helper)
+    fn get_config_internal(&self, symbol_type: SymbolType) -> Option<&c_uint> {
+        match symbol_type {
+            SymbolType::Ean13 => Some(&self.ean.ean13_config),
+            SymbolType::Ean2 => Some(&self.ean.ean2_config),
+            SymbolType::Ean5 => Some(&self.ean.ean5_config),
+            SymbolType::Ean8 => Some(&self.ean.ean8_config),
+            SymbolType::Upca => Some(&self.ean.upca_config),
+            SymbolType::Upce => Some(&self.ean.upce_config),
+            SymbolType::Isbn10 => Some(&self.ean.isbn10_config),
+            SymbolType::Isbn13 => Some(&self.ean.isbn13_config),
+            SymbolType::I25 => Some(&self.i25.config),
+            SymbolType::Databar => Some(&self.databar.config),
+            SymbolType::DatabarExp => Some(&self.databar.config_exp),
+            SymbolType::Codabar => Some(&self.codabar.config),
+            SymbolType::Code39 => Some(&self.code39.config),
+            SymbolType::Code93 => Some(&self.code93.config),
+            SymbolType::Code128 => Some(&self.code128.config),
+            SymbolType::QrCode => Some(&self.qrf.config),
+            SymbolType::SqCode => Some(&self.sqf.config),
+            _ => None,
+        }
+    }
+
+    /// Get mutable configuration reference for a symbology (internal helper)
+    fn get_config_mut(&mut self, sym: SymbolType) -> Option<&mut c_uint> {
+        match sym {
+            SymbolType::Ean13 => Some(&mut self.ean.ean13_config),
+            SymbolType::Ean2 => Some(&mut self.ean.ean2_config),
+            SymbolType::Ean5 => Some(&mut self.ean.ean5_config),
+            SymbolType::Ean8 => Some(&mut self.ean.ean8_config),
+            SymbolType::Upca => Some(&mut self.ean.upca_config),
+            SymbolType::Upce => Some(&mut self.ean.upce_config),
+            SymbolType::Isbn10 => Some(&mut self.ean.isbn10_config),
+            SymbolType::Isbn13 => Some(&mut self.ean.isbn13_config),
+            SymbolType::I25 => Some(&mut self.i25.config),
+            SymbolType::Databar => Some(&mut self.databar.config),
+            SymbolType::DatabarExp => Some(&mut self.databar.config_exp),
+            SymbolType::Codabar => Some(&mut self.codabar.config),
+            SymbolType::Code39 => Some(&mut self.code39.config),
+            SymbolType::Code93 => Some(&mut self.code93.config),
+            SymbolType::Code128 => Some(&mut self.code128.config),
+            SymbolType::QrCode => Some(&mut self.qrf.config),
+            SymbolType::SqCode => Some(&mut self.sqf.config),
+            _ => None,
+        }
+    }
+
+    /// Get all configurations for a symbology
+    pub(crate) fn get_configs(&self, symbol_type: SymbolType) -> c_uint {
+        self.get_config_internal(symbol_type).copied().unwrap_or(0)
+    }
+
+    /// Set boolean configuration (internal helper)
+    fn set_config_bool(&mut self, sym: SymbolType, cfg: c_int, val: c_int) -> c_int {
+        let config = match self.get_config_mut(sym) {
+            Some(c) => c,
+            None => return 1,
+        };
+
+        if cfg >= ZBAR_CFG_NUM {
+            return 1;
+        }
+
+        if val == 0 {
+            *config &= !(1 << cfg);
+        } else if val == 1 {
+            *config |= 1 << cfg;
+        } else {
+            return 1;
+        }
+
+        // Update EAN enable flag
+        self.ean.enable = if test_cfg(
+            self.ean.ean13_config
+                | self.ean.ean2_config
+                | self.ean.ean5_config
+                | self.ean.ean8_config
+                | self.ean.upca_config
+                | self.ean.upce_config
+                | self.ean.isbn10_config
+                | self.ean.isbn13_config,
+            ZBAR_CFG_ENABLE,
+        ) {
+            1
+        } else {
+            0
+        };
+
+        0
+    }
+
+    /// Set integer configuration (internal helper)
+    fn set_config_int(&mut self, sym: SymbolType, cfg: c_int, val: c_int) -> c_int {
+        match sym {
+            SymbolType::I25 => {
+                self.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+                0
+            }
+            SymbolType::Codabar => {
+                self.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+                0
+            }
+            SymbolType::Code39 => {
+                self.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+                0
+            }
+            SymbolType::Code93 => {
+                self.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+                0
+            }
+            SymbolType::Code128 => {
+                self.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
+                0
+            }
+            _ => 1,
+        }
+    }
+
+    /// Get decoder configuration value
+    pub(crate) fn get_config(
+        &mut self,
+        symbol_type: SymbolType,
+        cfg: c_int,
+    ) -> Result<c_int, c_int> {
+        let config = match self.get_config_internal(symbol_type) {
+            Some(c) => c,
+            None => return Err(1),
+        };
+
+        // Return error if symbol doesn't have config
+        if symbol_type <= SymbolType::Partial
+            || symbol_type > SymbolType::Code128
+            || symbol_type == SymbolType::Composite
+        {
+            return Err(1);
+        }
+
+        // Return decoder boolean configs
+        if cfg < ZBAR_CFG_NUM {
+            return Ok(if (*config & (1 << cfg)) != 0 { 1 } else { 0 });
+        }
+
+        // Return decoder integer configs
+        if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
+            Ok(match symbol_type {
+                SymbolType::I25 => self.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+                SymbolType::Codabar => self.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+                SymbolType::Code39 => self.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+                SymbolType::Code93 => self.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+                SymbolType::Code128 => self.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+                _ => return Err(1),
+            })
+        } else {
+            Err(1)
+        }
+    }
+
+    /// Set decoder configuration
+    pub(crate) unsafe fn set_config(&mut self, sym: SymbolType, cfg: c_int, val: c_int) -> c_int {
+        // If ZBAR_NONE, set config for all symbologies
+        if sym == SymbolType::None {
+            for &s in &SymbolType::ALL {
+                // We need to recursively call this, but we can't reborrow dcode
+                // So we need to use the raw pointer API
+                unsafe {
+                    self.set_config(s, cfg, val);
+                }
+            }
+            return 0;
+        }
+
+        if (0..ZBAR_CFG_NUM).contains(&cfg) {
+            self.set_config_bool(sym, cfg, val)
+        } else if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
+            self.set_config_int(sym, cfg, val)
+        } else {
+            1
+        }
+    }
+
+    /// Set decoder callback handler
+    pub(crate) fn set_handler(
+        &mut self,
+        handler: Option<zbar_decoder_handler_t>,
+    ) -> Option<zbar_decoder_handler_t> {
+        let result = self.handler;
+        self.handler = handler;
+        result
+    }
+
+    /// Set user data pointer
+    pub(crate) fn set_userdata(&mut self, userdata: *mut c_void) {
+        self.userdata = userdata;
+    }
+
+    /// Get user data pointer
+    pub(crate) fn get_userdata(&self) -> *mut c_void {
+        self.userdata
+    }
+
+    /// Get decoded symbol type
+    pub(crate) fn get_type(&self) -> SymbolType {
+        self.type_
+    }
+
+    /// Get decoded symbol modifiers
+    pub(crate) fn get_modifiers(&self) -> c_uint {
+        self.modifiers
+    }
+}
+
+impl Drop for zbar_decoder_t {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.databar.segs.is_null() {
+                libc::free(self.databar.segs as *mut c_void);
+                self.databar.segs = ptr::null_mut();
+            }
+        }
     }
 }

@@ -3,7 +3,7 @@
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
 use crate::{
-    decoder_types::{qr_finder_line, zbar_decoder_t, DECODE_WINDOW},
+    decoder::{qr_finder_line, zbar_decoder_t, DECODE_WINDOW},
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -48,7 +48,7 @@ fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
 // SQ Finder functions
 // ============================================================================
 
-pub fn decoder_get_sq_finder_config(dcode: &zbar_decoder_t) -> c_uint {
+pub(crate) fn decoder_get_sq_finder_config(dcode: &zbar_decoder_t) -> c_uint {
     dcode.sqf.config
 }
 
@@ -59,14 +59,14 @@ pub fn decoder_get_sq_finder_config(dcode: &zbar_decoder_t) -> c_uint {
 /// Get mutable reference to QR finder line state
 ///
 /// At this point lengths are all decode unit offsets from the decode edge.
-pub fn decoder_get_qr_finder_line(dcode: &mut zbar_decoder_t) -> &mut qr_finder_line {
+pub(crate) fn decoder_get_qr_finder_line(dcode: &mut zbar_decoder_t) -> &mut qr_finder_line {
     &mut dcode.qrf.line
 }
 
 /// Find QR code finder pattern
 ///
 /// Searches for the 1:1:3:1:1 ratio pattern characteristic of QR code finders.
-pub fn find_qr(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn find_qr(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest finder pattern width
     dcode.qrf.s5 -= get_width(dcode, 6);
     dcode.qrf.s5 += get_width(dcode, 1);

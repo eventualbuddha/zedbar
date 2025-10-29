@@ -5,57 +5,9 @@
 //!
 //! Handles symbol lifecycle, reference counting, and data access.
 
-use crate::{
-    decoder_types::{
-        ZBAR_CFG_ADD_CHECK, ZBAR_CFG_ASCII, ZBAR_CFG_BINARY, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE,
-        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CFG_POSITION, ZBAR_CFG_UNCERTAINTY,
-        ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_ORIENT_DOWN,
-        ZBAR_ORIENT_LEFT, ZBAR_ORIENT_RIGHT, ZBAR_ORIENT_UP,
-    },
-    img_scanner::zbar_symbol_set_t,
-    qrcode::qr_point,
-    refcnt,
-};
+use crate::{img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point, refcnt};
 use libc::{c_int, c_uint};
 use std::{fmt::Display, ptr};
-
-/// Get config name
-pub fn get_config_name(cfg: i32) -> &'static str {
-    match cfg {
-        ZBAR_CFG_ENABLE => "ENABLE",
-        ZBAR_CFG_ADD_CHECK => "ADD_CHECK",
-        ZBAR_CFG_EMIT_CHECK => "EMIT_CHECK",
-        ZBAR_CFG_ASCII => "ASCII",
-        ZBAR_CFG_BINARY => "BINARY",
-        ZBAR_CFG_MIN_LEN => "MIN_LEN",
-        ZBAR_CFG_MAX_LEN => "MAX_LEN",
-        ZBAR_CFG_UNCERTAINTY => "UNCERTAINTY",
-        ZBAR_CFG_POSITION => "POSITION",
-        ZBAR_CFG_X_DENSITY => "X_DENSITY",
-        ZBAR_CFG_Y_DENSITY => "Y_DENSITY",
-        _ => "",
-    }
-}
-
-/// Get modifier name
-pub fn get_modifier_name(mod_type: i32) -> &'static str {
-    match mod_type {
-        ZBAR_MOD_GS1 => "GS1",
-        ZBAR_MOD_AIM => "AIM",
-        _ => "",
-    }
-}
-
-/// Get orientation name
-pub fn get_orientation_name(orient: i32) -> &'static str {
-    match orient {
-        ZBAR_ORIENT_UP => "UP",
-        ZBAR_ORIENT_RIGHT => "RIGHT",
-        ZBAR_ORIENT_DOWN => "DOWN",
-        ZBAR_ORIENT_LEFT => "LEFT",
-        _ => "UNKNOWN",
-    }
-}
 
 #[derive(Default)]
 pub(crate) struct zbar_symbol_t {

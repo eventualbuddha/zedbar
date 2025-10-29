@@ -3,7 +3,7 @@
 //! This module implements decoding for Code 93 barcodes.
 
 use crate::{
-    decoder_types::{
+    decoder::{
         code93_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
@@ -369,7 +369,7 @@ fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 93 decode function
-pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> SymbolType {
     if dcode.code93.character() < 0 {
         if dcode.color() != zbar_color_t::ZBAR_BAR {
             return SymbolType::None;

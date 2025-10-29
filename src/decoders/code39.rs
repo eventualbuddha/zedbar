@@ -3,7 +3,7 @@
 //! This module implements decoding for Code 39 barcodes.
 
 use crate::{
-    decoder_types::{
+    decoder::{
         code39_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
@@ -462,7 +462,7 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 }
 
 /// Main Code 39 decode function
-pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w9 = get_width(dcode, 9);
     let w0 = get_width(dcode, 0);

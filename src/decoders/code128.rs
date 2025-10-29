@@ -3,7 +3,7 @@
 //! This module implements decoding for Code 128 barcodes.
 
 use crate::{
-    decoder_types::{
+    decoder::{
         code128_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
         ZBAR_MOD_AIM, ZBAR_MOD_GS1,
     },
@@ -615,7 +615,7 @@ fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 128 decode function
-pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     dcode.code128.s6 = dcode
         .code128

@@ -336,7 +336,7 @@ unsafe fn find_bottom_dot(
 /// - `reader` points to a valid `SqReader` instance
 /// - `iscn` points to a valid `zbar_image_scanner_t` instance
 /// - `img` points to a valid `zbar_image_t` with properly initialized image data
-pub unsafe fn sq_decode(
+pub(crate) unsafe fn sq_decode(
     reader: &mut SqReader,
     iscn: &mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
@@ -649,7 +649,7 @@ pub unsafe fn sq_decode(
 /// # Safety
 ///
 /// This function allocates memory that must be freed with `_zbar_sq_destroy`.
-pub unsafe fn _zbar_sq_create() -> *mut SqReader {
+pub(crate) unsafe fn _zbar_sq_create() -> *mut SqReader {
     let reader = Box::new(SqReader { enabled: true });
     Box::into_raw(reader)
 }
@@ -659,7 +659,7 @@ pub unsafe fn _zbar_sq_create() -> *mut SqReader {
 /// # Safety
 ///
 /// The `reader` pointer must have been created by `_zbar_sq_create` and not previously freed.
-pub unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
+pub(crate) unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
     if !reader.is_null() {
         let _ = Box::from_raw(reader);
     }

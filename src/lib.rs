@@ -7,7 +7,6 @@
 #![allow(non_camel_case_types)]
 
 pub mod decoder;
-pub mod decoder_types;
 pub mod decoders;
 pub mod error;
 pub mod finder;
