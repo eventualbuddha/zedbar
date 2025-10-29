@@ -4,10 +4,10 @@
 
 use crate::{
     decoder_types::{
-        i25_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
-        ZBAR_CFG_MIN_LEN, ZBAR_I25, ZBAR_NONE, ZBAR_PARTIAL,
+        i25_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 use libc::{c_int, c_uint};
 
@@ -43,8 +43,8 @@ fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
 
 /// Acquire shared state lock
 #[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
-    if dcode.lock != 0 {
+fn acquire_lock(dcode: &mut zbar_decoder_t, req: SymbolType) -> bool {
+    if dcode.lock != SymbolType::None {
         return true;
     }
     dcode.lock = req;
@@ -53,9 +53,9 @@ fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
 
 /// Check and release shared state lock
 #[inline]
-fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
+fn release_lock(dcode: &mut zbar_decoder_t, req: SymbolType) -> i8 {
     zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
-    dcode.lock = 0;
+    dcode.lock = SymbolType::None;
     0
 }
 
@@ -137,11 +137,11 @@ fn i25_decode10(dcode: &zbar_decoder_t, offset: u8) -> u8 {
 
 /// Decode start pattern
 #[inline]
-fn i25_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     let s10 = dcode.i25.s10;
 
     if s10 < 10 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let mut enc: u8 = 0;
@@ -163,14 +163,14 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     };
 
     if !valid {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Check leading quiet zone - spec is 10n(?)
     // we require 5.25n for w=2n to 6.75n for w=3n
     let quiet = get_width(dcode, i);
     if quiet != 0 && quiet < s10 * 3 / 8 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     dcode
@@ -178,14 +178,14 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         .set_direction(dcode.color() != zbar_color_t::ZBAR_SPACE);
     dcode.i25.set_element(1);
     dcode.i25.set_character(0);
-    ZBAR_PARTIAL
+    SymbolType::Partial
 }
 
 /// Acquire lock and copy holding buffer
 #[inline]
 unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
     // Lock shared resources
-    if acquire_lock(dcode, ZBAR_I25) {
+    if acquire_lock(dcode, SymbolType::I25) {
         dcode.i25.set_character(-1);
         return true;
     }
@@ -195,7 +195,7 @@ unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
 
 /// Decode end pattern and validate
 #[inline]
-unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
     let width = dcode.i25.width;
     let direction = dcode.i25.direction();
     let character = dcode.i25.character();
@@ -206,7 +206,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         || decode_e(get_width(dcode, 1), width, 45) > 2
         || decode_e(get_width(dcode, 2), width, 45) > 2
     {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Check exit condition
@@ -218,11 +218,11 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     };
 
     if !valid {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     if character <= 4 && i25_acquire_lock(dcode) {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     dcode.direction = 1 - 2 * (direction as c_int);
@@ -241,9 +241,9 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     }
 
     if character < min_len as i16 || (max_len > 0 && character > max_len as i16) {
-        release_lock(dcode, ZBAR_I25);
+        release_lock(dcode, SymbolType::I25);
         dcode.i25.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let buffer = buffer.clone();
@@ -255,18 +255,18 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     dcode.modifiers = 0;
     dcode.i25.set_character(-1);
-    ZBAR_I25
+    SymbolType::I25
 }
 
 /// Main I25 decode function
-pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w10 = get_width(dcode, 10);
     let w0 = get_width(dcode, 0);
     dcode.i25.s10 = dcode.i25.s10.wrapping_sub(w10).wrapping_add(w0);
 
-    if dcode.i25.character() < 0 && i25_decode_start(dcode) == ZBAR_NONE {
-        return ZBAR_NONE;
+    if dcode.i25.character() < 0 && i25_decode_start(dcode) == SymbolType::None {
+        return SymbolType::None;
     }
 
     let element = dcode.i25.element();
@@ -276,7 +276,7 @@ pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t
     if dcode.i25.element() == check_element {
         return i25_decode_end(dcode);
     } else if dcode.i25.element() != 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // FIXME check current character width against previous
@@ -287,17 +287,17 @@ pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t
     let _element = dcode.i25.element();
 
     if dcode.i25.character() == 4 && i25_acquire_lock(dcode) {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     let c = i25_decode10(dcode, 1);
     if c > 9 {
         // goto reset
         if dcode.i25.character() >= 4 {
-            release_lock(dcode, ZBAR_I25);
+            release_lock(dcode, SymbolType::I25);
         }
         dcode.i25.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let character = dcode.i25.character();
@@ -309,10 +309,10 @@ pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t
     if c > 9 {
         // goto reset
         if dcode.i25.character() >= 4 {
-            release_lock(dcode, ZBAR_I25);
+            release_lock(dcode, SymbolType::I25);
         }
         dcode.i25.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let character = dcode.i25.character();
@@ -322,8 +322,8 @@ pub unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t
     dcode.i25.set_element(10);
 
     if dcode.i25.character() == 2 {
-        ZBAR_PARTIAL
+        SymbolType::Partial
     } else {
-        ZBAR_NONE
+        SymbolType::None
     }
 }

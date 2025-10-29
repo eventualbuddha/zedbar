@@ -5,11 +5,11 @@ use libc::{c_int, c_uint};
 use crate::{
     decoder::{_zbar_decoder_decode_e, decoder_realloc_databar_segments},
     decoder_types::{
-        databar_decoder_t, databar_segment_t, zbar_decoder_t, zbar_symbol_type_t,
-        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_MOD_GS1,
-        ZBAR_NONE, ZBAR_PARTIAL,
+        databar_decoder_t, databar_segment_t, zbar_decoder_t, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE,
+        ZBAR_MOD_GS1,
     },
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 
 const DATABAR_MAX_SEGMENTS: usize = 32;
@@ -749,10 +749,7 @@ pub unsafe fn _zbar_databar_merge_segment(db: &mut databar_decoder_t, seg: &mut 
 }
 
 /// Match DataBar segment to find complete symbol
-pub unsafe fn match_segment(
-    dcode: &mut zbar_decoder_t,
-    seg: *mut databar_segment_t,
-) -> zbar_symbol_type_t {
+pub unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: *mut databar_segment_t) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
@@ -761,7 +758,7 @@ pub unsafe fn match_segment(
     let mut d = [0u32; 4];
 
     if (*seg).partial() && (*seg).count() < 4 {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     for i0 in 0..(csegs as usize) {
@@ -842,7 +839,7 @@ pub unsafe fn match_segment(
     }
 
     if smax[0].is_null() {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     d[(((*seg).color() as usize) << 1) | ((*seg).side() as usize)] = (*seg).data as u32;
@@ -858,17 +855,17 @@ pub unsafe fn match_segment(
     (*seg).set_finder(-1);
 
     if dcode.set_buffer_capacity(18).is_err() {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
-    if dcode._zbar_decoder_acquire_lock(ZBAR_DATABAR) != 0 {
-        return ZBAR_PARTIAL;
+    if !dcode.acquire_lock(SymbolType::Databar) {
+        return SymbolType::Partial;
     }
 
     _zbar_databar_postprocess(dcode, d);
     dcode.modifiers = 1 << ZBAR_MOD_GS1;
     dcode.direction = 1 - 2 * (((*seg).side() as i32) ^ ((*seg).color() as i32) ^ 1);
-    ZBAR_DATABAR
+    SymbolType::Databar
 }
 
 /// Lookup DataBar expanded sequence
@@ -927,11 +924,11 @@ pub unsafe fn match_segment_exp(
     dcode: *mut zbar_decoder_t,
     seg: *mut databar_segment_t,
     dir: c_int,
-) -> zbar_symbol_type_t {
+) -> SymbolType {
     let db = &mut (*dcode).databar;
     let csegs = db.csegs() as usize;
     if csegs == 0 {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     let ifixed = seg.offset_from(db.segs) as usize;
@@ -1014,7 +1011,7 @@ pub unsafe fn match_segment_exp(
                         continue;
                     }
                     if lu < 0 {
-                        return ZBAR_NONE;
+                        return SymbolType::None;
                     }
                 }
 
@@ -1077,11 +1074,11 @@ pub unsafe fn match_segment_exp(
     }
 
     if bestsegs[0] < 0 {
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
-    if (*dcode)._zbar_decoder_acquire_lock(ZBAR_DATABAR_EXP) != 0 {
-        return ZBAR_PARTIAL;
+    if (*dcode).acquire_lock(SymbolType::DatabarExp) {
+        return SymbolType::Partial;
     }
 
     let mut data_vals = [0i32; 22];
@@ -1094,8 +1091,8 @@ pub unsafe fn match_segment_exp(
     }
 
     if databar_postprocess_exp(&mut *dcode, &mut data_vals) != 0 {
-        (*dcode)._zbar_decoder_release_lock(ZBAR_DATABAR_EXP);
-        return ZBAR_PARTIAL;
+        (*dcode).release_lock(SymbolType::DatabarExp);
+        return SymbolType::Partial;
     }
 
     for sidx in bestsegs {
@@ -1115,7 +1112,7 @@ pub unsafe fn match_segment_exp(
 
     (*dcode).direction = (1 - 2 * (((*seg_ptr).side() ^ (*seg_ptr).color() as u8) as i32)) * dir;
     (*dcode).modifiers = 1 << ZBAR_MOD_GS1;
-    ZBAR_DATABAR_EXP
+    SymbolType::DatabarExp
 }
 
 /// Calculate DataBar checksum
@@ -1301,7 +1298,7 @@ pub unsafe fn decode_char(
     seg: *mut databar_segment_t,
     off: c_int,
     dir: c_int,
-) -> zbar_symbol_type_t {
+) -> SymbolType {
     let s = dcode.calc_s(if dir > 0 { off } else { off - 6 } as u8, 8);
     let mut emin = [0i32, 0i32];
     let mut sum = 0i32;
@@ -1318,14 +1315,14 @@ pub unsafe fn decode_char(
     emin[1] = -(n as i32);
 
     if s < 13 || _zbar_databar_check_width((*seg).width as c_uint, s, n) == 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let mut off = off;
     for i in (0..4).rev() {
         let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         sum = e - sum;
         off += dir;
@@ -1340,7 +1337,7 @@ pub unsafe fn decode_char(
 
         let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         sum = e - sum;
         off += dir;
@@ -1366,16 +1363,16 @@ pub unsafe fn decode_char(
     sum1 &= 0xf;
 
     if sum0.wrapping_add(sum1).wrapping_add(8) as c_int != n as c_int {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     if ((sum0 ^ (n >> 1)) | (sum1 ^ (n >> 1) ^ n)) & 1 != 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let i = ((n & 0x3) ^ 1) * 5 + (sum1 >> 1);
     if i as usize >= GROUPS.len() {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     let g = &GROUPS[i as usize];
 
@@ -1386,7 +1383,7 @@ pub unsafe fn decode_char(
         (!(n as i32) & 1) as c_uint,
     );
     if vodd < 0 || vodd > g.todd as i32 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let veven = calc_value4(
@@ -1396,7 +1393,7 @@ pub unsafe fn decode_char(
         (n & 1) as c_uint,
     );
     if veven < 0 || veven > g.teven as i32 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let mut v = g.sum as i32;
@@ -1414,18 +1411,18 @@ pub unsafe fn decode_char(
     if (*seg).exp() {
         let side = (*seg).color() as u8 ^ (*seg).side() ^ 1;
         if v >= 4096 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         chk = _zbar_databar_calc_check(sig0, sig1, side as c_uint, 211);
         if (*seg).finder() != 0 || (*seg).color() != zbar_color_t::ZBAR_SPACE || (*seg).side() != 0
         {
             let i = ((*seg).finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
             if !(0..12).contains(&i) {
-                return ZBAR_NONE;
+                return SymbolType::None;
             }
             chk = (chk * EXP_CHECKSUMS[i as usize] as u32) % 211;
         } else if v >= 4009 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         } else {
             chk = 0;
         }
@@ -1446,7 +1443,7 @@ pub unsafe fn decode_char(
     } else if dir > 0 {
         return match_segment(dcode, seg);
     }
-    ZBAR_PARTIAL
+    SymbolType::Partial
 }
 
 /// Allocate a new DataBar segment (or reuse an old one)
@@ -1527,19 +1524,19 @@ pub unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
 }
 
 /// Decode DataBar finder pattern
-pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
     let e0 = dcode.pair_width(1);
     let e2 = dcode.pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
         let e = e2 * 4;
         if e < 15 * e0 || e > 34 * e0 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         (0, e2, dcode.pair_width(4))
     } else {
         let e = e0 * 4;
         if e < 15 * e2 || e > 34 * e2 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         (1, e0, dcode.pair_width(0))
     };
@@ -1547,7 +1544,7 @@ pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     let s = e1 + e3;
     if s < 12 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let sig = (_zbar_decoder_decode_e(e3, s, 14) << 8)
@@ -1560,7 +1557,7 @@ pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         || ((sig >> 8) & 0xf) >= 10
         || (((sig >> 8) + sig) & 0xf) != 10
     {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let finder = (FINDER_HASH[((sig - (sig >> 5)) & 0x1f) as usize]
@@ -1575,16 +1572,16 @@ pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
             & 1)
             == 0
     {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     if finder < 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let iseg = _zbar_databar_alloc_segment(&mut dcode.databar);
     if iseg < 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let seg = &mut (*dcode.databar.segs.offset(iseg as isize));
@@ -1598,7 +1595,7 @@ pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     seg.set_epoch(dcode.databar.epoch());
 
     let rc = decode_char(dcode, seg, 12 - dir, -1);
-    if rc == 0 {
+    if rc == SymbolType::None {
         seg.set_partial(true);
     } else {
         dcode
@@ -1608,13 +1605,13 @@ pub unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     let i = ((dcode.idx as c_int + 8 + dir) & 0xf) as usize;
     if dcode.databar.chars[i] != -1 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     dcode.databar.chars[i] = iseg as i8;
     rc
 }
 
-pub unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> SymbolType {
     let i = dcode.idx & 0xf;
 
     let mut sym = decode_finder(dcode);
@@ -1646,7 +1643,7 @@ pub unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> zbar_symbol_ty
     }
 
     sym = decode_char(dcode, seg, 1, 1);
-    if sym == 0 {
+    if sym == SymbolType::None {
         (*seg).set_finder(-1);
         if !pair.is_null() {
             (*pair).set_partial(true);

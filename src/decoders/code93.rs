@@ -4,10 +4,10 @@
 
 use crate::{
     decoder_types::{
-        code93_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
-        ZBAR_CFG_MIN_LEN, ZBAR_CODE93, ZBAR_NONE, ZBAR_PARTIAL,
+        code93_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 use libc::{c_int, c_uint};
 
@@ -57,24 +57,6 @@ fn pair_width(dcode: &zbar_decoder_t, offset: u8) -> c_uint {
 #[inline]
 fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_uint {
     ((e * n * 2 + 1) / s).wrapping_sub(3) / 2
-}
-
-/// Acquire shared state lock
-#[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
-    if dcode.lock != 0 {
-        return true;
-    }
-    dcode.lock = req;
-    false
-}
-
-/// Check and release shared state lock
-#[inline]
-fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
-    zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
-    dcode.lock = 0;
-    0
 }
 
 /// Access config value by index
@@ -187,18 +169,18 @@ fn decode6(dcode: &zbar_decoder_t) -> i32 {
 
 /// Decode start pattern
 #[inline]
-fn decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     let s = dcode.s6;
     let c = encode6(dcode);
     if c < 0 || (c != 0x00f && c != 0x0f0) {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let dir = (c >> 7) != 0;
 
     let qz = if dir {
         if decode_e(pair_width(dcode, 0), s, 9) != 0 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         get_width(dcode, 8)
     } else {
@@ -206,7 +188,7 @@ fn decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     };
 
     if qz != 0 && qz < (s * 3) / 4 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Decoded valid start/stop - initialize state
@@ -214,17 +196,17 @@ fn decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.code93.set_element(if !dir { 0 } else { 7 });
     dcode.code93.set_character(0);
     dcode.code93.width = s;
-    ZBAR_PARTIAL
+    SymbolType::Partial
 }
 
 /// Abort decoding
 #[inline]
-fn decode_abort(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn decode_abort(dcode: &mut zbar_decoder_t) -> SymbolType {
     if dcode.code93.character() > 1 {
-        release_lock(dcode, ZBAR_CODE93);
+        dcode.release_lock(SymbolType::Code93);
     }
     dcode.code93.set_character(-1);
-    ZBAR_NONE
+    SymbolType::None
 }
 
 /// Check stop pattern
@@ -387,10 +369,10 @@ fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 93 decode function
-pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> SymbolType {
     if dcode.code93.character() < 0 {
         if dcode.color() != zbar_color_t::ZBAR_BAR {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         return decode_start(dcode);
     }
@@ -400,7 +382,7 @@ pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.code93.set_element(element);
 
     if element != 6 || dcode.color() as u8 == (dcode.code93.direction() as u8) {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     dcode.code93.set_element(0);
@@ -416,7 +398,7 @@ pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     if c == 0x2f {
         if !check_stop(dcode) {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         if !validate_checksums(dcode) {
             return decode_abort(dcode);
@@ -426,7 +408,7 @@ pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         }
 
         dcode.code93.set_character(-1);
-        return ZBAR_CODE93;
+        return SymbolType::Code93;
     }
 
     let character = dcode.code93.character();
@@ -441,7 +423,7 @@ pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     if character == 1 {
         // Lock shared resources
-        if acquire_lock(dcode, ZBAR_CODE93) {
+        if dcode.acquire_lock(SymbolType::Code39) {
             return decode_abort(dcode);
         }
         // Copy from holding buffer
@@ -459,5 +441,5 @@ pub fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         return decode_abort(dcode);
     }
     dcode.code93.set_character(character + 1);
-    ZBAR_NONE
+    SymbolType::None
 }

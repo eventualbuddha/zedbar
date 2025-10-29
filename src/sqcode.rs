@@ -8,11 +8,10 @@ use crate::{
     img_scanner::{
         _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_t,
     },
+    SymbolType,
 };
 use libc::{c_int, size_t};
 use std::io::Write;
-
-const ZBAR_SQCODE: i32 = 0x80; // SQCODE symbol type
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Shape {
@@ -101,7 +100,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 
 /// Extract text from buffer and add to scanner results
 unsafe fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
-    let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_SQCODE);
+    let sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::SqCode);
     if sym.is_null() {
         return true;
     }

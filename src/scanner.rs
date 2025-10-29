@@ -39,7 +39,7 @@ impl Scanner {
     /// Configure the scanner for a specific symbology
     pub fn set_config(&mut self, symbology: SymbolType, config: Config, value: i32) -> Result<()> {
         let result = unsafe {
-            zbar_image_scanner_set_config(&mut *self.ptr, symbology as i32, config as i32, value)
+            zbar_image_scanner_set_config(&mut *self.ptr, symbology, config as i32, value)
         };
 
         if result == 0 {

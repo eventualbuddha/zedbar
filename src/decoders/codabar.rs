@@ -4,11 +4,11 @@
 
 use crate::{
     decoder_types::{
-        codabar_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_ADD_CHECK,
-        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR, ZBAR_NONE,
-        ZBAR_PARTIAL,
+        codabar_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK,
+        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 use libc::{c_int, c_uint};
 
@@ -94,24 +94,6 @@ fn decode_sortn(dcode: &zbar_decoder_t, n: i32, i0: u8) -> c_uint {
         sort |= (i0 as c_uint) + (jmin as c_uint) * 2;
     }
     sort
-}
-
-/// Acquire shared state lock
-#[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
-    if dcode.lock != 0 {
-        return true;
-    }
-    dcode.lock = req;
-    false
-}
-
-/// Check and release shared state lock
-#[inline]
-fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
-    zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
-    dcode.lock = 0;
-    0
 }
 
 /// Access config value by index
@@ -252,22 +234,22 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
 
 /// Decode start pattern
 #[inline]
-fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     let s = dcode.codabar.s7;
     if s < 8 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Check leading quiet zone - spec is 10x
     let qz = get_width(dcode, 8);
     if (qz != 0 && qz * 2 < s) || 4 * get_width(dcode, 0) > 3 * s {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Check space ratios first
     let ispc = decode_sort3(dcode, 2);
     if (ispc >> 8) == 4 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Require 2 wide and 1 narrow spaces
@@ -280,7 +262,7 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         || 8 * wsmid < 5 * wsmax
         || wsmid * wsmid <= wsmax * wsmin
     {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     let ispc = ispc >> 10;
 
@@ -290,7 +272,7 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     let wbmax = get_width(dcode, (ibar & 0xf) as u8);
     let wbmin = get_width(dcode, (ibar >> 12) as u8);
     if 8 * wbmin < wbmax || 3 * wbmin > 2 * wbmax {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     // Require 1 wide & 3 narrow bars
@@ -302,13 +284,20 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         || wb1 * wb2 >= wbmin * wbmax
         || wb2 * wb2 >= wb1 * wbmax
     {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     let ibar = (((ibar & 0xf) as u8) - 1) >> 1;
 
     // Decode combination
     let ic = ispc * 4 + (ibar as c_uint);
-    zassert!(ic < 8, ZBAR_NONE, "ic={} ispc={} ibar={}", ic, ispc, ibar);
+    zassert!(
+        ic < 8,
+        SymbolType::None,
+        "ic={} ispc={} ibar={}",
+        ic,
+        ispc,
+        ibar
+    );
     let c = CODABAR_HI[ic as usize];
     dcode.codabar.buf[0] = (c & 0x3) | 0x10;
 
@@ -318,12 +307,12 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.codabar.set_element(4);
     dcode.codabar.set_character(1);
     dcode.codabar.width = dcode.codabar.s7;
-    ZBAR_PARTIAL
+    SymbolType::Partial
 }
 
 /// Post-process decoded buffer
 #[inline]
-fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> SymbolType {
     let dir = dcode.codabar.direction();
     dcode.direction = 1 - 2 * (dir as c_int);
     let mut n = dcode.codabar.character() as usize;
@@ -337,7 +326,7 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Get a mutable slice to the buffer, ensuring it has space for n bytes plus null terminator
     let buffer = match dcode.buffer_mut_slice(n + 1) {
         Ok(buf) => buf,
-        Err(_) => return ZBAR_NONE,
+        Err(_) => return SymbolType::None,
     };
 
     // Copy from holding buffer to main buffer
@@ -355,7 +344,7 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
             chk += *c as c_uint;
         }
         if (chk & 0xf) != 0 {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         if !emit_check {
             buffer[n - 2] = buffer[n - 1];
@@ -365,10 +354,7 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     // Translate character codes to ASCII
     for c in buffer.iter_mut().take(n) {
-        *c = match CODABAR_CHARACTERS.get(*c as usize) {
-            None => b'?',
-            Some(c) => *c,
-        };
+        *c = *CODABAR_CHARACTERS.get(*c as usize).unwrap_or(&b'?');
     }
 
     // Add null terminator at position n
@@ -379,32 +365,32 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     dcode.modifiers = 0;
     dcode.codabar.set_character(-1);
-    ZBAR_CODABAR
+    SymbolType::Codabar
 }
 
 /// Main Codabar decode function
-pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w8 = get_width(dcode, 8);
     let w1 = get_width(dcode, 1);
     dcode.codabar.s7 = dcode.codabar.s7.wrapping_sub(w8).wrapping_add(w1);
 
     if dcode.color() != zbar_color_t::ZBAR_SPACE {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     if dcode.codabar.character() < 0 {
         return codabar_decode_start(dcode);
     }
 
-    if dcode.codabar.character() < 2 && codabar_decode_start(dcode) != ZBAR_NONE {
-        return ZBAR_PARTIAL;
+    if dcode.codabar.character() < 2 && codabar_decode_start(dcode) != SymbolType::None {
+        return SymbolType::Partial;
     }
 
     let element = dcode.codabar.element() - 1;
     dcode.codabar.set_element(element);
     if element != 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     dcode.codabar.set_element(4);
 
@@ -413,10 +399,10 @@ pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         // goto reset
         let character = dcode.codabar.character();
         if character >= NIBUF as i16 {
-            release_lock(dcode, ZBAR_CODABAR);
+            dcode.release_lock(SymbolType::Codabar);
         }
         dcode.codabar.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let character = dcode.codabar.character();
@@ -429,17 +415,17 @@ pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
             .is_err()
         {
             // goto reset
-            release_lock(dcode, ZBAR_CODABAR);
+            dcode.release_lock(SymbolType::Codabar);
             dcode.codabar.set_character(-1);
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
     }
     dcode.codabar.set_character(character + 1);
 
     // Lock shared resources
-    if character + 1 == NIBUF as i16 && acquire_lock(dcode, ZBAR_CODABAR) {
+    if character + 1 == NIBUF as i16 && dcode.acquire_lock(SymbolType::Codabar) {
         dcode.codabar.set_character(-1);
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     let s = dcode.codabar.s7;
@@ -449,10 +435,10 @@ pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
             // goto reset
             let character = dcode.codabar.character();
             if character >= NIBUF as i16 {
-                release_lock(dcode, ZBAR_CODABAR);
+                dcode.release_lock(SymbolType::Codabar);
             }
             dcode.codabar.set_character(-1);
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
 
         let n = dcode.codabar.character();
@@ -462,20 +448,20 @@ pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
             // goto reset
             let character = dcode.codabar.character();
             if character >= NIBUF as i16 {
-                release_lock(dcode, ZBAR_CODABAR);
+                dcode.release_lock(SymbolType::Codabar);
             }
             dcode.codabar.set_character(-1);
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
 
-        if dcode.codabar.character() < NIBUF as i16 && acquire_lock(dcode, ZBAR_CODABAR) {
+        if dcode.codabar.character() < NIBUF as i16 && dcode.acquire_lock(SymbolType::Codabar) {
             dcode.codabar.set_character(-1);
-            return ZBAR_PARTIAL;
+            return SymbolType::Partial;
         }
 
         let sym = codabar_postprocess(dcode);
-        if sym <= ZBAR_PARTIAL {
-            release_lock(dcode, ZBAR_CODABAR);
+        if sym <= SymbolType::Partial {
+            dcode.release_lock(SymbolType::Codabar);
             dcode.codabar.set_character(-1);
         }
         return sym;
@@ -483,11 +469,11 @@ pub fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         // goto reset
         let character = dcode.codabar.character();
         if character >= NIBUF as i16 {
-            release_lock(dcode, ZBAR_CODABAR);
+            dcode.release_lock(SymbolType::Codabar);
         }
         dcode.codabar.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
-    ZBAR_NONE
+    SymbolType::None
 }

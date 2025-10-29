@@ -2,11 +2,8 @@
 
 use crate::{
     decoder_types::{
-        databar_segment_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_ENABLE,
-        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CODABAR, ZBAR_CODE128, ZBAR_CODE39, ZBAR_CODE93,
-        ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_EAN13, ZBAR_EAN2, ZBAR_EAN5,
-        ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_NONE, ZBAR_PARTIAL, ZBAR_QRCODE,
-        ZBAR_SQCODE, ZBAR_UPCA, ZBAR_UPCE,
+        databar_segment_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_ENABLE, ZBAR_CFG_MAX_LEN,
+        ZBAR_CFG_MIN_LEN,
     },
     decoders::{
         codabar::_zbar_decode_codabar, code128::_zbar_decode_code128, code39::_zbar_decode_code39,
@@ -14,6 +11,7 @@ use crate::{
         i25::_zbar_decode_i25,
     },
     finder::find_qr,
+    SymbolType,
 };
 use libc::{c_int, c_uint, c_void};
 use std::mem::size_of;
@@ -93,9 +91,9 @@ pub unsafe fn zbar_decoder_get_userdata(dcode: *const zbar_decoder_t) -> *mut c_
 }
 
 /// Get decoded symbol type
-pub unsafe fn zbar_decoder_get_type(dcode: *const zbar_decoder_t) -> zbar_symbol_type_t {
+pub unsafe fn zbar_decoder_get_type(dcode: *const zbar_decoder_t) -> SymbolType {
     if dcode.is_null() {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     let dcode = &*dcode;
     dcode.type_
@@ -121,10 +119,10 @@ pub unsafe fn zbar_decoder_get_modifiers(dcode: *const zbar_decoder_t) -> c_uint
 ///
 /// # Returns
 /// - Appropriate symbol type if width completes decode of a symbol (data is available for retrieval)
-/// - ZBAR_PARTIAL as a hint if part of a symbol was decoded
-/// - ZBAR_NONE (0) if no new symbol data is available
-pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> zbar_symbol_type_t {
-    let mut sym = ZBAR_NONE;
+/// - `SymbolType::Partial` as a hint if part of a symbol was decoded
+/// - `SymbolType::None` if no new symbol data is available
+pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> SymbolType {
+    let mut sym = SymbolType::None;
 
     // Store width in circular buffer
     dcode.w[(dcode.idx & (DECODE_WINDOW - 1) as u8) as usize] = w;
@@ -136,35 +134,35 @@ pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> zbar_s
     // Each decoder processes width stream in parallel
     if test_cfg(dcode.qrf.config, ZBAR_CFG_ENABLE) {
         let tmp = find_qr(dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
 
     if dcode.ean.enable != 0 {
         let tmp = _zbar_decode_ean(&mut *dcode);
-        if tmp != 0 {
+        if tmp != SymbolType::None {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode.code39.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_code39(&mut *dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode.code93.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_code93(&mut *dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode.code128.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_code128(&mut *dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
@@ -174,21 +172,21 @@ pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> zbar_s
         ZBAR_CFG_ENABLE,
     ) {
         let tmp = _zbar_decode_databar(&mut *dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode.codabar.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_codabar(&mut *dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
 
     if test_cfg(dcode.i25.config, ZBAR_CFG_ENABLE) {
         let tmp = _zbar_decode_i25(&mut *dcode);
-        if tmp > ZBAR_PARTIAL {
+        if tmp > SymbolType::Partial {
             sym = tmp;
         }
     }
@@ -196,9 +194,10 @@ pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> zbar_s
     dcode.idx = dcode.idx.wrapping_add(1);
     dcode.type_ = sym;
 
-    if sym != 0 {
-        if dcode.lock != 0 && sym > ZBAR_PARTIAL && sym != ZBAR_QRCODE {
-            dcode._zbar_decoder_release_lock(sym);
+    if sym != SymbolType::None {
+        if dcode.lock != SymbolType::None && sym > SymbolType::Partial && sym != SymbolType::QrCode
+        {
+            dcode.release_lock(sym);
         }
         if let Some(handler) = dcode.handler {
             handler(dcode);
@@ -213,65 +212,62 @@ pub unsafe fn zbar_decode_width(dcode: &mut zbar_decoder_t, w: c_uint) -> zbar_s
 // ============================================================================
 
 /// Get configuration reference for a symbology (internal helper)
-fn decoder_get_config(dcode: &zbar_decoder_t, sym: zbar_symbol_type_t) -> Option<&c_uint> {
-    match sym {
-        ZBAR_EAN13 => Some(&dcode.ean.ean13_config),
-        ZBAR_EAN2 => Some(&dcode.ean.ean2_config),
-        ZBAR_EAN5 => Some(&dcode.ean.ean5_config),
-        ZBAR_EAN8 => Some(&dcode.ean.ean8_config),
-        ZBAR_UPCA => Some(&dcode.ean.upca_config),
-        ZBAR_UPCE => Some(&dcode.ean.upce_config),
-        ZBAR_ISBN10 => Some(&dcode.ean.isbn10_config),
-        ZBAR_ISBN13 => Some(&dcode.ean.isbn13_config),
-        ZBAR_I25 => Some(&dcode.i25.config),
-        ZBAR_DATABAR => Some(&dcode.databar.config),
-        ZBAR_DATABAR_EXP => Some(&dcode.databar.config_exp),
-        ZBAR_CODABAR => Some(&dcode.codabar.config),
-        ZBAR_CODE39 => Some(&dcode.code39.config),
-        ZBAR_CODE93 => Some(&dcode.code93.config),
-        ZBAR_CODE128 => Some(&dcode.code128.config),
-        ZBAR_QRCODE => Some(&dcode.qrf.config),
-        ZBAR_SQCODE => Some(&dcode.sqf.config),
+fn decoder_get_config(dcode: &zbar_decoder_t, symbol_type: SymbolType) -> Option<&c_uint> {
+    match symbol_type {
+        SymbolType::Ean13 => Some(&dcode.ean.ean13_config),
+        SymbolType::Ean2 => Some(&dcode.ean.ean2_config),
+        SymbolType::Ean5 => Some(&dcode.ean.ean5_config),
+        SymbolType::Ean8 => Some(&dcode.ean.ean8_config),
+        SymbolType::Upca => Some(&dcode.ean.upca_config),
+        SymbolType::Upce => Some(&dcode.ean.upce_config),
+        SymbolType::Isbn10 => Some(&dcode.ean.isbn10_config),
+        SymbolType::Isbn13 => Some(&dcode.ean.isbn13_config),
+        SymbolType::I25 => Some(&dcode.i25.config),
+        SymbolType::Databar => Some(&dcode.databar.config),
+        SymbolType::DatabarExp => Some(&dcode.databar.config_exp),
+        SymbolType::Codabar => Some(&dcode.codabar.config),
+        SymbolType::Code39 => Some(&dcode.code39.config),
+        SymbolType::Code93 => Some(&dcode.code93.config),
+        SymbolType::Code128 => Some(&dcode.code128.config),
+        SymbolType::QrCode => Some(&dcode.qrf.config),
+        SymbolType::SqCode => Some(&dcode.sqf.config),
         _ => None,
     }
 }
 
 /// Get mutable configuration reference for a symbology (internal helper)
-fn decoder_get_config_mut(
-    dcode: &mut zbar_decoder_t,
-    sym: zbar_symbol_type_t,
-) -> Option<&mut c_uint> {
+fn decoder_get_config_mut(dcode: &mut zbar_decoder_t, sym: SymbolType) -> Option<&mut c_uint> {
     match sym {
-        ZBAR_EAN13 => Some(&mut dcode.ean.ean13_config),
-        ZBAR_EAN2 => Some(&mut dcode.ean.ean2_config),
-        ZBAR_EAN5 => Some(&mut dcode.ean.ean5_config),
-        ZBAR_EAN8 => Some(&mut dcode.ean.ean8_config),
-        ZBAR_UPCA => Some(&mut dcode.ean.upca_config),
-        ZBAR_UPCE => Some(&mut dcode.ean.upce_config),
-        ZBAR_ISBN10 => Some(&mut dcode.ean.isbn10_config),
-        ZBAR_ISBN13 => Some(&mut dcode.ean.isbn13_config),
-        ZBAR_I25 => Some(&mut dcode.i25.config),
-        ZBAR_DATABAR => Some(&mut dcode.databar.config),
-        ZBAR_DATABAR_EXP => Some(&mut dcode.databar.config_exp),
-        ZBAR_CODABAR => Some(&mut dcode.codabar.config),
-        ZBAR_CODE39 => Some(&mut dcode.code39.config),
-        ZBAR_CODE93 => Some(&mut dcode.code93.config),
-        ZBAR_CODE128 => Some(&mut dcode.code128.config),
-        ZBAR_QRCODE => Some(&mut dcode.qrf.config),
-        ZBAR_SQCODE => Some(&mut dcode.sqf.config),
+        SymbolType::Ean13 => Some(&mut dcode.ean.ean13_config),
+        SymbolType::Ean2 => Some(&mut dcode.ean.ean2_config),
+        SymbolType::Ean5 => Some(&mut dcode.ean.ean5_config),
+        SymbolType::Ean8 => Some(&mut dcode.ean.ean8_config),
+        SymbolType::Upca => Some(&mut dcode.ean.upca_config),
+        SymbolType::Upce => Some(&mut dcode.ean.upce_config),
+        SymbolType::Isbn10 => Some(&mut dcode.ean.isbn10_config),
+        SymbolType::Isbn13 => Some(&mut dcode.ean.isbn13_config),
+        SymbolType::I25 => Some(&mut dcode.i25.config),
+        SymbolType::Databar => Some(&mut dcode.databar.config),
+        SymbolType::DatabarExp => Some(&mut dcode.databar.config_exp),
+        SymbolType::Codabar => Some(&mut dcode.codabar.config),
+        SymbolType::Code39 => Some(&mut dcode.code39.config),
+        SymbolType::Code93 => Some(&mut dcode.code93.config),
+        SymbolType::Code128 => Some(&mut dcode.code128.config),
+        SymbolType::QrCode => Some(&mut dcode.qrf.config),
+        SymbolType::SqCode => Some(&mut dcode.sqf.config),
         _ => None,
     }
 }
 
 /// Get all configurations for a symbology
-pub fn zbar_decoder_get_configs(dcode: &zbar_decoder_t, sym: zbar_symbol_type_t) -> c_uint {
-    decoder_get_config(dcode, sym).copied().unwrap_or(0)
+pub fn zbar_decoder_get_configs(dcode: &zbar_decoder_t, symbol_type: SymbolType) -> c_uint {
+    decoder_get_config(dcode, symbol_type).copied().unwrap_or(0)
 }
 
 /// Set boolean configuration (internal helper)
 fn decoder_set_config_bool(
     dcode: &mut zbar_decoder_t,
-    sym: zbar_symbol_type_t,
+    sym: SymbolType,
     cfg: c_int,
     val: c_int,
 ) -> c_int {
@@ -315,28 +311,28 @@ fn decoder_set_config_bool(
 /// Set integer configuration (internal helper)
 fn decoder_set_config_int(
     dcode: &mut zbar_decoder_t,
-    sym: zbar_symbol_type_t,
+    sym: SymbolType,
     cfg: c_int,
     val: c_int,
 ) -> c_int {
     match sym {
-        ZBAR_I25 => {
+        SymbolType::I25 => {
             dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
-        ZBAR_CODABAR => {
+        SymbolType::Codabar => {
             dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
-        ZBAR_CODE39 => {
+        SymbolType::Code39 => {
             dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
-        ZBAR_CODE93 => {
+        SymbolType::Code93 => {
             dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
-        ZBAR_CODE128 => {
+        SymbolType::Code128 => {
             dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize] = val;
             0
         }
@@ -347,16 +343,19 @@ fn decoder_set_config_int(
 /// Get decoder configuration value
 pub fn zbar_decoder_get_config(
     dcode: &mut zbar_decoder_t,
-    sym: zbar_symbol_type_t,
+    symbol_type: SymbolType,
     cfg: c_int,
 ) -> Result<c_int, c_int> {
-    let config = match decoder_get_config(dcode, sym) {
+    let config = match decoder_get_config(dcode, symbol_type) {
         Some(c) => c,
         None => return Err(1),
     };
 
     // Return error if symbol doesn't have config
-    if sym <= ZBAR_PARTIAL || sym > ZBAR_CODE128 || sym == ZBAR_COMPOSITE {
+    if symbol_type <= SymbolType::Partial
+        || symbol_type > SymbolType::Code128
+        || symbol_type == SymbolType::Composite
+    {
         return Err(1);
     }
 
@@ -367,12 +366,12 @@ pub fn zbar_decoder_get_config(
 
     // Return decoder integer configs
     if (ZBAR_CFG_MIN_LEN..=ZBAR_CFG_MAX_LEN).contains(&cfg) {
-        Ok(match sym {
-            ZBAR_I25 => dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            ZBAR_CODABAR => dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            ZBAR_CODE39 => dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            ZBAR_CODE93 => dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
-            ZBAR_CODE128 => dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+        Ok(match symbol_type {
+            SymbolType::I25 => dcode.i25.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            SymbolType::Codabar => dcode.codabar.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            SymbolType::Code39 => dcode.code39.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            SymbolType::Code93 => dcode.code93.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
+            SymbolType::Code128 => dcode.code128.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize],
             _ => return Err(1),
         })
     } else {
@@ -382,43 +381,18 @@ pub fn zbar_decoder_get_config(
 
 /// Set decoder configuration
 pub unsafe fn zbar_decoder_set_config(
-    dcode: *mut zbar_decoder_t,
-    sym: zbar_symbol_type_t,
+    dcode: &mut zbar_decoder_t,
+    sym: SymbolType,
     cfg: c_int,
     val: c_int,
 ) -> c_int {
-    if dcode.is_null() {
-        return 1;
-    }
-
-    let dcode = &mut *dcode;
-
     // If ZBAR_NONE, set config for all symbologies
-    if sym == ZBAR_NONE {
-        const ALL: [zbar_symbol_type_t; 17] = [
-            ZBAR_EAN13,
-            ZBAR_EAN2,
-            ZBAR_EAN5,
-            ZBAR_EAN8,
-            ZBAR_UPCA,
-            ZBAR_UPCE,
-            ZBAR_ISBN10,
-            ZBAR_ISBN13,
-            ZBAR_I25,
-            ZBAR_DATABAR,
-            ZBAR_DATABAR_EXP,
-            ZBAR_CODABAR,
-            ZBAR_CODE39,
-            ZBAR_CODE93,
-            ZBAR_CODE128,
-            ZBAR_QRCODE,
-            ZBAR_SQCODE,
-        ];
-        for &s in &ALL {
+    if sym == SymbolType::None {
+        for &s in &SymbolType::ALL {
             // We need to recursively call this, but we can't reborrow dcode
             // So we need to use the raw pointer API
             unsafe {
-                zbar_decoder_set_config(dcode as *mut _, s, cfg, val);
+                zbar_decoder_set_config(dcode, s, cfg, val);
             }
         }
         return 0;

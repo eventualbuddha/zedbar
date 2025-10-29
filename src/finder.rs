@@ -3,10 +3,9 @@
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
 use crate::{
-    decoder_types::{
-        qr_finder_line, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_QRCODE,
-    },
+    decoder_types::{qr_finder_line, zbar_decoder_t, DECODE_WINDOW},
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 use libc::c_uint;
 
@@ -67,7 +66,7 @@ pub fn decoder_get_qr_finder_line(dcode: &mut zbar_decoder_t) -> &mut qr_finder_
 /// Find QR code finder pattern
 ///
 /// Searches for the 1:1:3:1:1 ratio pattern characteristic of QR code finders.
-pub fn find_qr(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn find_qr(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest finder pattern width
     dcode.qrf.s5 -= get_width(dcode, 6);
     dcode.qrf.s5 += get_width(dcode, 1);
@@ -78,28 +77,28 @@ pub fn find_qr(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // If we find finder patterns with the opposite polarity, we should invert
     // the final binarized image and use them to search for QR codes in that.
     if dcode.color() != zbar_color_t::ZBAR_SPACE || s < 7 {
-        return 0;
+        return SymbolType::None;
     }
 
     // Check for 1:1:3:1:1 ratio pattern
     let mut ei = decode_e(pair_width(dcode, 1), s, 7);
     if ei != 0 {
-        return 0;
+        return SymbolType::None;
     }
 
     ei = decode_e(pair_width(dcode, 2), s, 7);
     if ei != 2 {
-        return 0;
+        return SymbolType::None;
     }
 
     ei = decode_e(pair_width(dcode, 3), s, 7);
     if ei != 2 {
-        return 0;
+        return SymbolType::None;
     }
 
     ei = decode_e(pair_width(dcode, 4), s, 7);
     if ei != 0 {
-        return 0;
+        return SymbolType::None;
     }
 
     // Valid QR finder symbol - mark positions needed by decoder
@@ -126,5 +125,5 @@ pub fn find_qr(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.direction = 0;
     dcode.set_buffer_len(0);
 
-    ZBAR_QRCODE
+    SymbolType::QrCode
 }

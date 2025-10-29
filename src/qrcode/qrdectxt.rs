@@ -9,15 +9,14 @@ use std::ptr::null_mut;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
-use crate::decoder_types::{
-    ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_PARTIAL, ZBAR_QRCODE,
-};
+use crate::decoder_types::{ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1};
 use crate::img_scanner::{
     _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_get_config,
     zbar_image_scanner_t,
 };
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
 use crate::symbol::{symbol_set_create, zbar_symbol_t};
+use crate::SymbolType;
 
 #[derive(Clone, Copy)]
 pub struct qr_code_data_entry_sa {
@@ -74,7 +73,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
     iscn: &mut zbar_image_scanner_t,
 ) -> c_int {
     let raw_binary: c_int =
-        zbar_image_scanner_get_config(iscn, ZBAR_QRCODE, ZBAR_CFG_BINARY).unwrap_or(0);
+        zbar_image_scanner_get_config(iscn, SymbolType::QrCode, ZBAR_CFG_BINARY).unwrap_or(0);
 
     let qrdata = &qrlist.qrdata;
     let mut mark = vec![0u8; qrdata.len()];
@@ -172,12 +171,12 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 if err {
                     break;
                 }
-                let sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE);
+                let sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
                 *sym_cur = sym;
                 let sym_ref = &mut *sym;
 
                 if sa[j] < 0 {
-                    sym_ref.symbol_type = ZBAR_PARTIAL;
+                    sym_ref.symbol_type = SymbolType::Partial;
                     let mut k = j + 1;
                     while k < sa_size && sa[k] < 0 {
                         k += 1;
@@ -187,7 +186,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                         break;
                     }
                     sym_cur = &mut sym_ref.next;
-                    let next_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE);
+                    let next_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
                     *sym_cur = next_sym;
                 }
 
@@ -349,7 +348,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     sym_ref.modifiers = fnc1 as u32;
                     iscn.add_symbol(&mut *sym);
                 } else {
-                    let sa_sym = _zbar_image_scanner_alloc_sym(iscn, ZBAR_QRCODE);
+                    let sa_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
                     let sa_sym_ref = &mut *sa_sym;
                     sa_sym_ref.syms = symbol_set_create();
                     sa_sym_ref.data = sa_text;

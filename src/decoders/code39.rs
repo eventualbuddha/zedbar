@@ -4,10 +4,10 @@
 
 use crate::{
     decoder_types::{
-        code39_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
-        ZBAR_CFG_MIN_LEN, ZBAR_CODE39, ZBAR_NONE, ZBAR_PARTIAL,
+        code39_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
     },
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 use libc::{c_int, c_uint};
 
@@ -314,24 +314,6 @@ fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> u8 {
     }
 }
 
-/// Acquire shared state lock
-#[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
-    if dcode.lock != 0 {
-        return true;
-    }
-    dcode.lock = req;
-    false
-}
-
-/// Check and release shared state lock
-#[inline]
-fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
-    zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
-    dcode.lock = 0;
-    0
-}
-
 /// Access config value by index
 #[inline]
 fn cfg(decoder: &code39_decoder_t, cfg: c_int) -> c_int {
@@ -421,10 +403,10 @@ fn code39_decode9(dcode: &mut zbar_decoder_t) -> i8 {
 
 /// Decode start pattern
 #[inline]
-fn code39_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+fn code39_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
     let c = code39_decode9(dcode);
     if c != 0x19 && c != 0x2b {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
     dcode
         .code39
@@ -433,12 +415,12 @@ fn code39_decode_start(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     // Check leading quiet zone - spec is 10x
     let quiet = get_width(dcode, 9);
     if quiet != 0 && quiet < dcode.code39.s9 / 2 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     dcode.code39.set_element(9);
     dcode.code39.set_character(0);
-    ZBAR_PARTIAL
+    SymbolType::Partial
 }
 
 /// Post-process decoded buffer
@@ -480,7 +462,7 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 }
 
 /// Main Code 39 decode function
-pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w9 = get_width(dcode, 9);
     let w0 = get_width(dcode, 0);
@@ -488,7 +470,7 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     if dcode.code39.character() < 0 {
         if dcode.color() != zbar_color_t::ZBAR_BAR {
-            return ZBAR_NONE;
+            return SymbolType::None;
         }
         return code39_decode_start(dcode);
     }
@@ -497,7 +479,7 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.code39.set_element(element + 1);
 
     if dcode.code39.element() < 9 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     if dcode.code39.element() == 10 {
@@ -516,7 +498,7 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
         if has_stop {
             // STOP character found
-            let mut sym = ZBAR_NONE;
+            let mut sym = SymbolType::None;
 
             // Trim STOP character
             dcode.code39.set_character(character - 1);
@@ -533,13 +515,13 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
                     // Failed length check
                 } else if code39_postprocess(dcode) == 0 {
                     // FIXME checksum
-                    sym = ZBAR_CODE39;
+                    sym = SymbolType::Code39;
                 }
             }
 
             dcode.code39.set_character(-1);
-            if sym == ZBAR_NONE {
-                release_lock(dcode, ZBAR_CODE39);
+            if sym == SymbolType::None {
+                dcode.release_lock(SymbolType::Code39);
             }
             return sym;
         }
@@ -547,21 +529,21 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         if space > dcode.code39.width / 2 {
             // Inter-character space check failure
             if character > 0 {
-                release_lock(dcode, ZBAR_CODE39);
+                dcode.release_lock(SymbolType::Code39);
             }
             dcode.code39.set_character(-1);
         }
         dcode.code39.set_element(0);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     if !check_width(dcode.code39.width, dcode.code39.s9) {
         let character = dcode.code39.character();
         if character > 0 {
-            release_lock(dcode, ZBAR_CODE39);
+            dcode.release_lock(SymbolType::Code39);
         }
         dcode.code39.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let c = code39_decode9(dcode);
@@ -569,20 +551,20 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     let character = dcode.code39.character();
 
     // Lock shared resources
-    if character == 0 && acquire_lock(dcode, ZBAR_CODE39) {
+    if character == 0 && dcode.acquire_lock(SymbolType::Code39) {
         dcode.code39.set_character(-1);
-        return ZBAR_PARTIAL;
+        return SymbolType::Partial;
     }
 
     if c < 0 {
-        release_lock(dcode, ZBAR_CODE39);
+        dcode.release_lock(SymbolType::Code39);
         dcode.code39.set_character(-1);
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     zassert!(
         c < 0x2c,
-        ZBAR_NONE,
+        SymbolType::None,
         "c={:02x} s9={:x}\n",
         c,
         dcode.code39.s9
@@ -591,5 +573,5 @@ pub fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     dcode.code39.set_byte(character as usize, c as u8);
     dcode.code39.set_character(character + 1);
 
-    ZBAR_NONE
+    SymbolType::None
 }

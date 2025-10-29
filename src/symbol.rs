@@ -9,69 +9,15 @@ use crate::{
     decoder_types::{
         ZBAR_CFG_ADD_CHECK, ZBAR_CFG_ASCII, ZBAR_CFG_BINARY, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE,
         ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN, ZBAR_CFG_POSITION, ZBAR_CFG_UNCERTAINTY,
-        ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY, ZBAR_CODABAR, ZBAR_CODE128, ZBAR_CODE39,
-        ZBAR_CODE93, ZBAR_COMPOSITE, ZBAR_DATABAR, ZBAR_DATABAR_EXP, ZBAR_EAN13, ZBAR_EAN2,
-        ZBAR_EAN5, ZBAR_EAN8, ZBAR_I25, ZBAR_ISBN10, ZBAR_ISBN13, ZBAR_MOD_AIM, ZBAR_MOD_GS1,
-        ZBAR_ORIENT_DOWN, ZBAR_ORIENT_LEFT, ZBAR_ORIENT_RIGHT, ZBAR_ORIENT_UP, ZBAR_PARTIAL,
-        ZBAR_QRCODE, ZBAR_SQCODE, ZBAR_SYMBOL, ZBAR_UPCA, ZBAR_UPCE,
+        ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_ORIENT_DOWN,
+        ZBAR_ORIENT_LEFT, ZBAR_ORIENT_RIGHT, ZBAR_ORIENT_UP,
     },
     img_scanner::zbar_symbol_set_t,
     qrcode::qr_point,
     refcnt,
 };
 use libc::{c_int, c_uint};
-use std::ptr;
-
-const NUM_SYMS: usize = 20;
-
-// Symbol hash table for fast lookup
-static SYMBOL_HASH: [i8; (ZBAR_CODE128 + 1) as usize] = {
-    let mut hash = [-1i8; (ZBAR_CODE128 + 1) as usize];
-    hash[ZBAR_SQCODE as usize] = 1;
-    hash[ZBAR_CODE128 as usize] = 2;
-    hash[ZBAR_EAN13 as usize] = 3;
-    hash[ZBAR_UPCA as usize] = 4;
-    hash[ZBAR_EAN8 as usize] = 5;
-    hash[ZBAR_UPCE as usize] = 6;
-    hash[ZBAR_ISBN13 as usize] = 7;
-    hash[ZBAR_ISBN10 as usize] = 8;
-    hash[ZBAR_CODE39 as usize] = 9;
-    hash[ZBAR_I25 as usize] = 10;
-    hash[ZBAR_QRCODE as usize] = 12;
-    hash[ZBAR_DATABAR as usize] = 13;
-    hash[ZBAR_DATABAR_EXP as usize] = 14;
-    hash[ZBAR_CODE93 as usize] = 15;
-    hash[ZBAR_EAN2 as usize] = 16;
-    hash[ZBAR_EAN5 as usize] = 17;
-    hash[ZBAR_COMPOSITE as usize] = 18;
-    hash[ZBAR_CODABAR as usize] = 19;
-    hash
-};
-
-/// Get symbol type name
-pub fn get_symbol_name(sym: i32) -> &'static str {
-    match sym & ZBAR_SYMBOL {
-        ZBAR_EAN2 => "EAN-2",
-        ZBAR_EAN5 => "EAN-5",
-        ZBAR_EAN8 => "EAN-8",
-        ZBAR_UPCE => "UPC-E",
-        ZBAR_ISBN10 => "ISBN-10",
-        ZBAR_UPCA => "UPC-A",
-        ZBAR_EAN13 => "EAN-13",
-        ZBAR_ISBN13 => "ISBN-13",
-        ZBAR_COMPOSITE => "COMPOSITE",
-        ZBAR_I25 => "I2/5",
-        ZBAR_DATABAR => "DataBar",
-        ZBAR_DATABAR_EXP => "DataBar-Exp",
-        ZBAR_CODABAR => "Codabar",
-        ZBAR_CODE39 => "CODE-39",
-        ZBAR_CODE93 => "CODE-93",
-        ZBAR_CODE128 => "CODE-128",
-        ZBAR_QRCODE => "QR-Code",
-        ZBAR_SQCODE => "SQ-Code",
-        _ => "UNKNOWN",
-    }
-}
+use std::{fmt::Display, ptr};
 
 /// Get config name
 pub fn get_config_name(cfg: i32) -> &'static str {
@@ -111,17 +57,9 @@ pub fn get_orientation_name(orient: i32) -> &'static str {
     }
 }
 
-/// Get symbol hash index
-pub fn get_symbol_hash(sym: i32) -> i32 {
-    debug_assert!((ZBAR_PARTIAL..=ZBAR_CODE128).contains(&sym));
-    let h = SYMBOL_HASH[sym as usize];
-    debug_assert!(h >= 0 && (h as usize) < NUM_SYMS);
-    h as i32
-}
-
 #[derive(Default)]
 pub(crate) struct zbar_symbol_t {
-    pub(crate) symbol_type: c_int,
+    pub(crate) symbol_type: SymbolType,
     pub(crate) configs: c_uint,
     pub(crate) modifiers: c_uint,
     pub(crate) data: Vec<u8>,
@@ -214,8 +152,9 @@ pub(crate) unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_
 
 // High-level Rust API types
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub enum SymbolType {
+    #[default]
     None = 0,
     Partial = 1,
     Ean2 = 2,
@@ -238,30 +177,113 @@ pub enum SymbolType {
     Code128 = 128,
 }
 
+impl SymbolType {
+    pub(crate) const ALL: [Self; 17] = [
+        SymbolType::Ean13,
+        SymbolType::Ean2,
+        SymbolType::Ean5,
+        SymbolType::Ean8,
+        SymbolType::Upca,
+        SymbolType::Upce,
+        SymbolType::Isbn10,
+        SymbolType::Isbn13,
+        SymbolType::I25,
+        SymbolType::Databar,
+        SymbolType::DatabarExp,
+        SymbolType::Codabar,
+        SymbolType::Code39,
+        SymbolType::Code93,
+        SymbolType::Code128,
+        SymbolType::QrCode,
+        SymbolType::SqCode,
+    ];
+
+    pub(crate) fn hash(self) -> i8 {
+        match self {
+            Self::SqCode => 1,
+            Self::Code128 => 2,
+            Self::Ean13 => 3,
+            Self::Upca => 4,
+            Self::Ean8 => 5,
+            Self::Upce => 6,
+            Self::Isbn13 => 7,
+            Self::Isbn10 => 8,
+            Self::Code39 => 9,
+            Self::I25 => 10,
+            Self::QrCode => 12,
+            Self::Databar => 13,
+            Self::DatabarExp => 14,
+            Self::Code93 => 15,
+            Self::Ean2 => 16,
+            Self::Ean5 => 17,
+            Self::Composite => 18,
+            Self::Codabar => 19,
+            _ => -1,
+        }
+    }
+}
+
+impl Display for SymbolType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::None => "None",
+                Self::Partial => "Partial",
+                Self::Ean2 => "EAN-2",
+                Self::Ean5 => "EAN-5",
+                Self::Ean8 => "EAN-8",
+                Self::Upce => "UPC-E",
+                Self::Isbn10 => "ISBN-10",
+                Self::Upca => "UPC-A",
+                Self::Ean13 => "EAN-13",
+                Self::Isbn13 => "ISBN-13",
+                Self::Composite => "COMPOSITE",
+                Self::I25 => "I2/5",
+                Self::Databar => "DataBar",
+                Self::DatabarExp => "DataBar-Exp",
+                Self::Codabar => "Codabar",
+                Self::Code39 => "CODE-39",
+                Self::Code93 => "CODE-93",
+                Self::Code128 => "CODE-128",
+                Self::QrCode => "QR-Code",
+                Self::SqCode => "SQ-Code",
+            }
+        )
+    }
+}
+
+impl From<SymbolType> for i32 {
+    fn from(value: SymbolType) -> Self {
+        value as i32
+    }
+}
+
 impl From<i32> for SymbolType {
     fn from(value: i32) -> Self {
         match value {
-            0 => SymbolType::None,
-            1 => SymbolType::Partial,
-            2 => SymbolType::Ean2,
-            5 => SymbolType::Ean5,
-            8 => SymbolType::Ean8,
-            9 => SymbolType::Upce,
-            10 => SymbolType::Isbn10,
-            12 => SymbolType::Upca,
-            13 => SymbolType::Ean13,
-            14 => SymbolType::Isbn13,
-            15 => SymbolType::Composite,
-            25 => SymbolType::I25,
-            34 => SymbolType::Databar,
-            35 => SymbolType::DatabarExp,
-            38 => SymbolType::Codabar,
-            39 => SymbolType::Code39,
-            64 => SymbolType::QrCode,
-            80 => SymbolType::SqCode,
-            93 => SymbolType::Code93,
-            128 => SymbolType::Code128,
-            _ => SymbolType::None,
+            0 => Self::None,
+            1 => Self::Partial,
+            2 => Self::Ean2,
+            5 => Self::Ean5,
+            8 => Self::Ean8,
+            9 => Self::Upce,
+            10 => Self::Isbn10,
+            12 => Self::Upca,
+            13 => Self::Ean13,
+            14 => Self::Isbn13,
+            15 => Self::Composite,
+            25 => Self::I25,
+            34 => Self::Databar,
+            35 => Self::DatabarExp,
+            38 => Self::Codabar,
+            39 => Self::Code39,
+            64 => Self::QrCode,
+            80 => Self::SqCode,
+            93 => Self::Code93,
+            128 => Self::Code128,
+            _ => Self::None,
         }
     }
 }
@@ -282,8 +304,7 @@ impl Symbol {
 
     /// Get the symbol type
     pub fn symbol_type(&self) -> SymbolType {
-        let type_code = unsafe { (*self.ptr).symbol_type };
-        SymbolType::from(type_code)
+        unsafe { (*self.ptr).symbol_type }
     }
 
     /// Get the decoded data as bytes

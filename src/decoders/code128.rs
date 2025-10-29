@@ -4,10 +4,11 @@
 
 use crate::{
     decoder_types::{
-        code128_decoder_t, zbar_decoder_t, zbar_symbol_type_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN,
-        ZBAR_CFG_MIN_LEN, ZBAR_CODE128, ZBAR_MOD_AIM, ZBAR_MOD_GS1, ZBAR_NONE,
+        code128_decoder_t, zbar_decoder_t, DECODE_WINDOW, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
+        ZBAR_MOD_AIM, ZBAR_MOD_GS1,
     },
     line_scanner::zbar_color_t,
+    SymbolType,
 };
 use libc::{c_int, c_uint};
 
@@ -116,24 +117,6 @@ fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
     } else {
         e_val as i32
     }
-}
-
-/// Acquire shared state lock
-#[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> bool {
-    if dcode.lock != 0 {
-        return true;
-    }
-    dcode.lock = req;
-    false
-}
-
-/// Check and release shared state lock
-#[inline]
-fn release_lock(dcode: &mut zbar_decoder_t, req: zbar_symbol_type_t) -> i8 {
-    zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
-    dcode.lock = 0;
-    0
 }
 
 /// Access config value by index
@@ -370,12 +353,12 @@ fn postprocess_c(dcode: &mut zbar_decoder_t, start: usize, end: usize, dst: usiz
     let old_len = dcode.code128.character() as usize;
     let newlen = old_len + delta;
     if dcode.set_buffer_capacity(newlen as c_uint).is_err() {
-        return ZBAR_NONE as c_uint;
+        return SymbolType::None as c_uint;
     }
 
     let buf = match dcode.buffer_mut_slice(newlen) {
         Ok(buf) => buf,
-        Err(_) => return ZBAR_NONE as c_uint,
+        Err(_) => return SymbolType::None as c_uint,
     };
 
     // Relocate unprocessed data to end of buffer
@@ -632,7 +615,7 @@ fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 128 decode function
-pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
+pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     dcode.code128.s6 = dcode
         .code128
@@ -648,7 +631,7 @@ pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         if dcode.code128.character() >= 0 {
             dcode.code128.set_element(dcode.code128.element() + 1);
         }
-        return 0;
+        return SymbolType::None;
     }
     dcode.code128.set_element(0);
 
@@ -657,10 +640,10 @@ pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     if dcode.code128.character() < 0 {
         let qz = get_width(dcode, 6);
         if c < START_A as i8 || c > STOP_REV as i8 || c == STOP_FWD as i8 {
-            return 0;
+            return SymbolType::None;
         }
         if qz != 0 && qz < (dcode.code128.s6 * 3) / 4 {
-            return 0;
+            return SymbolType::None;
         }
         // Decoded valid start/stop - initialize state
         dcode.code128.set_character(1);
@@ -672,26 +655,26 @@ pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
         }
         dcode.code128.set_start(c as u8);
         dcode.code128.width = dcode.code128.s6;
-        return 0;
+        return SymbolType::None;
     } else if c < 0
         || dcode
             .set_buffer_capacity((dcode.code128.character() + 1) as c_uint)
             .is_err()
     {
         if dcode.code128.character() > 1 {
-            release_lock(dcode, ZBAR_CODE128);
+            dcode.release_lock(SymbolType::Code128);
         }
         dcode.code128.set_character(-1);
-        return 0;
+        return SymbolType::None;
     } else {
         let dw = dcode.code128.width.abs_diff(dcode.code128.s6);
         let dw = dw * 4;
         if dw > dcode.code128.width {
             if dcode.code128.character() > 1 {
-                release_lock(dcode, ZBAR_CODE128);
+                dcode.release_lock(SymbolType::Code128);
             }
             dcode.code128.set_character(-1);
-            return 0;
+            return SymbolType::None;
         }
     }
     dcode.code128.width = dcode.code128.s6;
@@ -699,7 +682,7 @@ pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
     let capacity = dcode.buffer_capacity();
     zassert!(
         (capacity as i16) > dcode.code128.character(),
-        0,
+        SymbolType::None,
         "alloc={:x} idx={:x} c={:02x}\n",
         capacity,
         dcode.code128.character(),
@@ -708,9 +691,9 @@ pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
 
     if dcode.code128.character() == 1 {
         // Lock shared resources
-        if acquire_lock(dcode, ZBAR_CODE128) {
+        if dcode.acquire_lock(SymbolType::Code128) {
             dcode.code128.set_character(-1);
-            return 0;
+            return SymbolType::None;
         }
         let start = dcode.code128.start();
         if let Ok(buf) = dcode.buffer_mut_slice(1) {
@@ -729,21 +712,21 @@ pub fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> zbar_symbol_type_t {
             || (dcode.code128.direction() == 0 && c == STOP_FWD as i8))
     {
         // FIXME STOP_FWD should check extra bar (and QZ!)
-        let mut sym = ZBAR_CODE128;
+        let mut sym = SymbolType::Code128;
         #[allow(clippy::if_same_then_else)]
         if validate_checksum(dcode) || postprocess(dcode) {
-            sym = ZBAR_NONE;
+            sym = SymbolType::None;
         } else if dcode.code128.character() < cfg(&dcode.code128, ZBAR_CFG_MIN_LEN) as i16
             || (cfg(&dcode.code128, ZBAR_CFG_MAX_LEN) > 0
                 && dcode.code128.character() > cfg(&dcode.code128, ZBAR_CFG_MAX_LEN) as i16)
         {
-            sym = ZBAR_NONE;
+            sym = SymbolType::None;
         }
         dcode.code128.set_character(-1);
-        if sym == ZBAR_NONE {
-            release_lock(dcode, ZBAR_CODE128);
+        if sym == SymbolType::None {
+            dcode.release_lock(SymbolType::Code128);
         }
         return sym;
     }
-    0
+    SymbolType::None
 }

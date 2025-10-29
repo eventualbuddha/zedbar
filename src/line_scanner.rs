@@ -6,7 +6,8 @@
 use libc::{c_int, c_uint};
 
 use crate::decoder::zbar_decode_width;
-use crate::decoder_types::{zbar_decoder_t, zbar_symbol_type_t, ZBAR_NONE, ZBAR_PARTIAL};
+use crate::decoder_types::zbar_decoder_t;
+use crate::SymbolType;
 
 // Constants from scanner.c
 const ZBAR_FIXED: i32 = 5;
@@ -141,7 +142,7 @@ pub(crate) fn zbar_scanner_new(dcode: *mut zbar_decoder_t) -> zbar_scanner_t {
 ///
 /// This function is called when an edge (transition) is detected.
 /// It calculates the width of the element and passes it to the decoder.
-fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
+fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> SymbolType {
     if scn.y1_sign == 0 {
         scn.last_edge = (1 << ZBAR_FIXED) + ROUND;
         scn.cur_edge = (1 << ZBAR_FIXED) + ROUND;
@@ -157,7 +158,7 @@ fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
     if let Some(decoder) = scn.decoder_mut() {
         unsafe { zbar_decode_width(&mut *decoder, width) }
     } else {
-        ZBAR_PARTIAL
+        SymbolType::Partial
     }
 }
 
@@ -167,9 +168,9 @@ fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> zbar_symbol_type_t {
 
 /// Flush the scanner state
 #[inline]
-pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
+pub fn scanner_flush(scn: &mut zbar_scanner_t) -> SymbolType {
     if scn.y1_sign == 0 {
-        return ZBAR_NONE;
+        return SymbolType::None;
     }
 
     let x = (scn.x << ZBAR_FIXED) + ROUND;
@@ -186,17 +187,17 @@ pub fn scanner_flush(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
     if let Some(decoder) = scn.decoder_mut() {
         unsafe { zbar_decode_width(decoder, 0) }
     } else {
-        ZBAR_PARTIAL
+        SymbolType::Partial
     }
 }
 
 /// Start a new scan
-pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
-    let mut edge = ZBAR_NONE;
+pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> SymbolType {
+    let mut edge = SymbolType::None;
 
     while scn.y1_sign != 0 {
         let tmp = scanner_flush(scn);
-        if tmp < 0 || tmp > edge {
+        if tmp > edge {
             edge = tmp;
         }
     }
@@ -217,7 +218,7 @@ pub fn scanner_new_scan(scn: &mut zbar_scanner_t) -> zbar_symbol_type_t {
 }
 
 /// Process a single pixel intensity value
-pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
+pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> SymbolType {
     // retrieve short value history
     let x = scn.x;
     let mut y0_1 = scn.y0[((x.wrapping_sub(1)) & 3) as usize];
@@ -252,7 +253,7 @@ pub fn scan_y(scn: &mut zbar_scanner_t, y: c_int) -> zbar_symbol_type_t {
     let y2_1 = y0_0 - (y0_1 * 2) + y0_2;
     let y2_2 = y0_1 - (y0_2 * 2) + y0_3;
 
-    let mut edge = ZBAR_NONE;
+    let mut edge = SymbolType::None;
 
     // 2nd zero-crossing is 1st local min/max - could be edge
     if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (calc_thresh(scn) <= y1_1.unsigned_abs()) {
