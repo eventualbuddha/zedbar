@@ -84,7 +84,7 @@ fn decode_with_rqrr(path: &str) -> Option<(String, String)> {
     let mut prepared_img = rqrr::PreparedImage::prepare(img);
     let grids = prepared_img.detect_grids();
 
-    grids.iter().next().and_then(|grid| {
+    grids.first().and_then(|grid| {
         let (_meta, content) = grid.decode().ok()?;
         Some(("QR-Code".to_string(), content))
     })
@@ -453,7 +453,7 @@ fn decode_with_zbars_binary(path: &str) -> Option<(String, Vec<u8>)> {
     }
 
     let type_line = String::from_utf8_lossy(&type_output.stdout);
-    let symbol_type = type_line.lines().next()?.splitn(2, ':').next()?.to_string();
+    let symbol_type = type_line.lines().next()?.split(':').next()?.to_string();
 
     // Get raw binary data with --raw
     let data_output = Command::new("zbarimg")
@@ -487,7 +487,7 @@ fn decode_with_rqrr_binary(path: &str) -> Option<(String, Vec<u8>)> {
     let mut prepared_img = rqrr::PreparedImage::prepare(img);
     let grids = prepared_img.detect_grids();
 
-    grids.iter().next().and_then(|grid| {
+    grids.first().and_then(|grid| {
         let (_meta, content) = grid.decode().ok()?;
         Some(("QR-Code".to_string(), content.into_bytes()))
     })
