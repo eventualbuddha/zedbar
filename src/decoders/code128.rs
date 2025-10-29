@@ -675,7 +675,7 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
 
     if dcode.code128.character() == 1 {
         // Lock shared resources
-        if dcode.acquire_lock(SymbolType::Code128) {
+        if !dcode.acquire_lock(SymbolType::Code128) {
             dcode.code128.set_character(-1);
             return SymbolType::None;
         }

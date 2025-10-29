@@ -899,18 +899,18 @@ impl zbar_decoder_t {
     #[inline]
     pub(crate) fn acquire_lock(&mut self, req: SymbolType) -> bool {
         if self.lock != SymbolType::None {
-            return true;
+            return false;
         }
         self.lock = req;
-        false
+        true
     }
 
     /// Check and release shared state lock
     #[inline]
-    pub(crate) fn release_lock(&mut self, req: SymbolType) -> i8 {
-        zassert!(self.lock == req, 1, "lock={} req={}\n", self.lock, req);
+    pub(crate) fn release_lock(&mut self, req: SymbolType) -> bool {
+        zassert!(self.lock == req, false, "lock={} req={}\n", self.lock, req);
         self.lock = SymbolType::None;
-        0
+        true
     }
 
     /// Process next bar/space width from input stream

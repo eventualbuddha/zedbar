@@ -404,7 +404,7 @@ pub(crate) fn _zbar_decode_code93(dcode: &mut zbar_decoder_t) -> SymbolType {
 
     if character == 1 {
         // Lock shared resources
-        if dcode.acquire_lock(SymbolType::Code39) {
+        if !dcode.acquire_lock(SymbolType::Code39) {
             return decode_abort(dcode);
         }
         // Copy from holding buffer

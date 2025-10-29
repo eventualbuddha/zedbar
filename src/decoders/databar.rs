@@ -1074,7 +1074,7 @@ unsafe fn match_segment_exp(
         return SymbolType::Partial;
     }
 
-    if (*dcode).acquire_lock(SymbolType::DatabarExp) {
+    if !(*dcode).acquire_lock(SymbolType::DatabarExp) {
         return SymbolType::Partial;
     }
 

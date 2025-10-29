@@ -533,7 +533,7 @@ pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
     let character = dcode.code39.character();
 
     // Lock shared resources
-    if character == 0 && dcode.acquire_lock(SymbolType::Code39) {
+    if character == 0 && !dcode.acquire_lock(SymbolType::Code39) {
         dcode.code39.set_character(-1);
         return SymbolType::Partial;
     }

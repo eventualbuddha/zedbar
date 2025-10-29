@@ -438,16 +438,6 @@ fn ean_part_end7(ean: &ean_decoder_t, pass: &mut ean_pass_t, fwd: u8) -> Partial
     PartialSymbolType::None
 }
 
-/// Acquire lock for a symbol
-#[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, sym: SymbolType) -> bool {
-    if dcode.lock != SymbolType::None {
-        return true;
-    }
-    dcode.lock = sym;
-    false
-}
-
 /// EAN checksum verification
 fn ean_verify_checksum(ean: &ean_decoder_t, n: usize) -> i8 {
     let mut chk: u8 = 0;
@@ -910,7 +900,7 @@ pub(crate) unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType 
                     dcode.ean.pass[2].state = -1;
                     dcode.ean.pass[3].state = -1;
                     if sym > SymbolType::Partial {
-                        if !acquire_lock(dcode, sym) {
+                        if dcode.acquire_lock(sym) {
                             postprocess(dcode, sym);
                         } else {
                             sym = SymbolType::Partial;

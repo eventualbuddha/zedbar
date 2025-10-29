@@ -417,7 +417,7 @@ pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
     dcode.codabar.set_character(character + 1);
 
     // Lock shared resources
-    if character + 1 == NIBUF as i16 && dcode.acquire_lock(SymbolType::Codabar) {
+    if character + 1 == NIBUF as i16 && !dcode.acquire_lock(SymbolType::Codabar) {
         dcode.codabar.set_character(-1);
         return SymbolType::Partial;
     }
@@ -448,7 +448,7 @@ pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
             return SymbolType::None;
         }
 
-        if dcode.codabar.character() < NIBUF as i16 && dcode.acquire_lock(SymbolType::Codabar) {
+        if dcode.codabar.character() < NIBUF as i16 && !dcode.acquire_lock(SymbolType::Codabar) {
             dcode.codabar.set_character(-1);
             return SymbolType::Partial;
         }

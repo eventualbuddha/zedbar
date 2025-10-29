@@ -10,36 +10,9 @@ use crate::{
 };
 use libc::{c_int, c_uint};
 
-// Assertion macro
-macro_rules! zassert {
-    ($condition:expr, $retval:expr, $($arg:tt)*) => {
-        if !$condition {
-            return $retval;
-        }
-    };
-}
-
 // ============================================================================
 // Helper functions from decoder.h
 // ============================================================================
-
-/// Acquire shared state lock
-#[inline]
-fn acquire_lock(dcode: &mut zbar_decoder_t, req: SymbolType) -> bool {
-    if dcode.lock != SymbolType::None {
-        return true;
-    }
-    dcode.lock = req;
-    false
-}
-
-/// Check and release shared state lock
-#[inline]
-fn release_lock(dcode: &mut zbar_decoder_t, req: SymbolType) -> i8 {
-    zassert!(dcode.lock == req, 1, "lock={} req={}\n", dcode.lock, req);
-    dcode.lock = SymbolType::None;
-    0
-}
 
 /// Access config value by index
 #[inline]
@@ -167,7 +140,7 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
 #[inline]
 unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
     // Lock shared resources
-    if acquire_lock(dcode, SymbolType::I25) {
+    if !dcode.acquire_lock(SymbolType::I25) {
         dcode.i25.set_character(-1);
         return true;
     }
@@ -223,7 +196,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
     }
 
     if character < min_len as i16 || (max_len > 0 && character > max_len as i16) {
-        release_lock(dcode, SymbolType::I25);
+        dcode.release_lock(SymbolType::I25);
         dcode.i25.set_character(-1);
         return SymbolType::None;
     }
@@ -276,7 +249,7 @@ pub(crate) unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType 
     if c > 9 {
         // goto reset
         if dcode.i25.character() >= 4 {
-            release_lock(dcode, SymbolType::I25);
+            dcode.release_lock(SymbolType::I25);
         }
         dcode.i25.set_character(-1);
         return SymbolType::None;
@@ -291,7 +264,7 @@ pub(crate) unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType 
     if c > 9 {
         // goto reset
         if dcode.i25.character() >= 4 {
-            release_lock(dcode, SymbolType::I25);
+            dcode.release_lock(SymbolType::I25);
         }
         dcode.i25.set_character(-1);
         return SymbolType::None;
