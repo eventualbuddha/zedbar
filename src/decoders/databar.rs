@@ -871,12 +871,12 @@ unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: &mut databar_segment_t)
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
 unsafe fn lookup_sequence(
-    seg: *mut databar_segment_t,
+    seg: &mut databar_segment_t,
     fixed: i32,
     seq: &mut [i32],
     maxsize: usize,
 ) -> i32 {
-    let mut n = ((*seg).data as u32 / 211) as usize;
+    let mut n = (seg.data as u32 / 211) as usize;
     let mut i = n.div_ceil(2) + 1;
     n += 4;
     i = (i * i) / 4;
@@ -1002,7 +1002,7 @@ unsafe fn match_segment_exp(
 
                 if idx == 0 {
                     let maxsize = seq.len();
-                    let lu = lookup_sequence(candidate, fixed, &mut seq, maxsize);
+                    let lu = lookup_sequence(&mut *candidate, fixed, &mut seq, maxsize);
                     if lu == 0 {
                         i -= 1;
                         continue;
@@ -1290,9 +1290,9 @@ fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -
 }
 
 /// Decode a DataBar character from width measurements
-pub(crate) unsafe fn decode_char(
+unsafe fn decode_char(
     dcode: &mut zbar_decoder_t,
-    seg: *mut databar_segment_t,
+    seg: &mut databar_segment_t,
     off: c_int,
     dir: c_int,
 ) -> SymbolType {
@@ -1302,16 +1302,16 @@ pub(crate) unsafe fn decode_char(
     let mut sig0 = 0u32;
     let mut sig1 = 0u32;
 
-    let n = if (*seg).exp() {
+    let n = if seg.exp() {
         17
-    } else if (*seg).side() != 0 {
+    } else if seg.side() != 0 {
         15
     } else {
         16
     };
     emin[1] = -(n as i32);
 
-    if s < 13 || check_width((*seg).width as c_uint, s, n) == 0 {
+    if s < 13 || check_width(seg.width as c_uint, s, n) == 0 {
         return SymbolType::None;
     }
 
@@ -1405,15 +1405,14 @@ pub(crate) unsafe fn decode_char(
     }
 
     let mut chk;
-    if (*seg).exp() {
-        let side = (*seg).color() as u8 ^ (*seg).side() ^ 1;
+    if seg.exp() {
+        let side = seg.color() as u8 ^ (*seg).side() ^ 1;
         if v >= 4096 {
             return SymbolType::None;
         }
         chk = calc_check(sig0, sig1, side as c_uint, 211);
-        if (*seg).finder() != 0 || (*seg).color() != zbar_color_t::ZBAR_SPACE || (*seg).side() != 0
-        {
-            let i = ((*seg).finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
+        if seg.finder() != 0 || (*seg).color() != zbar_color_t::ZBAR_SPACE || (*seg).side() != 0 {
+            let i = (seg.finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
             if !(0..12).contains(&i) {
                 return SymbolType::None;
             }
@@ -1424,18 +1423,18 @@ pub(crate) unsafe fn decode_char(
             chk = 0;
         }
     } else {
-        chk = calc_check(sig0, sig1, (*seg).side() as c_uint, 79);
-        if (*seg).color() != zbar_color_t::ZBAR_SPACE {
+        chk = calc_check(sig0, sig1, seg.side() as c_uint, 79);
+        if seg.color() != zbar_color_t::ZBAR_SPACE {
             chk = (chk * 16) % 79;
         }
     }
 
-    (*seg).set_check(chk as u8);
-    (*seg).data = v as i16;
+    seg.set_check(chk as u8);
+    seg.data = v as i16;
 
     merge_segment(&mut dcode.databar, &mut *seg);
 
-    if (*seg).exp() {
+    if seg.exp() {
         return match_segment_exp(dcode, seg, dir);
     } else if dir > 0 {
         return match_segment(dcode, &mut *seg);
@@ -1445,7 +1444,7 @@ pub(crate) unsafe fn decode_char(
 
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
-pub(crate) unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
+unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
     let mut maxage = 0u32;
     let csegs = db.csegs() as usize;
     let mut old: c_int = -1;
@@ -1521,7 +1520,7 @@ pub(crate) unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> 
 }
 
 /// Decode DataBar finder pattern
-pub(crate) unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
+unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
     let e0 = dcode.pair_width(1);
     let e2 = dcode.pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
@@ -1639,7 +1638,7 @@ pub(crate) unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> SymbolT
         (*seg).set_epoch(dcode.databar.epoch());
     }
 
-    sym = decode_char(dcode, seg, 1, 1);
+    sym = decode_char(dcode, &mut *seg, 1, 1);
     if sym == SymbolType::None {
         (*seg).set_finder(-1);
         if !pair.is_null() {
