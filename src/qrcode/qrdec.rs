@@ -4844,7 +4844,7 @@ pub(crate) unsafe fn qr_decode(
         qr_reader_match_centers(
             reader,
             &mut qrlist,
-            from_raw_parts_mut(centers, ncenters as usize),
+            from_raw_parts_mut(centers, ncenters),
             ncenters,
             &bin,
             img.width as c_int,
