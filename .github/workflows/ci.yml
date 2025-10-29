@@ -15,7 +15,12 @@ jobs:
       - name: Install C dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc libjpeg-dev libpng-dev
+          sudo apt-get install -y gcc libjpeg-dev libpng-dev libzbar0 zbar-tools
+
+      - name: Verify zbarimg installation
+        run: |
+          which zbarimg
+          zbarimg --version
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
