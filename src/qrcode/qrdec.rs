@@ -4236,7 +4236,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     img: &[u8],
     _width: c_int,
     _height: c_int,
-    _c: *mut *mut qr_finder_center,
+    centers: [*mut qr_finder_center; 3],
 ) -> c_int {
     let mut ci: [usize; 7] = [0; 7];
     let mut maxd: c_uint;
@@ -4244,7 +4244,7 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     let mut i0: usize;
 
     // Sort the points in counter-clockwise order
-    let ccw: c_int = qr_point_ccw(&(**_c.add(0)).pos, &(**_c.add(1)).pos, &(**_c.add(2)).pos);
+    let ccw: c_int = qr_point_ccw(&(*centers[0]).pos, &(*centers[1]).pos, &(*centers[2]).pos);
 
     // Colinear points can't be the corners of a quadrilateral
     if ccw == 0 {
@@ -4262,10 +4262,10 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
     // Assume the points farthest from each other are the opposite corners,
     // and find the top-left point
-    maxd = qr_point_distance2(&(**_c.add(1)).pos, &(**_c.add(2)).pos);
+    maxd = qr_point_distance2(&(*centers[1]).pos, &(*centers[2]).pos);
     i0 = 0;
     for i in 1..3 {
-        let d = qr_point_distance2(&(**_c.add(ci[i + 1])).pos, &(**_c.add(ci[i + 2])).pos);
+        let d = qr_point_distance2(&(*centers[ci[i + 1]]).pos, &(*centers[ci[i + 2]]).pos);
         if d > maxd {
             i0 = i;
             maxd = d;
@@ -4285,9 +4285,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
         let ur_version: c_int;
         let mut fmt_info: c_int;
 
-        ul.c = *_c.add(ci[i]);
-        ur.c = *_c.add(ci[i + 1]);
-        dl.c = *_c.add(ci[i + 2]);
+        ul.c = centers[ci[i]];
+        ur.c = centers[ci[i + 1]];
+        dl.c = centers[ci[i + 2]];
 
         // Estimate the module size and version number from the two opposite corners.
         // The module size is not constant in the image, so we compute an affine
@@ -4539,8 +4539,6 @@ unsafe fn qr_reader_match_centers(
                 }
 
                 if mark[k] == 0 {
-                    let mut c: [*mut qr_finder_center; 3] =
-                        [&mut _centers[i], &mut _centers[j], &mut _centers[k]];
                     let mut qrdata = qr_code_data::default();
                     let version = qr_reader_try_configuration(
                         reader,
@@ -4548,7 +4546,11 @@ unsafe fn qr_reader_match_centers(
                         img,
                         _width,
                         _height,
-                        c.as_mut_ptr(),
+                        [
+                            &mut _centers[i] as *mut qr_finder_center,
+                            &mut _centers[j] as *mut qr_finder_center,
+                            &mut _centers[k] as *mut qr_finder_center,
+                        ],
                     );
 
                     if version >= 0 {
