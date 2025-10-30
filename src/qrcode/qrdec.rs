@@ -209,7 +209,7 @@ unsafe fn qr_hom_fit_edge_line(
 ///
 /// Represents a mapping from a unit square to a quadrilateral in the image,
 /// used for extracting QR code modules with perspective correction.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 struct qr_hom_cell {
     /// Forward transformation matrix [3][3]
     pub(crate) fwd: [[c_int; 3]; 3],
@@ -225,13 +225,14 @@ struct qr_hom_cell {
 
 /// Sampling grid for QR code module extraction
 struct qr_sampling_grid {
-    /// Array of homography cells for mapping between code and image space
-    pub(crate) cells: [*mut qr_hom_cell; 6],
+    /// 2D array of homography cells for mapping between code and image space
+    /// cells[i][j] represents the cell at row i, column j
+    pub(crate) cells: Vec<Vec<qr_hom_cell>>,
     /// Mask indicating which modules are part of function patterns
     pub(crate) fpmask: Vec<c_uint>,
     /// Limits for each cell region
     pub(crate) cell_limits: [c_int; 6],
-    /// Number of cells in use
+    /// Number of cells in use per dimension
     pub(crate) ncells: c_int,
 }
 
@@ -239,15 +240,6 @@ struct qr_sampling_grid {
 #[derive(Default)]
 pub(crate) struct qr_finder_lines {
     lines: Vec<qr_finder_line>,
-}
-
-unsafe fn qr_alloc_array<T>(count: usize) -> *mut T {
-    libc::malloc(count * size_of::<T>()) as *mut T
-}
-
-#[inline]
-unsafe fn qr_free_array<T>(ptr: *mut T) {
-    libc::free(ptr as *mut c_void);
 }
 
 /// Allocates a client reader handle.
@@ -297,16 +289,13 @@ pub(crate) struct qr_finder_edge_pt {
 /// The center of a finder pattern obtained from the crossing of one or more
 /// clusters of horizontal finder lines with one or more clusters of vertical
 /// finder lines.
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 pub(crate) struct qr_finder_center {
     /// The estimated location of the finder center.
     pos: qr_point,
 
     /// The list of edge points from the crossing lines.
-    edge_pts: *mut qr_finder_edge_pt,
-
-    /// The number of edge points from the crossing lines.
-    nedge_pts: usize,
+    edge_pts: Vec<qr_finder_edge_pt>,
 }
 
 /*Determine if a horizontal line crosses a vertical line.
@@ -1003,8 +992,8 @@ pub(crate) unsafe fn qr_hom_fit(
     // However, if our average version estimate is greater than 1, try to search for an alignment pattern
     let version4 = _ul.eversion[0] + _ul.eversion[1] + _ur.eversion[0] + _dl.eversion[1];
     if version4 > 4 {
-        let mut cell: qr_hom_cell = std::mem::zeroed();
-        let mut p3: qr_point = [0; 2];
+        let mut cell = qr_hom_cell::default();
+        let mut p3 = qr_point::default();
         let dim = 17 + version4;
         qr_hom_cell_init(
             &mut cell,
@@ -1122,7 +1111,7 @@ pub(crate) unsafe fn qr_finder_estimate_module_size_and_version(
     _width: c_int,
     _height: c_int,
 ) -> c_int {
-    let mut offs: qr_point = [0, 0];
+    let mut offs = qr_point::default();
     let mut sums: [c_int; 4] = [0; 4];
     let mut nsums: [c_int; 4] = [0; 4];
 
@@ -1658,83 +1647,64 @@ enum Direction {
 /// Adds the coordinates of the edge points from the lines contained in the
 /// given list of clusters to the list of edge points for a finder center.
 ///
+/// Fills edge points into a Vec from line clusters
+///
 /// Only the edge point position is initialized.
 /// The edge label and extent are set by qr_finder_edge_pts_aff_classify()
 /// or qr_finder_edge_pts_hom_classify().
-///
-/// # Parameters
-/// - `_edge_pts`: The buffer in which to store the edge points.
-/// - `_nedge_pts`: The current number of edge points in the buffer.
-/// - `_neighbors`: The list of clusters.
-/// - `_nneighbors`: The number of clusters in the list.
-/// - `_v`: 0 for horizontal lines and 1 for vertical lines.
-///
-/// # Returns
-/// The new total number of edge points.
-unsafe fn qr_finder_edge_pts_fill(
-    _edge_pts: *mut qr_finder_edge_pt,
-    mut _nedge_pts: usize,
-    _neighbors: &mut [qr_finder_cluster],
-    _v: Direction,
-) -> usize {
-    let _v = match _v {
+unsafe fn qr_finder_edge_pts_fill_vec(
+    edge_pts: &mut Vec<qr_finder_edge_pt>,
+    neighbors: &mut [qr_finder_cluster],
+    dir: Direction,
+) {
+    let v_idx = match dir {
         Direction::Horizontal => 0,
         Direction::Vertical => 1,
     };
-    for c in _neighbors.iter() {
+    for c in neighbors.iter() {
         for j in 0..c.nlines {
             let l = *c.lines.add(j);
 
             // Add beginning offset edge point if present
             if (*l).boffs > 0 {
-                (*_edge_pts.add(_nedge_pts)).pos[0] = (*l).pos[0];
-                (*_edge_pts.add(_nedge_pts)).pos[1] = (*l).pos[1];
-                (*_edge_pts.add(_nedge_pts)).pos[_v] -= (*l).boffs;
-                _nedge_pts += 1;
+                let mut pt = qr_finder_edge_pt::default();
+                pt.pos[0] = (*l).pos[0];
+                pt.pos[1] = (*l).pos[1];
+                pt.pos[v_idx] -= (*l).boffs;
+                edge_pts.push(pt);
             }
 
             // Add ending offset edge point if present
             if (*l).eoffs > 0 {
-                (*_edge_pts.add(_nedge_pts)).pos[0] = (*l).pos[0];
-                (*_edge_pts.add(_nedge_pts)).pos[1] = (*l).pos[1];
-                (*_edge_pts.add(_nedge_pts)).pos[_v] += (*l).len + (*l).eoffs;
-                _nedge_pts += 1;
+                let mut pt = qr_finder_edge_pt::default();
+                pt.pos[0] = (*l).pos[0];
+                pt.pos[1] = (*l).pos[1];
+                pt.pos[v_idx] += (*l).len + (*l).eoffs;
+                edge_pts.push(pt);
             }
         }
     }
-    _nedge_pts
 }
 
 /// Finds horizontal clusters that cross corresponding vertical clusters,
 /// presumably corresponding to a finder center.
 ///
 /// # Parameters
-/// - `_centers`: The buffer in which to store putative finder centers.
-/// - `_edge_pts`: The buffer to use for the edge point lists for each finder center.
-/// - `_hclusters`: The clusters of horizontal lines crossing finder patterns.
-/// - `_nhclusters`: The number of horizontal line clusters.
-/// - `_vclusters`: The clusters of vertical lines crossing finder patterns.
-/// - `_nvclusters`: The number of vertical line clusters.
+/// - `hclusters`: The clusters of horizontal lines crossing finder patterns.
+/// - `vclusters`: The clusters of vertical lines crossing finder patterns.
 ///
 /// # Returns
-/// Tuple of (centers, edge_pts) where centers contains the putative finder centers
-/// and edge_pts contains all edge points for all centers.
+/// Vec of putative finder centers, each owning its edge points.
 pub(crate) unsafe fn qr_finder_find_crossings(
     hclusters: &[qr_finder_cluster],
     vclusters: &[qr_finder_cluster],
-) -> (Vec<qr_finder_center>, Vec<qr_finder_edge_pt>) {
+) -> Vec<qr_finder_center> {
     let _nhclusters = hclusters.len();
     let _nvclusters = vclusters.len();
     let mut hmark = vec![0u8; _nhclusters];
     let mut vmark = vec![0u8; _nvclusters];
     let mut ncenters: usize = 0;
-    let mut edge_pts_idx: usize = 0;
 
-    // Calculate required size for edge_pts
-    let mut nedge_pts: usize = hclusters.iter().chain(vclusters).map(|c| c.nlines).sum();
-    nedge_pts <<= 1;
-
-    let mut edge_pts = vec![qr_finder_edge_pt::default(); nedge_pts];
     let mut centers = vec![qr_finder_center::default(); usize::min(_nhclusters, _nvclusters)];
 
     // TODO: This may need some re-working.
@@ -1808,30 +1778,27 @@ pub(crate) unsafe fn qr_finder_find_crossings(
                 ((x as usize + hneighbors.len()) / (hneighbors.len() << 1)) as i32;
             centers[ncenters].pos[1] =
                 ((y as usize + vneighbors.len()) / (vneighbors.len() << 1)) as i32;
-            centers[ncenters].edge_pts = edge_pts.as_mut_ptr().add(edge_pts_idx);
 
-            let mut nedge_pts = qr_finder_edge_pts_fill(
-                edge_pts.as_mut_ptr().add(edge_pts_idx),
-                0,
+            // Fill edge points directly into the center's Vec
+            qr_finder_edge_pts_fill_vec(
+                &mut centers[ncenters].edge_pts,
                 &mut hneighbors,
                 Direction::Horizontal,
             );
-            nedge_pts = qr_finder_edge_pts_fill(
-                edge_pts.as_mut_ptr().add(edge_pts_idx),
-                nedge_pts,
+            qr_finder_edge_pts_fill_vec(
+                &mut centers[ncenters].edge_pts,
                 &mut vneighbors,
                 Direction::Vertical,
             );
 
-            centers[ncenters].nedge_pts = nedge_pts;
-            edge_pts_idx += nedge_pts;
             ncenters += 1;
         }
     }
     if ncenters > 1 {
         centers[..ncenters].sort_by(|a, b| {
-            b.nedge_pts
-                .cmp(&a.nedge_pts)
+            b.edge_pts
+                .len()
+                .cmp(&a.edge_pts.len())
                 .then_with(|| a.pos[1].cmp(&b.pos[1]))
                 .then_with(|| a.pos[0].cmp(&b.pos[0]))
         });
@@ -1840,7 +1807,7 @@ pub(crate) unsafe fn qr_finder_find_crossings(
     // Truncate to actual size
     centers.truncate(ncenters);
 
-    (centers, edge_pts)
+    centers
 }
 
 /// Locate QR finder pattern centers from scanned lines
@@ -1857,7 +1824,7 @@ pub(crate) unsafe fn qr_finder_centers_locate(
     reader: &mut qr_reader,
     _width: c_int,
     _height: c_int,
-) -> (Vec<qr_finder_center>, Vec<qr_finder_edge_pt>) {
+) -> Vec<qr_finder_center> {
     let nhlines = reader.finder_lines[0].lines.len();
     let nvlines = reader.finder_lines[1].lines.len();
 
@@ -1901,7 +1868,7 @@ pub(crate) unsafe fn qr_finder_centers_locate(
     if nhclusters >= 3 && nvclusters >= 3 {
         qr_finder_find_crossings(&hclusters[..nhclusters], &vclusters[..nvclusters])
     } else {
-        (Vec::new(), Vec::new())
+        Vec::new()
     }
 }
 
@@ -2032,8 +1999,7 @@ pub(crate) unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &
     for item in _f.nedge_pts.iter_mut() {
         *item = 0;
     }
-    for i in 0..(*c).nedge_pts {
-        let edge_pt = &mut *(*c).edge_pts.add(i);
+    for edge_pt in (*c).edge_pts.iter_mut() {
         let mut q = qr_aff_unproject(_aff, edge_pt.pos[0], edge_pt.pos[1]);
         qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
         let d = c_int::from(q[1].abs() > q[0].abs());
@@ -2043,9 +2009,8 @@ pub(crate) unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &
         edge_pt.extent = q[d as usize];
     }
 
-    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts);
-    edge_pts.sort_by(qr_cmp_edge_pt);
-    _f.edge_pts[0] = (*c).edge_pts;
+    (*c).edge_pts.sort_by(qr_cmp_edge_pt);
+    _f.edge_pts[0] = (*c).edge_pts.as_mut_ptr();
     for e in 1.._f.edge_pts.len() {
         _f.edge_pts[e] = _f.edge_pts[e - 1].add(_f.nedge_pts[e - 1] as usize);
     }
@@ -2066,30 +2031,27 @@ pub(crate) unsafe fn qr_finder_edge_pts_hom_classify(_f: &mut qr_finder, _hom: &
     for item in _f.nedge_pts.iter_mut() {
         *item = 0;
     }
-    for i in 0..(*c).nedge_pts {
-        let edge_pt = (*c).edge_pts.add(i);
-
-        match qr_hom_unproject(_hom, (*edge_pt).pos[0], (*edge_pt).pos[1]) {
+    for edge_pt in (*c).edge_pts.iter_mut() {
+        match qr_hom_unproject(_hom, edge_pt.pos[0], edge_pt.pos[1]) {
             Ok(mut q) => {
                 // Successful projection
                 qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
                 let d = c_int::from(q[1].abs() > q[0].abs());
                 let e = d << 1 | c_int::from(q[d as usize] >= 0);
                 _f.nedge_pts[e as usize] += 1;
-                (*edge_pt).edge = e;
-                (*edge_pt).extent = q[d as usize];
+                edge_pt.edge = e;
+                edge_pt.extent = q[d as usize];
             }
             Err(q) => {
                 // Projection failed (went to infinity)
-                (*edge_pt).edge = 4;
-                (*edge_pt).extent = q[0];
+                edge_pt.edge = 4;
+                edge_pt.extent = q[0];
             }
         }
     }
 
-    let edge_pts = std::slice::from_raw_parts_mut((*c).edge_pts, (*c).nedge_pts);
-    edge_pts.sort_by(qr_cmp_edge_pt);
-    _f.edge_pts[0] = (*c).edge_pts;
+    (*c).edge_pts.sort_by(qr_cmp_edge_pt);
+    _f.edge_pts[0] = (*c).edge_pts.as_mut_ptr();
     for e in 1.._f.edge_pts.len() {
         _f.edge_pts[e] = _f.edge_pts[e - 1].add(_f.nedge_pts[e - 1] as usize);
     }
@@ -2585,19 +2547,6 @@ pub(crate) fn qr_data_mask_fill(_mask: &mut [c_uint], _dim: usize, _pattern: c_i
     }
 }
 
-/// Clear a QR sampling grid
-///
-/// Frees the allocated memory for the function pattern mask and cell array.
-///
-/// # Safety
-/// This function is unsafe because it frees raw pointers.
-unsafe fn qr_sampling_grid_clear(_grid: *mut qr_sampling_grid) {
-    if !_grid.is_null() {
-        // fpmask is now a Vec and will be automatically deallocated
-        qr_free_array((*_grid).cells[0]);
-    }
-}
-
 /// Initialize a QR sampling grid
 ///
 /// Sets up the sampling grid for reading QR code data bits from an image.
@@ -2618,7 +2567,7 @@ unsafe fn qr_sampling_grid_init(
     _width: c_int,
     _height: c_int,
 ) {
-    let mut base_cell: qr_hom_cell = qr_hom_cell {
+    let mut base_cell = qr_hom_cell {
         fwd: [[0; 3]; 3],
         x0: 0,
         y0: 0,
@@ -2651,13 +2600,10 @@ unsafe fn qr_sampling_grid_init(
         _p[3][1],
     );
 
-    // Allocate the array of cells
+    // Allocate the 2D array of cells
     _grid.ncells = nalign - 1;
-    let cell_count = ((nalign - 1) * (nalign - 1)) as usize;
-    _grid.cells[0] = qr_alloc_array::<qr_hom_cell>(cell_count);
-    for i in 1..(_grid.ncells as usize) {
-        _grid.cells[i] = _grid.cells[i - 1].add(_grid.ncells as usize);
-    }
+    let ncells = _grid.ncells as usize;
+    _grid.cells = vec![vec![qr_hom_cell::default(); ncells]; ncells];
 
     // Initialize the function pattern mask
     let stride = ((dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS) as usize;
@@ -2681,11 +2627,7 @@ unsafe fn qr_sampling_grid_init(
     // If we have no alignment patterns (e.g., this is a version 1 code), just use
     // the base cell and hope it's good enough
     if _version < 2 {
-        memcpy(
-            _grid.cells[0] as *mut c_void,
-            &base_cell as *const qr_hom_cell as *const c_void,
-            size_of::<qr_hom_cell>(),
-        );
+        _grid.cells[0][0] = base_cell;
     } else {
         let mut q = vec![qr_point::default(); (nalign * nalign) as usize];
         let mut p = vec![qr_point::default(); (nalign * nalign) as usize];
@@ -2739,21 +2681,21 @@ unsafe fn qr_sampling_grid_init(
                     // neighboring alignment patterns
                     qr_hom_cell_project(
                         &mut p0,
-                        &*_grid.cells[(i - 2) as usize].add((j - 1) as usize),
+                        &_grid.cells[(i - 2) as usize][(j - 1) as usize],
                         u,
                         v,
                         0,
                     );
                     qr_hom_cell_project(
                         &mut p1,
-                        &*_grid.cells[(i - 2) as usize].add((j - 2) as usize),
+                        &_grid.cells[(i - 2) as usize][(j - 2) as usize],
                         u,
                         v,
                         0,
                     );
                     qr_hom_cell_project(
                         &mut p2,
-                        &*_grid.cells[(i - 1) as usize].add((j - 2) as usize),
+                        &_grid.cells[(i - 1) as usize][(j - 2) as usize],
                         u,
                         v,
                         0,
@@ -2781,9 +2723,8 @@ unsafe fn qr_sampling_grid_init(
                     }
 
                     // We need a cell that has the target point at a known (u,v) location
-                    let cell_ptr = _grid.cells[(i - 1) as usize].add((j - 1) as usize);
                     qr_hom_cell_init(
-                        &mut *cell_ptr,
+                        &mut _grid.cells[(i - 1) as usize][(j - 1) as usize],
                         q[(k_idx - nalign - 1) as usize][0],
                         q[(k_idx - nalign - 1) as usize][1],
                         q[(k_idx - nalign) as usize][0],
@@ -2801,19 +2742,19 @@ unsafe fn qr_sampling_grid_init(
                         p1[0],
                         p1[1],
                     );
-                    cell_ptr
+                    &_grid.cells[(i - 1) as usize][(j - 1) as usize]
                 } else if i > 1 && j > 0 {
-                    _grid.cells[(i - 2) as usize].add((j - 1) as usize)
+                    &_grid.cells[(i - 2) as usize][(j - 1) as usize]
                 } else if i > 0 && j > 1 {
-                    _grid.cells[(i - 1) as usize].add((j - 2) as usize)
+                    &_grid.cells[(i - 1) as usize][(j - 2) as usize]
                 } else {
-                    &base_cell as *const qr_hom_cell as *mut qr_hom_cell
+                    &base_cell
                 };
 
                 // Use a very small search radius
                 qr_alignment_pattern_search(
                     &mut p[k_idx as usize],
-                    &*cell,
+                    cell,
                     u,
                     v,
                     2,
@@ -2824,7 +2765,7 @@ unsafe fn qr_sampling_grid_init(
 
                 if i > 0 && j > 0 {
                     qr_hom_cell_init(
-                        &mut *_grid.cells[(i - 1) as usize].add((j - 1) as usize),
+                        &mut _grid.cells[(i - 1) as usize][(j - 1) as usize],
                         q[(k_idx - nalign - 1) as usize][0],
                         q[(k_idx - nalign - 1) as usize][1],
                         q[(k_idx - nalign) as usize][0],
@@ -2856,24 +2797,24 @@ unsafe fn qr_sampling_grid_init(
     _grid.cell_limits[(_grid.ncells - 1) as usize] = dim;
 
     // Produce a bounding square for the code
-    qr_hom_cell_project(&mut _p[0], &*_grid.cells[0].add(0), -1, -1, 1);
+    qr_hom_cell_project(&mut _p[0], &_grid.cells[0][0], -1, -1, 1);
     qr_hom_cell_project(
         &mut _p[1],
-        &*_grid.cells[0].add((_grid.ncells - 1) as usize),
+        &_grid.cells[0][(_grid.ncells - 1) as usize],
         (dim << 1) - 1,
         -1,
         1,
     );
     qr_hom_cell_project(
         &mut _p[2],
-        &*_grid.cells[(_grid.ncells - 1) as usize].add(0),
+        &_grid.cells[(_grid.ncells - 1) as usize][0],
         -1,
         (dim << 1) - 1,
         1,
     );
     qr_hom_cell_project(
         &mut _p[3],
-        &*_grid.cells[(_grid.ncells - 1) as usize].add((_grid.ncells - 1) as usize),
+        &_grid.cells[(_grid.ncells - 1) as usize][(_grid.ncells - 1) as usize],
         (dim << 1) - 1,
         (dim << 1) - 1,
         1,
@@ -2922,12 +2863,12 @@ unsafe fn qr_sampling_grid_sample(
         let mut v0 = 0;
         for i in 0.._grid.ncells {
             let v1 = _grid.cell_limits[i as usize];
-            let cell = _grid.cells[i as usize].add(j as usize);
-            let du = u0 - (*cell).u0;
-            let dv = v0 - (*cell).v0;
-            let mut x0 = (*cell).fwd[0][0] * du + (*cell).fwd[0][1] * dv + (*cell).fwd[0][2];
-            let mut y0 = (*cell).fwd[1][0] * du + (*cell).fwd[1][1] * dv + (*cell).fwd[1][2];
-            let mut w0 = (*cell).fwd[2][0] * du + (*cell).fwd[2][1] * dv + (*cell).fwd[2][2];
+            let cell = &_grid.cells[i as usize][j as usize];
+            let du = u0 - cell.u0;
+            let dv = v0 - cell.v0;
+            let mut x0 = cell.fwd[0][0] * du + cell.fwd[0][1] * dv + cell.fwd[0][2];
+            let mut y0 = cell.fwd[1][0] * du + cell.fwd[1][1] * dv + cell.fwd[1][2];
+            let mut w0 = cell.fwd[2][0] * du + cell.fwd[2][1] * dv + cell.fwd[2][2];
 
             for u in u0..u1 {
                 let mut x = x0;
@@ -2938,18 +2879,18 @@ unsafe fn qr_sampling_grid_sample(
                     // function pattern
                     if qr_sampling_grid_is_in_fp(_grid, _dim, u, v) == 0 {
                         let mut p: qr_point = [0, 0];
-                        qr_hom_cell_fproject(&mut p, &*cell, x, y, w);
+                        qr_hom_cell_fproject(&mut p, cell, x, y, w);
                         _data_bits[(u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)] ^=
                             (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint)
                                 << (v & (QR_INT_BITS - 1));
                     }
-                    x += (*cell).fwd[0][1];
-                    y += (*cell).fwd[1][1];
-                    w += (*cell).fwd[2][1];
+                    x += cell.fwd[0][1];
+                    y += cell.fwd[1][1];
+                    w += cell.fwd[2][1];
                 }
-                x0 += (*cell).fwd[0][0];
-                y0 += (*cell).fwd[1][0];
-                w0 += (*cell).fwd[2][0];
+                x0 += cell.fwd[0][0];
+                y0 += cell.fwd[1][0];
+                w0 += cell.fwd[2][0];
             }
             v0 = v1;
         }
@@ -3439,7 +3380,7 @@ unsafe fn qr_code_decode(
     _height: c_int,
 ) -> c_int {
     let mut grid: qr_sampling_grid = qr_sampling_grid {
-        cells: [null_mut(); 6],
+        cells: Vec::new(),
         fpmask: Vec::new(),
         cell_limits: [0; 6],
         ncells: 0,
@@ -3492,8 +3433,6 @@ unsafe fn qr_code_decode(
         &grid.fpmask,
         dim,
     );
-
-    qr_sampling_grid_clear(&mut grid);
 
     // Perform the error correction using reed-solomon crate
     let mut ndata = 0;
@@ -4696,7 +4635,7 @@ unsafe fn qr_reader_match_centers(
                             let mut inside = vec![];
                             for l in 0.._ncenters {
                                 if mark[l] == 2 {
-                                    inside.push(_centers[l]);
+                                    inside.push(_centers[l].clone());
                                 }
                             }
                             ninside = inside.len();
@@ -4748,7 +4687,7 @@ pub(crate) unsafe fn qr_decode(
         return 0;
     }
 
-    let (mut centers, _edge_pts) = qr_finder_centers_locate(reader, 0, 0);
+    let mut centers = qr_finder_centers_locate(reader, 0, 0);
 
     if centers.len() >= 3 {
         let bin = binarize(&img.data, img.width as usize, img.height as usize);
