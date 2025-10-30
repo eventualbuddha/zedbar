@@ -3,7 +3,7 @@
 //! This module provides low-level QR code decoding functions including
 //! point geometry operations and error correction.
 
-use std::{cmp::Ordering, mem::swap, slice::from_raw_parts};
+use std::mem::swap;
 
 use libc::{c_int, c_uchar, c_uint};
 use rand::{Rng, SeedableRng};
@@ -156,7 +156,7 @@ fn qr_hom_project_alignment_to_corner(
 /// This is used for edges that have only one finder pattern, where we walk along the edge
 /// collecting sample points. If we don't get enough points (> 1), we fall back to an
 /// axis-aligned line in the affine coordinate system.
-unsafe fn qr_hom_fit_edge_line(
+fn qr_hom_fit_edge_line(
     line: &mut qr_line,
     pts: &mut [qr_point],
     npts: usize,
@@ -311,13 +311,6 @@ pub(crate) struct qr_finder_edge_pt {
     /// The location of the edge point.
     pos: qr_point,
 
-    /// A label classifying which edge this belongs to:
-    /// 0: negative u edge (left)
-    /// 1: positive u edge (right)
-    /// 2: negative v edge (top)
-    /// 3: positive v edge (bottom)*/
-    edge: c_int,
-
     /// The (signed) perpendicular distance of the edge point from a line parallel
     /// to the edge passing through the finder center, in (u,v) coordinates.
     /// This is also re-used by RANSAC to store inlier flags.*/
@@ -350,9 +343,8 @@ pub(crate) fn qr_finder_lines_are_crossing(hline: &qr_finder_line, vline: &qr_fi
 /// Translate a point by the given offsets
 ///
 /// Adds dx to the x coordinate and dy to the y coordinate.
-pub(crate) fn qr_point_translate(point: &mut qr_point, dx: c_int, dy: c_int) {
-    point[0] += dx;
-    point[1] += dy;
+pub(crate) fn qr_point_translate(point: &qr_point, dx: c_int, dy: c_int) -> qr_point {
+    [point[0] + dx, point[1] + dy]
 }
 
 /// Calculate the squared distance between two points
@@ -398,7 +390,7 @@ pub(crate) fn qr_line_orient(_l: &mut qr_line, _x: c_int, _y: c_int) {
     }
 }
 
-pub(crate) unsafe fn qr_line_isect(_l0: &qr_line, _l1: &qr_line) -> Option<qr_point> {
+pub(crate) fn qr_line_isect(_l0: &qr_line, _l1: &qr_line) -> Option<qr_point> {
     let mut d = (*_l0)[0]
         .wrapping_mul((*_l1)[1])
         .wrapping_sub((*_l0)[1].wrapping_mul((*_l1)[0]));
@@ -468,12 +460,7 @@ pub(crate) fn qr_line_fit(
 /// - `_p`: Array of points
 /// - `_np`: Number of points
 /// - `_res`: Resolution bits for scaling
-pub(crate) unsafe fn qr_line_fit_points(
-    _l: &mut qr_line,
-    _p: &mut [qr_point],
-    _np: usize,
-    _res: c_int,
-) {
+pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usize, _res: c_int) {
     let mut sx: c_int = 0;
     let mut sy: c_int = 0;
     let mut xmin = c_int::MAX;
@@ -625,7 +612,7 @@ pub(crate) struct qr_hom {
 /// # Safety
 /// This function is unsafe because it dereferences the raw _hom pointer.
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn qr_hom_init(
+pub(crate) fn qr_hom_init(
     _hom: &mut qr_hom,
     _x0: c_int,
     _y0: c_int,
@@ -721,7 +708,7 @@ pub(crate) unsafe fn qr_hom_init(
 /// This function attempts to correct perspective distortion by fitting lines
 /// to the edges of the QR code area and then building a homography transformation.
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn qr_hom_fit(
+fn qr_hom_fit(
     _hom: &mut qr_hom,
     _ul: &mut qr_finder,
     _ur: &mut qr_finder,
@@ -744,32 +731,16 @@ pub(crate) unsafe fn qr_hom_fit(
     qr_finder_ransac(_ul, _aff, rng, 0);
     qr_finder_ransac(_dl, _aff, rng, 0);
     qr_line_fit_finder_pair(&mut l[0], _aff, _ul, _dl, 0);
-    if qr_line_eval(
-        &l[0],
-        _dl.c.as_ref().unwrap().pos[0],
-        _dl.c.as_ref().unwrap().pos[1],
-    ) < 0
-        || qr_line_eval(
-            &l[0],
-            _ur.c.as_ref().unwrap().pos[0],
-            _ur.c.as_ref().unwrap().pos[1],
-        ) < 0
+    if qr_line_eval(&l[0], _dl.center().pos[0], _dl.center().pos[1]) < 0
+        || qr_line_eval(&l[0], _ur.center().pos[0], _ur.center().pos[1]) < 0
     {
         return -1;
     }
     qr_finder_ransac(_ul, _aff, rng, 2);
     qr_finder_ransac(_ur, _aff, rng, 2);
     qr_line_fit_finder_pair(&mut l[2], _aff, _ul, _ur, 2);
-    if qr_line_eval(
-        &l[2],
-        _dl.c.as_ref().unwrap().pos[0],
-        _dl.c.as_ref().unwrap().pos[1],
-    ) < 0
-        || qr_line_eval(
-            &l[2],
-            _ur.c.as_ref().unwrap().pos[0],
-            _ur.c.as_ref().unwrap().pos[1],
-        ) < 0
+    if qr_line_eval(&l[2], _dl.center().pos[0], _dl.center().pos[1]) < 0
+        || qr_line_eval(&l[2], _ur.center().pos[0], _ur.center().pos[1]) < 0
     {
         return -1;
     }
@@ -779,16 +750,8 @@ pub(crate) unsafe fn qr_hom_fit(
     qr_finder_ransac(_ur, _aff, rng, 1);
     let mut dru = 0;
     if qr_line_fit_finder_edge(&mut l[1], _ur, 1, _aff.res) >= 0 {
-        if qr_line_eval(
-            &l[1],
-            _ul.c.as_ref().unwrap().pos[0],
-            _ul.c.as_ref().unwrap().pos[1],
-        ) < 0
-            || qr_line_eval(
-                &l[1],
-                _dl.c.as_ref().unwrap().pos[0],
-                _dl.c.as_ref().unwrap().pos[1],
-            ) < 0
+        if qr_line_eval(&l[1], _ul.center().pos[0], _ul.center().pos[1]) < 0
+            || qr_line_eval(&l[1], _dl.center().pos[0], _dl.center().pos[1]) < 0
         {
             return -1;
         }
@@ -805,16 +768,8 @@ pub(crate) unsafe fn qr_hom_fit(
     qr_finder_ransac(_dl, _aff, rng, 3);
     let mut dbv = 0;
     if qr_line_fit_finder_edge(&mut l[3], _dl, 3, _aff.res) >= 0 {
-        if qr_line_eval(
-            &l[3],
-            _ul.c.as_ref().unwrap().pos[0],
-            _ul.c.as_ref().unwrap().pos[1],
-        ) < 0
-            || qr_line_eval(
-                &l[3],
-                _ur.c.as_ref().unwrap().pos[0],
-                _ur.c.as_ref().unwrap().pos[1],
-            ) < 0
+        if qr_line_eval(&l[3], _ul.center().pos[0], _ul.center().pos[1]) < 0
+            || qr_line_eval(&l[3], _ur.center().pos[0], _ur.center().pos[1]) < 0
         {
             return -1;
         }
@@ -832,16 +787,16 @@ pub(crate) unsafe fn qr_hom_fit(
     let mut rlastfit = nr;
     let mut cr = nr + (_dl.o[1] - rv + drv - 1) / drv;
     let mut r: Vec<qr_point> = Vec::with_capacity(cr as usize);
-    for i in 0.._ur.ninliers[1] {
-        r.push((*_ur.edge_pts[1].add(i as usize)).pos);
+    for i in 0.._ur.ninliers[1] as usize {
+        r.push(_ur.edge_pts[1][i].pos);
     }
 
     let mut nb = _dl.ninliers[3];
     let mut blastfit = nb;
     let mut cb = nb + (_ur.o[0] - bu + dbu - 1) / dbu;
     let mut b: Vec<qr_point> = Vec::with_capacity(cb as usize);
-    for i in 0.._dl.ninliers[3] {
-        b.push((*_dl.edge_pts[3].add(i as usize)).pos);
+    for i in 0.._dl.ninliers[3] as usize {
+        b.push(_dl.edge_pts[3][i].pos);
     }
 
     // Set up the step parameters for the affine projection
@@ -1109,7 +1064,7 @@ pub(crate) fn qr_hom_fproject(
 /// All the information we've collected about a finder pattern in the current
 /// configuration.
 #[derive(Default)]
-pub(crate) struct qr_finder {
+struct qr_finder {
     /// The module size along each axis (in the square domain).
     size: [c_int; 2],
 
@@ -1117,10 +1072,7 @@ pub(crate) struct qr_finder {
     eversion: [c_int; 2],
 
     /// The list of classified edge points for each edge.
-    edge_pts: [*mut qr_finder_edge_pt; 4],
-
-    /// The number of edge points classified as belonging to each edge.
-    nedge_pts: [c_int; 4],
+    edge_pts: [Vec<qr_finder_edge_pt>; 4],
 
     /// The number of inliers found after running RANSAC on each edge.
     ninliers: [c_int; 4],
@@ -1129,125 +1081,211 @@ pub(crate) struct qr_finder {
     o: qr_point,
 
     /// The finder center information from the original image.
-    c: *mut qr_finder_center,
+    center: qr_finder_center,
 }
 
-/// Estimates the size of a module after classifying the edge points.
-///
-/// _width:  The distance between UL and UR in the square domain.
-/// _height: The distance between UL and DL in the square domain.
-///
-/// Returns 0 on success, or -1 if the module size or version could not be estimated.
-///
-/// # Safety
-/// This function is unsafe because it dereferences the raw _f pointer.
-pub(crate) unsafe fn qr_finder_estimate_module_size_and_version(
-    _f: &mut qr_finder,
-    _width: c_int,
-    _height: c_int,
-) -> c_int {
-    let mut offs = qr_point::default();
-    let mut sums: [c_int; 4] = [0; 4];
-    let mut nsums: [c_int; 4] = [0; 4];
+impl qr_finder {
+    /// Gets the finder center information from the original image.
+    fn center(&self) -> &qr_finder_center {
+        &self.center
+    }
 
-    for e in 0..4 {
-        if _f.nedge_pts[e] > 0 {
-            let edge_pts = _f.edge_pts[e];
-            let mut n = _f.nedge_pts[e];
+    /// Sets the finder center information from the original image.
+    fn set_center(&mut self, center: qr_finder_center) {
+        self.center = center;
+    }
 
-            // Average the samples for this edge, dropping the top and bottom 25%
-            let mut sum: c_int = 0;
-            for i in (n >> 2)..(n - (n >> 2)) {
-                sum = sum.wrapping_add((*edge_pts.offset(i as isize)).extent);
+    /// Computes the index of the edge each edge point belongs to, and its (signed)
+    /// distance along the corresponding axis from the center of the finder pattern
+    /// (in the square domain), using homography projection.
+    ///
+    /// This is similar to `edge_pts_aff_classify` but uses full homography
+    /// projection which can fail (return infinity). Failed projections are marked
+    /// with edge=4.
+    ///
+    /// The resulting list of edge points is sorted by edge index, with ties broken
+    /// by extent.
+    unsafe fn edge_pts_hom_classify(&mut self, hom: &qr_hom) {
+        let center = &mut self.center;
+
+        // Clear all edge point vectors
+        for edge_vec in &mut self.edge_pts {
+            edge_vec.clear();
+        }
+
+        for edge_pt in center.edge_pts.iter() {
+            let (edge, extent) = match qr_hom_unproject(hom, edge_pt.pos[0], edge_pt.pos[1]) {
+                Ok(mut q) => {
+                    // Successful projection
+                    q = qr_point_translate(&q, -self.o[0], -self.o[1]);
+                    let d = c_int::from(q[1].abs() > q[0].abs());
+                    let e = d << 1 | c_int::from(q[d as usize] >= 0);
+                    (e, q[d as usize])
+                }
+                Err(q) => {
+                    // Projection failed (went to infinity)
+                    (4, q[0])
+                }
+            };
+
+            if edge < 4 {
+                self.edge_pts[edge as usize].push(qr_finder_edge_pt {
+                    pos: edge_pt.pos,
+                    extent,
+                });
             }
-            n -= (n >> 2) << 1;
-            let mean = qr_divround(sum, n);
-            offs[e >> 1] = offs[e >> 1].wrapping_add(mean);
-            sums[e] = sum;
-            nsums[e] = n;
-        } else {
-            nsums[e] = 0;
-            sums[e] = 0;
+        }
+
+        // Sort each edge's points by extent
+        for edge_vec in &mut self.edge_pts {
+            edge_vec.sort_by(|a, b| a.extent.cmp(&b.extent));
         }
     }
 
-    // If we have samples on both sides of an axis, refine our idea of where the
-    // unprojected finder center is located.
-    if _f.nedge_pts[0] > 0 && _f.nedge_pts[1] > 0 {
-        _f.o[0] = _f.o[0].wrapping_sub(offs[0] >> 1);
-        sums[0] = sums[0].wrapping_sub((offs[0].wrapping_mul(nsums[0])) >> 1);
-        sums[1] = sums[1].wrapping_sub((offs[0].wrapping_mul(nsums[1])) >> 1);
-    }
-    if _f.nedge_pts[2] > 0 && _f.nedge_pts[3] > 0 {
-        _f.o[1] = _f.o[1].wrapping_sub(offs[1] >> 1);
-        sums[2] = sums[2].wrapping_sub((offs[1].wrapping_mul(nsums[2])) >> 1);
-        sums[3] = sums[3].wrapping_sub((offs[1].wrapping_mul(nsums[3])) >> 1);
-    }
+    /// Computes the index of the edge each edge point belongs to, and its (signed)
+    /// distance along the corresponding axis from the center of the finder pattern
+    /// (in the square domain).
+    /// The resulting list of edge points is sorted by edge index, with ties broken
+    /// by extent.
+    unsafe fn edge_pts_aff_classify(&mut self, _aff: &qr_aff) {
+        let center = &mut self.center;
 
-    // We must have _some_ samples along each axis... if we don't, our transform
-    // must be pretty severely distorting the original square (e.g., with
-    // coordinates so large as to cause overflow).
-    let mut nusize = nsums[0].wrapping_add(nsums[1]);
-    if nusize <= 0 {
-        return -1;
-    }
+        // Clear all edge point vectors
+        for edge_vec in &mut self.edge_pts {
+            edge_vec.clear();
+        }
 
-    // The module size is 1/3 the average edge extent.
-    nusize = nusize.wrapping_mul(3);
-    let mut usize = sums[1].wrapping_sub(sums[0]);
-    usize = ((usize.wrapping_shl(1)).wrapping_add(nusize)) / (nusize.wrapping_shl(1));
-    if usize <= 0 {
-        return -1;
-    }
+        for edge_pt in center.edge_pts.iter() {
+            let mut q = qr_aff_unproject(_aff, edge_pt.pos[0], edge_pt.pos[1]);
+            q = qr_point_translate(&q, -self.o[0], -self.o[1]);
+            let d = c_int::from(q[1].abs() > q[0].abs());
+            let e = d << 1 | c_int::from(q[d as usize] >= 0);
 
-    // Now estimate the version directly from the module size and the distance
-    // between the finder patterns.
-    // This is done independently using the extents along each axis.
-    // If either falls significantly outside the valid range (1 to 40), reject the
-    // configuration.
-    let uversion = (_width.wrapping_sub(usize.wrapping_mul(8))) / (usize.wrapping_shl(2));
-    if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&uversion) {
-        return -1;
+            self.edge_pts[e as usize].push(qr_finder_edge_pt {
+                pos: edge_pt.pos,
+                extent: q[d as usize],
+            });
+        }
+
+        // Sort each edge's points by extent
+        for edge_vec in &mut self.edge_pts {
+            edge_vec.sort_by(|a, b| a.extent.cmp(&b.extent));
+        }
     }
 
-    // Now do the same for the other axis.
-    let mut nvsize = nsums[2].wrapping_add(nsums[3]);
-    if nvsize <= 0 {
-        return -1;
+    /// Estimates the size of a module after classifying the edge points.
+    ///
+    /// _width:  The distance between UL and UR in the square domain.
+    /// _height: The distance between UL and DL in the square domain.
+    ///
+    /// Returns 0 on success, or -1 if the module size or version could not be estimated.
+    ///
+    /// # Safety
+    /// This function is unsafe because it dereferences the raw _f pointer.
+    unsafe fn estimate_module_size_and_version(&mut self, _width: c_int, _height: c_int) -> c_int {
+        let mut offs = qr_point::default();
+        let mut sums: [c_int; 4] = [0; 4];
+        let mut nsums: [c_int; 4] = [0; 4];
+
+        for e in 0..4 {
+            let n = self.edge_pts[e].len() as c_int;
+            if n > 0 {
+                // Average the samples for this edge, dropping the top and bottom 25%
+                let mut sum: c_int = 0;
+                let start = (n >> 2) as usize;
+                let end = (n - (n >> 2)) as usize;
+                for i in start..end {
+                    sum = sum.wrapping_add(self.edge_pts[e][i].extent);
+                }
+                let n_trimmed = n - ((n >> 2) << 1);
+                let mean = qr_divround(sum, n_trimmed);
+                offs[e >> 1] = offs[e >> 1].wrapping_add(mean);
+                sums[e] = sum;
+                nsums[e] = n_trimmed;
+            } else {
+                nsums[e] = 0;
+                sums[e] = 0;
+            }
+        }
+
+        // If we have samples on both sides of an axis, refine our idea of where the
+        // unprojected finder center is located.
+        if !self.edge_pts[0].is_empty() && !self.edge_pts[1].is_empty() {
+            self.o[0] = self.o[0].wrapping_sub(offs[0] >> 1);
+            sums[0] = sums[0].wrapping_sub((offs[0].wrapping_mul(nsums[0])) >> 1);
+            sums[1] = sums[1].wrapping_sub((offs[0].wrapping_mul(nsums[1])) >> 1);
+        }
+        if !self.edge_pts[2].is_empty() && !self.edge_pts[3].is_empty() {
+            self.o[1] = self.o[1].wrapping_sub(offs[1] >> 1);
+            sums[2] = sums[2].wrapping_sub((offs[1].wrapping_mul(nsums[2])) >> 1);
+            sums[3] = sums[3].wrapping_sub((offs[1].wrapping_mul(nsums[3])) >> 1);
+        }
+
+        // We must have _some_ samples along each axis... if we don't, our transform
+        // must be pretty severely distorting the original square (e.g., with
+        // coordinates so large as to cause overflow).
+        let mut nusize = nsums[0].wrapping_add(nsums[1]);
+        if nusize <= 0 {
+            return -1;
+        }
+
+        // The module size is 1/3 the average edge extent.
+        nusize = nusize.wrapping_mul(3);
+        let mut usize = sums[1].wrapping_sub(sums[0]);
+        usize = ((usize.wrapping_shl(1)).wrapping_add(nusize)) / (nusize.wrapping_shl(1));
+        if usize <= 0 {
+            return -1;
+        }
+
+        // Now estimate the version directly from the module size and the distance
+        // between the finder patterns.
+        // This is done independently using the extents along each axis.
+        // If either falls significantly outside the valid range (1 to 40), reject the
+        // configuration.
+        let uversion = (_width.wrapping_sub(usize.wrapping_mul(8))) / (usize.wrapping_shl(2));
+        if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&uversion) {
+            return -1;
+        }
+
+        // Now do the same for the other axis.
+        let mut nvsize = nsums[2].wrapping_add(nsums[3]);
+        if nvsize <= 0 {
+            return -1;
+        }
+        nvsize = nvsize.wrapping_mul(3);
+        let mut vsize = sums[3].wrapping_sub(sums[2]);
+        vsize = ((vsize.wrapping_shl(1)).wrapping_add(nvsize)) / (nvsize.wrapping_shl(1));
+        if vsize <= 0 {
+            return -1;
+        }
+
+        let vversion = (_height.wrapping_sub(vsize.wrapping_mul(8))) / (vsize.wrapping_shl(2));
+        if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&vversion) {
+            return -1;
+        }
+
+        // If the estimated version using extents along one axis is significantly
+        // different than the estimated version along the other axis, then the axes
+        // have significantly different scalings (relative to the grid).
+        // This can happen, e.g., when we have multiple adjacent QR codes, and we've
+        // picked two finder patterns from one and the third finder pattern from
+        // another
+        if uversion.wrapping_sub(vversion).abs() > QR_LARGE_VERSION_SLACK {
+            return -1;
+        }
+
+        self.size[0] = usize;
+        self.size[1] = vsize;
+
+        // We intentionally do not compute an average version from the sizes along
+        // both axes.
+        // In the presence of projective distortion, one of them will be much more
+        // accurate than the other.
+        self.eversion[0] = uversion;
+        self.eversion[1] = vversion;
+
+        0
     }
-    nvsize = nvsize.wrapping_mul(3);
-    let mut vsize = sums[3].wrapping_sub(sums[2]);
-    vsize = ((vsize.wrapping_shl(1)).wrapping_add(nvsize)) / (nvsize.wrapping_shl(1));
-    if vsize <= 0 {
-        return -1;
-    }
-
-    let vversion = (_height.wrapping_sub(vsize.wrapping_mul(8))) / (vsize.wrapping_shl(2));
-    if !(1..=40 + QR_LARGE_VERSION_SLACK).contains(&vversion) {
-        return -1;
-    }
-
-    // If the estimated version using extents along one axis is significantly
-    // different than the estimated version along the other axis, then the axes
-    // have significantly different scalings (relative to the grid).
-    // This can happen, e.g., when we have multiple adjacent QR codes, and we've
-    // picked two finder patterns from one and the third finder pattern from
-    // another
-    if uversion.wrapping_sub(vversion).abs() > QR_LARGE_VERSION_SLACK {
-        return -1;
-    }
-
-    _f.size[0] = usize;
-    _f.size[1] = vsize;
-
-    // We intentionally do not compute an average version from the sizes along
-    // both axes.
-    // In the presence of projective distortion, one of them will be much more
-    // accurate than the other.
-    _f.eversion[0] = uversion;
-    _f.eversion[1] = vversion;
-
-    0
 }
 
 /// Eliminate outliers from the classified edge points with RANSAC.
@@ -1257,14 +1295,9 @@ pub(crate) unsafe fn qr_finder_estimate_module_size_and_version(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-pub(crate) unsafe fn qr_finder_ransac(
-    _f: &mut qr_finder,
-    _hom: &qr_aff,
-    rng: &mut ChaCha8Rng,
-    _e: c_int,
-) {
-    let edge_pts = _f.edge_pts[_e as usize];
-    let n = _f.nedge_pts[_e as usize];
+fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e: c_int) {
+    let edge_idx = _e as usize;
+    let n = _f.edge_pts[edge_idx].len() as c_int;
     let mut best_ninliers = 0;
 
     if n > 1 {
@@ -1283,8 +1316,8 @@ pub(crate) unsafe fn qr_finder_ransac(
                 p1i += 1;
             }
 
-            let p0 = &(*edge_pts.add(p0i)).pos;
-            let p1 = &(*edge_pts.add(p1i)).pos;
+            let p0 = _f.edge_pts[edge_idx][p0i].pos;
+            let p1 = _f.edge_pts[edge_idx][p1i].pos;
 
             // If the corresponding line is not within 45 degrees of the proper
             // orientation in the square domain, reject it outright.
@@ -1292,8 +1325,8 @@ pub(crate) unsafe fn qr_finder_ransac(
             // be misclassified into the wrong edge.
             let mut q0 = qr_aff_unproject(_hom, p0[0], p0[1]);
             let mut q1 = qr_aff_unproject(_hom, p1[0], p1[1]);
-            qr_point_translate(&mut q0, -_f.o[0], -_f.o[1]);
-            qr_point_translate(&mut q1, -_f.o[0], -_f.o[1]);
+            q0 = qr_point_translate(&q0, -_f.o[0], -_f.o[1]);
+            q1 = qr_point_translate(&q1, -_f.o[0], -_f.o[1]);
 
             if (q0[(_e >> 1) as usize] - q1[(_e >> 1) as usize]).abs()
                 > (q0[(1 - (_e >> 1)) as usize] - q1[(1 - (_e >> 1)) as usize]).abs()
@@ -1310,21 +1343,21 @@ pub(crate) unsafe fn qr_finder_ransac(
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
             let thresh =
-                qr_isqrt(qr_point_distance2(p0, p1) << (2 * QR_FINDER_SUBPREC + 1)) as c_int;
+                qr_isqrt(qr_point_distance2(&p0, &p1) << (2 * QR_FINDER_SUBPREC + 1)) as c_int;
             let mut ninliers = 0;
 
-            for j in 0..n {
-                if qr_point_ccw(p0, p1, &(*edge_pts.offset(j as isize)).pos).abs() <= thresh {
-                    (*edge_pts.offset(j as isize)).extent |= 1;
+            for j in 0..n as usize {
+                if qr_point_ccw(&p0, &p1, &_f.edge_pts[edge_idx][j].pos).abs() <= thresh {
+                    _f.edge_pts[edge_idx][j].extent |= 1;
                     ninliers += 1;
                 } else {
-                    (*edge_pts.offset(j as isize)).extent &= !1;
+                    _f.edge_pts[edge_idx][j].extent &= !1;
                 }
             }
 
             if ninliers > best_ninliers {
-                for j in 0..n {
-                    (*edge_pts.offset(j as isize)).extent <<= 1;
+                for j in 0..n as usize {
+                    _f.edge_pts[edge_idx][j].extent <<= 1;
                 }
                 best_ninliers = ninliers;
 
@@ -1345,12 +1378,10 @@ pub(crate) unsafe fn qr_finder_ransac(
         // Now collect all the inliers at the beginning of the list
         let mut i = 0;
         let mut j = 0;
-        while j < best_ninliers {
-            if (*edge_pts.offset(i as isize)).extent & 2 != 0 {
+        while j < best_ninliers as usize {
+            if _f.edge_pts[edge_idx][i].extent & 2 != 0 {
                 if j < i {
-                    let tmp = *edge_pts.offset(i as isize);
-                    *edge_pts.offset(j as isize) = *edge_pts.offset(i as isize);
-                    *edge_pts.offset(i as isize) = tmp;
+                    _f.edge_pts[edge_idx].swap(i, j);
                 }
                 j += 1;
             }
@@ -1358,37 +1389,29 @@ pub(crate) unsafe fn qr_finder_ransac(
         }
     }
 
-    _f.ninliers[_e as usize] = best_ninliers;
+    _f.ninliers[edge_idx] = best_ninliers;
 }
 
 /// Perform a least-squares line fit to an edge of a finder pattern using the inliers found by RANSAC.
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-pub(crate) unsafe fn qr_line_fit_finder_edge(
-    _l: &mut qr_line,
-    _f: &qr_finder,
-    _e: c_int,
-    _res: c_int,
-) -> c_int {
+fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: c_int, _res: c_int) -> c_int {
     let npts = _f.ninliers[_e as usize] as usize;
     if npts < 2 {
         return -1;
     }
 
-    let mut pts = vec![qr_point::default(); npts];
-    let edge_pts = _f.edge_pts[_e as usize];
-    let edge_pts = from_raw_parts(edge_pts, npts);
-
-    for (point, edge_point) in pts.iter_mut().zip(edge_pts) {
-        point[0] = edge_point.pos[0];
-        point[1] = edge_point.pos[1];
-    }
+    let mut pts: Vec<qr_point> = _f.edge_pts[_e as usize]
+        .iter()
+        .take(npts)
+        .map(|ep| ep.pos)
+        .collect();
 
     qr_line_fit_points(_l, &mut pts, npts, _res);
 
     // Make sure the center of the finder pattern lies in the positive halfspace of the line.
-    qr_line_orient(_l, (*_f.c).pos[0], (*_f.c).pos[1]);
+    qr_line_orient(_l, _f.center().pos[0], _f.center().pos[1]);
 
     0
 }
@@ -1400,7 +1423,7 @@ pub(crate) unsafe fn qr_line_fit_finder_edge(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers.
-pub(crate) unsafe fn qr_line_fit_finder_pair(
+fn qr_line_fit_finder_pair(
     _l: &mut qr_line,
     _aff: &qr_aff,
     _f0: &qr_finder,
@@ -1416,11 +1439,8 @@ pub(crate) unsafe fn qr_line_fit_finder_pair(
     let mut pts = vec![qr_point::default(); npts];
 
     if n0 > 0 {
-        let edge_pts = _f0.edge_pts[_e as usize];
-        let edge_pts = from_raw_parts(edge_pts, n0);
-        for (point, edge_point) in pts.iter_mut().zip(edge_pts).take(n0) {
-            point[0] = edge_point.pos[0];
-            point[1] = edge_point.pos[1];
+        for (i, edge_point) in _f0.edge_pts[_e as usize].iter().take(n0).enumerate() {
+            pts[i] = edge_point.pos;
         }
     } else {
         let mut q: qr_point = [_f0.o[0], _f0.o[1]];
@@ -1430,11 +1450,8 @@ pub(crate) unsafe fn qr_line_fit_finder_pair(
     }
 
     if n1 > 0 {
-        let edge_pts = _f1.edge_pts[_e as usize];
-        let edge_pts = from_raw_parts(edge_pts, n1);
-        for (point, edge_point) in pts[n0..].iter_mut().zip(edge_pts).take(n1) {
-            point[0] = edge_point.pos[0];
-            point[1] = edge_point.pos[1];
+        for (i, edge_point) in _f1.edge_pts[_e as usize].iter().take(n1).enumerate() {
+            pts[n0 + i] = edge_point.pos;
         }
     } else {
         let mut q: qr_point = [_f1.o[0], _f1.o[1]];
@@ -1445,7 +1462,7 @@ pub(crate) unsafe fn qr_line_fit_finder_pair(
     qr_line_fit_points(_l, &mut pts, npts, _aff.res);
 
     // Make sure at least one finder center lies in the positive halfspace.
-    qr_line_orient(_l, (*_f0.c).pos[0], (*_f0.c).pos[1]);
+    qr_line_orient(_l, _f0.center().pos[0], _f0.center().pos[1]);
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
@@ -1977,87 +1994,8 @@ pub(crate) static QR_RS_NBLOCKS: [[c_uchar; 4]; 40] = [
     [25, 49, 68, 81],
 ];
 
-pub(crate) fn qr_cmp_edge_pt(a: &qr_finder_edge_pt, b: &qr_finder_edge_pt) -> Ordering {
-    match ((c_int::from(a.edge > b.edge) - c_int::from(a.edge < b.edge)) << 1)
-        + c_int::from(a.extent > b.extent)
-        - c_int::from(a.extent < b.extent)
-    {
-        ..0 => Ordering::Less,
-        0 => Ordering::Equal,
-        1.. => Ordering::Greater,
-    }
-}
-
-/// Computes the index of the edge each edge point belongs to, and its (signed)
-/// distance along the corresponding axis from the center of the finder pattern
-/// (in the square domain).
-/// The resulting list of edge points is sorted by edge index, with ties broken
-/// by extent.
-pub(crate) unsafe fn qr_finder_edge_pts_aff_classify(_f: &mut qr_finder, _aff: &qr_aff) {
-    let c = _f.c;
-    for item in _f.nedge_pts.iter_mut() {
-        *item = 0;
-    }
-    for edge_pt in (*c).edge_pts.iter_mut() {
-        let mut q = qr_aff_unproject(_aff, edge_pt.pos[0], edge_pt.pos[1]);
-        qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
-        let d = c_int::from(q[1].abs() > q[0].abs());
-        let e = d << 1 | c_int::from(q[d as usize] >= 0);
-        _f.nedge_pts[e as usize] += 1;
-        edge_pt.edge = e;
-        edge_pt.extent = q[d as usize];
-    }
-
-    (*c).edge_pts.sort_by(qr_cmp_edge_pt);
-    _f.edge_pts[0] = (*c).edge_pts.as_mut_ptr();
-    for e in 1.._f.edge_pts.len() {
-        _f.edge_pts[e] = _f.edge_pts[e - 1].add(_f.nedge_pts[e - 1] as usize);
-    }
-}
-
-/// Computes the index of the edge each edge point belongs to, and its (signed)
-/// distance along the corresponding axis from the center of the finder pattern
-/// (in the square domain), using homography projection.
-///
-/// This is similar to `qr_finder_edge_pts_aff_classify` but uses full homography
-/// projection which can fail (return infinity). Failed projections are marked
-/// with edge=4.
-///
-/// The resulting list of edge points is sorted by edge index, with ties broken
-/// by extent.
-pub(crate) unsafe fn qr_finder_edge_pts_hom_classify(_f: &mut qr_finder, _hom: &qr_hom) {
-    let c = _f.c;
-    for item in _f.nedge_pts.iter_mut() {
-        *item = 0;
-    }
-    for edge_pt in (*c).edge_pts.iter_mut() {
-        match qr_hom_unproject(_hom, edge_pt.pos[0], edge_pt.pos[1]) {
-            Ok(mut q) => {
-                // Successful projection
-                qr_point_translate(&mut q, -_f.o[0], -_f.o[1]);
-                let d = c_int::from(q[1].abs() > q[0].abs());
-                let e = d << 1 | c_int::from(q[d as usize] >= 0);
-                _f.nedge_pts[e as usize] += 1;
-                edge_pt.edge = e;
-                edge_pt.extent = q[d as usize];
-            }
-            Err(q) => {
-                // Projection failed (went to infinity)
-                edge_pt.edge = 4;
-                edge_pt.extent = q[0];
-            }
-        }
-    }
-
-    (*c).edge_pts.sort_by(qr_cmp_edge_pt);
-    _f.edge_pts[0] = (*c).edge_pts.as_mut_ptr();
-    for e in 1.._f.edge_pts.len() {
-        _f.edge_pts[e] = _f.edge_pts[e - 1].add(_f.nedge_pts[e - 1] as usize);
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn qr_finder_quick_crossing_check(
+pub(crate) fn qr_finder_quick_crossing_check(
     _img: &[u8],
     _width: c_int,
     _height: c_int,
@@ -2190,7 +2128,7 @@ const BCH18_6_CODES: [c_uint; 34] = [
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-pub(crate) unsafe fn qr_finder_version_decode(
+unsafe fn qr_finder_version_decode(
     _f: &qr_finder,
     _hom: &qr_hom,
     _img: &[u8],
@@ -2253,7 +2191,7 @@ pub(crate) unsafe fn qr_finder_version_decode(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-pub(crate) unsafe fn qr_finder_fmt_info_decode(
+unsafe fn qr_finder_fmt_info_decode(
     _ul: &qr_finder,
     _ur: &qr_finder,
     _dl: &qr_finder,
@@ -3785,7 +3723,7 @@ fn qr_hom_cell_project(_cell: &qr_hom_cell, mut _u: c_int, mut _v: c_int, _res: 
 ///
 /// Returns 0 on success, -1 if no crossing found.
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn qr_finder_locate_crossing(
+pub(crate) fn qr_finder_locate_crossing(
     img: &[u8],
     width: c_int,
     _height: c_int,
@@ -3841,8 +3779,8 @@ pub(crate) unsafe fn qr_finder_locate_crossing(
     }
 
     // Return the midpoint of the v segment
-    (*p)[0] = ((x0_pos[0] + x1_pos[0] + 1) << QR_FINDER_SUBPREC) >> 1;
-    (*p)[1] = ((x0_pos[1] + x1_pos[1] + 1) << QR_FINDER_SUBPREC) >> 1;
+    p[0] = ((x0_pos[0] + x1_pos[0] + 1) << QR_FINDER_SUBPREC) >> 1;
+    p[1] = ((x0_pos[1] + x1_pos[1] + 1) << QR_FINDER_SUBPREC) >> 1;
     0
 }
 
@@ -3876,8 +3814,8 @@ fn qr_alignment_pattern_fetch(
 /// Searches for an alignment pattern around the specified grid coordinates (u, v)
 /// within a radius of r modules. Returns 0 on success, -1 if the best match is too poor.
 #[allow(clippy::too_many_arguments)]
-unsafe fn qr_alignment_pattern_search(
-    p: *mut qr_point,
+fn qr_alignment_pattern_search(
+    p: &mut qr_point,
     cell: &qr_hom_cell,
     _u: c_int,
     _v: c_int,
@@ -3984,8 +3922,8 @@ unsafe fn qr_alignment_pattern_search(
 
     // If the best result we got was sufficiently bad, reject the match
     if best_dist > 6 {
-        (*p)[0] = pattern[2][2][0];
-        (*p)[1] = pattern[2][2][1];
+        p[0] = pattern[2][2][0];
+        p[1] = pattern[2][2][1];
         return -1;
     }
 
@@ -4098,8 +4036,8 @@ unsafe fn qr_alignment_pattern_search(
         }
     }
 
-    (*p)[0] = bestx;
-    (*p)[1] = besty;
+    p[0] = bestx;
+    p[1] = besty;
     0
 }
 
@@ -4236,7 +4174,8 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     img: &[u8],
     _width: c_int,
     _height: c_int,
-    centers: [*mut qr_finder_center; 3],
+    centers: &mut [qr_finder_center],
+    centers_indexes: [usize; 3],
 ) -> c_int {
     let mut ci: [usize; 7] = [0; 7];
     let mut maxd: c_uint;
@@ -4244,7 +4183,11 @@ pub(crate) unsafe fn qr_reader_try_configuration(
     let mut i0: usize;
 
     // Sort the points in counter-clockwise order
-    let ccw: c_int = qr_point_ccw(&(*centers[0]).pos, &(*centers[1]).pos, &(*centers[2]).pos);
+    let ccw = qr_point_ccw(
+        &centers[centers_indexes[0]].pos,
+        &centers[centers_indexes[1]].pos,
+        &centers[centers_indexes[2]].pos,
+    );
 
     // Colinear points can't be the corners of a quadrilateral
     if ccw == 0 {
@@ -4262,10 +4205,16 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
     // Assume the points farthest from each other are the opposite corners,
     // and find the top-left point
-    maxd = qr_point_distance2(&(*centers[1]).pos, &(*centers[2]).pos);
+    maxd = qr_point_distance2(
+        &centers[centers_indexes[1]].pos,
+        &centers[centers_indexes[2]].pos,
+    );
     i0 = 0;
     for i in 1..3 {
-        let d = qr_point_distance2(&(*centers[ci[i + 1]]).pos, &(*centers[ci[i + 2]]).pos);
+        let d = qr_point_distance2(
+            &centers[centers_indexes[ci[i + 1]]].pos,
+            &centers[centers_indexes[ci[i + 2]]].pos,
+        );
         if d > maxd {
             i0 = i;
             maxd = d;
@@ -4285,9 +4234,10 @@ pub(crate) unsafe fn qr_reader_try_configuration(
         let ur_version: c_int;
         let mut fmt_info: c_int;
 
-        ul.c = centers[ci[i]];
-        ur.c = centers[ci[i + 1]];
-        dl.c = centers[ci[i + 2]];
+        // FIXME: stop cloning these values
+        ul.set_center(centers[centers_indexes[ci[i]]].clone());
+        ur.set_center(centers[centers_indexes[ci[i + 1]]].clone());
+        dl.set_center(centers[centers_indexes[ci[i + 2]]].clone());
 
         // Estimate the module size and version number from the two opposite corners.
         // The module size is not constant in the image, so we compute an affine
@@ -4299,15 +4249,21 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             - 2
             - QR_FINDER_SUBPREC
             - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
-        qr_aff_init(&mut aff, &(*ul.c).pos, &(*ur.c).pos, &(*dl.c).pos, res);
-        ur.o = qr_aff_unproject(&aff, (*ur.c).pos[0], (*ur.c).pos[1]);
-        qr_finder_edge_pts_aff_classify(&mut ur, &aff);
-        if qr_finder_estimate_module_size_and_version(&mut ur, 1 << res, 1 << res) < 0 {
+        qr_aff_init(
+            &mut aff,
+            &ul.center().pos,
+            &ur.center().pos,
+            &dl.center().pos,
+            res,
+        );
+        ur.o = qr_aff_unproject(&aff, ur.center().pos[0], ur.center().pos[1]);
+        ur.edge_pts_aff_classify(&aff);
+        if ur.estimate_module_size_and_version(1 << res, 1 << res) < 0 {
             continue;
         }
-        dl.o = qr_aff_unproject(&aff, (*dl.c).pos[0], (*dl.c).pos[1]);
-        qr_finder_edge_pts_aff_classify(&mut dl, &aff);
-        if qr_finder_estimate_module_size_and_version(&mut dl, 1 << res, 1 << res) < 0 {
+        dl.o = qr_aff_unproject(&aff, dl.center().pos[0], dl.center().pos[1]);
+        dl.edge_pts_aff_classify(&aff);
+        if dl.estimate_module_size_and_version(1 << res, 1 << res) < 0 {
             continue;
         }
 
@@ -4317,9 +4273,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             continue;
         }
 
-        ul.o = qr_aff_unproject(&aff, (*ul.c).pos[0], (*ul.c).pos[1]);
-        qr_finder_edge_pts_aff_classify(&mut ul, &aff);
-        if qr_finder_estimate_module_size_and_version(&mut ul, 1 << res, 1 << res) < 0
+        ul.o = qr_aff_unproject(&aff, ul.center().pos[0], ul.center().pos[1]);
+        ul.edge_pts_aff_classify(&aff);
+        if ul.estimate_module_size_and_version(1 << res, 1 << res) < 0
             || (ul.eversion[1] - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK
             || (ul.eversion[0] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK
         {
@@ -4346,19 +4302,19 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
         qrdata.bbox = bbox;
 
-        ul.o = qr_hom_unproject(&hom, (*ul.c).pos[0], (*ul.c).pos[1]).unwrap_or_default();
-        ur.o = qr_hom_unproject(&hom, (*ur.c).pos[0], (*ur.c).pos[1]).unwrap_or_default();
-        dl.o = qr_hom_unproject(&hom, (*dl.c).pos[0], (*dl.c).pos[1]).unwrap_or_default();
-        qr_finder_edge_pts_hom_classify(&mut ur, &hom);
+        ul.o = qr_hom_unproject(&hom, ul.center().pos[0], ul.center().pos[1]).unwrap_or_default();
+        ur.o = qr_hom_unproject(&hom, ur.center().pos[0], ur.center().pos[1]).unwrap_or_default();
+        dl.o = qr_hom_unproject(&hom, dl.center().pos[0], dl.center().pos[1]).unwrap_or_default();
+        ur.edge_pts_hom_classify(&hom);
         let width = ur.o[0] - ul.o[0];
         let height = ur.o[0] - ul.o[0];
-        if qr_finder_estimate_module_size_and_version(&mut ur, width, height) < 0 {
+        if ur.estimate_module_size_and_version(width, height) < 0 {
             continue;
         }
-        qr_finder_edge_pts_hom_classify(&mut dl, &hom);
+        dl.edge_pts_hom_classify(&hom);
         let width = dl.o[1] - ul.o[1];
         let height = dl.o[1] - ul.o[1];
-        if qr_finder_estimate_module_size_and_version(&mut dl, width, height) < 0 {
+        if dl.estimate_module_size_and_version(width, height) < 0 {
             continue;
         }
 
@@ -4416,10 +4372,10 @@ pub(crate) unsafe fn qr_reader_try_configuration(
             }
         }
 
-        qr_finder_edge_pts_hom_classify(&mut ul, &hom);
+        ul.edge_pts_hom_classify(&hom);
         let width = ur.o[0] - dl.o[0];
         let height = dl.o[1] - ul.o[1];
-        if qr_finder_estimate_module_size_and_version(&mut ul, width, height) < 0
+        if ul.estimate_module_size_and_version(width, height) < 0
             || (ul.eversion[1] - ur.eversion[1]).abs() > QR_SMALL_VERSION_SLACK
             || (ul.eversion[0] - dl.eversion[0]).abs() > QR_SMALL_VERSION_SLACK
         {
@@ -4430,9 +4386,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
         if fmt_info < 0
             || qr_code_decode(
                 qrdata,
-                &(*ul.c).pos,
-                &(*ur.c).pos,
-                &(*dl.c).pos,
+                &ul.center().pos,
+                &ur.center().pos,
+                &dl.center().pos,
                 ur_version,
                 fmt_info,
                 img,
@@ -4477,9 +4433,9 @@ pub(crate) unsafe fn qr_reader_try_configuration(
 
             if qr_code_decode(
                 qrdata,
-                &(*ul.c).pos,
-                &(*dl.c).pos,
-                &(*ur.c).pos,
+                &ul.center().pos,
+                &dl.center().pos,
+                &ur.center().pos,
                 ur_version,
                 fmt_info,
                 img,
@@ -4513,27 +4469,26 @@ unsafe fn qr_reader_match_centers(
     reader: &mut qr_reader,
     _qrlist: &mut qr_code_data_list,
     _centers: &mut [qr_finder_center],
-    _ncenters: usize,
     img: &[u8],
     _width: c_int,
     _height: c_int,
 ) {
     // The number of centers should be small, so an O(n^3) exhaustive search of
     // which ones go together should be reasonable.
-    let mut mark = vec![0u8; _ncenters];
+    let mut mark = vec![0u8; _centers.len()];
     let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
     let mut nfailures = 0;
 
-    for i in 0.._ncenters {
+    for i in 0.._centers.len() {
         // TODO: We might be able to accelerate this step significantly by
         // considering the remaining finder centers in a more intelligent order,
         // based on the first finder center we just chose.
-        for j in i + 1.._ncenters {
+        for j in i + 1.._centers.len() {
             if mark[i] != 0 {
                 break;
             }
 
-            for k in j + 1.._ncenters {
+            for k in j + 1.._centers.len() {
                 if mark[j] != 0 {
                     break;
                 }
@@ -4546,11 +4501,8 @@ unsafe fn qr_reader_match_centers(
                         img,
                         _width,
                         _height,
-                        [
-                            &mut _centers[i] as *mut qr_finder_center,
-                            &mut _centers[j] as *mut qr_finder_center,
-                            &mut _centers[k] as *mut qr_finder_center,
-                        ],
+                        _centers,
+                        [i, j, k],
                     );
 
                     if version >= 0 {
@@ -4570,7 +4522,7 @@ unsafe fn qr_reader_match_centers(
 
                         // Find any other finder centers located inside this code
                         ninside = 0;
-                        for l in 0.._ncenters {
+                        for l in 0.._centers.len() {
                             if mark[l] == 0
                                 && qr_point_ccw(&qrdata.bbox[0], &qrdata.bbox[1], &_centers[l].pos)
                                     >= 0
@@ -4591,17 +4543,15 @@ unsafe fn qr_reader_match_centers(
                             // Copy the relevant centers to a new array and do a search confined
                             // to that subset.
                             let mut inside = vec![];
-                            for l in 0.._ncenters {
+                            for l in 0.._centers.len() {
                                 if mark[l] == 2 {
                                     inside.push(_centers[l].clone());
                                 }
                             }
-                            ninside = inside.len();
                             qr_reader_match_centers(
                                 reader,
                                 _qrlist,
                                 &mut inside,
-                                ninside,
                                 img,
                                 _width,
                                 _height,
@@ -4609,7 +4559,7 @@ unsafe fn qr_reader_match_centers(
                         }
 
                         // Mark _all_ such centers used: codes cannot partially overlap
-                        for m in mark.iter_mut().take(_ncenters) {
+                        for m in mark.iter_mut() {
                             if *m == 2 {
                                 *m = 1;
                             }
@@ -4652,12 +4602,10 @@ pub(crate) unsafe fn qr_decode(
 
         let mut qrlist = qr_code_data_list::default();
 
-        let ncenters = centers.len();
         qr_reader_match_centers(
             reader,
             &mut qrlist,
             &mut centers,
-            ncenters,
             &bin,
             img.width as c_int,
             img.height as c_int,
