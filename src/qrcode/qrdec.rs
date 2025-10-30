@@ -1554,16 +1554,17 @@ pub(crate) fn qr_code_ncodewords(_version: c_uint) -> c_int {
 /// # Returns
 /// The number of clusters found.
 unsafe fn qr_finder_cluster_lines(
-    _clusters: *mut qr_finder_cluster,
-    _neighbors: *mut *mut qr_finder_line,
-    _lines: *mut qr_finder_line,
-    _nlines: usize,
+    _clusters: &mut [qr_finder_cluster],
+    _neighbors: &mut [*mut qr_finder_line],
+    _lines: &mut [qr_finder_line],
     _v: c_int,
 ) -> usize {
+    let _nlines = _lines.len();
     // Allocate mark array to track which lines have been clustered
     let mut mark = vec![0u8; _nlines];
-    let mut neighbors = _neighbors;
+    let mut neighbor_idx = 0;
     let mut nclusters = 0;
+    let lines_ptr = _lines.as_mut_ptr();
 
     for i in 0..(_nlines - 1) {
         if mark[i] != 0 {
@@ -1571,16 +1572,16 @@ unsafe fn qr_finder_cluster_lines(
         }
 
         let mut nneighbors = 1usize;
-        *neighbors.offset(0) = _lines.add(i);
-        let mut len = (*_lines.add(i)).len as usize;
+        _neighbors[neighbor_idx] = &mut _lines[i] as *mut qr_finder_line;
+        let mut len = _lines[i].len as usize;
 
         for (j, mj) in mark.iter().enumerate().take(_nlines).skip(i + 1) {
             if *mj != 0 {
                 continue;
             }
 
-            let a = *neighbors.add(nneighbors - 1);
-            let b = _lines.add(j);
+            let a = _neighbors[neighbor_idx + nneighbors - 1];
+            let b = &mut _lines[j] as *mut qr_finder_line;
 
             // The clustering threshold is proportional to the size of the lines,
             // since minor noise in large areas can interrupt patterns more easily
@@ -1625,7 +1626,7 @@ unsafe fn qr_finder_cluster_lines(
                 continue;
             }
 
-            *neighbors.add(nneighbors) = _lines.add(j);
+            _neighbors[neighbor_idx + nneighbors] = b;
             nneighbors += 1;
             len += (*b).len as usize;
         }
@@ -1643,15 +1644,15 @@ unsafe fn qr_finder_cluster_lines(
         // is a very small threshold, but was needed for some test images).
         len = ((len << 1) + nneighbors) / (nneighbors << 1);
         if nneighbors * (5 << QR_FINDER_SUBPREC) >= len {
-            (*_clusters.add(nclusters)).lines = neighbors;
-            (*_clusters.add(nclusters)).nlines = nneighbors;
+            _clusters[nclusters].lines = _neighbors.as_mut_ptr().add(neighbor_idx);
+            _clusters[nclusters].nlines = nneighbors;
 
             for j in 0..nneighbors {
-                let line_offset = (*neighbors.add(j)).offset_from(_lines);
+                let line_offset = _neighbors[neighbor_idx + j].offset_from(lines_ptr);
                 mark[line_offset as usize] = 1;
             }
 
-            neighbors = neighbors.add(nneighbors);
+            neighbor_idx += nneighbors;
             nclusters += 1;
         }
     }
@@ -1860,35 +1861,22 @@ pub(crate) unsafe fn qr_finder_centers_locate(
 ) -> usize {
     *_centers = null_mut();
     *_edge_pts = null_mut();
-    let hlines_vec = &reader.finder_lines[0].lines;
-    let hlines = if hlines_vec.is_empty() {
-        null_mut()
-    } else {
-        hlines_vec.as_ptr() as *mut qr_finder_line
-    };
-    let nhlines = hlines_vec.len();
 
-    let vlines_vec = &reader.finder_lines[1].lines;
-    let vlines = if vlines_vec.is_empty() {
-        null_mut()
-    } else {
-        vlines_vec.as_ptr() as *mut qr_finder_line
-    };
-    let nvlines = vlines_vec.len();
+    let nhlines = reader.finder_lines[0].lines.len();
+    let nvlines = reader.finder_lines[1].lines.len();
 
     // Cluster the detected lines
-    let hneighbors = qr_alloc_array::<*mut qr_finder_line>(nhlines);
+    let mut hneighbors = vec![null_mut(); nhlines];
 
     // We require more than one line per cluster, so there are at most nhlines/2
-    let hclusters = qr_alloc_array::<qr_finder_cluster>(nhlines >> 1);
+    let mut hclusters = vec![qr_finder_cluster::default(); nhlines >> 1];
 
-    if hneighbors.is_null() || hclusters.is_null() {
-        qr_free_array(hneighbors);
-        qr_free_array(hclusters);
-        return 0;
-    }
-
-    let nhclusters = qr_finder_cluster_lines(hclusters, hneighbors, hlines, nhlines, 0);
+    let nhclusters = qr_finder_cluster_lines(
+        &mut hclusters,
+        &mut hneighbors,
+        &mut reader.finder_lines[0].lines,
+        0,
+    );
 
     // We need vertical lines to be sorted by X coordinate, with ties broken by Y
     // coordinate, for clustering purposes.
@@ -1901,29 +1889,26 @@ pub(crate) unsafe fn qr_finder_centers_locate(
         });
     }
 
-    let vneighbors = qr_alloc_array::<*mut qr_finder_line>(nvlines);
+    let mut vneighbors = vec![null_mut(); nvlines];
 
     // We require more than one line per cluster, so there are at most nvlines/2
-    let vclusters = qr_alloc_array::<qr_finder_cluster>(nvlines >> 1);
+    let mut vclusters = vec![qr_finder_cluster::default(); nvlines >> 1];
 
-    if vneighbors.is_null() || vclusters.is_null() {
-        qr_free_array(vneighbors);
-        qr_free_array(vclusters);
-        qr_free_array(hneighbors);
-        qr_free_array(hclusters);
-        return 0;
-    }
-
-    let nvclusters = qr_finder_cluster_lines(vclusters, vneighbors, vlines, nvlines, 1);
+    let nvclusters = qr_finder_cluster_lines(
+        &mut vclusters,
+        &mut vneighbors,
+        &mut reader.finder_lines[1].lines,
+        1,
+    );
 
     // Find line crossings among the clusters
     let ncenters = if nhclusters >= 3 && nvclusters >= 3 {
         let mut nedge_pts = 0;
         for i in 0..nhclusters {
-            nedge_pts += (*hclusters.add(i)).nlines as usize;
+            nedge_pts += hclusters[i].nlines as usize;
         }
         for i in 0..nvclusters {
-            nedge_pts += (*vclusters.add(i)).nlines as usize;
+            nedge_pts += vclusters[i].nlines as usize;
         }
         nedge_pts <<= 1;
 
@@ -1933,15 +1918,16 @@ pub(crate) unsafe fn qr_finder_centers_locate(
         if edge_pts.is_null() || centers.is_null() {
             qr_free_array(edge_pts);
             qr_free_array(centers);
-            qr_free_array(vclusters);
-            qr_free_array(vneighbors);
-            qr_free_array(hclusters);
-            qr_free_array(hneighbors);
             return 0;
         }
 
         let ncenters = qr_finder_find_crossings(
-            centers, edge_pts, hclusters, nhclusters, vclusters, nvclusters,
+            centers,
+            edge_pts,
+            hclusters.as_mut_ptr(),
+            nhclusters,
+            vclusters.as_mut_ptr(),
+            nvclusters,
         );
 
         *_centers = centers;
@@ -1950,11 +1936,6 @@ pub(crate) unsafe fn qr_finder_centers_locate(
     } else {
         0
     };
-
-    qr_free_array(vclusters);
-    qr_free_array(vneighbors);
-    qr_free_array(hclusters);
-    qr_free_array(hneighbors);
 
     ncenters
 }
