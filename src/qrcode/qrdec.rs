@@ -1644,19 +1644,17 @@ enum Direction {
     Vertical,
 }
 
-/// Adds the coordinates of the edge points from the lines contained in the
+/// Gets the coordinates of the edge points based on the lines contained in the
 /// given list of clusters to the list of edge points for a finder center.
-///
-/// Fills edge points into a Vec from line clusters
 ///
 /// Only the edge point position is initialized.
 /// The edge label and extent are set by qr_finder_edge_pts_aff_classify()
 /// or qr_finder_edge_pts_hom_classify().
-unsafe fn qr_finder_edge_pts_fill_vec(
-    edge_pts: &mut Vec<qr_finder_edge_pt>,
-    neighbors: &mut [qr_finder_cluster],
+unsafe fn qr_finder_get_edge_pts(
+    neighbors: &[qr_finder_cluster],
     dir: Direction,
-) {
+) -> Vec<qr_finder_edge_pt> {
+    let mut edge_pts = vec![];
     let v_idx = match dir {
         Direction::Horizontal => 0,
         Direction::Vertical => 1,
@@ -1684,6 +1682,7 @@ unsafe fn qr_finder_edge_pts_fill_vec(
             }
         }
     }
+    edge_pts
 }
 
 /// Finds horizontal clusters that cross corresponding vertical clusters,
@@ -1703,9 +1702,8 @@ pub(crate) unsafe fn qr_finder_find_crossings(
     let _nvclusters = vclusters.len();
     let mut hmark = vec![0u8; _nhclusters];
     let mut vmark = vec![0u8; _nvclusters];
-    let mut ncenters: usize = 0;
 
-    let mut centers = vec![qr_finder_center::default(); usize::min(_nhclusters, _nvclusters)];
+    let mut centers = vec![];
 
     // TODO: This may need some re-working.
     // We should be finding groups of clusters such that _all_ horizontal lines in
@@ -1774,38 +1772,27 @@ pub(crate) unsafe fn qr_finder_find_crossings(
                 }
             }
 
-            centers[ncenters].pos[0] =
-                ((x as usize + hneighbors.len()) / (hneighbors.len() << 1)) as i32;
-            centers[ncenters].pos[1] =
-                ((y as usize + vneighbors.len()) / (vneighbors.len() << 1)) as i32;
-
-            // Fill edge points directly into the center's Vec
-            qr_finder_edge_pts_fill_vec(
-                &mut centers[ncenters].edge_pts,
-                &mut hneighbors,
-                Direction::Horizontal,
-            );
-            qr_finder_edge_pts_fill_vec(
-                &mut centers[ncenters].edge_pts,
-                &mut vneighbors,
-                Direction::Vertical,
-            );
-
-            ncenters += 1;
+            centers.push(qr_finder_center {
+                pos: [
+                    ((x as usize + hneighbors.len()) / (hneighbors.len() << 1)) as i32,
+                    ((y as usize + vneighbors.len()) / (vneighbors.len() << 1)) as i32,
+                ],
+                edge_pts: [
+                    qr_finder_get_edge_pts(&hneighbors, Direction::Horizontal),
+                    qr_finder_get_edge_pts(&vneighbors, Direction::Vertical),
+                ]
+                .concat(),
+            })
         }
     }
-    if ncenters > 1 {
-        centers[..ncenters].sort_by(|a, b| {
-            b.edge_pts
-                .len()
-                .cmp(&a.edge_pts.len())
-                .then_with(|| a.pos[1].cmp(&b.pos[1]))
-                .then_with(|| a.pos[0].cmp(&b.pos[0]))
-        });
-    }
 
-    // Truncate to actual size
-    centers.truncate(ncenters);
+    centers.sort_by(|a, b| {
+        b.edge_pts
+            .len()
+            .cmp(&a.edge_pts.len())
+            .then_with(|| a.pos[1].cmp(&b.pos[1]))
+            .then_with(|| a.pos[0].cmp(&b.pos[0]))
+    });
 
     centers
 }
