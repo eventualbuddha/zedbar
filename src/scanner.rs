@@ -51,7 +51,7 @@ impl Scanner {
 
     /// Scan an image for barcodes
     pub fn scan(&mut self, image: &mut Image) -> Result<i32> {
-        unsafe { zbar_scan_image(self.ptr, &mut *image.as_ptr()) }
+        unsafe { zbar_scan_image(self.ptr, image.as_mut_image()) }
     }
 }
 

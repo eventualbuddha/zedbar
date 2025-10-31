@@ -17,7 +17,7 @@ pub(crate) struct zbar_symbol_t {
     pub(crate) data: Vec<u8>,
     pub(crate) pts: Vec<qr_point>,
     pub(crate) orient: c_int,
-    pub(crate) components: Option<Box<zbar_symbol_set_t>>,
+    pub(crate) components: Option<zbar_symbol_set_t>,
     pub(crate) quality: c_int,
 }
 
@@ -25,12 +25,6 @@ impl zbar_symbol_t {
     pub(crate) fn add_point(&mut self, x: c_int, y: c_int) {
         self.pts.push([x, y]);
     }
-}
-
-
-/// Create a new symbol set
-pub(crate) fn symbol_set_create() -> Box<zbar_symbol_set_t> {
-    Box::new(zbar_symbol_set_t::default())
 }
 
 // High-level Rust API types

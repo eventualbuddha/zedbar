@@ -631,26 +631,3 @@ pub(crate) unsafe fn sq_decode(
         0
     }
 }
-
-// C FFI exports
-
-/// Creates a new SQCode reader
-///
-/// # Safety
-///
-/// This function allocates memory that must be freed with `_zbar_sq_destroy`.
-pub(crate) unsafe fn _zbar_sq_create() -> *mut SqReader {
-    let reader = Box::new(SqReader { enabled: true });
-    Box::into_raw(reader)
-}
-
-/// Destroys an SQCode reader and frees its memory
-///
-/// # Safety
-///
-/// The `reader` pointer must have been created by `_zbar_sq_create` and not previously freed.
-pub(crate) unsafe fn _zbar_sq_destroy(reader: *mut SqReader) {
-    if !reader.is_null() {
-        let _ = Box::from_raw(reader);
-    }
-}

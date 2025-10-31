@@ -39,6 +39,10 @@ impl Image {
         }
     }
 
+    pub(crate) fn as_mut_image(&mut self) -> &mut zbar_image_t {
+        &mut self.image
+    }
+
     /// Create an image from grayscale data
     pub fn from_gray(data: &[u8], width: u32, height: u32) -> Result<Self> {
         if (data.len() as u64) != (width as u64) * (height as u64) {
@@ -80,11 +84,6 @@ impl Image {
         } else {
             SymbolSet::from_slice(&[])
         }
-    }
-
-    /// Get a raw pointer to the underlying C image object
-    pub(crate) fn as_ptr(&mut self) -> *mut zbar_image_t {
-        &mut self.image
     }
 }
 

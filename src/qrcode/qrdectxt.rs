@@ -11,9 +11,10 @@ use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use crate::decoder::{ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1};
 use crate::img_scanner::{
     _zbar_image_scanner_alloc_sym, zbar_image_scanner_get_config, zbar_image_scanner_t,
+    zbar_symbol_set_t,
 };
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
-use crate::symbol::{symbol_set_create, zbar_symbol_t};
+use crate::symbol::zbar_symbol_t;
 use crate::SymbolType;
 
 #[derive(Clone, Copy)]
@@ -346,8 +347,9 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 } else {
                     // Multiple QR codes - create structured append symbol
                     let mut sa_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
-                    let mut component_set = symbol_set_create();
-                    component_set.symbols = component_syms;
+                    let component_set = zbar_symbol_set_t {
+                        symbols: component_syms,
+                    };
                     sa_sym.components = Some(component_set);
                     sa_sym.data = sa_text;
                     sa_sym.modifiers = fnc1 as u32;

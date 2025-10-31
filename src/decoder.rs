@@ -683,7 +683,7 @@ impl qr_finder_t {
 // ============================================================================
 
 /// Decoder handler callback
-pub(crate) type zbar_decoder_handler_t = unsafe fn(*mut zbar_decoder_t);
+pub(crate) type zbar_decoder_handler_t = unsafe fn(&mut zbar_decoder_t);
 
 /// Main barcode decoder state
 #[derive(Default)]
@@ -716,7 +716,7 @@ pub(crate) struct zbar_decoder_t {
 
 impl zbar_decoder_t {
     /// Create a new decoder instance
-    pub(crate) unsafe fn new() -> Option<Self> {
+    pub(crate) unsafe fn new() -> Self {
         let mut decoder = Self::default();
 
         decoder.buffer = Vec::with_capacity(BUFFER_MIN as usize);
@@ -738,9 +738,7 @@ impl zbar_decoder_t {
         decoder.databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
         decoder.databar.set_csegs(4);
         decoder.databar.segs = libc::calloc(4, size_of::<databar_segment_t>()) as *mut _;
-        if decoder.databar.segs.is_null() {
-            return None;
-        }
+        assert!(!decoder.databar.segs.is_null());
 
         decoder.codabar.config = 1 << ZBAR_CFG_ENABLE;
         cfg_set(&mut decoder.codabar.configs, ZBAR_CFG_MIN_LEN, 4);
@@ -754,7 +752,7 @@ impl zbar_decoder_t {
         decoder.sqf.config = 1 << ZBAR_CFG_ENABLE;
 
         decoder.reset();
-        Some(decoder)
+        decoder
     }
 
     pub(crate) fn color(&self) -> zbar_color_t {
