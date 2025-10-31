@@ -7,7 +7,7 @@ use std::mem::swap;
 
 use libc::{c_int, c_uint};
 
-use crate::{img_scanner::zbar_symbol_set_t, symbol::zbar_symbol_t};
+use crate::img_scanner::zbar_symbol_set_t;
 
 #[derive(Default)]
 pub struct zbar_image_t {
@@ -34,12 +34,6 @@ impl zbar_image_t {
     pub(crate) fn swap_symbols_with(&mut self, other: &mut Self) {
         swap(&mut self.syms, &mut other.syms);
     }
-}
-
-
-#[allow(dead_code)]
-pub(crate) fn zbar_image_first_symbol(img: &zbar_image_t) -> Option<&zbar_symbol_t> {
-    img.syms.as_ref().and_then(|syms| syms.symbols.first())
 }
 
 pub(crate) fn _zbar_image_copy(src: &zbar_image_t, inverted: c_int) -> Option<zbar_image_t> {

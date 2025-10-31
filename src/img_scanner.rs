@@ -157,30 +157,6 @@ impl zbar_image_scanner_t {
         }
     }
 
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn syms(&self) -> Option<&zbar_symbol_set_t> {
-        self.syms.as_deref()
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn syms_mut(&mut self) -> Option<&mut zbar_symbol_set_t> {
-        self.syms.as_deref_mut()
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn take_syms(&mut self) -> Option<Box<zbar_symbol_set_t>> {
-        self.syms.take()
-    }
-
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn set_syms(&mut self, syms: Box<zbar_symbol_set_t>) {
-        self.syms = Some(syms);
-    }
-
     // Accessor methods for pointer fields
 
     #[inline]
