@@ -2,8 +2,7 @@
 
 use crate::image::Image;
 use crate::img_scanner::{
-    zbar_image_scanner_create, zbar_image_scanner_destroy, zbar_image_scanner_set_config,
-    zbar_image_scanner_t, zbar_scan_image,
+    zbar_image_scanner_create, zbar_image_scanner_set_config, zbar_image_scanner_t,
 };
 use crate::{Error, Result, SymbolType};
 
@@ -51,16 +50,14 @@ impl Scanner {
 
     /// Scan an image for barcodes
     pub fn scan(&mut self, image: &mut Image) -> Result<i32> {
-        unsafe { zbar_scan_image(self.ptr, image.as_mut_image()) }
+        unsafe { (*self.ptr).scan_image(image.as_mut_image()) }
     }
 }
 
 impl Drop for Scanner {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
-            unsafe {
-                zbar_image_scanner_destroy(self.ptr);
-            }
+            unsafe { drop(Box::from_raw(self.ptr)) }
         }
     }
 }

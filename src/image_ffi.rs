@@ -34,30 +34,30 @@ impl zbar_image_t {
     pub(crate) fn swap_symbols_with(&mut self, other: &mut Self) {
         swap(&mut self.syms, &mut other.syms);
     }
-}
 
-pub(crate) fn _zbar_image_copy(src: &zbar_image_t, inverted: c_int) -> Option<zbar_image_t> {
-    const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
-    const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
+    pub(crate) fn copy(&self, inverted: bool) -> Option<Self> {
+        const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
+        const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
 
-    if inverted != 0 && src.format != FOURCC_Y800 && src.format != FOURCC_GREY {
-        return None;
-    }
-
-    let mut dst = zbar_image_t {
-        format: src.format,
-        width: src.width,
-        height: src.height,
-        data: vec![0; src.data.len()],
-        ..Default::default()
-    };
-
-    if inverted == 0 {
-        dst.data.copy_from_slice(&src.data);
-    } else {
-        for (dp, sp) in dst.data.iter_mut().zip(src.data.iter()) {
-            *dp = !(*sp);
+        if inverted && self.format != FOURCC_Y800 && self.format != FOURCC_GREY {
+            return None;
         }
+
+        let mut dst = Self {
+            format: self.format,
+            width: self.width,
+            height: self.height,
+            data: vec![0; self.data.len()],
+            ..Default::default()
+        };
+
+        if !inverted {
+            dst.data.copy_from_slice(&self.data);
+        } else {
+            for (dp, sp) in dst.data.iter_mut().zip(self.data.iter()) {
+                *dp = !(*sp);
+            }
+        }
+        Some(dst)
     }
-    Some(dst)
 }

@@ -3,11 +3,7 @@
 //! Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Rust port based on the C implementation
 
-use crate::{
-    image_ffi::zbar_image_t,
-    img_scanner::{_zbar_image_scanner_alloc_sym, zbar_image_scanner_t},
-    SymbolType,
-};
+use crate::{image_ffi::zbar_image_t, img_scanner::zbar_image_scanner_t, SymbolType};
 use libc::{c_int, size_t};
 use std::io::Write;
 
@@ -98,7 +94,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 
 /// Extract text from buffer and add to scanner results
 fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
-    let mut sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::SqCode);
+    let mut sym = iscn.alloc_sym(SymbolType::SqCode);
 
     let encoded = match base64_encode_buffer(&buf[..len]) {
         Some(e) => e,

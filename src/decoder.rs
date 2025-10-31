@@ -1235,13 +1235,8 @@ impl zbar_decoder_t {
     }
 
     /// Set decoder callback handler
-    pub(crate) fn set_handler(
-        &mut self,
-        handler: Option<zbar_decoder_handler_t>,
-    ) -> Option<zbar_decoder_handler_t> {
-        let result = self.handler;
+    pub(crate) fn set_handler(&mut self, handler: Option<zbar_decoder_handler_t>) {
         self.handler = handler;
-        result
     }
 
     /// Set user data pointer

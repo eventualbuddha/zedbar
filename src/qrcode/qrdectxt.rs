@@ -9,10 +9,7 @@ use std::os::raw::{c_int, c_uchar};
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
 use crate::decoder::{ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1};
-use crate::img_scanner::{
-    _zbar_image_scanner_alloc_sym, zbar_image_scanner_get_config, zbar_image_scanner_t,
-    zbar_symbol_set_t,
-};
+use crate::img_scanner::{zbar_image_scanner_get_config, zbar_image_scanner_t, zbar_symbol_set_t};
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
 use crate::symbol::zbar_symbol_t;
 use crate::SymbolType;
@@ -169,7 +166,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 if err {
                     break;
                 }
-                let mut sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
+                let mut sym = iscn.alloc_sym(SymbolType::QrCode);
 
                 if sa[j] < 0 {
                     sym.symbol_type = SymbolType::Partial;
@@ -182,7 +179,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     if j >= sa_size {
                         break;
                     }
-                    sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
+                    sym = iscn.alloc_sym(SymbolType::QrCode);
                 }
 
                 let qrdataj = &qrdata[sa[j] as usize];
@@ -346,7 +343,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     }
                 } else {
                     // Multiple QR codes - create structured append symbol
-                    let mut sa_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
+                    let mut sa_sym = iscn.alloc_sym(SymbolType::QrCode);
                     let component_set = zbar_symbol_set_t {
                         symbols: component_syms,
                     };
