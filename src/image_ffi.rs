@@ -3,17 +3,11 @@
 //! This crate provides barcode scanning functionality, originally based on the C ZBar library.
 //! The conversion to Rust is being done incrementally.
 
-use std::{
-    mem::swap,
-    ptr::{null, NonNull},
-};
+use std::mem::swap;
 
 use libc::{c_int, c_uint};
 
-use crate::{
-    img_scanner::zbar_symbol_set_t,
-    symbol::{zbar_symbol_set_ref, zbar_symbol_t},
-};
+use crate::{img_scanner::zbar_symbol_set_t, symbol::zbar_symbol_t};
 
 #[derive(Default)]
 pub struct zbar_image_t {
@@ -23,13 +17,18 @@ pub struct zbar_image_t {
     pub data: Vec<u8>,
     pub refcnt: c_int,
     pub seq: c_uint,
-    syms: Option<NonNull<zbar_symbol_set_t>>,
+    syms: Option<Box<zbar_symbol_set_t>>,
 }
 
 impl zbar_image_t {
     #[inline]
-    pub(crate) fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
-        self.syms = NonNull::new(ptr);
+    pub(crate) fn set_syms(&mut self, syms: Box<zbar_symbol_set_t>) {
+        self.syms = Some(syms);
+    }
+
+    #[inline]
+    pub(crate) fn syms(&self) -> Option<&zbar_symbol_set_t> {
+        self.syms.as_deref()
     }
 
     pub(crate) fn swap_symbols_with(&mut self, other: &mut Self) {
@@ -37,19 +36,11 @@ impl zbar_image_t {
     }
 }
 
-impl Drop for zbar_image_t {
-    fn drop(&mut self) {
-        unsafe {
-            if let Some(syms) = self.syms.take() {
-                zbar_symbol_set_ref(syms.as_ptr(), -1);
-            }
-        }
-    }
-}
+// Drop is automatically implemented
 
-pub(crate) unsafe fn zbar_image_first_symbol(img: &zbar_image_t) -> *const zbar_symbol_t {
-    img.syms
-        .map_or(null(), |syms| unsafe { (*syms.as_ptr()).head })
+#[allow(dead_code)]
+pub(crate) fn zbar_image_first_symbol(img: &zbar_image_t) -> Option<&zbar_symbol_t> {
+    img.syms.as_ref().and_then(|syms| syms.symbols.first())
 }
 
 pub(crate) fn _zbar_image_copy(src: &zbar_image_t, inverted: c_int) -> Option<zbar_image_t> {

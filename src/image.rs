@@ -1,7 +1,7 @@
 //! Image handling and format support
 
-use crate::image_ffi::{zbar_image_first_symbol, zbar_image_t};
-use crate::symbol::{Symbol, SymbolSet};
+use crate::image_ffi::zbar_image_t;
+use crate::symbol::SymbolSet;
 use crate::{Error, Result};
 
 /// Image formats supported by ZBar
@@ -74,10 +74,12 @@ impl Image {
     }
 
     /// Get the symbols found in this image (if it has been scanned)
-    pub fn symbols(&self) -> SymbolSet {
-        let first_symbol_ptr = unsafe { zbar_image_first_symbol(&self.image) };
-        let first_symbol = unsafe { Symbol::from_ptr(first_symbol_ptr) };
-        SymbolSet::new(first_symbol)
+    pub fn symbols(&self) -> SymbolSet<'_> {
+        if let Some(syms) = self.image.syms() {
+            SymbolSet::from_slice(&syms.symbols)
+        } else {
+            SymbolSet::from_slice(&[])
+        }
     }
 
     /// Get a raw pointer to the underlying C image object

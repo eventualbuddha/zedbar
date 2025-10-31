@@ -5,9 +5,7 @@
 
 use crate::{
     image_ffi::zbar_image_t,
-    img_scanner::{
-        _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_t,
-    },
+    img_scanner::{_zbar_image_scanner_alloc_sym, zbar_image_scanner_t},
     SymbolType,
 };
 use libc::{c_int, size_t};
@@ -99,24 +97,19 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract text from buffer and add to scanner results
-unsafe fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
-    let sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::SqCode);
-    if sym.is_null() {
-        return true;
-    }
+fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
+    let mut sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::SqCode);
 
     let encoded = match base64_encode_buffer(&buf[..len]) {
         Some(e) => e,
         None => {
-            _zbar_image_scanner_recycle_syms(iscn, sym);
+            // Symbol will be dropped automatically
             return true;
         }
     };
 
-    let sym = &mut *sym;
     sym.data = encoded;
-
-    iscn.add_symbol(&mut *sym);
+    iscn.add_symbol(sym);
     false
 }
 

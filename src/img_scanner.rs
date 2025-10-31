@@ -1,7 +1,4 @@
-use std::{
-    ffi::c_void,
-    ptr::{null_mut, NonNull},
-};
+use std::{ffi::c_void, ptr::null_mut};
 
 use libc::{c_int, c_uint};
 
@@ -20,12 +17,8 @@ use crate::{
     qrcode::qrdec::{
         _zbar_qr_create, _zbar_qr_found_line, _zbar_qr_reset, qr_decode, qr_finder_lines,
     },
-    refcnt,
     sqcode::{sq_decode, SqReader},
-    symbol::{
-        symbol_alloc_zeroed, symbol_free, symbol_refcnt, symbol_set_create, symbol_set_free,
-        zbar_symbol_set_ref, zbar_symbol_t,
-    },
+    symbol::{symbol_set_create, zbar_symbol_t},
     Error, Result, SymbolType,
 };
 
@@ -92,30 +85,12 @@ pub(crate) struct qr_reader {
     pub(crate) finder_lines: [qr_finder_lines; 2],
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_set_t {
-    pub(crate) refcnt: c_int,
-    pub(crate) nsyms: c_int,
-    pub(crate) head: *mut zbar_symbol_t,
-    pub(crate) tail: *mut zbar_symbol_t,
+    pub(crate) symbols: Vec<zbar_symbol_t>,
 }
 
-impl Drop for zbar_symbol_set_t {
-    fn drop(&mut self) {
-        let mut sym = self.head;
-        while !sym.is_null() {
-            let next = unsafe { (*sym).next };
-            unsafe {
-                (*sym).next = std::ptr::null_mut();
-            }
-            unsafe {
-                symbol_refcnt(&mut *sym, -1);
-            }
-            sym = next;
-        }
-        self.head = std::ptr::null_mut();
-    }
-}
+// Drop is automatically implemented - Vec will drop all symbols
 
 // Function pointer type for image data handler callbacks
 pub(crate) type zbar_image_data_handler_t =
@@ -147,7 +122,7 @@ pub(crate) struct zbar_image_scanner_t {
     v: c_int,
 
     /// previous decode results
-    syms: Option<NonNull<zbar_symbol_set_t>>,
+    syms: Option<Box<zbar_symbol_set_t>>,
 
     // configuration settings
     /// config flags
@@ -164,62 +139,47 @@ impl zbar_image_scanner_t {
     ///
     /// # Arguments
     /// * `sym` - The symbol to add
-    pub(crate) unsafe fn add_symbol(&mut self, sym: &mut zbar_symbol_t) {
-        let syms = self.syms.expect("syms is set").as_mut();
-
-        // The symbol set takes ownership of the symbol reference.
-        // Ensure the reference count reflects this so that recycling
-        // and Drop logic can safely release it later.
-        let new_refcnt = refcnt!(sym.refcnt, 1);
-        debug_assert!(new_refcnt > 0);
-        let _ = new_refcnt;
-
-        if syms.tail.is_null() {
-            sym.next = syms.head;
-            syms.head = sym;
-        } else {
-            let tail = &mut *syms.tail;
-            sym.next = tail.next;
-            tail.next = sym;
-        }
-
-        syms.nsyms += 1;
+    pub(crate) fn add_symbol(&mut self, sym: zbar_symbol_t) {
+        let syms = self.syms.as_mut().expect("syms is set");
+        syms.symbols.push(sym);
     }
 
-    pub(crate) unsafe fn find_duplicate_symbol(
+    pub(crate) fn find_duplicate_symbol(
         &mut self,
         symbol_type: SymbolType,
         data: &[u8],
-    ) -> *mut zbar_symbol_t {
-        let syms = self.syms_ptr();
-        let mut sym = if !syms.is_null() {
-            (*syms).head
+    ) -> Option<&mut zbar_symbol_t> {
+        if let Some(syms) = &mut self.syms {
+            syms.symbols
+                .iter_mut()
+                .find(|sym| sym.symbol_type == symbol_type && sym.data == data)
         } else {
-            null_mut()
-        };
-        while !sym.is_null() {
-            let sym_ref = &mut *sym;
-            if sym_ref.symbol_type == symbol_type && sym_ref.data == data {
-                return sym;
-            }
-            sym = sym_ref.next;
+            None
         }
-        null_mut()
     }
 
     #[inline]
-    pub(crate) fn syms_ptr(&self) -> *mut zbar_symbol_set_t {
-        self.syms.map_or(null_mut(), NonNull::as_ptr)
+    #[allow(dead_code)]
+    pub(crate) fn syms(&self) -> Option<&zbar_symbol_set_t> {
+        self.syms.as_deref()
     }
 
     #[inline]
-    pub(crate) fn set_syms_ptr(&mut self, ptr: *mut zbar_symbol_set_t) {
-        self.syms = NonNull::new(ptr);
+    #[allow(dead_code)]
+    pub(crate) fn syms_mut(&mut self) -> Option<&mut zbar_symbol_set_t> {
+        self.syms.as_deref_mut()
     }
 
     #[inline]
-    pub(crate) fn take_syms(&mut self) -> Option<NonNull<zbar_symbol_set_t>> {
+    #[allow(dead_code)]
+    pub(crate) fn take_syms(&mut self) -> Option<Box<zbar_symbol_set_t>> {
         self.syms.take()
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn set_syms(&mut self, syms: Box<zbar_symbol_set_t>) {
+        self.syms = Some(syms);
     }
 
     // Accessor methods for pointer fields
@@ -328,37 +288,7 @@ pub(crate) fn zbar_image_scanner_get_config(
 /// # Arguments
 /// * `iscn` - The image scanner instance
 /// * `sym` - Head of the symbol list to process
-pub(crate) unsafe fn _zbar_image_scanner_recycle_syms(
-    _iscn: &mut zbar_image_scanner_t,
-    mut sym: *mut zbar_symbol_t,
-) {
-    while !sym.is_null() {
-        let next = (*sym).next;
-
-        if (*sym).refcnt != 0 && refcnt!((*sym).refcnt, -1) != 0 {
-            // Unlink referenced symbol
-            // FIXME handle outstanding component refs (currently unsupported)
-            c_assert!((*sym).data.capacity() != 0);
-            (*sym).next = null_mut();
-        } else {
-            // Free unreferenced symbol
-            if !(*sym).syms.is_null() {
-                let syms = (*sym).syms;
-                if refcnt!((*syms).refcnt, -1) != 0 {
-                    c_assert!(false);
-                }
-                _zbar_image_scanner_recycle_syms(_iscn, (*syms).head);
-                (*syms).head = null_mut();
-                symbol_set_free(syms);
-                (*sym).syms = null_mut();
-            }
-
-            symbol_free(sym);
-        }
-
-        sym = next;
-    }
-}
+// Symbol recycling is no longer needed - Drop handles cleanup automatically
 
 /// Flush scanner pipeline and start new scan
 ///
@@ -388,20 +318,16 @@ pub(crate) unsafe fn _zbar_image_scanner_quiet_border(iscn: &mut zbar_image_scan
 ///
 /// # Returns
 /// Pointer to the allocated symbol
-pub(crate) unsafe fn _zbar_image_scanner_alloc_sym(
+pub(crate) fn _zbar_image_scanner_alloc_sym(
     _iscn: &mut zbar_image_scanner_t,
     symbol_type: SymbolType,
-) -> *mut zbar_symbol_t {
-    let sym = symbol_alloc_zeroed();
-
-    // Initialize the symbol
-    let sym_ref = &mut *sym;
-    sym_ref.symbol_type = symbol_type;
-    sym_ref.quality = 1;
-    sym_ref.orient = ZBAR_ORIENT_UNKNOWN;
-    c_assert!(sym_ref.syms.is_null());
-
-    sym
+) -> zbar_symbol_t {
+    zbar_symbol_t {
+        symbol_type,
+        quality: 1,
+        orient: ZBAR_ORIENT_UNKNOWN,
+        ..Default::default()
+    }
 }
 
 /// Handle QR code finder line detection
@@ -536,17 +462,7 @@ pub(crate) unsafe fn zbar_image_scanner_destroy(iscn: *mut zbar_image_scanner_t)
         return;
     }
 
-    let scanner = &mut *iscn;
-    if let Some(syms_handle) = scanner.take_syms() {
-        let syms_ptr = syms_handle.as_ptr();
-        let syms = &*syms_ptr;
-        if syms.refcnt != 0 {
-            zbar_symbol_set_ref(syms_ptr, -1);
-        } else {
-            symbol_set_free(syms_ptr);
-        }
-    }
-
+    // Drop takes care of cleaning up the symbol set
     image_scanner_free(iscn);
 }
 
@@ -591,36 +507,34 @@ pub(crate) unsafe fn symbol_handler(dcode: *mut zbar_decoder_t) {
     }
 
     let data = (*dcode).buffer_slice();
-    let sym = iscn_ref.find_duplicate_symbol(symbol_type, data);
-    if !sym.is_null() {
-        (*sym).quality += 1;
+    if let Some(sym) = iscn_ref.find_duplicate_symbol(symbol_type, data) {
+        sym.quality += 1;
         if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-            (*sym).add_point(x, y);
+            sym.add_point(x, y);
         }
         return;
     }
 
     // Allocate new symbol
-    let sym = _zbar_image_scanner_alloc_sym(&mut *iscn, symbol_type);
-    let sym_ref = &mut *sym;
-    sym_ref.configs = (*dcode).get_configs(symbol_type);
-    sym_ref.modifiers = (*dcode).get_modifiers();
+    let mut sym = _zbar_image_scanner_alloc_sym(&mut *iscn, symbol_type);
+    sym.configs = (*dcode).get_configs(symbol_type);
+    sym.modifiers = (*dcode).get_modifiers();
 
     // Copy data
-    sym_ref.data.extend_from_slice(data);
+    sym.data.extend_from_slice(data);
 
     // Initialize position
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
-        sym_ref.add_point(x, y);
+        sym.add_point(x, y);
     }
 
     // Set orientation
     let dir = (*dcode).direction;
     if dir != 0 {
-        sym_ref.orient = (if iscn_ref.dy != 0 { 1 } else { 0 }) + ((iscn_ref.du ^ dir) & 2);
+        sym.orient = (if iscn_ref.dy != 0 { 1 } else { 0 }) + ((iscn_ref.du ^ dir) & 2);
     }
 
-    iscn_ref.add_symbol(&mut *sym);
+    iscn_ref.add_symbol(sym);
 }
 
 /// Set configuration for image scanner
@@ -727,17 +641,19 @@ pub(crate) unsafe fn _zbar_scan_image(
         return null_mut();
     }
 
-    // Recycle previous scanner and image results
+    // Get or create symbol set
     let scanner = &mut *iscn;
-    let mut syms = scanner.syms_ptr();
-    if syms.is_null() {
-        syms = symbol_set_create();
-        scanner.set_syms_ptr(syms);
-        zbar_symbol_set_ref(syms, 1);
-    } else {
-        zbar_symbol_set_ref(syms, 2);
+    if scanner.syms.is_none() {
+        scanner.syms = Some(symbol_set_create());
     }
-    img.set_syms_ptr(syms);
+
+    // Clear previous symbols for new scan
+    if let Some(syms) = &mut scanner.syms {
+        syms.symbols.clear();
+    }
+
+    // Share the symbol set with the image (we'll clone it at the end)
+    // For now, we'll handle this differently - the image will get a clone of the results
 
     let w = img.width;
     let h = img.height;
@@ -878,84 +794,101 @@ pub(crate) unsafe fn _zbar_scan_image(
 
     // Filter and merge EAN composite results
     let filter = density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1;
-    let mut nean = 0;
-    let mut naddon = 0;
+    let scanner = &mut *iscn;
 
-    if (*syms).nsyms != 0 {
-        let mut symp = &mut (*syms).head as *mut *mut zbar_symbol_t;
-        while !(*symp).is_null() {
-            let sym = *symp;
-            let sym_type = (*sym).symbol_type;
-
+    if let Some(syms) = &mut scanner.syms {
+        // Filter low-quality symbols
+        syms.symbols.retain(|sym| {
+            let sym_type = sym.symbol_type;
             if (sym_type < SymbolType::Composite && sym_type > SymbolType::Partial)
                 || sym_type == SymbolType::Databar
                 || sym_type == SymbolType::DatabarExp
                 || sym_type == SymbolType::Codabar
             {
-                if (sym_type == SymbolType::Codabar || filter) && (*sym).quality < 4 {
-                    // Recycle symbol
-                    *symp = (*sym).next;
-                    (*syms).nsyms -= 1;
-                    (*sym).next = null_mut();
-                    _zbar_image_scanner_recycle_syms(&mut *iscn, sym);
-                    continue;
-                } else if sym_type < SymbolType::Composite && sym_type != SymbolType::Isbn10 {
-                    if sym_type > SymbolType::Ean5 {
-                        nean += 1;
-                    } else {
-                        naddon += 1;
-                    }
+                // Keep if quality >= 4 OR if not Codabar and not filtered
+                !((sym_type == SymbolType::Codabar || filter) && sym.quality < 4)
+            } else {
+                true
+            }
+        });
+
+        // Count EAN and add-on symbols for potential merging
+        let mut nean = 0;
+        let mut naddon = 0;
+        for sym in &syms.symbols {
+            let sym_type = sym.symbol_type;
+            if sym_type < SymbolType::Composite && sym_type != SymbolType::Isbn10 {
+                if sym_type > SymbolType::Ean5 {
+                    nean += 1;
+                } else if sym_type > SymbolType::Partial {
+                    naddon += 1;
                 }
             }
-            symp = &mut (*sym).next as *mut *mut zbar_symbol_t;
         }
 
         // Merge EAN composite if we have exactly one EAN and one add-on
-        if nean == 1 && naddon == 1 && (*iscn).ean_config != 0 {
-            let mut ean: *mut zbar_symbol_t = null_mut();
-            let mut addon: *mut zbar_symbol_t = null_mut();
-
+        let ean_config = scanner.ean_config;
+        if nean == 1 && naddon == 1 && ean_config != 0 {
             // Extract EAN and add-on symbols
-            let mut symp = &mut (*syms).head as *mut *mut zbar_symbol_t;
-            while !(*symp).is_null() {
-                let sym = *symp;
-                let sym_type = (*sym).symbol_type;
+            let mut ean_sym: Option<zbar_symbol_t> = None;
+            let mut addon_sym: Option<zbar_symbol_t> = None;
+            let mut other_syms = Vec::new();
+
+            for sym in syms.symbols.drain(..) {
+                let sym_type = sym.symbol_type;
                 if sym_type < SymbolType::Composite && sym_type > SymbolType::Partial {
-                    // Move to composite
-                    *symp = (*sym).next;
-                    (*syms).nsyms -= 1;
-                    (*sym).next = null_mut();
                     if sym_type <= SymbolType::Ean5 {
-                        addon = sym;
+                        addon_sym = Some(sym);
                     } else {
-                        ean = sym;
+                        ean_sym = Some(sym);
                     }
                 } else {
-                    symp = &mut (*sym).next as *mut *mut zbar_symbol_t;
+                    other_syms.push(sym);
                 }
             }
-            c_assert!(!ean.is_null());
-            c_assert!(!addon.is_null());
 
-            // Create composite symbol
-            let ean_sym = _zbar_image_scanner_alloc_sym(&mut *iscn, SymbolType::Composite);
-            (*ean_sym).orient = (*ean).orient;
-            (*ean_sym).syms = symbol_set_create();
+            if let (Some(ean), Some(addon)) = (ean_sym, addon_sym) {
+                // Create composite symbol
+                let mut composite = zbar_symbol_t {
+                    symbol_type: SymbolType::Composite,
+                    orient: ean.orient,
+                    quality: 1,
+                    ..Default::default()
+                };
 
-            // Copy data
-            (*ean_sym).data.extend_from_slice(&(*ean).data);
-            (*ean_sym).data.extend_from_slice(&(*addon).data);
+                // Copy data from both symbols
+                composite.data.extend_from_slice(&ean.data);
+                composite.data.extend_from_slice(&addon.data);
 
-            // Link symbols
-            (*(*ean_sym).syms).head = ean;
-            (*ean).next = addon;
-            (*(*ean_sym).syms).nsyms = 2;
+                // Create component symbol set
+                let mut component_set = symbol_set_create();
+                component_set.symbols.push(ean);
+                component_set.symbols.push(addon);
+                composite.components = Some(component_set);
 
-            (&mut *iscn).add_symbol(&mut *ean_sym);
+                // Add composite to results
+                other_syms.push(composite);
+            }
+
+            syms.symbols = other_syms;
         }
     }
 
-    syms
+    // Clone the symbol set to the image
+    let scanner = &mut *iscn;
+    if let Some(syms) = &scanner.syms {
+        // Create a clone of the symbol set for the image
+        let img_syms = Box::new(zbar_symbol_set_t {
+            symbols: syms.symbols.clone(),
+        });
+        img.set_syms(img_syms);
+
+        // Return a pointer to the scanner's symbol set for compatibility
+        // This is safe because the scanner outlives this function call
+        syms as *const _ as *mut _
+    } else {
+        null_mut()
+    }
 }
 
 /// Public wrapper for zbar_scan_image
@@ -972,25 +905,28 @@ pub(crate) unsafe fn zbar_scan_image(
     iscn: *mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
 ) -> Result<c_int> {
-    let mut syms = _zbar_scan_image(iscn, img);
+    let syms = _zbar_scan_image(iscn, img);
     if syms.is_null() {
         return Err(Error::Unknown(-1));
     }
 
+    let nsyms = (*syms).symbols.len();
+
     // Try inverted image if no symbols found and TEST_INVERTED is enabled
-    if (*syms).nsyms == 0 && TEST_CFG!(iscn, ZBAR_CFG_TEST_INVERTED) {
+    if nsyms == 0 && TEST_CFG!(iscn, ZBAR_CFG_TEST_INVERTED) {
         if let Some(mut inv) = _zbar_image_copy(&*img, 1) {
-            syms = _zbar_scan_image(iscn, &mut inv);
+            let _ = _zbar_scan_image(iscn, &mut inv);
             img.swap_symbols_with(&mut inv);
         }
     }
 
     // Call user handler if symbols found
-    if (*syms).nsyms != 0 {
+    let final_nsyms = img.syms().map_or(0, |s| s.symbols.len());
+    if final_nsyms != 0 {
         if let Some(handler) = (*iscn).handler {
             handler(img, (*iscn).userdata);
         }
     }
 
-    Ok((*syms).nsyms as c_int)
+    Ok(final_nsyms as c_int)
 }

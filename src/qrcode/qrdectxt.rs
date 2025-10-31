@@ -5,14 +5,12 @@
 
 use std::collections::VecDeque;
 use std::os::raw::{c_int, c_uchar};
-use std::ptr::null_mut;
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
 use crate::decoder::{ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1};
 use crate::img_scanner::{
-    _zbar_image_scanner_alloc_sym, _zbar_image_scanner_recycle_syms, zbar_image_scanner_get_config,
-    zbar_image_scanner_t,
+    _zbar_image_scanner_alloc_sym, zbar_image_scanner_get_config, zbar_image_scanner_t,
 };
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
 use crate::symbol::{symbol_set_create, zbar_symbol_t};
@@ -163,20 +161,18 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 VecDeque::from(vec![UTF_8, SHIFT_JIS, BIG5, WINDOWS_1252]);
             let mut err = false;
             let mut bytebuf: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
-            let mut syms_head: *mut zbar_symbol_t = null_mut();
-            let mut sym_cur = &mut syms_head;
+            let mut component_syms = Vec::new();
 
             let mut j = 0;
             while j < sa_size {
                 if err {
                     break;
                 }
-                let sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
-                *sym_cur = sym;
-                let sym_ref = &mut *sym;
+                let mut sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
 
                 if sa[j] < 0 {
-                    sym_ref.symbol_type = SymbolType::Partial;
+                    sym.symbol_type = SymbolType::Partial;
+                    component_syms.push(sym);
                     let mut k = j + 1;
                     while k < sa_size && sa[k] < 0 {
                         k += 1;
@@ -185,16 +181,14 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     if j >= sa_size {
                         break;
                     }
-                    sym_cur = &mut sym_ref.next;
-                    let next_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
-                    *sym_cur = next_sym;
+                    sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
                 }
 
                 let qrdataj = &qrdata[sa[j] as usize];
-                sym_add_point(&mut *sym, qrdataj.bbox[0][0], qrdataj.bbox[0][1]);
-                sym_add_point(&mut *sym, qrdataj.bbox[2][0], qrdataj.bbox[2][1]);
-                sym_add_point(&mut *sym, qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
-                sym_add_point(&mut *sym, qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
+                sym_add_point(&mut sym, qrdataj.bbox[0][0], qrdataj.bbox[0][1]);
+                sym_add_point(&mut sym, qrdataj.bbox[2][0], qrdataj.bbox[2][1]);
+                sym_add_point(&mut sym, qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
+                sym_add_point(&mut sym, qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
 
                 let entries = &qrdataj.entries;
                 for entry in entries.iter() {
@@ -278,8 +272,9 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                         _ => {}
                     }
                 }
-                let sym_ref = &mut *sym;
-                sym_cur = &mut sym_ref.next;
+
+                // Add the symbol to our collection
+                component_syms.push(sym);
                 j += 1;
             }
 
@@ -342,23 +337,24 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 sa_text.shrink_to_fit();
 
                 if sa_size == 1 {
-                    let sym = syms_head;
-                    let sym_ref = &mut *sym;
-                    sym_ref.data = sa_text;
-                    sym_ref.modifiers = fnc1 as u32;
-                    iscn.add_symbol(&mut *sym);
+                    // Single QR code - add it directly
+                    if let Some(mut sym) = component_syms.into_iter().next() {
+                        sym.data = sa_text;
+                        sym.modifiers = fnc1 as u32;
+                        iscn.add_symbol(sym);
+                    }
                 } else {
-                    let sa_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
-                    let sa_sym_ref = &mut *sa_sym;
-                    sa_sym_ref.syms = symbol_set_create();
-                    sa_sym_ref.data = sa_text;
-                    sa_sym_ref.modifiers = fnc1 as u32;
-                    iscn.add_symbol(&mut *sa_sym);
-                    _zbar_image_scanner_recycle_syms(iscn, syms_head);
+                    // Multiple QR codes - create structured append symbol
+                    let mut sa_sym = _zbar_image_scanner_alloc_sym(iscn, SymbolType::QrCode);
+                    let mut component_set = symbol_set_create();
+                    component_set.symbols = component_syms;
+                    sa_sym.components = Some(component_set);
+                    sa_sym.data = sa_text;
+                    sa_sym.modifiers = fnc1 as u32;
+                    iscn.add_symbol(sa_sym);
                 }
-            } else {
-                _zbar_image_scanner_recycle_syms(iscn, syms_head);
             }
+            // else: symbols are dropped automatically
         }
     }
 

@@ -5,11 +5,11 @@
 //!
 //! Handles symbol lifecycle, reference counting, and data access.
 
-use crate::{img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point, refcnt};
+use crate::{img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point};
 use libc::{c_int, c_uint};
-use std::{fmt::Display, ptr};
+use std::fmt::Display;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_t {
     pub(crate) symbol_type: SymbolType,
     pub(crate) configs: c_uint,
@@ -17,9 +17,7 @@ pub(crate) struct zbar_symbol_t {
     pub(crate) data: Vec<u8>,
     pub(crate) pts: Vec<qr_point>,
     pub(crate) orient: c_int,
-    pub(crate) refcnt: c_int,
-    pub(crate) next: *mut zbar_symbol_t,
-    pub(crate) syms: *mut zbar_symbol_set_t,
+    pub(crate) components: Option<Box<zbar_symbol_set_t>>,
     pub(crate) quality: c_int,
 }
 
@@ -29,77 +27,11 @@ impl zbar_symbol_t {
     }
 }
 
-impl Drop for zbar_symbol_t {
-    fn drop(&mut self) {
-        if !self.syms.is_null() {
-            unsafe {
-                zbar_symbol_set_ref(self.syms, -1);
-            }
-            self.syms = ptr::null_mut();
-        }
-    }
-}
-
-/// Free a symbol
-///
-/// # Safety
-///
-/// The symbol pointer must be valid and not previously freed.
-pub(crate) unsafe fn symbol_free(sym: *mut zbar_symbol_t) {
-    drop(Box::from_raw(sym));
-}
-
-/// Adjust symbol reference count
-pub(crate) unsafe fn symbol_refcnt(sym: &mut zbar_symbol_t, delta: c_int) {
-    if refcnt!(sym.refcnt, delta) == 0 && delta <= 0 {
-        symbol_free(sym as *mut _);
-    }
-}
+// Drop is automatically implemented - components will be dropped via Option<Box<T>>
 
 /// Create a new symbol set
-///
-/// # Safety
-///
-/// Allocates memory that must be freed with `symbol_set_free`.
-pub(crate) unsafe fn symbol_set_create() -> *mut zbar_symbol_set_t {
-    let mut symbol_set = Box::new(zbar_symbol_set_t::default());
-    refcnt!(symbol_set.refcnt, 1);
-    Box::into_raw(symbol_set)
-}
-
-/// Free a symbol set
-///
-/// # Safety
-///
-/// The symbol set pointer must be valid and not previously freed.
-pub(crate) unsafe fn symbol_set_free(syms: *mut zbar_symbol_set_t) {
-    drop(Box::from_raw(syms));
-}
-
-/// Allocate a zeroed symbol instance suitable for initialization.
-pub(crate) unsafe fn symbol_alloc_zeroed() -> *mut zbar_symbol_t {
-    let symbol = Box::new(zbar_symbol_t::default());
-    Box::into_raw(symbol)
-}
-
-pub(crate) unsafe fn zbar_symbol_next(sym: *const zbar_symbol_t) -> *const zbar_symbol_t {
-    if sym.is_null() {
-        ptr::null()
-    } else {
-        let sym = &*sym;
-        sym.next
-    }
-}
-
-pub(crate) unsafe fn zbar_symbol_set_ref(syms: *mut zbar_symbol_set_t, delta: c_int) {
-    if syms.is_null() {
-        return;
-    }
-    let syms_ref = &mut *syms;
-
-    if refcnt!(syms_ref.refcnt, delta) == 0 && delta <= 0 {
-        symbol_set_free(syms);
-    }
+pub(crate) fn symbol_set_create() -> Box<zbar_symbol_set_t> {
+    Box::new(zbar_symbol_set_t::default())
 }
 
 // High-level Rust API types
@@ -240,28 +172,24 @@ impl From<i32> for SymbolType {
     }
 }
 
-/// A decoded barcode symbol
-pub struct Symbol {
-    ptr: *const zbar_symbol_t,
+/// A reference to a decoded barcode symbol
+pub struct Symbol<'a> {
+    inner: &'a zbar_symbol_t,
 }
 
-impl Symbol {
-    pub(crate) unsafe fn from_ptr(ptr: *const zbar_symbol_t) -> Option<Self> {
-        if ptr.is_null() {
-            None
-        } else {
-            Some(Symbol { ptr })
-        }
+impl<'a> Symbol<'a> {
+    pub(crate) fn from_ref(sym: &'a zbar_symbol_t) -> Self {
+        Symbol { inner: sym }
     }
 
     /// Get the symbol type
     pub fn symbol_type(&self) -> SymbolType {
-        unsafe { (*self.ptr).symbol_type }
+        self.inner.symbol_type
     }
 
     /// Get the decoded data as bytes
     pub fn data(&self) -> &[u8] {
-        unsafe { &(*self.ptr).data }
+        &self.inner.data
     }
 
     /// Get the decoded data as a string (if valid UTF-8)
@@ -269,65 +197,62 @@ impl Symbol {
         std::str::from_utf8(self.data()).ok()
     }
 
-    /// Get the next symbol in the result set
-    pub fn next(&self) -> Option<Symbol> {
-        let next_ptr = unsafe { zbar_symbol_next(self.ptr) };
-        unsafe { Symbol::from_ptr(next_ptr) }
+    /// Get the component symbols (for composite symbols like EAN+add-on or QR structured append)
+    pub fn components(&self) -> Option<SymbolSet<'_>> {
+        self.inner.components.as_ref().map(|set| SymbolSet {
+            symbols: &set.symbols,
+        })
     }
 }
 
 /// Iterator over symbols
-pub struct SymbolIterator {
-    current: Option<Symbol>,
+pub struct SymbolIterator<'a> {
+    iter: std::slice::Iter<'a, zbar_symbol_t>,
 }
 
-impl SymbolIterator {
-    pub(crate) fn new(first: Option<Symbol>) -> Self {
-        SymbolIterator { current: first }
-    }
-}
-
-impl Iterator for SymbolIterator {
-    type Item = Symbol;
+impl<'a> Iterator for SymbolIterator<'a> {
+    type Item = Symbol<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(current) = self.current.take() {
-            self.current = current.next();
-            Some(current)
-        } else {
-            None
-        }
+        self.iter.next().map(Symbol::from_ref)
     }
 }
 
 /// Collection of decoded symbols
-pub struct SymbolSet {
-    symbols: Option<Symbol>,
+pub struct SymbolSet<'a> {
+    symbols: &'a [zbar_symbol_t],
 }
 
-impl SymbolSet {
-    pub(crate) fn new(first_symbol: Option<Symbol>) -> Self {
-        Self {
-            symbols: first_symbol,
-        }
+impl<'a> SymbolSet<'a> {
+    pub(crate) fn from_slice(symbols: &'a [zbar_symbol_t]) -> Self {
+        Self { symbols }
     }
 
     /// Get an iterator over the symbols
-    pub fn iter(&self) -> SymbolIterator {
-        SymbolIterator::new(self.symbols.as_ref().map(|s| Symbol { ptr: s.ptr }))
+    pub fn iter(&self) -> SymbolIterator<'a> {
+        SymbolIterator {
+            iter: self.symbols.iter(),
+        }
     }
 
     /// Check if there are any symbols
     pub fn is_empty(&self) -> bool {
-        self.symbols.is_none()
+        self.symbols.is_empty()
+    }
+
+    /// Get the number of symbols
+    pub fn len(&self) -> usize {
+        self.symbols.len()
     }
 }
 
-impl IntoIterator for SymbolSet {
-    type Item = Symbol;
-    type IntoIter = SymbolIterator;
+impl<'a> IntoIterator for SymbolSet<'a> {
+    type Item = Symbol<'a>;
+    type IntoIter = SymbolIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        SymbolIterator::new(self.symbols)
+        SymbolIterator {
+            iter: self.symbols.iter(),
+        }
     }
 }
