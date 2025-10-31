@@ -4,7 +4,6 @@
 //! that mirror the C struct layouts exactly for FFI compatibility.
 
 use libc::{c_char, c_int, c_short, c_uint, c_void};
-use std::ptr;
 
 use crate::{
     decoders::{
@@ -431,6 +430,7 @@ pub(crate) struct sq_finder_t {
 // ============================================================================
 
 /// DataBar segment (partial)
+#[derive(Clone)]
 pub(crate) struct databar_segment_t {
     // First 32 bits of bitfields:
     // finder: 5, exp: 1, color: 1, side: 1,
@@ -551,44 +551,86 @@ impl databar_segment_t {
     }
 }
 
+impl Default for databar_segment_t {
+    fn default() -> Self {
+        let mut seg = Self {
+            bitfields: 0,
+            data: 0,
+            width: 0,
+        };
+        seg.set_finder(-1);
+        seg
+    }
+}
+
 /// DataBar decoder state
-#[derive(Default)]
 pub(crate) struct databar_decoder_t {
-    pub(crate) config: c_uint,
-    pub(crate) config_exp: c_uint,
-    // Bitfields: csegs: 8, epoch: 8 (16 bits in a u32)
-    pub(crate) bitfields: c_uint,
-    pub(crate) segs: *mut databar_segment_t,
-    pub(crate) chars: [c_char; 16],
+    config: c_uint,
+    config_exp: c_uint,
+    epoch: u8,
+    segs: Vec<databar_segment_t>,
+    chars: [c_char; 16],
+}
+
+impl Default for databar_decoder_t {
+    fn default() -> Self {
+        Self {
+            config: 0,
+            config_exp: 0,
+            epoch: 0,
+            segs: Vec::new(),
+            chars: [-1; 16],
+        }
+    }
 }
 
 impl databar_decoder_t {
-    #[inline]
-    pub(crate) fn csegs(&self) -> u8 {
-        (self.bitfields & 0xFF) as u8
+    pub(crate) fn csegs(&self) -> usize {
+        self.segs.len()
     }
 
-    #[inline]
-    pub(crate) fn set_csegs(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !0xFF) | (val as c_uint);
+    pub(crate) fn seg(&self, index: usize) -> &databar_segment_t {
+        &self.segs[index]
     }
 
-    #[inline]
+    pub(crate) fn seg_mut(&mut self, index: usize) -> &mut databar_segment_t {
+        &mut self.segs[index]
+    }
+
+    pub(crate) fn char(&self, index: usize) -> c_char {
+        self.chars[index]
+    }
+
+    pub(crate) fn set_char(&mut self, index: usize, value: c_char) {
+        self.chars[index] = value;
+    }
+
+    pub(crate) fn resize_segs(&mut self, size: usize) {
+        self.segs.resize_with(size, databar_segment_t::default);
+    }
+
     pub(crate) fn epoch(&self) -> u8 {
-        ((self.bitfields >> 8) & 0xFF) as u8
+        self.epoch
     }
 
-    #[inline]
     pub(crate) fn set_epoch(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0xFF << 8)) | ((val as c_uint) << 8);
+        self.epoch = val;
+    }
+
+    pub(crate) fn config(&self) -> u32 {
+        self.config
+    }
+
+    pub(crate) fn config_exp(&self) -> u32 {
+        self.config_exp
     }
 
     /// Reset DataBar decoder state
     pub(crate) unsafe fn reset(&mut self) {
-        let n = self.csegs() as isize;
+        let n = self.segs.len();
         self.new_scan();
         for i in 0..n {
-            let seg = &mut *(self.segs).offset(i);
+            let seg = self.seg_mut(i);
             seg.set_finder(-1);
         }
     }
@@ -597,7 +639,7 @@ impl databar_decoder_t {
     pub(crate) unsafe fn new_scan(&mut self) {
         for i in 0..16 {
             if self.chars[i] >= 0 {
-                let seg = &mut *(self.segs).offset(self.chars[i] as isize);
+                let seg = &mut self.segs[self.chars[i] as usize];
                 if seg.partial() {
                     seg.set_finder(-1);
                 }
@@ -717,9 +759,10 @@ pub(crate) struct zbar_decoder_t {
 impl zbar_decoder_t {
     /// Create a new decoder instance
     pub(crate) unsafe fn new() -> Self {
-        let mut decoder = Self::default();
-
-        decoder.buffer = Vec::with_capacity(BUFFER_MIN as usize);
+        let mut decoder = Self {
+            buffer: Vec::with_capacity(BUFFER_MIN as usize),
+            ..Self::default()
+        };
 
         // Initialize default configs
         decoder.ean.enable = 1;
@@ -736,9 +779,7 @@ impl zbar_decoder_t {
 
         decoder.databar.config = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
         decoder.databar.config_exp = (1 << ZBAR_CFG_ENABLE) | (1 << ZBAR_CFG_EMIT_CHECK);
-        decoder.databar.set_csegs(4);
-        decoder.databar.segs = libc::calloc(4, size_of::<databar_segment_t>()) as *mut _;
-        assert!(!decoder.databar.segs.is_null());
+        decoder.databar.segs = vec![databar_segment_t::default(); 4];
 
         decoder.codabar.config = 1 << ZBAR_CFG_ENABLE;
         cfg_set(&mut decoder.codabar.configs, ZBAR_CFG_MIN_LEN, 4);
@@ -1221,16 +1262,5 @@ impl zbar_decoder_t {
     /// Get decoded symbol modifiers
     pub(crate) fn get_modifiers(&self) -> c_uint {
         self.modifiers
-    }
-}
-
-impl Drop for zbar_decoder_t {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.databar.segs.is_null() {
-                libc::free(self.databar.segs as *mut c_void);
-                self.databar.segs = ptr::null_mut();
-            }
-        }
     }
 }

@@ -1,5 +1,3 @@
-use std::{ffi::c_void, ptr::null_mut};
-
 use libc::{c_int, c_uint};
 
 use crate::{
@@ -205,15 +203,6 @@ fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
         buf[i] = b'0' + d;
         remaining -= 1;
     }
-}
-
-#[inline]
-unsafe fn realloc_databar_segments(
-    ptr: *mut databar_segment_t,
-    count: usize,
-) -> *mut databar_segment_t {
-    libc::realloc(ptr as *mut c_void, count * size_of::<databar_segment_t>())
-        as *mut databar_segment_t
 }
 
 unsafe fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
@@ -576,7 +565,7 @@ unsafe fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
 fn postprocess(dcode: &mut zbar_decoder_t, mut d: [c_uint; 4]) {
     // Get config before borrowing buffer
-    let emit_check = ((dcode.databar.config >> ZBAR_CFG_EMIT_CHECK) & 1) != 0;
+    let emit_check = ((dcode.databar.config() >> ZBAR_CFG_EMIT_CHECK) & 1) != 0;
 
     let buf = match dcode.buffer_mut_slice(16) {
         Ok(buf) => buf,
@@ -701,47 +690,59 @@ fn check_width(wf: u32, wd: u32, n: u32) -> c_int {
 }
 
 /// Merge or update a DataBar segment with existing segments
-unsafe fn merge_segment(db: &mut databar_decoder_t, seg: &mut databar_segment_t) {
-    let csegs = db.csegs() as isize;
+unsafe fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
+    let csegs = db.csegs();
+    let epoch = db.epoch();
 
     for i in 0..csegs {
-        let s = db.segs.offset(i);
-
         // Skip if this is the same segment
-        if s == seg {
+        if i == seg_idx {
             continue;
         }
 
-        let s = &mut *s;
+        // Read values we need from the target segment
+        let seg_finder = db.seg(seg_idx).finder();
+        let seg_exp = db.seg(seg_idx).exp();
+        let seg_color = db.seg(seg_idx).color();
+        let seg_side = db.seg(seg_idx).side();
+        let seg_data = db.seg(seg_idx).data;
+        let seg_check = db.seg(seg_idx).check();
+        let seg_width = db.seg(seg_idx).width;
+        let seg_partial = db.seg(seg_idx).partial();
+
+        let s = db.seg_mut(i);
         // Check if this segment matches and should be merged
-        if s.finder() == seg.finder()
-            && s.exp() == seg.exp()
-            && s.color() == seg.color()
-            && s.side() == seg.side()
-            && s.data == seg.data
-            && s.check() == seg.check()
-            && check_width(seg.width as u32, s.width as u32, 14) != 0
+        if s.finder() == seg_finder
+            && s.exp() == seg_exp
+            && s.color() == seg_color
+            && s.side() == seg_side
+            && s.data == seg_data
+            && s.check() == seg_check
+            && check_width(seg_width as u32, s.width as u32, 14) != 0
         {
             // Found a matching segment - merge with it
             let mut cnt = s.count();
             if cnt < 0x7F {
                 cnt += 1;
             }
-            seg.set_count(cnt);
 
             // Merge partial flags (bitwise AND)
-            let new_partial = seg.partial() && s.partial();
-            seg.set_partial(new_partial);
+            let new_partial = seg_partial && s.partial();
 
             // Average the widths (weighted average favoring new measurement)
-            let new_width = (3 * seg.width + s.width + 2) / 4;
-            seg.width = new_width;
+            let new_width = (3 * seg_width + s.width + 2) / 4;
 
             // Mark old segment as unused
             s.set_finder(-1);
+
+            // Now update the target segment
+            let seg = &mut db.seg_mut(seg_idx);
+            seg.set_count(cnt);
+            seg.set_partial(new_partial);
+            seg.width = new_width;
         } else if s.finder() >= 0 {
             // Not a match, check if we should age it out
-            let age = db.epoch().wrapping_sub(s.epoch());
+            let age = epoch.wrapping_sub(s.epoch());
             if age >= 248 || (age >= 128 && s.count() < 2) {
                 s.set_finder(-1);
             }
@@ -750,47 +751,59 @@ unsafe fn merge_segment(db: &mut databar_decoder_t, seg: &mut databar_segment_t)
 }
 
 /// Match DataBar segment to find complete symbol
-unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: &mut databar_segment_t) -> SymbolType {
+unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg_idx: usize) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
     let mut maxcnt = 0;
-    let mut smax: [*mut databar_segment_t; 3] = [std::ptr::null_mut(); 3];
+    let mut smax: Option<[usize; 3]> = None;
     let mut d = [0u32; 4];
 
+    let seg = db.seg(seg_idx);
     if seg.partial() && seg.count() < 4 {
         return SymbolType::Partial;
     }
 
-    for i0 in 0..(csegs as usize) {
-        let s0 = db.segs.add(i0);
-        if s0 == seg
-            || (*s0).finder() != seg.finder()
-            || (*s0).exp()
-            || (*s0).color() != seg.color()
-            || (*s0).side() == seg.side()
-            || ((*s0).partial() && (*s0).count() < 4)
-            || check_width(seg.width as c_uint, (*s0).width as c_uint, 14) == 0
+    // Cache values we need from seg
+    let seg_finder = seg.finder();
+    let seg_color = seg.color();
+    let seg_side = seg.side();
+    let seg_width = seg.width;
+    let seg_check = seg.check();
+
+    for i0 in 0..csegs {
+        if i0 == seg_idx {
+            continue;
+        }
+        let s0 = db.seg(i0);
+        if s0.finder() != seg_finder
+            || s0.exp()
+            || s0.color() != seg_color
+            || s0.side() == seg_side
+            || (s0.partial() && s0.count() < 4)
+            || check_width(seg_width as c_uint, s0.width as c_uint, 14) == 0
         {
             continue;
         }
 
-        for i1 in 0..(csegs as usize) {
-            let s1 = db.segs.add(i1);
-            if i1 == i0
-                || (*s1).finder() < 0
-                || (*s1).exp()
-                || (*s1).color() == seg.color()
-                || ((*s1).partial() && (*s1).count() < 4)
-                || check_width(seg.width as c_uint, (*s1).width as c_uint, 14) == 0
+        for i1 in 0..csegs {
+            if i1 == i0 {
+                continue;
+            }
+            let s1 = db.seg(i1);
+            if s1.finder() < 0
+                || s1.exp()
+                || s1.color() == seg_color
+                || (s1.partial() && s1.count() < 4)
+                || check_width(seg_width as c_uint, s1.width as c_uint, 14) == 0
             {
                 continue;
             }
 
-            let mut chkf = if seg.color() != zbar_color_t::ZBAR_SPACE {
-                seg.finder() as i32 + (*s1).finder() as i32 * 9
+            let mut chkf = if seg_color != zbar_color_t::ZBAR_SPACE {
+                seg_finder as i32 + s1.finder() as i32 * 9
             } else {
-                (*s1).finder() as i32 + seg.finder() as i32 * 9
+                s1.finder() as i32 + seg_finder as i32 * 9
             };
             if chkf > 72 {
                 chkf -= 1;
@@ -799,8 +812,7 @@ unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: &mut databar_segment_t)
                 chkf -= 1;
             }
 
-            let chks =
-                ((seg.check() as i32) + ((*s0).check() as i32) + ((*s1).check() as i32)) % 79;
+            let chks = ((seg_check as i32) + (s0.check() as i32) + (s1.check() as i32)) % 79;
 
             let chk = if chkf >= chks {
                 chkf - chks
@@ -808,51 +820,58 @@ unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: &mut databar_segment_t)
                 79 + chkf - chks
             };
 
-            let age1 = ((db.epoch().wrapping_sub((*s0).epoch())) as u32)
-                + ((db.epoch().wrapping_sub((*s1).epoch())) as u32);
+            let age1 = ((db.epoch().wrapping_sub(s0.epoch())) as u32)
+                + ((db.epoch().wrapping_sub(s1.epoch())) as u32);
 
-            for i2 in (i1 + 1)..(csegs as usize) {
-                let s2 = db.segs.add(i2);
-                if i2 == i0
-                    || (*s2).finder() != (*s1).finder()
-                    || (*s2).exp()
-                    || (*s2).color() != (*s1).color()
-                    || (*s2).side() == (*s1).side()
-                    || (*s2).check() as i32 != chk
-                    || ((*s2).partial() && (*s2).count() < 4)
-                    || check_width(seg.width as c_uint, (*s2).width as c_uint, 14) == 0
+            for i2 in (i1 + 1)..csegs {
+                if i2 == i0 {
+                    continue;
+                }
+                let s2 = db.seg(i2);
+                if s2.finder() != s1.finder()
+                    || s2.exp()
+                    || s2.color() != s1.color()
+                    || s2.side() == s1.side()
+                    || s2.check() as i32 != chk
+                    || (s2.partial() && s2.count() < 4)
+                    || check_width(seg_width as c_uint, s2.width as c_uint, 14) == 0
                 {
                     continue;
                 }
-                let age2 = db.epoch().wrapping_sub((*s2).epoch()) as u32;
+                let age2 = db.epoch().wrapping_sub(s2.epoch()) as u32;
                 let age = age1 + age2;
-                let cnt = (*s0).count() as u32 + (*s1).count() as u32 + (*s2).count() as u32;
+                let cnt = s0.count() as u32 + s1.count() as u32 + s2.count() as u32;
                 if maxcnt < cnt as i32 || (maxcnt == cnt as i32 && (maxage as i32) > (age as i32)) {
                     maxcnt = cnt as i32;
                     maxage = age;
-                    smax[0] = s0;
-                    smax[1] = s1;
-                    smax[2] = s2;
+                    smax = Some([i0, i1, i2]);
                 }
             }
         }
     }
 
-    if smax[0].is_null() {
+    let Some(smax) = smax else {
         return SymbolType::Partial;
-    }
+    };
 
+    let seg = db.seg(seg_idx);
     d[((seg.color() as usize) << 1) | (seg.side() as usize)] = seg.data as u32;
-    for i0 in 0..3 {
-        d[(((*smax[i0]).color() as usize) << 1) | ((*smax[i0]).side() as usize)] =
-            (*smax[i0]).data as u32;
-        let new_count = (*smax[i0]).count().wrapping_sub(1);
-        (*smax[i0]).set_count(new_count);
+
+    for idx in smax {
+        let s = db.seg(idx);
+        d[((s.color() as usize) << 1) | (s.side() as usize)] = s.data as u32;
+        let new_count = s.count().wrapping_sub(1);
+        let s = db.seg_mut(idx);
+        s.set_count(new_count);
         if new_count == 0 {
-            (*smax[i0]).set_finder(-1);
+            s.set_finder(-1);
         }
     }
-    seg.set_finder(-1);
+    db.seg_mut(seg_idx).set_finder(-1);
+
+    // Extract values before dropping db borrow
+    let seg_side = db.seg(seg_idx).side();
+    let seg_color = db.seg(seg_idx).color();
 
     if dcode.set_buffer_capacity(18).is_err() {
         return SymbolType::Partial;
@@ -864,7 +883,7 @@ unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg: &mut databar_segment_t)
 
     postprocess(dcode, d);
     dcode.modifiers = 1 << ZBAR_MOD_GS1;
-    dcode.direction = 1 - 2 * ((seg.side() as i32) ^ (seg.color() as i32) ^ 1);
+    dcode.direction = 1 - 2 * ((seg_side as i32) ^ (seg_color as i32) ^ 1);
     SymbolType::Databar
 }
 
@@ -920,19 +939,15 @@ unsafe fn lookup_sequence(
     }
 }
 
-unsafe fn match_segment_exp(
-    dcode: *mut zbar_decoder_t,
-    seg: *mut databar_segment_t,
-    dir: c_int,
-) -> SymbolType {
-    let db = &mut (*dcode).databar;
-    let csegs = db.csegs() as usize;
+unsafe fn match_segment_exp(dcode: &mut zbar_decoder_t, seg_idx: usize, dir: c_int) -> SymbolType {
+    let db = &mut dcode.databar;
+    let csegs = db.csegs();
     if csegs == 0 {
         return SymbolType::Partial;
     }
 
-    let ifixed = seg.offset_from(db.segs) as usize;
-    let fixed = (*seg).segment_index();
+    let ifixed = seg_idx;
+    let fixed = db.seg(seg_idx).segment_index();
     let mut bestsegs = [-1i32; 22];
     let mut segs_idx = [-1i32; 22];
     let mut seq = [-1i32; 22];
@@ -943,36 +958,32 @@ unsafe fn match_segment_exp(
     seq[1] = -1;
     segs_idx[0] = -1;
     bestsegs[0] = -1;
-    width_stack[0] = (*seg).width as u32;
+    width_stack[0] = db.seg(seg_idx).width as u32;
 
     #[allow(clippy::needless_range_loop)]
     for j in 0..csegs {
-        let s = db.segs.add(j);
-        iseg[j] =
-            if (*s).exp() && (*s).finder() >= 0 && (!(*s).partial() || (*s).count() as i32 >= 4) {
-                (*s).segment_index()
-            } else {
-                -1
-            };
+        let s = db.seg(j);
+        iseg[j] = if s.exp() && s.finder() >= 0 && (!s.partial() || s.count() as i32 >= 4) {
+            s.segment_index()
+        } else {
+            -1
+        };
     }
 
     let mut maxcnt = 0i32;
     let mut maxage = 0x7fff_u32;
     let mut i: i32 = 0;
-    let mut seg_ptr = seg;
 
     loop {
         while i >= 0 && seq[i as usize] >= 0 {
             let idx = i as usize;
             let target = seq[idx];
             let mut found: Option<usize> = None;
-            let mut candidate: *mut databar_segment_t = std::ptr::null_mut();
             let current_width = width_stack[idx];
 
             if target == fixed {
-                candidate = db.segs.add(ifixed);
-                if segs_idx[idx] < 0
-                    && check_width(current_width, (*candidate).width as u32, 14) != 0
+                let candidate = db.seg(ifixed);
+                if segs_idx[idx] < 0 && check_width(current_width, candidate.width as u32, 14) != 0
                 {
                     found = Some(ifixed);
                 }
@@ -984,10 +995,9 @@ unsafe fn match_segment_exp(
                 };
                 while start < csegs {
                     if iseg[start] == target {
-                        let cand = db.segs.add(start);
-                        if idx == 0 || check_width(current_width, (*cand).width as u32, 14) != 0 {
+                        let cand = db.seg(start);
+                        if idx == 0 || check_width(current_width, cand.width as u32, 14) != 0 {
                             found = Some(start);
-                            candidate = cand;
                             break;
                         }
                     }
@@ -996,13 +1006,9 @@ unsafe fn match_segment_exp(
             }
 
             if let Some(jidx) = found {
-                if candidate.is_null() {
-                    candidate = db.segs.add(jidx);
-                }
-
                 if idx == 0 {
                     let maxsize = seq.len();
-                    let lu = lookup_sequence(&mut *candidate, fixed, &mut seq, maxsize);
+                    let lu = lookup_sequence(db.seg_mut(jidx), fixed, &mut seq, maxsize);
                     if lu == 0 {
                         i -= 1;
                         continue;
@@ -1012,15 +1018,15 @@ unsafe fn match_segment_exp(
                     }
                 }
 
+                let candidate = db.seg(jidx);
                 let next_width = if idx == 0 {
-                    (*candidate).width as u32
+                    candidate.width as u32
                 } else {
-                    (current_width + (*candidate).width as u32) / 2
+                    (current_width + candidate.width as u32) / 2
                 };
                 width_stack[idx + 1] = next_width;
                 segs_idx[idx] = jidx as i32;
                 segs_idx[idx + 1] = -1;
-                seg_ptr = candidate;
                 i = idx as i32 + 1;
             } else {
                 i -= 1;
@@ -1036,20 +1042,20 @@ unsafe fn match_segment_exp(
         let mut age: u32;
 
         let first_idx = segs_idx[0] as usize;
-        let mut seg_eval = db.segs.add(first_idx);
-        age = ((*db).epoch().wrapping_sub((*seg_eval).epoch())) as u32 & 0xff;
+        let seg_eval = db.seg(first_idx);
+        age = (db.epoch().wrapping_sub(seg_eval.epoch())) as u32 & 0xff;
 
         let mut pos = 1usize;
         while pos < segs_idx.len() && segs_idx[pos] >= 0 {
             let sidx = segs_idx[pos] as usize;
-            seg_eval = db.segs.add(sidx);
-            chk += (*seg_eval).check() as u32;
-            cnt += (*seg_eval).count() as u32;
-            age += ((*db).epoch().wrapping_sub((*seg_eval).epoch())) as u32 & 0xff;
+            let seg_eval = db.seg(sidx);
+            chk += seg_eval.check() as u32;
+            cnt += seg_eval.count() as u32;
+            age += (db.epoch().wrapping_sub(seg_eval.epoch())) as u32 & 0xff;
             pos += 1;
         }
 
-        let mut chk0 = (*db.segs.add(first_idx)).data as i32 % 211;
+        let mut chk0 = db.seg(first_idx).data as i32 % 211;
         if chk0 < 0 {
             chk0 += 211;
         }
@@ -1074,41 +1080,51 @@ unsafe fn match_segment_exp(
         return SymbolType::Partial;
     }
 
-    if !(*dcode).acquire_lock(SymbolType::DatabarExp) {
-        return SymbolType::Partial;
-    }
-
+    // Extract data values before dropping db borrow
     let mut data_vals = [0i32; 22];
     let mut count = 0usize;
     while count < bestsegs.len() && bestsegs[count] >= 0 {
         let sidx = bestsegs[count] as usize;
-        let s = db.segs.add(sidx);
-        data_vals[count] = (*s).data as i32;
+        let s = db.seg(sidx);
+        data_vals[count] = s.data as i32;
         count += 1;
     }
 
-    if postprocess_exp(&mut *dcode, &mut data_vals) != 0 {
-        (*dcode).release_lock(SymbolType::DatabarExp);
-        return SymbolType::Partial;
-    }
-
+    // Update segments before dropping db borrow
+    let mut last_idx = ifixed;
     for sidx in bestsegs {
-        let s = db.segs.add(sidx as usize);
-        seg_ptr = s;
-        if sidx as usize != ifixed {
-            let mut cnt = (*s).count();
+        if sidx < 0 {
+            break;
+        }
+        let idx = sidx as usize;
+        last_idx = idx;
+        if idx != ifixed {
+            let s = db.seg_mut(idx);
+            let mut cnt = s.count();
             if cnt > 0 {
                 cnt -= 1;
-                (*s).set_count(cnt);
+                s.set_count(cnt);
                 if cnt == 0 {
-                    (*s).set_finder(-1);
+                    s.set_finder(-1);
                 }
             }
         }
     }
 
-    (*dcode).direction = (1 - 2 * (((*seg_ptr).side() ^ (*seg_ptr).color() as u8) as i32)) * dir;
-    (*dcode).modifiers = 1 << ZBAR_MOD_GS1;
+    let seg_side = db.seg(last_idx).side();
+    let seg_color = db.seg(last_idx).color();
+
+    if !dcode.acquire_lock(SymbolType::DatabarExp) {
+        return SymbolType::Partial;
+    }
+
+    if postprocess_exp(dcode, &mut data_vals) != 0 {
+        dcode.release_lock(SymbolType::DatabarExp);
+        return SymbolType::Partial;
+    }
+
+    dcode.direction = (1 - 2 * ((seg_side ^ seg_color as u8) as i32)) * dir;
+    dcode.modifiers = 1 << ZBAR_MOD_GS1;
     SymbolType::DatabarExp
 }
 
@@ -1292,26 +1308,33 @@ fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -
 /// Decode a DataBar character from width measurements
 unsafe fn decode_char(
     dcode: &mut zbar_decoder_t,
-    seg: &mut databar_segment_t,
+    seg_idx: usize,
     off: c_int,
     dir: c_int,
 ) -> SymbolType {
+    // Read segment values we need before taking other borrows
+    let seg_exp = dcode.databar.seg(seg_idx).exp();
+    let seg_side = dcode.databar.seg(seg_idx).side();
+    let seg_width = dcode.databar.seg(seg_idx).width;
+    let seg_finder = dcode.databar.seg(seg_idx).finder();
+    let seg_color = dcode.databar.seg(seg_idx).color();
+
     let s = dcode.calc_s(if dir > 0 { off } else { off - 6 } as u8, 8);
     let mut emin = [0i32, 0i32];
     let mut sum = 0i32;
     let mut sig0 = 0u32;
     let mut sig1 = 0u32;
 
-    let n = if seg.exp() {
+    let n = if seg_exp {
         17
-    } else if seg.side() != 0 {
+    } else if seg_side != 0 {
         15
     } else {
         16
     };
     emin[1] = -(n as i32);
 
-    if s < 13 || check_width(seg.width as c_uint, s, n) == 0 {
+    if s < 13 || check_width(seg_width as c_uint, s, n) == 0 {
         return SymbolType::None;
     }
 
@@ -1405,14 +1428,14 @@ unsafe fn decode_char(
     }
 
     let mut chk;
-    if seg.exp() {
-        let side = seg.color() as u8 ^ (*seg).side() ^ 1;
+    if seg_exp {
+        let side = seg_color as u8 ^ seg_side ^ 1;
         if v >= 4096 {
             return SymbolType::None;
         }
         chk = calc_check(sig0, sig1, side as c_uint, 211);
-        if seg.finder() != 0 || (*seg).color() != zbar_color_t::ZBAR_SPACE || (*seg).side() != 0 {
-            let i = (seg.finder() as i32) * 2 - (side as i32) + ((*seg).color() as i32);
+        if seg_finder != 0 || seg_color != zbar_color_t::ZBAR_SPACE || seg_side != 0 {
+            let i = (seg_finder as i32) * 2 - (side as i32) + (seg_color as i32);
             if !(0..12).contains(&i) {
                 return SymbolType::None;
             }
@@ -1423,21 +1446,23 @@ unsafe fn decode_char(
             chk = 0;
         }
     } else {
-        chk = calc_check(sig0, sig1, seg.side() as c_uint, 79);
-        if seg.color() != zbar_color_t::ZBAR_SPACE {
+        chk = calc_check(sig0, sig1, seg_side as c_uint, 79);
+        if seg_color != zbar_color_t::ZBAR_SPACE {
             chk = (chk * 16) % 79;
         }
     }
 
+    let seg = dcode.databar.seg_mut(seg_idx);
     seg.set_check(chk as u8);
     seg.data = v as i16;
 
-    merge_segment(&mut dcode.databar, &mut *seg);
+    merge_segment(&mut dcode.databar, seg_idx);
 
-    if seg.exp() {
-        return match_segment_exp(dcode, seg, dir);
+    let is_exp = dcode.databar.seg(seg_idx).exp();
+    if is_exp {
+        return match_segment_exp(dcode, seg_idx, dir);
     } else if dir > 0 {
-        return match_segment(dcode, &mut *seg);
+        return match_segment(dcode, seg_idx);
     }
     SymbolType::Partial
 }
@@ -1446,26 +1471,27 @@ unsafe fn decode_char(
 /// Returns the index of the allocated segment, or -1 on failure
 unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
     let mut maxage = 0u32;
-    let csegs = db.csegs() as usize;
+    let csegs = db.csegs();
+    let epoch = db.epoch();
     let mut old: c_int = -1;
 
     // First pass: look for empty slots or very old segments
     for i in 0..csegs {
-        let seg = db.segs.add(i);
+        let seg = db.seg_mut(i);
 
-        if (*seg).finder() < 0 {
+        if seg.finder() < 0 {
             return i as c_int;
         }
 
-        let age = db.epoch().wrapping_sub((*seg).epoch());
-        if age >= 128 && (*seg).count() < 2 {
-            (*seg).set_finder(-1);
+        let age = epoch.wrapping_sub(seg.epoch());
+        if age >= 128 && seg.count() < 2 {
+            seg.set_finder(-1);
             return i as c_int;
         }
 
         // Score based on both age and count
-        let score = if age > (*seg).count() {
-            age - (*seg).count() + 1
+        let score = if age > seg.count() {
+            age - seg.count() + 1
         } else {
             1
         };
@@ -1485,36 +1511,15 @@ unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
         }
 
         if new_csegs != csegs {
-            // Reallocate segment array
-            let new_ptr = realloc_databar_segments(db.segs, new_csegs);
-
-            if new_ptr.is_null() {
-                // Allocation failed, fall through to reuse old segment
-            } else {
-                db.segs = new_ptr;
-                db.set_csegs(new_csegs as u8);
-
-                // Initialize new segments
-                for j in i..new_csegs {
-                    let seg = (db.segs).add(j);
-                    (*seg).set_finder(-1);
-                    (*seg).set_exp(false);
-                    (*seg).set_color(zbar_color_t::ZBAR_SPACE);
-                    (*seg).set_side(0);
-                    (*seg).set_partial(false);
-                    (*seg).set_count(0);
-                    (*seg).set_epoch(0);
-                    (*seg).set_check(0);
-                }
-                return i as c_int;
-            }
+            // Grow the segment array
+            db.resize_segs(new_csegs);
+            return i as c_int;
         }
     }
 
     // Reuse oldest segment
     if old >= 0 {
-        let seg = db.segs.offset(old as isize);
-        (*seg).set_finder(-1);
+        db.seg_mut(old as usize).set_finder(-1);
     }
     old
 }
@@ -1561,9 +1566,9 @@ unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
         & 0x1f;
     if finder == 0x1f
         || (((if finder < 9 {
-            dcode.databar.config
+            dcode.databar.config()
         } else {
-            dcode.databar.config_exp
+            dcode.databar.config_exp()
         }) >> ZBAR_CFG_ENABLE)
             & 1)
             == 0
@@ -1580,18 +1585,21 @@ unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
         return SymbolType::None;
     }
 
-    let seg = &mut (*dcode.databar.segs.offset(iseg as isize));
+    let color = dcode.color();
+    let epoch = dcode.databar.epoch();
+    let seg = dcode.databar.seg_mut(iseg as usize);
     seg.set_finder(if finder >= 9 { finder - 9 } else { finder });
     seg.set_exp(finder >= 9);
-    seg.set_color(((dcode.color() as u8) ^ dir as u8 ^ 1).into());
+    seg.set_color(((color as u8) ^ dir as u8 ^ 1).into());
     seg.set_side(dir as u8);
     seg.set_partial(false);
     seg.set_count(1);
     seg.width = s as i16;
-    seg.set_epoch(dcode.databar.epoch());
+    seg.set_epoch(epoch);
 
-    let rc = decode_char(dcode, seg, 12 - dir, -1);
+    let rc = decode_char(dcode, iseg as usize, 12 - dir, -1);
     if rc == SymbolType::None {
+        let seg = dcode.databar.seg_mut(iseg as usize);
         seg.set_partial(true);
     } else {
         dcode
@@ -1600,10 +1608,10 @@ unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
     }
 
     let i = ((dcode.idx as c_int + 8 + dir) & 0xf) as usize;
-    if dcode.databar.chars[i] != -1 {
+    if dcode.databar.char(i) != -1 {
         return SymbolType::None;
     }
-    dcode.databar.chars[i] = iseg as i8;
+    dcode.databar.set_char(i, iseg as i8);
     rc
 }
 
@@ -1612,37 +1620,50 @@ pub(crate) unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> SymbolT
 
     let mut sym = decode_finder(dcode);
 
-    let iseg = dcode.databar.chars[i as usize];
+    let iseg = dcode.databar.char(i as usize);
     if iseg < 0 {
         return sym;
     }
 
-    dcode.databar.chars[i as usize] = -1;
-    let mut seg = dcode.databar.segs.offset(iseg as isize);
+    dcode.databar.set_char(i as usize, -1);
 
-    let pair;
-    if (*seg).partial() {
-        pair = null_mut();
-        (*seg).set_side(!(*seg).side());
+    let seg_idx: usize;
+    let pair_idx: Option<usize>;
+
+    if dcode.databar.seg(iseg as usize).partial() {
+        pair_idx = None;
+        seg_idx = iseg as usize;
+        let old_side = dcode.databar.seg(seg_idx).side();
+        dcode.databar.seg_mut(seg_idx).set_side(!old_side);
     } else {
         let jseg = _zbar_databar_alloc_segment(&mut dcode.databar);
-        pair = dcode.databar.segs.offset(iseg as isize);
-        seg = dcode.databar.segs.offset(jseg as isize);
-        (*seg).set_finder((*pair).finder());
-        (*seg).set_exp((*pair).exp());
-        (*seg).set_color((*pair).color());
-        (*seg).set_side(!(*pair).side());
-        (*seg).set_partial(false);
-        (*seg).set_count(1);
-        (*seg).width = (*pair).width;
-        (*seg).set_epoch(dcode.databar.epoch());
+        pair_idx = Some(iseg as usize);
+        seg_idx = jseg as usize;
+
+        // Extract values from pair before borrowing seg mutably
+        let pair_finder = dcode.databar.seg(iseg as usize).finder();
+        let pair_exp = dcode.databar.seg(iseg as usize).exp();
+        let pair_color = dcode.databar.seg(iseg as usize).color();
+        let pair_side = dcode.databar.seg(iseg as usize).side();
+        let pair_width = dcode.databar.seg(iseg as usize).width;
+        let epoch = dcode.databar.epoch();
+
+        let seg = dcode.databar.seg_mut(jseg as usize);
+        seg.set_finder(pair_finder);
+        seg.set_exp(pair_exp);
+        seg.set_color(pair_color);
+        seg.set_side(!pair_side);
+        seg.set_partial(false);
+        seg.set_count(1);
+        seg.width = pair_width;
+        seg.set_epoch(epoch);
     }
 
-    sym = decode_char(dcode, &mut *seg, 1, 1);
+    sym = decode_char(dcode, seg_idx, 1, 1);
     if sym == SymbolType::None {
-        (*seg).set_finder(-1);
-        if !pair.is_null() {
-            (*pair).set_partial(true);
+        dcode.databar.seg_mut(seg_idx).set_finder(-1);
+        if let Some(pidx) = pair_idx {
+            dcode.databar.seg_mut(pidx).set_partial(true);
         }
     } else {
         dcode
