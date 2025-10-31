@@ -36,7 +36,6 @@ impl zbar_image_t {
     }
 }
 
-// Drop is automatically implemented
 
 #[allow(dead_code)]
 pub(crate) fn zbar_image_first_symbol(img: &zbar_image_t) -> Option<&zbar_symbol_t> {
@@ -51,11 +50,13 @@ pub(crate) fn _zbar_image_copy(src: &zbar_image_t, inverted: c_int) -> Option<zb
         return None;
     }
 
-    let mut dst = zbar_image_t::default();
-    dst.format = src.format;
-    dst.width = src.width;
-    dst.height = src.height;
-    dst.data = vec![0; src.data.len()];
+    let mut dst = zbar_image_t {
+        format: src.format,
+        width: src.width,
+        height: src.height,
+        data: vec![0; src.data.len()],
+        ..Default::default()
+    };
 
     if inverted == 0 {
         dst.data.copy_from_slice(&src.data);

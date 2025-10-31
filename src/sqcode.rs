@@ -102,10 +102,7 @@ fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> 
 
     let encoded = match base64_encode_buffer(&buf[..len]) {
         Some(e) => e,
-        None => {
-            // Symbol will be dropped automatically
-            return true;
-        }
+        None => return true,
     };
 
     sym.data = encoded;

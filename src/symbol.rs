@@ -27,7 +27,6 @@ impl zbar_symbol_t {
     }
 }
 
-// Drop is automatically implemented - components will be dropped via Option<Box<T>>
 
 /// Create a new symbol set
 pub(crate) fn symbol_set_create() -> Box<zbar_symbol_set_t> {

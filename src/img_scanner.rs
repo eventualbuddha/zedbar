@@ -90,7 +90,6 @@ pub(crate) struct zbar_symbol_set_t {
     pub(crate) symbols: Vec<zbar_symbol_t>,
 }
 
-// Drop is automatically implemented - Vec will drop all symbols
 
 // Function pointer type for image data handler callbacks
 pub(crate) type zbar_image_data_handler_t =
@@ -279,16 +278,6 @@ pub(crate) fn zbar_image_scanner_get_config(
 
     Err(1)
 }
-
-/// Recycle symbols from the image scanner
-///
-/// Recursively processes a linked list of symbols, either unlinking referenced
-/// symbols or freeing unreferenced ones.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `sym` - Head of the symbol list to process
-// Symbol recycling is no longer needed - Drop handles cleanup automatically
 
 /// Flush scanner pipeline and start new scan
 ///

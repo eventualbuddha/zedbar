@@ -354,7 +354,6 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     iscn.add_symbol(sa_sym);
                 }
             }
-            // else: symbols are dropped automatically
         }
     }
 
