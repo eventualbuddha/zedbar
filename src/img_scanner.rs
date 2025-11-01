@@ -87,10 +87,6 @@ pub(crate) struct zbar_symbol_set_t {
     pub(crate) symbols: Vec<zbar_symbol_t>,
 }
 
-// Function pointer type for image data handler callbacks
-pub(crate) type zbar_image_data_handler_t =
-    unsafe fn(img: *mut zbar_image_t, userdata: *const c_void);
-
 /// image scanner state
 #[derive(Default)]
 pub(crate) struct zbar_image_scanner_t {
@@ -103,11 +99,6 @@ pub(crate) struct zbar_image_scanner_t {
     qr: Option<qr_reader>,
     /// SQ Code 2D reader
     sq: Option<SqReader>,
-
-    /// application data
-    userdata: *const c_void,
-    /// user result callback
-    handler: Option<zbar_image_data_handler_t>,
 
     /// current scan direction
     dx: c_int,
@@ -213,12 +204,6 @@ impl zbar_image_scanner_t {
 
         // Call user handler if symbols found
         let final_nsyms = img.syms().map_or(0, |s| s.symbols.len());
-        if final_nsyms != 0 {
-            if let Some(handler) = self.handler {
-                handler(img, self.userdata);
-            }
-        }
-
         Ok(final_nsyms as c_int)
     }
 
