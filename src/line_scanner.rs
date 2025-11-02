@@ -20,38 +20,9 @@ const EWMA_WEIGHT: c_uint = 25;
 // THRESH_INIT = (unsigned)((0.44 * (1 << 6) + 1) / 2) = 14
 const THRESH_INIT: c_uint = 14;
 
-/// Calculate the current threshold for edge detection
-///
-/// Implements adaptive threshold calculation that slowly fades back to minimum.
-/// This helps with noise rejection while maintaining sensitivity.
-pub fn calc_thresh(scn: &mut zbar_scanner_t) -> c_uint {
-    // threshold 1st to improve noise rejection
-    let thresh = scn.y1_thresh;
-
-    if thresh <= scn.y1_min_thresh || scn.width == 0 {
-        return scn.y1_min_thresh;
-    }
-
-    // slowly return threshold to min
-    let dx = (scn.x << ZBAR_FIXED) - scn.last_edge;
-    let mut t = thresh as u64 * dx as u64;
-    t /= scn.width as u64;
-    t /= ZBAR_SCANNER_THRESH_FADE as u64;
-
-    if thresh > t as c_uint {
-        let new_thresh = thresh - t as c_uint;
-        if new_thresh > scn.y1_min_thresh {
-            return new_thresh;
-        }
-    }
-
-    scn.y1_thresh = scn.y1_min_thresh;
-    scn.y1_min_thresh
-}
-
 /// Color of element: bar or space
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum zbar_color_t {
+pub(crate) enum zbar_color_t {
     ZBAR_SPACE = 0, // light area or space between bars
     ZBAR_BAR = 1,   // dark area or colored bar segment
 }
@@ -68,7 +39,7 @@ impl From<u8> for zbar_color_t {
 
 /// Scanner state structure - must match the C layout exactly
 #[derive(Default)]
-pub struct zbar_scanner_t {
+pub(crate) struct zbar_scanner_t {
     decoder: *mut zbar_decoder_t,
     y1_min_thresh: c_uint,
     x: c_uint,
@@ -81,21 +52,60 @@ pub struct zbar_scanner_t {
 }
 
 impl zbar_scanner_t {
+    /// Create a new scanner instance (owned version)
+    ///
+    /// Initializes a new scanner with the specified decoder.
+    pub(crate) fn new(dcode: *mut zbar_decoder_t) -> Self {
+        Self {
+            decoder: dcode,
+            y1_min_thresh: ZBAR_SCANNER_THRESH_MIN,
+            ..Self::default()
+        }
+    }
+
+    /// Get the width of the most recent bar or space
+    pub(crate) fn width(&self) -> c_uint {
+        self.width
+    }
+
     /// Get a mutable reference to the decoder (if present)
     #[inline]
     pub(crate) fn decoder_mut(&mut self) -> Option<&mut zbar_decoder_t> {
         unsafe { self.decoder.as_mut() }
     }
 
-    /// Set the decoder pointer
-    #[inline]
-    pub(crate) fn set_decoder(&mut self, decoder: *mut zbar_decoder_t) {
-        self.decoder = decoder;
+    /// Calculate the current threshold for edge detection
+    ///
+    /// Implements adaptive threshold calculation that slowly fades back to minimum.
+    /// This helps with noise rejection while maintaining sensitivity.
+    pub(crate) fn calc_thresh(&mut self) -> c_uint {
+        // threshold 1st to improve noise rejection
+        let thresh = self.y1_thresh;
+
+        if thresh <= self.y1_min_thresh || self.width == 0 {
+            return self.y1_min_thresh;
+        }
+
+        // slowly return threshold to min
+        let dx = (self.x << ZBAR_FIXED) - self.last_edge;
+        let mut t = thresh as u64 * dx as u64;
+        t /= self.width as u64;
+        t /= ZBAR_SCANNER_THRESH_FADE as u64;
+
+        if thresh > t as c_uint {
+            let new_thresh = thresh - t as c_uint;
+            if new_thresh > self.y1_min_thresh {
+                return new_thresh;
+            }
+        }
+
+        self.y1_thresh = self.y1_min_thresh;
+        self.y1_min_thresh
     }
 
     /// Flush the scanner state
     #[inline]
-    pub fn scanner_flush(&mut self) -> SymbolType {
+    pub(crate) fn scanner_flush(&mut self) -> SymbolType {
         if self.y1_sign == 0 {
             return SymbolType::None;
         }
@@ -103,7 +113,7 @@ impl zbar_scanner_t {
         let x = (self.x << ZBAR_FIXED) + ROUND;
 
         if self.cur_edge != x || self.y1_sign > 0 {
-            let edge = process_edge(self, -self.y1_sign);
+            let edge = self.process_edge();
             self.cur_edge = x;
             self.y1_sign = -self.y1_sign;
             return edge;
@@ -112,14 +122,14 @@ impl zbar_scanner_t {
         self.y1_sign = 0;
         self.width = 0;
         if let Some(decoder) = self.decoder_mut() {
-            unsafe { decoder.zbar_decode_width(0) }
+            unsafe { decoder.decode_width(0) }
         } else {
             SymbolType::Partial
         }
     }
 
     /// Start a new scan
-    pub fn scanner_new_scan(&mut self) -> SymbolType {
+    pub(crate) fn new_scan(&mut self) -> SymbolType {
         let mut edge = SymbolType::None;
 
         while self.y1_sign != 0 {
@@ -145,7 +155,7 @@ impl zbar_scanner_t {
     }
 
     /// Process a single pixel intensity value
-    pub fn scan_y(&mut self, y: c_int) -> SymbolType {
+    pub(crate) fn scan_y(&mut self, y: c_int) -> SymbolType {
         // retrieve short value history
         let x = self.x;
         let mut y0_1 = self.y0[((x.wrapping_sub(1)) & 3) as usize];
@@ -183,13 +193,14 @@ impl zbar_scanner_t {
         let mut edge = SymbolType::None;
 
         // 2nd zero-crossing is 1st local min/max - could be edge
-        if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (calc_thresh(self) <= y1_1.unsigned_abs()) {
+        if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (self.calc_thresh() <= y1_1.unsigned_abs())
+        {
             // check for 1st sign change
             let y1_rev = if self.y1_sign > 0 { y1_1 < 0 } else { y1_1 > 0 };
 
             if y1_rev {
                 // intensity change reversal - finalize previous edge
-                edge = process_edge(self, y1_1);
+                edge = self.process_edge();
             }
 
             if y1_rev || (self.y1_sign.abs() < y1_1.abs()) {
@@ -230,71 +241,46 @@ impl zbar_scanner_t {
         self.scanner_flush();
 
         // Start new scan
-        self.scanner_new_scan();
-    }
-}
-
-// ============================================================================
-// Safe reference-based APIs
-// ============================================================================
-
-/// Get the width of the most recent bar or space
-#[inline]
-pub fn scanner_get_width(scn: &zbar_scanner_t) -> c_uint {
-    scn.width
-}
-
-/// Get the interpolated position of the last edge
-#[inline]
-pub fn scanner_get_edge(scn: &zbar_scanner_t, offset: c_uint, prec: c_int) -> c_uint {
-    let edge = scn
-        .last_edge
-        .wrapping_sub(offset)
-        .wrapping_sub(1 << ZBAR_FIXED)
-        .wrapping_sub(ROUND);
-    let prec = ZBAR_FIXED - prec;
-
-    match prec {
-        1.. => edge >> prec,
-        0 => edge,
-        _ => edge << (-prec),
-    }
-}
-
-/// Create a new scanner instance (owned version)
-///
-/// Initializes a new scanner with the specified decoder.
-pub(crate) fn zbar_scanner_new(dcode: *mut zbar_decoder_t) -> zbar_scanner_t {
-    let mut scn = zbar_scanner_t::default();
-    scn.set_decoder(dcode);
-    scn.y1_min_thresh = ZBAR_SCANNER_THRESH_MIN;
-    scn
-}
-
-/// Process an edge and pass the width to the decoder
-///
-/// This function is called when an edge (transition) is detected.
-/// It calculates the width of the element and passes it to the decoder.
-fn process_edge(scn: &mut zbar_scanner_t, _y1: i32) -> SymbolType {
-    if scn.y1_sign == 0 {
-        scn.last_edge = (1 << ZBAR_FIXED) + ROUND;
-        scn.cur_edge = (1 << ZBAR_FIXED) + ROUND;
-    } else if scn.last_edge == 0 {
-        scn.last_edge = scn.cur_edge;
+        self.new_scan();
     }
 
-    scn.width = scn.cur_edge - scn.last_edge;
-    scn.last_edge = scn.cur_edge;
+    /// Get the interpolated position of the last edge
+    pub(crate) fn get_edge(&self, offset: c_uint, prec: c_int) -> c_uint {
+        let edge = self
+            .last_edge
+            .wrapping_sub(offset)
+            .wrapping_sub(1 << ZBAR_FIXED)
+            .wrapping_sub(ROUND);
+        let prec = ZBAR_FIXED - prec;
 
-    // pass to decoder
-    let width = scn.width;
-    if let Some(decoder) = scn.decoder_mut() {
-        unsafe { decoder.zbar_decode_width(width) }
-    } else {
-        SymbolType::Partial
+        match prec {
+            1.. => edge >> prec,
+            0 => edge,
+            _ => edge << (-prec),
+        }
+    }
+
+    /// Process an edge and pass the width to the decoder
+    ///
+    /// This function is called when an edge (transition) is detected.
+    /// It calculates the width of the element and passes it to the decoder.
+    fn process_edge(&mut self) -> SymbolType {
+        if self.y1_sign == 0 {
+            self.last_edge = (1 << ZBAR_FIXED) + ROUND;
+            self.cur_edge = (1 << ZBAR_FIXED) + ROUND;
+        } else if self.last_edge == 0 {
+            self.last_edge = self.cur_edge;
+        }
+
+        self.width = self.cur_edge - self.last_edge;
+        self.last_edge = self.cur_edge;
+
+        // pass to decoder
+        let width = self.width;
+        if let Some(decoder) = self.decoder_mut() {
+            unsafe { decoder.decode_width(width) }
+        } else {
+            SymbolType::Partial
+        }
     }
 }
-
-// ============================================================================
-// Safe reference-based APIs (main implementations)
-// ============================================================================

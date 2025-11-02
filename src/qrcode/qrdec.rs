@@ -3,23 +3,24 @@
 //! This module provides low-level QR code decoding functions including
 //! point geometry operations and error correction.
 
-use std::mem::swap;
+use std::{collections::VecDeque, mem::swap};
 
+use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use libc::{c_int, c_uchar, c_uint};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
 
 use crate::{
-    decoder::qr_finder_line,
+    decoder::{qr_finder_line, ZBAR_MOD_AIM, ZBAR_MOD_GS1},
     image_ffi::zbar_image_t,
-    img_scanner::qr_reader,
+    img_scanner::zbar_symbol_set_t,
     qrcode::{
         binarize::binarize,
-        qrdectxt::qr_code_data_list_extract_text,
         util::{qr_ihypot, qr_ilog, qr_isqrt},
     },
     symbol::zbar_symbol_t,
+    SymbolType,
 };
 
 use super::bch15_5::bch15_5_correct;
@@ -233,20 +234,6 @@ struct qr_sampling_grid {
 #[derive(Default)]
 pub(crate) struct qr_finder_lines {
     lines: Vec<qr_finder_line>,
-}
-
-/// Allocates a client reader handle.
-pub(crate) unsafe fn _zbar_qr_create() -> qr_reader {
-    qr_reader {
-        rng: ChaCha8Rng::from_seed([0u8; 32]),
-        finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
-    }
-}
-
-/// reset finder state between scans
-pub(crate) unsafe fn _zbar_qr_reset(reader: &mut qr_reader) {
-    reader.finder_lines[0].lines.clear();
-    reader.finder_lines[1].lines.clear();
 }
 
 /// A cluster of finder lines that have been grouped together.
@@ -1106,7 +1093,7 @@ impl qr_finder {
     ///
     /// The resulting list of edge points is sorted by edge index, with ties broken
     /// by extent.
-    unsafe fn edge_pts_hom_classify(&mut self, hom: &qr_hom) {
+    fn edge_pts_hom_classify(&mut self, hom: &qr_hom) {
         let center = &mut self.center;
 
         // Clear all edge point vectors
@@ -1148,7 +1135,7 @@ impl qr_finder {
     /// (in the square domain).
     /// The resulting list of edge points is sorted by edge index, with ties broken
     /// by extent.
-    unsafe fn edge_pts_aff_classify(&mut self, _aff: &qr_aff) {
+    fn edge_pts_aff_classify(&mut self, _aff: &qr_aff) {
         let center = &mut self.center;
 
         // Clear all edge point vectors
@@ -1183,7 +1170,7 @@ impl qr_finder {
     ///
     /// # Safety
     /// This function is unsafe because it dereferences the raw _f pointer.
-    unsafe fn estimate_module_size_and_version(&mut self, _width: c_int, _height: c_int) -> c_int {
+    fn estimate_module_size_and_version(&mut self, _width: c_int, _height: c_int) -> c_int {
         let mut offs = qr_point::default();
         let mut sums: [c_int; 4] = [0; 4];
         let mut nsums: [c_int; 4] = [0; 4];
@@ -1860,40 +1847,6 @@ pub(crate) fn qr_finder_find_crossings(
     centers
 }
 
-/// Locate QR finder pattern centers from scanned lines
-///
-/// Clusters horizontal and vertical lines that cross finder patterns,
-/// then locates the centers where horizontal and vertical clusters intersect.
-pub(crate) fn qr_finder_centers_locate(
-    reader: &mut qr_reader,
-    _width: c_int,
-    _height: c_int,
-) -> Vec<qr_finder_center> {
-    // Take ownership of the horizontal lines and cluster them
-    let hlines = std::mem::take(&mut reader.finder_lines[0].lines);
-    let hclustered = qr_finder_cluster_lines(hlines, 0);
-
-    // We need vertical lines to be sorted by X coordinate, with ties broken by Y
-    // coordinate, for clustering purposes.
-    // We scan the image in the opposite order, so sort the lines we found here.
-    let mut vlines = std::mem::take(&mut reader.finder_lines[1].lines);
-    if vlines.len() > 1 {
-        vlines.sort_by(|a, b| {
-            a.pos[0]
-                .cmp(&b.pos[0])
-                .then_with(|| a.pos[1].cmp(&b.pos[1]))
-        });
-    }
-    let vclustered = qr_finder_cluster_lines(vlines, 1);
-
-    // Find line crossings among the clusters
-    if hclustered.cluster_count() >= 3 && vclustered.cluster_count() >= 3 {
-        qr_finder_find_crossings(&hclustered, &vclustered)
-    } else {
-        Vec::new()
-    }
-}
-
 /// Mark a given rectangular region as belonging to the function pattern
 ///
 /// Function patterns include finder patterns, timing patterns, and alignment patterns.
@@ -2129,7 +2082,7 @@ const BCH18_6_CODES: [c_uint; 34] = [
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-unsafe fn qr_finder_version_decode(
+fn qr_finder_version_decode(
     _f: &qr_finder,
     _hom: &qr_hom,
     _img: &[u8],
@@ -2192,7 +2145,7 @@ unsafe fn qr_finder_version_decode(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers and accesses image data.
-unsafe fn qr_finder_fmt_info_decode(
+fn qr_finder_fmt_info_decode(
     _ul: &qr_finder,
     _ur: &qr_finder,
     _dl: &qr_finder,
@@ -2498,7 +2451,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
 /// # Safety
 /// This function is unsafe because it allocates memory and dereferences raw pointers.
 #[allow(clippy::too_many_arguments)]
-unsafe fn qr_sampling_grid_init(
+fn qr_sampling_grid_init(
     _grid: &mut qr_sampling_grid,
     _version: c_int,
     _ul_pos: &qr_point,
@@ -2820,7 +2773,7 @@ fn qr_sampling_grid_sample(
 ///
 /// # Safety
 /// This function is unsafe because it dereferences and modifies raw pointers.
-pub(crate) unsafe fn qr_samples_unpack(
+pub(crate) fn qr_samples_unpack(
     block_data: &mut [u8],
     mut block_positions: Vec<usize>,
     _nshort_data: usize,
@@ -2954,462 +2907,6 @@ pub(crate) unsafe fn qr_samples_unpack(
 
 /// The characters available in QR_MODE_ALNUM
 const QR_ALNUM_TABLE: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
-
-/// Parse QR code data from corrected codewords
-///
-/// Decodes the various data modes (numeric, alphanumeric, byte, Kanji, etc.)
-/// and populates the qr_code_data structure.
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers and performs memory allocation.
-pub(crate) unsafe fn qr_code_data_parse(
-    _qrdata: &mut qr_code_data,
-    _version: c_int,
-    data: &[u8],
-) -> c_int {
-    // The number of bits used to encode the character count for each version range and data mode
-    const LEN_BITS: [[c_int; 4]; 3] = [
-        [10, 9, 8, 8],    // Versions 1-9
-        [12, 11, 16, 10], // Versions 10-26
-        [14, 13, 16, 12], // Versions 27-40
-    ];
-
-    let mut self_parity: c_uint = 0;
-
-    // Entries are stored directly in the struct during parsing
-    _qrdata.entries = vec![];
-    _qrdata.sa_size = 0;
-
-    // The versions are divided into 3 ranges that each use a different number of bits for length fields
-    let len_bits_idx = (if _version > 9 { 1 } else { 0 }) + (if _version > 26 { 1 } else { 0 });
-
-    let mut qpb = qr_pack_buf {
-        buf: data,
-        endbyte: 0,
-        endbit: 0,
-    };
-
-    // While we have enough bits to read a mode...
-    while qr_pack_buf_avail(&qpb) >= 4 {
-        let Some(mode) = qr_pack_buf_read(&mut qpb, 4) else {
-            return -1;
-        };
-
-        // Mode 0 is a terminator
-        if mode == 0 {
-            break;
-        }
-
-        let Ok(mode) = qr_mode::try_from(mode) else {
-            // Unknown mode - we can't skip it, so fail
-            return -1;
-        };
-
-        let payload = match mode {
-            qr_mode::Num => {
-                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]) else {
-                    return -1;
-                };
-
-                let count = len / 3;
-                let rem = len % 3;
-                if qr_pack_buf_avail(&qpb) < 10 * count + 7 * ((rem >> 1) & 1) + 4 * (rem & 1) {
-                    return -1;
-                }
-
-                let mut data = vec![0; len as usize];
-                let mut buf = data.as_mut_slice();
-
-                // Read groups of 3 digits encoded in 10 bits
-                for _ in 0..count {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 10) else {
-                        return -1;
-                    };
-                    let bits = bits as c_uint;
-                    if bits >= 1000 {
-                        return -1;
-                    }
-                    let c = b'0' + (bits / 100) as u8;
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                    buf = &mut buf[1..];
-
-                    let bits = bits % 100;
-                    let c = b'0' + (bits / 10) as u8;
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                    buf = &mut buf[1..];
-
-                    let c = b'0' + (bits % 10) as u8;
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                    buf = &mut buf[1..];
-                }
-
-                // Read the last two digits encoded in 7 bits
-                if rem > 1 {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 7) else {
-                        return -1;
-                    };
-                    let bits = bits as c_uint;
-                    if bits >= 100 {
-                        return -1;
-                    }
-                    let c = b'0' + (bits / 10) as u8;
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                    buf = &mut buf[1..];
-
-                    let c = b'0' + (bits % 10) as u8;
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                }
-                // Or the last one digit encoded in 4 bits
-                else if rem != 0 {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 4) else {
-                        return -1;
-                    };
-                    let bits = bits as c_uint;
-                    if bits >= 10 {
-                        return -1;
-                    }
-                    let c = b'0' + bits as u8;
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                }
-
-                qr_code_data_payload::Numeric(data)
-            }
-            qr_mode::Alnum => {
-                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]) else {
-                    return -1;
-                };
-
-                let count = len >> 1;
-                let rem = len & 1;
-                if qr_pack_buf_avail(&qpb) < 11 * count + 6 * rem {
-                    return -1;
-                }
-
-                let mut data = vec![0; len as usize];
-                let mut buf = data.as_mut_slice();
-
-                // Read groups of two characters encoded in 11 bits
-                for _ in 0..count {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 11) else {
-                        return -1;
-                    };
-                    let bits = bits as c_uint;
-                    if bits >= 2025 {
-                        return -1;
-                    }
-                    let c = QR_ALNUM_TABLE[(bits / 45) as usize];
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                    buf = &mut buf[1..];
-
-                    let c = QR_ALNUM_TABLE[(bits % 45) as usize];
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                    buf = &mut buf[1..];
-                }
-
-                // Read the last character encoded in 6 bits
-                if rem != 0 {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 6) else {
-                        return -1;
-                    };
-                    let bits = bits as c_uint;
-                    if bits >= 45 {
-                        return -1;
-                    }
-                    let c = QR_ALNUM_TABLE[bits as usize];
-                    self_parity ^= c as c_uint;
-                    buf[0] = c;
-                }
-
-                qr_code_data_payload::Alphanumeric(data)
-            }
-            qr_mode::Struct => {
-                // Structured-append header
-                let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
-                    return -1;
-                };
-
-                let mut sa = qr_code_data_sa::default();
-
-                // If this is the first S-A header, save it
-                if _qrdata.sa_size == 0 {
-                    _qrdata.sa_index = ((bits >> 12) & 0xF) as c_uchar;
-                    sa.sa_index = _qrdata.sa_index;
-                    _qrdata.sa_size = (((bits >> 8) & 0xF) + 1) as c_uchar;
-                    sa.sa_size = _qrdata.sa_size;
-                    _qrdata.sa_parity = (bits & 0xFF) as c_uchar;
-                    sa.sa_parity = _qrdata.sa_parity;
-                }
-
-                qr_code_data_payload::StructuredAppendedHeaderData(sa)
-            }
-            qr_mode::Byte => {
-                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]) else {
-                    return -1;
-                };
-                if len < 0 {
-                    return -1;
-                }
-
-                if qr_pack_buf_avail(&qpb) < len << 3 {
-                    return -1;
-                }
-
-                let mut data = vec![0; len as usize];
-
-                for b in data.iter_mut() {
-                    let Some(c) = qr_pack_buf_read(&mut qpb, 8) else {
-                        return -1;
-                    };
-                    let c = c as c_uchar;
-                    self_parity ^= c as c_uint;
-                    *b = c;
-                }
-
-                qr_code_data_payload::Bytes(data)
-            }
-            qr_mode::Fnc1_1st => {
-                // FNC1 first position marker
-                // No data to read
-                qr_code_data_payload::Fnc1FirstPositionMarker
-            }
-            qr_mode::Eci => {
-                // Extended Channel Interpretation
-                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
-                    return -1;
-                };
-
-                let val = if (bits & 0x80) == 0 {
-                    // One byte
-                    bits as c_uint
-                } else if (bits & 0x40) == 0 {
-                    // Two bytes
-                    let mut val = ((bits & 0x3F) as c_uint) << 8;
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
-                        return -1;
-                    };
-                    val |= bits as c_uint;
-                    val
-                } else if (bits & 0x20) == 0 {
-                    // Three bytes
-                    let mut val = ((bits & 0x1F) as c_uint) << 16;
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
-                        return -1;
-                    };
-                    val |= bits as c_uint;
-                    if val >= 1000000 {
-                        return -1;
-                    }
-                    val
-                } else {
-                    // Invalid lead byte
-                    return -1;
-                };
-
-                qr_code_data_payload::ExtendedChannelInterpretation(val)
-            }
-            qr_mode::Kanji => {
-                let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]) else {
-                    return -1;
-                };
-                if len < 0 {
-                    return -1;
-                }
-
-                if qr_pack_buf_avail(&qpb) < 13 * len {
-                    return -1;
-                }
-
-                let mut data = vec![0; (2 * len) as usize];
-
-                // Decode 2-byte SJIS characters encoded in 13 bits
-                for i in 0..(len as usize) {
-                    let Some(bits) = qr_pack_buf_read(&mut qpb, 13) else {
-                        return -1;
-                    };
-                    let mut bits = bits as c_uint;
-                    bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
-                    if bits >= 0xA000 {
-                        bits += 0x4000;
-                    }
-                    self_parity ^= bits;
-                    data[i * 2] = (bits >> 8) as c_uchar;
-                    data[i * 2 + 1] = (bits & 0xFF) as c_uchar;
-                }
-
-                qr_code_data_payload::Kanji(data)
-            }
-            qr_mode::Fnc1_2nd => {
-                // FNC1 second position marker
-                let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
-                    return -1;
-                };
-                if !((0..100).contains(&bits)
-                    || (165..191).contains(&bits)
-                    || (197..223).contains(&bits))
-                {
-                    return -1;
-                }
-                qr_code_data_payload::ApplicationIndicator(bits)
-            }
-        };
-
-        _qrdata.entries.push(qr_code_data_entry { payload });
-    }
-
-    // Store the parity of the data from this code
-    _qrdata.self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
-
-    0
-}
-
-/// Decode a QR code from an image
-///
-/// This is the main decoding function that:
-/// 1. Initializes the sampling grid
-/// 2. Samples data bits from the image
-/// 3. Groups bits into Reed-Solomon codewords
-/// 4. Performs error correction on each block
-/// 5. Parses the corrected data
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers and performs memory allocation.
-#[allow(clippy::too_many_arguments)]
-unsafe fn qr_code_decode(
-    _qrdata: &mut qr_code_data,
-    _ul_pos: &qr_point,
-    _ur_pos: &qr_point,
-    _dl_pos: &qr_point,
-    _version: c_int,
-    _fmt_info: c_int,
-    _img: &[u8],
-    _width: c_int,
-    _height: c_int,
-) -> c_int {
-    let mut grid: qr_sampling_grid = qr_sampling_grid {
-        cells: Vec::new(),
-        fpmask: Vec::new(),
-        cell_limits: [0; 6],
-    };
-
-    // Read the bits out of the image
-    qr_sampling_grid_init(
-        &mut grid,
-        _version,
-        _ul_pos,
-        _ur_pos,
-        _dl_pos,
-        &mut _qrdata.bbox,
-        _img,
-        _width,
-        _height,
-    );
-
-    let dim = 17 + (_version << 2) as usize;
-    let data_bits = qr_sampling_grid_sample(&grid, dim, _fmt_info, _img, _width, _height);
-
-    // Group those bits into Reed-Solomon codewords
-    let ecc_level = (_fmt_info >> 3) ^ 1;
-    let nblocks = QR_RS_NBLOCKS[(_version - 1) as usize][ecc_level as usize] as usize;
-    let npar = QR_RS_NPAR_VALS
-        [(QR_RS_NPAR_OFFS[(_version - 1) as usize] as usize) + (ecc_level as usize)]
-        as usize;
-    let ncodewords = qr_code_ncodewords(_version as c_uint);
-    let block_sz = ncodewords / nblocks;
-    let nshort_blocks = nblocks - (ncodewords % nblocks);
-
-    let mut block_data = vec![0u8; ncodewords];
-    let mut block_positions = vec![0usize; nblocks];
-
-    // Initialize block starting positions
-    block_positions[0] = 0;
-    for i in 1..nblocks {
-        block_positions[i] = block_positions[i - 1] + block_sz + (i > nshort_blocks) as usize;
-    }
-
-    qr_samples_unpack(
-        &mut block_data,
-        block_positions,
-        block_sz - npar,
-        nshort_blocks,
-        &data_bits,
-        &grid.fpmask,
-        dim,
-    );
-
-    // Perform the error correction using reed-solomon crate
-    let mut ndata = 0;
-    let mut ncodewords_processed = 0;
-    let mut ret = 0;
-
-    for i in 0..nblocks {
-        let block_szi = block_sz + (i >= nshort_blocks) as usize;
-
-        // Use reed-solomon crate for error correction
-        // QR codes always use m0=0, so we can use the crate directly
-        let block_slice = &mut block_data[ncodewords_processed..][..block_szi];
-
-        // Save original for error counting
-        let original = block_slice.to_vec();
-
-        let decoder = RSDecoder::new(npar);
-        ret = match decoder.correct(&original, None) {
-            Ok(corrected) => {
-                // Copy corrected data back
-                let corrected_data = corrected.to_vec();
-                block_slice.copy_from_slice(&corrected_data);
-                // Count errors by comparing original with corrected
-                let mut error_count = 0;
-                for j in 0..block_szi {
-                    if original[j] != corrected_data[j] {
-                        error_count += 1;
-                    }
-                }
-                if error_count > 0 {
-                    error_count
-                } else {
-                    0
-                }
-            }
-            Err(_) => -1, // Correction failed
-        };
-
-        // For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
-        // to use all the parity bytes for correction.
-        // They are instead used to improve detection.
-        if ret < 0
-            || (_version == 1 && ret > ((ecc_level + 1) << 1))
-            || (_version == 2 && ecc_level == 0 && ret > 4)
-        {
-            ret = -1;
-            break;
-        }
-
-        let ndatai = block_szi - npar;
-        block_data.copy_within(ncodewords_processed..ncodewords_processed + ndatai, ndata);
-        ncodewords_processed += block_szi;
-        ndata += ndatai;
-    }
-
-    // Parse the corrected bitstream
-    if ret >= 0 {
-        ret = qr_code_data_parse(_qrdata, _version, &block_data[..ndata]);
-        if ret < 0 {
-            qr_code_data_clear(_qrdata);
-        }
-        _qrdata.version = _version as c_uchar;
-        _qrdata.ecc_level = ecc_level as c_uchar;
-    }
-
-    ret
-}
 
 enum Bch18_6CorrectError {
     Unrecoverable,
@@ -4043,6 +3540,525 @@ fn qr_alignment_pattern_search(
 }
 
 // QR Code data structures and functions
+//
+pub(crate) struct qr_reader {
+    /// The random number generator used by RANSAC.
+    pub(crate) rng: rand_chacha::ChaCha8Rng,
+    ///  current finder state, horizontal and vertical lines
+    pub(crate) finder_lines: [qr_finder_lines; 2],
+}
+
+impl qr_reader {
+    /// Allocates a client reader handle.
+    pub(crate) fn new() -> qr_reader {
+        qr_reader {
+            rng: ChaCha8Rng::from_seed([0u8; 32]),
+            finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
+        }
+    }
+
+    /// reset finder state between scans
+    pub(crate) unsafe fn reset(&mut self) {
+        self.finder_lines[0].lines.clear();
+        self.finder_lines[1].lines.clear();
+    }
+
+    /// Try to decode a QR code with the given configuration of three finder patterns.
+    ///
+    /// This function tries different orderings of the three finder pattern centers
+    /// to find a valid QR code configuration, estimates module size and version,
+    /// fits a homography transformation, and attempts to decode the QR code.
+    ///
+    /// Returns the version number if successful, -1 otherwise.
+    pub(crate) fn try_configuration(
+        &mut self,
+        qrdata: &mut qr_code_data,
+        img: &[u8],
+        _width: c_int,
+        _height: c_int,
+        centers: &mut [qr_finder_center],
+        centers_indexes: [usize; 3],
+    ) -> c_int {
+        let mut ci: [usize; 7] = [0; 7];
+        let mut maxd: c_uint;
+
+        let mut i0: usize;
+
+        // Sort the points in counter-clockwise order
+        let ccw = qr_point_ccw(
+            &centers[centers_indexes[0]].pos,
+            &centers[centers_indexes[1]].pos,
+            &centers[centers_indexes[2]].pos,
+        );
+
+        // Colinear points can't be the corners of a quadrilateral
+        if ccw == 0 {
+            return -1;
+        }
+
+        // Include a few extra copies of the cyclical list to avoid mods
+        ci[6] = 0;
+        ci[3] = 0;
+        ci[0] = 0;
+        ci[4] = if ccw < 0 { 2 } else { 1 };
+        ci[1] = ci[4];
+        ci[5] = if ccw < 0 { 1 } else { 2 };
+        ci[2] = ci[5];
+
+        // Assume the points farthest from each other are the opposite corners,
+        // and find the top-left point
+        maxd = qr_point_distance2(
+            &centers[centers_indexes[1]].pos,
+            &centers[centers_indexes[2]].pos,
+        );
+        i0 = 0;
+        for i in 1..3 {
+            let d = qr_point_distance2(
+                &centers[centers_indexes[ci[i + 1]]].pos,
+                &centers[centers_indexes[ci[i + 2]]].pos,
+            );
+            if d > maxd {
+                i0 = i;
+                maxd = d;
+            }
+        }
+
+        // However, try all three possible orderings, just to be sure (a severely
+        // skewed projection could move opposite corners closer than adjacent)
+        for i in i0..i0 + 3 {
+            let mut aff = qr_aff::default();
+            let mut hom = qr_hom::default();
+            let mut ul = qr_finder::default();
+            let mut ur = qr_finder::default();
+            let mut dl = qr_finder::default();
+            let mut bbox: [qr_point; 4] = Default::default();
+
+            let ur_version: c_int;
+            let mut fmt_info: c_int;
+
+            // FIXME: stop cloning these values
+            ul.set_center(centers[centers_indexes[ci[i]]].clone());
+            ur.set_center(centers[centers_indexes[ci[i + 1]]].clone());
+            dl.set_center(centers[centers_indexes[ci[i + 2]]].clone());
+
+            // Estimate the module size and version number from the two opposite corners.
+            // The module size is not constant in the image, so we compute an affine
+            // projection from the three points we have to a square domain, and
+            // estimate it there.
+            // Although it should be the same along both axes, we keep separate
+            // estimates to account for any remaining projective distortion.
+            let res: c_int = QR_INT_BITS
+                - 2
+                - QR_FINDER_SUBPREC
+                - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
+            qr_aff_init(
+                &mut aff,
+                &ul.center().pos,
+                &ur.center().pos,
+                &dl.center().pos,
+                res,
+            );
+            ur.o = qr_aff_unproject(&aff, ur.center().pos[0], ur.center().pos[1]);
+            ur.edge_pts_aff_classify(&aff);
+            if ur.estimate_module_size_and_version(1 << res, 1 << res) < 0 {
+                continue;
+            }
+            dl.o = qr_aff_unproject(&aff, dl.center().pos[0], dl.center().pos[1]);
+            dl.edge_pts_aff_classify(&aff);
+            if dl.estimate_module_size_and_version(1 << res, 1 << res) < 0 {
+                continue;
+            }
+
+            // If the estimated versions are significantly different, reject the
+            // configuration
+            if (ur.eversion[1] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
+                continue;
+            }
+
+            ul.o = qr_aff_unproject(&aff, ul.center().pos[0], ul.center().pos[1]);
+            ul.edge_pts_aff_classify(&aff);
+            if ul.estimate_module_size_and_version(1 << res, 1 << res) < 0
+                || (ul.eversion[1] - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK
+                || (ul.eversion[0] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK
+            {
+                continue;
+            }
+
+            // If we made it this far, upgrade the affine homography to a full
+            // homography
+            if qr_hom_fit(
+                &mut hom,
+                &mut ul,
+                &mut ur,
+                &mut dl,
+                &mut bbox,
+                &aff,
+                &mut self.rng,
+                img,
+                _width,
+                _height,
+            ) < 0
+            {
+                continue;
+            }
+
+            qrdata.bbox = bbox;
+
+            ul.o =
+                qr_hom_unproject(&hom, ul.center().pos[0], ul.center().pos[1]).unwrap_or_default();
+            ur.o =
+                qr_hom_unproject(&hom, ur.center().pos[0], ur.center().pos[1]).unwrap_or_default();
+            dl.o =
+                qr_hom_unproject(&hom, dl.center().pos[0], dl.center().pos[1]).unwrap_or_default();
+            ur.edge_pts_hom_classify(&hom);
+            let width = ur.o[0] - ul.o[0];
+            let height = ur.o[0] - ul.o[0];
+            if ur.estimate_module_size_and_version(width, height) < 0 {
+                continue;
+            }
+            dl.edge_pts_hom_classify(&hom);
+            let width = dl.o[1] - ul.o[1];
+            let height = dl.o[1] - ul.o[1];
+            if dl.estimate_module_size_and_version(width, height) < 0 {
+                continue;
+            }
+
+            // If we have a small version (less than 7), there's no encoded version
+            // information. If the estimated version on the two corners matches and is
+            // sufficiently small, we assume this is the case.
+            if ur.eversion[1] == dl.eversion[0] && ur.eversion[1] < 7 {
+                ur_version = ur.eversion[1];
+            } else {
+                // If the estimated versions are significantly different, reject the
+                // configuration
+                if (ur.eversion[1] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
+                    continue;
+                }
+
+                // Otherwise we try to read the actual version data from the image.
+                // If the real version is not sufficiently close to our estimated version,
+                // then we assume there was an unrecoverable decoding error (so many bit
+                // errors we were within 3 errors of another valid code), and throw that
+                // value away.
+                // If no decoded version could be sufficiently close, we don't even try.
+                let ur_version_tmp = if ur.eversion[1] >= 7 - QR_LARGE_VERSION_SLACK {
+                    let ver = qr_finder_version_decode(&ur, &hom, img, _width, _height, 0);
+                    if (ver - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK {
+                        -1
+                    } else {
+                        ver
+                    }
+                } else {
+                    -1
+                };
+
+                let dl_version_tmp = if dl.eversion[0] >= 7 - QR_LARGE_VERSION_SLACK {
+                    let ver = qr_finder_version_decode(&dl, &hom, img, _width, _height, 1);
+                    if (ver - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
+                        -1
+                    } else {
+                        ver
+                    }
+                } else {
+                    -1
+                };
+
+                // If we got at least one valid version, or we got two and they match,
+                // then we found a valid configuration
+                if ur_version_tmp >= 0 {
+                    if dl_version_tmp >= 0 && dl_version_tmp != ur_version_tmp {
+                        continue;
+                    }
+                    ur_version = ur_version_tmp;
+                } else if dl_version_tmp < 0 {
+                    continue;
+                } else {
+                    ur_version = dl_version_tmp;
+                }
+            }
+
+            ul.edge_pts_hom_classify(&hom);
+            let width = ur.o[0] - dl.o[0];
+            let height = dl.o[1] - ul.o[1];
+            if ul.estimate_module_size_and_version(width, height) < 0
+                || (ul.eversion[1] - ur.eversion[1]).abs() > QR_SMALL_VERSION_SLACK
+                || (ul.eversion[0] - dl.eversion[0]).abs() > QR_SMALL_VERSION_SLACK
+            {
+                continue;
+            }
+
+            fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, img, _width, _height);
+            if fmt_info < 0
+                || qrdata.decode(
+                    &ul.center().pos,
+                    &ur.center().pos,
+                    &dl.center().pos,
+                    ur_version,
+                    fmt_info,
+                    img,
+                    _width,
+                    _height,
+                ) < 0
+            {
+                // The code may be flipped.
+                // Try again, swapping the UR and DL centers.
+                // We should get a valid version either way, so it's relatively cheap to
+                // check this, as we've already filtered out a lot of invalid
+                // configurations.
+                // Swap using temporary variables to avoid borrow checker issues
+                let t = hom.inv[0][0];
+                hom.inv[0][0] = hom.inv[1][0];
+                hom.inv[1][0] = t;
+                let t = hom.inv[0][1];
+                hom.inv[0][1] = hom.inv[1][1];
+                hom.inv[1][1] = t;
+                hom.fwd[0].swap(0, 1);
+                hom.fwd[1].swap(0, 1);
+                hom.fwd[2].swap(0, 1);
+                ul.o.swap(0, 1);
+                ul.size.swap(0, 1);
+                ur.o.swap(0, 1);
+                ur.size.swap(0, 1);
+                dl.o.swap(0, 1);
+                dl.size.swap(0, 1);
+
+                fmt_info = qr_finder_fmt_info_decode(&ul, &dl, &ur, &hom, img, _width, _height);
+                if fmt_info < 0 {
+                    continue;
+                }
+
+                let t = bbox[1][0];
+                bbox[1][0] = bbox[2][0];
+                bbox[2][0] = t;
+                let t = bbox[1][1];
+                bbox[1][1] = bbox[2][1];
+                bbox[2][1] = t;
+                qrdata.bbox = bbox;
+
+                if qrdata.decode(
+                    &ul.center().pos,
+                    &dl.center().pos,
+                    &ur.center().pos,
+                    ur_version,
+                    fmt_info,
+                    img,
+                    _width,
+                    _height,
+                ) < 0
+                {
+                    continue;
+                }
+            }
+
+            return ur_version;
+        }
+
+        -1
+    }
+
+    /// Add a found finder line to the reader's line list
+    pub(crate) fn found_line(&mut self, dir: c_int, line: &qr_finder_line) -> c_int {
+        self.finder_lines[dir as usize].lines.push(*line);
+        0
+    }
+
+    /// Match finder centers and decode QR codes
+    unsafe fn match_centers(
+        &mut self,
+        _qrlist: &mut qr_code_data_list,
+        _centers: &mut [qr_finder_center],
+        img: &[u8],
+        _width: c_int,
+        _height: c_int,
+    ) {
+        // The number of centers should be small, so an O(n^3) exhaustive search of
+        // which ones go together should be reasonable.
+        let mut mark = vec![0u8; _centers.len()];
+        let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
+        let mut nfailures = 0;
+
+        for i in 0.._centers.len() {
+            // TODO: We might be able to accelerate this step significantly by
+            // considering the remaining finder centers in a more intelligent order,
+            // based on the first finder center we just chose.
+            for j in i + 1.._centers.len() {
+                if mark[i] != 0 {
+                    break;
+                }
+
+                for k in j + 1.._centers.len() {
+                    if mark[j] != 0 {
+                        break;
+                    }
+
+                    if mark[k] == 0 {
+                        let mut qrdata = qr_code_data::default();
+                        let version = self.try_configuration(
+                            &mut qrdata,
+                            img,
+                            _width,
+                            _height,
+                            _centers,
+                            [i, j, k],
+                        );
+
+                        if version >= 0 {
+                            let mut ninside: usize;
+
+                            // Convert the bounding box we're returning to the user to normal
+                            // image coordinates
+                            for point in qrdata.bbox.as_mut_slice() {
+                                point[0] >>= QR_FINDER_SUBPREC;
+                                point[1] >>= QR_FINDER_SUBPREC;
+                            }
+
+                            // Mark these centers as used
+                            mark[i] = 1;
+                            mark[j] = 1;
+                            mark[k] = 1;
+
+                            // Find any other finder centers located inside this code
+                            ninside = 0;
+                            for l in 0.._centers.len() {
+                                if mark[l] == 0
+                                    && qr_point_ccw(
+                                        &qrdata.bbox[0],
+                                        &qrdata.bbox[1],
+                                        &_centers[l].pos,
+                                    ) >= 0
+                                    && qr_point_ccw(
+                                        &qrdata.bbox[1],
+                                        &qrdata.bbox[3],
+                                        &_centers[l].pos,
+                                    ) >= 0
+                                    && qr_point_ccw(
+                                        &qrdata.bbox[3],
+                                        &qrdata.bbox[2],
+                                        &_centers[l].pos,
+                                    ) >= 0
+                                    && qr_point_ccw(
+                                        &qrdata.bbox[2],
+                                        &qrdata.bbox[0],
+                                        &_centers[l].pos,
+                                    ) >= 0
+                                {
+                                    mark[l] = 2;
+                                    ninside += 1;
+                                }
+                            }
+
+                            if ninside >= 3 {
+                                // We might have a "Double QR": a code inside a code.
+                                // Copy the relevant centers to a new array and do a search confined
+                                // to that subset.
+                                let mut inside = vec![];
+                                for l in 0.._centers.len() {
+                                    if mark[l] == 2 {
+                                        inside.push(_centers[l].clone());
+                                    }
+                                }
+                                self.match_centers(_qrlist, &mut inside, img, _width, _height);
+                            }
+
+                            // Mark _all_ such centers used: codes cannot partially overlap
+                            for m in mark.iter_mut() {
+                                if *m == 2 {
+                                    *m = 1;
+                                }
+                            }
+
+                            nfailures = 0;
+
+                            // Add the data to the list
+                            _qrlist.qrdata.push(qrdata);
+                        } else {
+                            nfailures += 1;
+                            if nfailures > nfailures_max {
+                                // Give up.
+                                // We're unlikely to find a valid code in all this clutter, and we
+                                // could spend quite a lot of time trying.
+                                // mark will be automatically freed by Drop
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Decode QR codes from an image
+    pub(crate) unsafe fn decode(
+        &mut self,
+        img: &mut zbar_image_t,
+        raw_binary: bool,
+    ) -> Vec<zbar_symbol_t> {
+        if self.finder_lines[0].lines.len() < 9 || self.finder_lines[1].lines.len() < 9 {
+            return vec![];
+        }
+
+        let mut centers = self.finder_centers_locate(0, 0);
+
+        if centers.len() >= 3 {
+            let bin = binarize(&img.data, img.width as usize, img.height as usize);
+
+            let mut qrlist = qr_code_data_list::default();
+
+            self.match_centers(
+                &mut qrlist,
+                &mut centers,
+                &bin,
+                img.width as c_int,
+                img.height as c_int,
+            );
+
+            let qrdata = if !qrlist.qrdata.is_empty() {
+                qrlist.extract_text(raw_binary)
+            } else {
+                vec![]
+            };
+
+            qrlist.qrdata.clear();
+            qrdata
+        } else {
+            vec![]
+        }
+    }
+
+    /// Locate QR finder pattern centers from scanned lines
+    ///
+    /// Clusters horizontal and vertical lines that cross finder patterns,
+    /// then locates the centers where horizontal and vertical clusters intersect.
+    pub(crate) fn finder_centers_locate(
+        &mut self,
+        _width: c_int,
+        _height: c_int,
+    ) -> Vec<qr_finder_center> {
+        // Take ownership of the horizontal lines and cluster them
+        let hlines = std::mem::take(&mut self.finder_lines[0].lines);
+        let hclustered = qr_finder_cluster_lines(hlines, 0);
+
+        // We need vertical lines to be sorted by X coordinate, with ties broken by Y
+        // coordinate, for clustering purposes.
+        // We scan the image in the opposite order, so sort the lines we found here.
+        let mut vlines = std::mem::take(&mut self.finder_lines[1].lines);
+        if vlines.len() > 1 {
+            vlines.sort_by(|a, b| {
+                a.pos[0]
+                    .cmp(&b.pos[0])
+                    .then_with(|| a.pos[1].cmp(&b.pos[1]))
+            });
+        }
+        let vclustered = qr_finder_cluster_lines(vlines, 1);
+
+        // Find line crossings among the clusters
+        if hclustered.cluster_count() >= 3 && vclustered.cluster_count() >= 3 {
+            qr_finder_find_crossings(&hclustered, &vclustered)
+        } else {
+            Vec::new()
+        }
+    }
+}
 
 /// QR code data mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4140,487 +4156,810 @@ pub(crate) struct qr_code_data {
     pub(crate) bbox: [qr_point; 4],
 }
 
+impl qr_code_data {
+    /// Parse QR code data from corrected codewords
+    ///
+    /// Decodes the various data modes (numeric, alphanumeric, byte, Kanji, etc.)
+    /// and populates the qr_code_data structure.
+    ///
+    /// # Safety
+    /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
+    pub(crate) fn parse(&mut self, _version: c_int, data: &[u8]) -> c_int {
+        // The number of bits used to encode the character count for each version range and data mode
+        const LEN_BITS: [[c_int; 4]; 3] = [
+            [10, 9, 8, 8],    // Versions 1-9
+            [12, 11, 16, 10], // Versions 10-26
+            [14, 13, 16, 12], // Versions 27-40
+        ];
+
+        let mut self_parity: c_uint = 0;
+
+        // Entries are stored directly in the struct during parsing
+        self.entries = vec![];
+        self.sa_size = 0;
+
+        // The versions are divided into 3 ranges that each use a different number of bits for length fields
+        let len_bits_idx = (if _version > 9 { 1 } else { 0 }) + (if _version > 26 { 1 } else { 0 });
+
+        let mut qpb = qr_pack_buf {
+            buf: data,
+            endbyte: 0,
+            endbit: 0,
+        };
+
+        // While we have enough bits to read a mode...
+        while qr_pack_buf_avail(&qpb) >= 4 {
+            let Some(mode) = qr_pack_buf_read(&mut qpb, 4) else {
+                return -1;
+            };
+
+            // Mode 0 is a terminator
+            if mode == 0 {
+                break;
+            }
+
+            let Ok(mode) = qr_mode::try_from(mode) else {
+                // Unknown mode - we can't skip it, so fail
+                return -1;
+            };
+
+            let payload = match mode {
+                qr_mode::Num => {
+                    let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][0]) else {
+                        return -1;
+                    };
+
+                    let count = len / 3;
+                    let rem = len % 3;
+                    if qr_pack_buf_avail(&qpb) < 10 * count + 7 * ((rem >> 1) & 1) + 4 * (rem & 1) {
+                        return -1;
+                    }
+
+                    let mut data = vec![0; len as usize];
+                    let mut buf = data.as_mut_slice();
+
+                    // Read groups of 3 digits encoded in 10 bits
+                    for _ in 0..count {
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 10) else {
+                            return -1;
+                        };
+                        let bits = bits as c_uint;
+                        if bits >= 1000 {
+                            return -1;
+                        }
+                        let c = b'0' + (bits / 100) as u8;
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                        buf = &mut buf[1..];
+
+                        let bits = bits % 100;
+                        let c = b'0' + (bits / 10) as u8;
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                        buf = &mut buf[1..];
+
+                        let c = b'0' + (bits % 10) as u8;
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                        buf = &mut buf[1..];
+                    }
+
+                    // Read the last two digits encoded in 7 bits
+                    if rem > 1 {
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 7) else {
+                            return -1;
+                        };
+                        let bits = bits as c_uint;
+                        if bits >= 100 {
+                            return -1;
+                        }
+                        let c = b'0' + (bits / 10) as u8;
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                        buf = &mut buf[1..];
+
+                        let c = b'0' + (bits % 10) as u8;
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                    }
+                    // Or the last one digit encoded in 4 bits
+                    else if rem != 0 {
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 4) else {
+                            return -1;
+                        };
+                        let bits = bits as c_uint;
+                        if bits >= 10 {
+                            return -1;
+                        }
+                        let c = b'0' + bits as u8;
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                    }
+
+                    qr_code_data_payload::Numeric(data)
+                }
+                qr_mode::Alnum => {
+                    let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][1]) else {
+                        return -1;
+                    };
+
+                    let count = len >> 1;
+                    let rem = len & 1;
+                    if qr_pack_buf_avail(&qpb) < 11 * count + 6 * rem {
+                        return -1;
+                    }
+
+                    let mut data = vec![0; len as usize];
+                    let mut buf = data.as_mut_slice();
+
+                    // Read groups of two characters encoded in 11 bits
+                    for _ in 0..count {
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 11) else {
+                            return -1;
+                        };
+                        let bits = bits as c_uint;
+                        if bits >= 2025 {
+                            return -1;
+                        }
+                        let c = QR_ALNUM_TABLE[(bits / 45) as usize];
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                        buf = &mut buf[1..];
+
+                        let c = QR_ALNUM_TABLE[(bits % 45) as usize];
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                        buf = &mut buf[1..];
+                    }
+
+                    // Read the last character encoded in 6 bits
+                    if rem != 0 {
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 6) else {
+                            return -1;
+                        };
+                        let bits = bits as c_uint;
+                        if bits >= 45 {
+                            return -1;
+                        }
+                        let c = QR_ALNUM_TABLE[bits as usize];
+                        self_parity ^= c as c_uint;
+                        buf[0] = c;
+                    }
+
+                    qr_code_data_payload::Alphanumeric(data)
+                }
+                qr_mode::Struct => {
+                    // Structured-append header
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
+                        return -1;
+                    };
+
+                    let mut sa = qr_code_data_sa::default();
+
+                    // If this is the first S-A header, save it
+                    if self.sa_size == 0 {
+                        self.sa_index = ((bits >> 12) & 0xF) as c_uchar;
+                        sa.sa_index = self.sa_index;
+                        self.sa_size = (((bits >> 8) & 0xF) + 1) as c_uchar;
+                        sa.sa_size = self.sa_size;
+                        self.sa_parity = (bits & 0xFF) as c_uchar;
+                        sa.sa_parity = self.sa_parity;
+                    }
+
+                    qr_code_data_payload::StructuredAppendedHeaderData(sa)
+                }
+                qr_mode::Byte => {
+                    let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][2]) else {
+                        return -1;
+                    };
+                    if len < 0 {
+                        return -1;
+                    }
+
+                    if qr_pack_buf_avail(&qpb) < len << 3 {
+                        return -1;
+                    }
+
+                    let mut data = vec![0; len as usize];
+
+                    for b in data.iter_mut() {
+                        let Some(c) = qr_pack_buf_read(&mut qpb, 8) else {
+                            return -1;
+                        };
+                        let c = c as c_uchar;
+                        self_parity ^= c as c_uint;
+                        *b = c;
+                    }
+
+                    qr_code_data_payload::Bytes(data)
+                }
+                qr_mode::Fnc1_1st => {
+                    // FNC1 first position marker
+                    // No data to read
+                    qr_code_data_payload::Fnc1FirstPositionMarker
+                }
+                qr_mode::Eci => {
+                    // Extended Channel Interpretation
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
+                        return -1;
+                    };
+
+                    let val = if (bits & 0x80) == 0 {
+                        // One byte
+                        bits as c_uint
+                    } else if (bits & 0x40) == 0 {
+                        // Two bytes
+                        let mut val = ((bits & 0x3F) as c_uint) << 8;
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
+                            return -1;
+                        };
+                        val |= bits as c_uint;
+                        val
+                    } else if (bits & 0x20) == 0 {
+                        // Three bytes
+                        let mut val = ((bits & 0x1F) as c_uint) << 16;
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
+                            return -1;
+                        };
+                        val |= bits as c_uint;
+                        if val >= 1000000 {
+                            return -1;
+                        }
+                        val
+                    } else {
+                        // Invalid lead byte
+                        return -1;
+                    };
+
+                    qr_code_data_payload::ExtendedChannelInterpretation(val)
+                }
+                qr_mode::Kanji => {
+                    let Some(len) = qr_pack_buf_read(&mut qpb, LEN_BITS[len_bits_idx][3]) else {
+                        return -1;
+                    };
+                    if len < 0 {
+                        return -1;
+                    }
+
+                    if qr_pack_buf_avail(&qpb) < 13 * len {
+                        return -1;
+                    }
+
+                    let mut data = vec![0; (2 * len) as usize];
+
+                    // Decode 2-byte SJIS characters encoded in 13 bits
+                    for i in 0..(len as usize) {
+                        let Some(bits) = qr_pack_buf_read(&mut qpb, 13) else {
+                            return -1;
+                        };
+                        let mut bits = bits as c_uint;
+                        bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
+                        if bits >= 0xA000 {
+                            bits += 0x4000;
+                        }
+                        self_parity ^= bits;
+                        data[i * 2] = (bits >> 8) as c_uchar;
+                        data[i * 2 + 1] = (bits & 0xFF) as c_uchar;
+                    }
+
+                    qr_code_data_payload::Kanji(data)
+                }
+                qr_mode::Fnc1_2nd => {
+                    // FNC1 second position marker
+                    let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
+                        return -1;
+                    };
+                    if !((0..100).contains(&bits)
+                        || (165..191).contains(&bits)
+                        || (197..223).contains(&bits))
+                    {
+                        return -1;
+                    }
+                    qr_code_data_payload::ApplicationIndicator(bits)
+                }
+            };
+
+            self.entries.push(qr_code_data_entry { payload });
+        }
+
+        // Store the parity of the data from this code
+        self.self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
+
+        0
+    }
+
+    /// Decode a QR code from an image
+    ///
+    /// This is the main decoding function that:
+    /// 1. Initializes the sampling grid
+    /// 2. Samples data bits from the image
+    /// 3. Groups bits into Reed-Solomon codewords
+    /// 4. Performs error correction on each block
+    /// 5. Parses the corrected data
+    ///
+    /// # Safety
+    /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
+    #[allow(clippy::too_many_arguments)]
+    fn decode(
+        &mut self,
+        _ul_pos: &qr_point,
+        _ur_pos: &qr_point,
+        _dl_pos: &qr_point,
+        version: c_int,
+        _fmt_info: c_int,
+        _img: &[u8],
+        _width: c_int,
+        _height: c_int,
+    ) -> c_int {
+        let mut grid: qr_sampling_grid = qr_sampling_grid {
+            cells: Vec::new(),
+            fpmask: Vec::new(),
+            cell_limits: [0; 6],
+        };
+
+        // Read the bits out of the image
+        qr_sampling_grid_init(
+            &mut grid,
+            version,
+            _ul_pos,
+            _ur_pos,
+            _dl_pos,
+            &mut self.bbox,
+            _img,
+            _width,
+            _height,
+        );
+
+        let dim = 17 + (version << 2) as usize;
+        let data_bits = qr_sampling_grid_sample(&grid, dim, _fmt_info, _img, _width, _height);
+
+        // Group those bits into Reed-Solomon codewords
+        let ecc_level = (_fmt_info >> 3) ^ 1;
+        let nblocks = QR_RS_NBLOCKS[(version - 1) as usize][ecc_level as usize] as usize;
+        let npar = QR_RS_NPAR_VALS
+            [(QR_RS_NPAR_OFFS[(version - 1) as usize] as usize) + (ecc_level as usize)]
+            as usize;
+        let ncodewords = qr_code_ncodewords(version as c_uint);
+        let block_sz = ncodewords / nblocks;
+        let nshort_blocks = nblocks - (ncodewords % nblocks);
+
+        let mut block_data = vec![0u8; ncodewords];
+        let mut block_positions = vec![0usize; nblocks];
+
+        // Initialize block starting positions
+        block_positions[0] = 0;
+        for i in 1..nblocks {
+            block_positions[i] = block_positions[i - 1] + block_sz + (i > nshort_blocks) as usize;
+        }
+
+        qr_samples_unpack(
+            &mut block_data,
+            block_positions,
+            block_sz - npar,
+            nshort_blocks,
+            &data_bits,
+            &grid.fpmask,
+            dim,
+        );
+
+        // Perform the error correction using reed-solomon crate
+        let mut ndata = 0;
+        let mut ncodewords_processed = 0;
+        let mut ret = 0;
+
+        for i in 0..nblocks {
+            let block_szi = block_sz + (i >= nshort_blocks) as usize;
+
+            // Use reed-solomon crate for error correction
+            // QR codes always use m0=0, so we can use the crate directly
+            let block_slice = &mut block_data[ncodewords_processed..][..block_szi];
+
+            // Save original for error counting
+            let original = block_slice.to_vec();
+
+            let decoder = RSDecoder::new(npar);
+            ret = match decoder.correct(&original, None) {
+                Ok(corrected) => {
+                    // Copy corrected data back
+                    let corrected_data = corrected.to_vec();
+                    block_slice.copy_from_slice(&corrected_data);
+                    // Count errors by comparing original with corrected
+                    let mut error_count = 0;
+                    for j in 0..block_szi {
+                        if original[j] != corrected_data[j] {
+                            error_count += 1;
+                        }
+                    }
+                    if error_count > 0 {
+                        error_count
+                    } else {
+                        0
+                    }
+                }
+                Err(_) => -1, // Correction failed
+            };
+
+            // For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
+            // to use all the parity bytes for correction.
+            // They are instead used to improve detection.
+            if ret < 0
+                || (version == 1 && ret > ((ecc_level + 1) << 1))
+                || (version == 2 && ecc_level == 0 && ret > 4)
+            {
+                ret = -1;
+                break;
+            }
+
+            let ndatai = block_szi - npar;
+            block_data.copy_within(ncodewords_processed..ncodewords_processed + ndatai, ndata);
+            ncodewords_processed += block_szi;
+            ndata += ndatai;
+        }
+
+        // Parse the corrected bitstream
+        if ret >= 0 {
+            ret = self.parse(version, &block_data[..ndata]);
+            if ret < 0 {
+                self.clear();
+            }
+            self.version = version as c_uchar;
+            self.ecc_level = ecc_level as c_uchar;
+        }
+
+        ret
+    }
+
+    /// Clear a QR code data structure.
+    pub(crate) fn clear(&mut self) {
+        for entry in self.entries.iter_mut() {
+            match &mut entry.payload {
+                qr_code_data_payload::Numeric(items)
+                | qr_code_data_payload::Alphanumeric(items)
+                | qr_code_data_payload::Bytes(items)
+                | qr_code_data_payload::Kanji(items) => items.clear(),
+                qr_code_data_payload::StructuredAppendedHeaderData(_)
+                | qr_code_data_payload::Fnc1FirstPositionMarker
+                | qr_code_data_payload::ExtendedChannelInterpretation(_)
+                | qr_code_data_payload::ApplicationIndicator(_) => {}
+            }
+        }
+    }
+}
+
 /// List of QR code data
 #[derive(Default)]
 pub(crate) struct qr_code_data_list {
     pub(crate) qrdata: Vec<qr_code_data>,
 }
 
-/// Clear a QR code data structure.
-pub(crate) unsafe fn qr_code_data_clear(qrdata: &mut qr_code_data) {
-    for entry in qrdata.entries.iter_mut() {
-        match &mut entry.payload {
-            qr_code_data_payload::Numeric(items)
-            | qr_code_data_payload::Alphanumeric(items)
-            | qr_code_data_payload::Bytes(items)
-            | qr_code_data_payload::Kanji(items) => items.clear(),
-            qr_code_data_payload::StructuredAppendedHeaderData(_)
-            | qr_code_data_payload::Fnc1FirstPositionMarker
-            | qr_code_data_payload::ExtendedChannelInterpretation(_)
-            | qr_code_data_payload::ApplicationIndicator(_) => {}
-        }
-    }
-}
+impl qr_code_data_list {
+    /// # Safety
+    ///
+    /// This function is unsafe because it dereferences raw pointers passed from C.
+    /// The caller must ensure that the pointers are valid and that the data they
+    /// point to has the expected layout.
+    pub(crate) unsafe fn extract_text(&self, raw_binary: bool) -> Vec<zbar_symbol_t> {
+        let mut symbols = vec![];
 
-/// Try to decode a QR code with the given configuration of three finder patterns.
-///
-/// This function tries different orderings of the three finder pattern centers
-/// to find a valid QR code configuration, estimates module size and version,
-/// fits a homography transformation, and attempts to decode the QR code.
-///
-/// Returns the version number if successful, -1 otherwise.
-pub(crate) unsafe fn qr_reader_try_configuration(
-    reader: &mut qr_reader,
-    qrdata: &mut qr_code_data,
-    img: &[u8],
-    _width: c_int,
-    _height: c_int,
-    centers: &mut [qr_finder_center],
-    centers_indexes: [usize; 3],
-) -> c_int {
-    let mut ci: [usize; 7] = [0; 7];
-    let mut maxd: c_uint;
+        let qrdata = &self.qrdata;
+        let mut mark = vec![0u8; qrdata.len()];
 
-    let mut i0: usize;
+        for i in 0..qrdata.len() {
+            if mark[i] == 0 {
+                let mut sa: [c_int; 16] = [-1; 16];
+                let sa_size;
 
-    // Sort the points in counter-clockwise order
-    let ccw = qr_point_ccw(
-        &centers[centers_indexes[0]].pos,
-        &centers[centers_indexes[1]].pos,
-        &centers[centers_indexes[2]].pos,
-    );
-
-    // Colinear points can't be the corners of a quadrilateral
-    if ccw == 0 {
-        return -1;
-    }
-
-    // Include a few extra copies of the cyclical list to avoid mods
-    ci[6] = 0;
-    ci[3] = 0;
-    ci[0] = 0;
-    ci[4] = if ccw < 0 { 2 } else { 1 };
-    ci[1] = ci[4];
-    ci[5] = if ccw < 0 { 1 } else { 2 };
-    ci[2] = ci[5];
-
-    // Assume the points farthest from each other are the opposite corners,
-    // and find the top-left point
-    maxd = qr_point_distance2(
-        &centers[centers_indexes[1]].pos,
-        &centers[centers_indexes[2]].pos,
-    );
-    i0 = 0;
-    for i in 1..3 {
-        let d = qr_point_distance2(
-            &centers[centers_indexes[ci[i + 1]]].pos,
-            &centers[centers_indexes[ci[i + 2]]].pos,
-        );
-        if d > maxd {
-            i0 = i;
-            maxd = d;
-        }
-    }
-
-    // However, try all three possible orderings, just to be sure (a severely
-    // skewed projection could move opposite corners closer than adjacent)
-    for i in i0..i0 + 3 {
-        let mut aff = qr_aff::default();
-        let mut hom = qr_hom::default();
-        let mut ul = qr_finder::default();
-        let mut ur = qr_finder::default();
-        let mut dl = qr_finder::default();
-        let mut bbox: [qr_point; 4] = Default::default();
-
-        let ur_version: c_int;
-        let mut fmt_info: c_int;
-
-        // FIXME: stop cloning these values
-        ul.set_center(centers[centers_indexes[ci[i]]].clone());
-        ur.set_center(centers[centers_indexes[ci[i + 1]]].clone());
-        dl.set_center(centers[centers_indexes[ci[i + 2]]].clone());
-
-        // Estimate the module size and version number from the two opposite corners.
-        // The module size is not constant in the image, so we compute an affine
-        // projection from the three points we have to a square domain, and
-        // estimate it there.
-        // Although it should be the same along both axes, we keep separate
-        // estimates to account for any remaining projective distortion.
-        let res: c_int = QR_INT_BITS
-            - 2
-            - QR_FINDER_SUBPREC
-            - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
-        qr_aff_init(
-            &mut aff,
-            &ul.center().pos,
-            &ur.center().pos,
-            &dl.center().pos,
-            res,
-        );
-        ur.o = qr_aff_unproject(&aff, ur.center().pos[0], ur.center().pos[1]);
-        ur.edge_pts_aff_classify(&aff);
-        if ur.estimate_module_size_and_version(1 << res, 1 << res) < 0 {
-            continue;
-        }
-        dl.o = qr_aff_unproject(&aff, dl.center().pos[0], dl.center().pos[1]);
-        dl.edge_pts_aff_classify(&aff);
-        if dl.estimate_module_size_and_version(1 << res, 1 << res) < 0 {
-            continue;
-        }
-
-        // If the estimated versions are significantly different, reject the
-        // configuration
-        if (ur.eversion[1] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
-            continue;
-        }
-
-        ul.o = qr_aff_unproject(&aff, ul.center().pos[0], ul.center().pos[1]);
-        ul.edge_pts_aff_classify(&aff);
-        if ul.estimate_module_size_and_version(1 << res, 1 << res) < 0
-            || (ul.eversion[1] - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK
-            || (ul.eversion[0] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK
-        {
-            continue;
-        }
-
-        // If we made it this far, upgrade the affine homography to a full
-        // homography
-        if qr_hom_fit(
-            &mut hom,
-            &mut ul,
-            &mut ur,
-            &mut dl,
-            &mut bbox,
-            &aff,
-            &mut reader.rng,
-            img,
-            _width,
-            _height,
-        ) < 0
-        {
-            continue;
-        }
-
-        qrdata.bbox = bbox;
-
-        ul.o = qr_hom_unproject(&hom, ul.center().pos[0], ul.center().pos[1]).unwrap_or_default();
-        ur.o = qr_hom_unproject(&hom, ur.center().pos[0], ur.center().pos[1]).unwrap_or_default();
-        dl.o = qr_hom_unproject(&hom, dl.center().pos[0], dl.center().pos[1]).unwrap_or_default();
-        ur.edge_pts_hom_classify(&hom);
-        let width = ur.o[0] - ul.o[0];
-        let height = ur.o[0] - ul.o[0];
-        if ur.estimate_module_size_and_version(width, height) < 0 {
-            continue;
-        }
-        dl.edge_pts_hom_classify(&hom);
-        let width = dl.o[1] - ul.o[1];
-        let height = dl.o[1] - ul.o[1];
-        if dl.estimate_module_size_and_version(width, height) < 0 {
-            continue;
-        }
-
-        // If we have a small version (less than 7), there's no encoded version
-        // information. If the estimated version on the two corners matches and is
-        // sufficiently small, we assume this is the case.
-        if ur.eversion[1] == dl.eversion[0] && ur.eversion[1] < 7 {
-            ur_version = ur.eversion[1];
-        } else {
-            // If the estimated versions are significantly different, reject the
-            // configuration
-            if (ur.eversion[1] - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
-                continue;
-            }
-
-            // Otherwise we try to read the actual version data from the image.
-            // If the real version is not sufficiently close to our estimated version,
-            // then we assume there was an unrecoverable decoding error (so many bit
-            // errors we were within 3 errors of another valid code), and throw that
-            // value away.
-            // If no decoded version could be sufficiently close, we don't even try.
-            let ur_version_tmp = if ur.eversion[1] >= 7 - QR_LARGE_VERSION_SLACK {
-                let ver = qr_finder_version_decode(&ur, &hom, img, _width, _height, 0);
-                if (ver - ur.eversion[1]).abs() > QR_LARGE_VERSION_SLACK {
-                    -1
-                } else {
-                    ver
-                }
-            } else {
-                -1
-            };
-
-            let dl_version_tmp = if dl.eversion[0] >= 7 - QR_LARGE_VERSION_SLACK {
-                let ver = qr_finder_version_decode(&dl, &hom, img, _width, _height, 1);
-                if (ver - dl.eversion[0]).abs() > QR_LARGE_VERSION_SLACK {
-                    -1
-                } else {
-                    ver
-                }
-            } else {
-                -1
-            };
-
-            // If we got at least one valid version, or we got two and they match,
-            // then we found a valid configuration
-            if ur_version_tmp >= 0 {
-                if dl_version_tmp >= 0 && dl_version_tmp != ur_version_tmp {
-                    continue;
-                }
-                ur_version = ur_version_tmp;
-            } else if dl_version_tmp < 0 {
-                continue;
-            } else {
-                ur_version = dl_version_tmp;
-            }
-        }
-
-        ul.edge_pts_hom_classify(&hom);
-        let width = ur.o[0] - dl.o[0];
-        let height = dl.o[1] - ul.o[1];
-        if ul.estimate_module_size_and_version(width, height) < 0
-            || (ul.eversion[1] - ur.eversion[1]).abs() > QR_SMALL_VERSION_SLACK
-            || (ul.eversion[0] - dl.eversion[0]).abs() > QR_SMALL_VERSION_SLACK
-        {
-            continue;
-        }
-
-        fmt_info = qr_finder_fmt_info_decode(&ul, &ur, &dl, &hom, img, _width, _height);
-        if fmt_info < 0
-            || qr_code_decode(
-                qrdata,
-                &ul.center().pos,
-                &ur.center().pos,
-                &dl.center().pos,
-                ur_version,
-                fmt_info,
-                img,
-                _width,
-                _height,
-            ) < 0
-        {
-            // The code may be flipped.
-            // Try again, swapping the UR and DL centers.
-            // We should get a valid version either way, so it's relatively cheap to
-            // check this, as we've already filtered out a lot of invalid
-            // configurations.
-            // Swap using temporary variables to avoid borrow checker issues
-            let t = hom.inv[0][0];
-            hom.inv[0][0] = hom.inv[1][0];
-            hom.inv[1][0] = t;
-            let t = hom.inv[0][1];
-            hom.inv[0][1] = hom.inv[1][1];
-            hom.inv[1][1] = t;
-            hom.fwd[0].swap(0, 1);
-            hom.fwd[1].swap(0, 1);
-            hom.fwd[2].swap(0, 1);
-            ul.o.swap(0, 1);
-            ul.size.swap(0, 1);
-            ur.o.swap(0, 1);
-            ur.size.swap(0, 1);
-            dl.o.swap(0, 1);
-            dl.size.swap(0, 1);
-
-            fmt_info = qr_finder_fmt_info_decode(&ul, &dl, &ur, &hom, img, _width, _height);
-            if fmt_info < 0 {
-                continue;
-            }
-
-            let t = bbox[1][0];
-            bbox[1][0] = bbox[2][0];
-            bbox[2][0] = t;
-            let t = bbox[1][1];
-            bbox[1][1] = bbox[2][1];
-            bbox[2][1] = t;
-            qrdata.bbox = bbox;
-
-            if qr_code_decode(
-                qrdata,
-                &ul.center().pos,
-                &dl.center().pos,
-                &ur.center().pos,
-                ur_version,
-                fmt_info,
-                img,
-                _width,
-                _height,
-            ) < 0
-            {
-                continue;
-            }
-        }
-
-        return ur_version;
-    }
-
-    -1
-}
-
-/// Add a found finder line to the reader's line list
-pub(crate) fn _zbar_qr_found_line(
-    reader: &mut qr_reader,
-    dir: c_int,
-    line: &qr_finder_line,
-) -> c_int {
-    let lines = &mut reader.finder_lines[dir as usize];
-    lines.lines.push(*line);
-    0
-}
-
-/// Match finder centers and decode QR codes
-unsafe fn qr_reader_match_centers(
-    reader: &mut qr_reader,
-    _qrlist: &mut qr_code_data_list,
-    _centers: &mut [qr_finder_center],
-    img: &[u8],
-    _width: c_int,
-    _height: c_int,
-) {
-    // The number of centers should be small, so an O(n^3) exhaustive search of
-    // which ones go together should be reasonable.
-    let mut mark = vec![0u8; _centers.len()];
-    let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
-    let mut nfailures = 0;
-
-    for i in 0.._centers.len() {
-        // TODO: We might be able to accelerate this step significantly by
-        // considering the remaining finder centers in a more intelligent order,
-        // based on the first finder center we just chose.
-        for j in i + 1.._centers.len() {
-            if mark[i] != 0 {
-                break;
-            }
-
-            for k in j + 1.._centers.len() {
-                if mark[j] != 0 {
-                    break;
-                }
-
-                if mark[k] == 0 {
-                    let mut qrdata = qr_code_data::default();
-                    let version = qr_reader_try_configuration(
-                        reader,
-                        &mut qrdata,
-                        img,
-                        _width,
-                        _height,
-                        _centers,
-                        [i, j, k],
-                    );
-
-                    if version >= 0 {
-                        let mut ninside: usize;
-
-                        // Convert the bounding box we're returning to the user to normal
-                        // image coordinates
-                        for point in qrdata.bbox.as_mut_slice() {
-                            point[0] >>= QR_FINDER_SUBPREC;
-                            point[1] >>= QR_FINDER_SUBPREC;
+                if qrdata[i].sa_size > 0 {
+                    sa_size = qrdata[i].sa_size as usize;
+                    let sa_parity = qrdata[i].sa_parity;
+                    for j in i..qrdata.len() {
+                        if mark[j] == 0
+                            && qrdata[j].sa_size as usize == sa_size
+                            && qrdata[j].sa_parity == sa_parity
+                            && sa[qrdata[j].sa_index as usize] < 0
+                        {
+                            sa[qrdata[j].sa_index as usize] = j as c_int;
+                            mark[j] = 1;
                         }
+                    }
+                } else {
+                    sa[0] = i as c_int;
+                    sa_size = 1;
+                }
 
-                        // Mark these centers as used
-                        mark[i] = 1;
-                        mark[j] = 1;
-                        mark[k] = 1;
+                let mut sa_ctext = 0;
+                let mut fnc1 = 0;
+                let mut fnc1_2ai = 0;
+                let mut has_kanji = false;
 
-                        // Find any other finder centers located inside this code
-                        ninside = 0;
-                        for l in 0.._centers.len() {
-                            if mark[l] == 0
-                                && qr_point_ccw(&qrdata.bbox[0], &qrdata.bbox[1], &_centers[l].pos)
-                                    >= 0
-                                && qr_point_ccw(&qrdata.bbox[1], &qrdata.bbox[3], &_centers[l].pos)
-                                    >= 0
-                                && qr_point_ccw(&qrdata.bbox[3], &qrdata.bbox[2], &_centers[l].pos)
-                                    >= 0
-                                && qr_point_ccw(&qrdata.bbox[2], &qrdata.bbox[0], &_centers[l].pos)
-                                    >= 0
-                            {
-                                mark[l] = 2;
-                                ninside += 1;
-                            }
-                        }
-
-                        if ninside >= 3 {
-                            // We might have a "Double QR": a code inside a code.
-                            // Copy the relevant centers to a new array and do a search confined
-                            // to that subset.
-                            let mut inside = vec![];
-                            for l in 0.._centers.len() {
-                                if mark[l] == 2 {
-                                    inside.push(_centers[l].clone());
+                for j in 0..sa_size {
+                    if sa[j] >= 0 {
+                        let qrdataj = &qrdata[sa[j] as usize];
+                        for entry in &qrdataj.entries {
+                            match entry.payload {
+                                qr_code_data_payload::Fnc1FirstPositionMarker => {
+                                    if fnc1 == 0 {
+                                        fnc1 = 1 << ZBAR_MOD_GS1;
+                                    }
+                                }
+                                qr_code_data_payload::ApplicationIndicator(ai) => {
+                                    if fnc1 == 0 {
+                                        fnc1 = 1 << ZBAR_MOD_AIM;
+                                        fnc1_2ai = ai;
+                                        sa_ctext += 2;
+                                    }
+                                }
+                                qr_code_data_payload::Kanji(ref data) => {
+                                    has_kanji = true;
+                                    sa_ctext += data.len() << 2;
+                                }
+                                qr_code_data_payload::Bytes(ref data) => {
+                                    sa_ctext += data.len() << 2;
+                                }
+                                qr_code_data_payload::Numeric(ref data)
+                                | qr_code_data_payload::Alphanumeric(ref data) => {
+                                    sa_ctext += data.len();
+                                }
+                                qr_code_data_payload::StructuredAppendedHeaderData(_)
+                                | qr_code_data_payload::ExtendedChannelInterpretation(_) => {
+                                    // does not count toward `sa_ctext`
                                 }
                             }
-                            qr_reader_match_centers(
-                                reader,
-                                _qrlist,
-                                &mut inside,
-                                img,
-                                _width,
-                                _height,
-                            );
+                        }
+                    }
+                }
+
+                let mut sa_text: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
+                if fnc1 == (1 << ZBAR_MOD_AIM) {
+                    if fnc1_2ai < 100 {
+                        sa_text.push(b'0' + (fnc1_2ai / 10) as u8);
+                        sa_text.push(b'0' + (fnc1_2ai % 10) as u8);
+                    } else {
+                        sa_text.push((fnc1_2ai - 100) as u8);
+                    }
+                }
+
+                let mut eci: Option<&'static Encoding> = None;
+                // Note: encoding_rs treats ISO-8859-1 as WINDOWS-1252 per WHATWG spec,
+                // but for QR codes we want the actual ISO-8859-1 behavior (bytes 0x80-0x9F as-is)
+                // So we use WINDOWS_1252 which is close enough for most cases
+                // Order: Try UTF-8 first (strict), then SHIFT_JIS, then others, WINDOWS_1252 last (accepts anything)
+                let mut enc_list: VecDeque<&'static Encoding> =
+                    VecDeque::from(vec![UTF_8, SHIFT_JIS, BIG5, WINDOWS_1252]);
+                let mut err = false;
+                let mut bytebuf: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
+                let mut component_syms = Vec::new();
+
+                let mut j = 0;
+                while j < sa_size {
+                    if err {
+                        break;
+                    }
+                    let mut sym = zbar_symbol_t::new(SymbolType::QrCode);
+
+                    if sa[j] < 0 {
+                        sym.symbol_type = SymbolType::Partial;
+                        component_syms.push(sym);
+                        let mut k = j + 1;
+                        while k < sa_size && sa[k] < 0 {
+                            k += 1;
+                        }
+                        j = k;
+                        if j >= sa_size {
+                            break;
+                        }
+                        sym = zbar_symbol_t::new(SymbolType::QrCode);
+                    }
+
+                    let qrdataj = &qrdata[sa[j] as usize];
+                    sym.add_point(qrdataj.bbox[0][0], qrdataj.bbox[0][1]);
+                    sym.add_point(qrdataj.bbox[2][0], qrdataj.bbox[2][1]);
+                    sym.add_point(qrdataj.bbox[3][0], qrdataj.bbox[3][1]);
+                    sym.add_point(qrdataj.bbox[1][0], qrdataj.bbox[1][1]);
+
+                    let entries = &qrdataj.entries;
+                    for entry in entries.iter() {
+                        // Process byte buffer if needed
+                        if !bytebuf.is_empty()
+                            && !matches!(
+                                entry.payload,
+                                qr_code_data_payload::Bytes(_) | qr_code_data_payload::Kanji(_)
+                            )
+                        {
+                            // convert bytes to text
+                            if let Some(enc) = eci {
+                                let (res, _enc, had_errors) = enc.decode(&bytebuf);
+                                if had_errors {
+                                    err = true;
+                                    break;
+                                }
+                                sa_text.extend_from_slice(res.as_bytes());
+                            } else if raw_binary {
+                                sa_text.extend_from_slice(&bytebuf);
+                            } else {
+                                if has_kanji {
+                                    enc_list_mtf(&mut enc_list, SHIFT_JIS);
+                                } else if bytebuf.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                                    let (res, _enc, had_errors) = UTF_8.decode(&bytebuf[3..]);
+                                    if !had_errors {
+                                        sa_text.extend_from_slice(res.as_bytes());
+                                        enc_list_mtf(&mut enc_list, UTF_8);
+                                    } else {
+                                        err = true;
+                                    }
+                                } else if text_is_ascii(&bytebuf) {
+                                    enc_list_mtf(&mut enc_list, UTF_8);
+                                } else if text_is_big5(&bytebuf) {
+                                    enc_list_mtf(&mut enc_list, BIG5);
+                                }
+
+                                if !err {
+                                    let mut decoded = false;
+                                    for &enc in &enc_list {
+                                        if enc == WINDOWS_1252 && !text_is_latin1(&bytebuf) {
+                                            continue;
+                                        }
+                                        let (res, _enc, had_errors) = enc.decode(&bytebuf);
+                                        if !had_errors {
+                                            sa_text.extend_from_slice(res.as_bytes());
+                                            enc_list_mtf(&mut enc_list, enc);
+                                            decoded = true;
+                                            break;
+                                        }
+                                    }
+                                    if !decoded {
+                                        err = true;
+                                    }
+                                }
+                            }
+                            bytebuf.clear();
+                        }
+                        if err {
+                            break;
                         }
 
-                        // Mark _all_ such centers used: codes cannot partially overlap
-                        for m in mark.iter_mut() {
-                            if *m == 2 {
-                                *m = 1;
+                        match &entry.payload {
+                            qr_code_data_payload::Numeric(ref data)
+                            | qr_code_data_payload::Alphanumeric(ref data) => {
+                                sa_text.extend_from_slice(data);
+                            }
+                            qr_code_data_payload::Bytes(ref data)
+                            | qr_code_data_payload::Kanji(ref data) => {
+                                bytebuf.extend_from_slice(data);
+                            }
+                            qr_code_data_payload::ExtendedChannelInterpretation(val) => {
+                                // Simplified ECI handling
+                                eci = match val {
+                                    3..=13 | 15..=18 => Some(WINDOWS_1252), // approx
+                                    20 => Some(SHIFT_JIS),
+                                    26 => Some(UTF_8),
+                                    _ => None,
+                                };
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Add the symbol to our collection
+                    component_syms.push(sym);
+                    j += 1;
+                }
+
+                if !err && !bytebuf.is_empty() {
+                    // convert bytes to text
+                    if let Some(enc) = eci {
+                        let (res, _enc, had_errors) = enc.decode(&bytebuf);
+                        if had_errors {
+                            err = true;
+                        } else {
+                            sa_text.extend_from_slice(res.as_bytes());
+                        }
+                    } else if raw_binary {
+                        sa_text.extend_from_slice(&bytebuf);
+                    } else {
+                        if has_kanji {
+                            enc_list_mtf(&mut enc_list, SHIFT_JIS);
+                        } else if bytebuf.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                            let (res, _enc, had_errors) = UTF_8.decode(&bytebuf[3..]);
+                            if !had_errors {
+                                sa_text.extend_from_slice(res.as_bytes());
+                                enc_list_mtf(&mut enc_list, UTF_8);
+                            } else {
+                                err = true;
+                            }
+                        } else if text_is_ascii(&bytebuf) {
+                            enc_list_mtf(&mut enc_list, UTF_8);
+                        } else if text_is_big5(&bytebuf) {
+                            enc_list_mtf(&mut enc_list, BIG5);
+                        }
+
+                        if !err {
+                            let mut decoded = false;
+                            // Move WINDOWS_1252 to end if it has C1 control chars
+                            if enc_list.front() == Some(&WINDOWS_1252) && !text_is_latin1(&bytebuf)
+                            {
+                                enc_list.pop_front();
+                                enc_list.push_back(WINDOWS_1252);
+                            }
+
+                            for &enc in &enc_list {
+                                let (res, _enc, had_errors) = enc.decode(&bytebuf);
+                                if !had_errors {
+                                    sa_text.extend_from_slice(res.as_bytes());
+                                    enc_list_mtf(&mut enc_list, enc);
+                                    decoded = true;
+                                    break;
+                                }
+                            }
+                            // Note: Unlike some encoding errors, C does not set err=1 if decoding fails
+                            // If no encoding worked, just copy the raw bytes
+                            if !decoded {
+                                sa_text.extend_from_slice(&bytebuf);
                             }
                         }
+                    }
+                    bytebuf.clear();
+                }
 
-                        nfailures = 0;
+                if !err {
+                    sa_text.shrink_to_fit();
 
-                        // Add the data to the list
-                        _qrlist.qrdata.push(qrdata);
-                    } else {
-                        nfailures += 1;
-                        if nfailures > nfailures_max {
-                            // Give up.
-                            // We're unlikely to find a valid code in all this clutter, and we
-                            // could spend quite a lot of time trying.
-                            // mark will be automatically freed by Drop
-                            return;
+                    if sa_size == 1 {
+                        // Single QR code - add it directly
+                        if let Some(mut sym) = component_syms.into_iter().next() {
+                            sym.data = sa_text;
+                            sym.modifiers = fnc1 as u32;
+                            symbols.push(sym);
                         }
+                    } else {
+                        // Multiple QR codes - create structured append symbol
+                        let mut sa_sym = zbar_symbol_t::new(SymbolType::QrCode);
+                        let component_set = zbar_symbol_set_t {
+                            symbols: component_syms,
+                        };
+                        sa_sym.components = Some(component_set);
+                        sa_sym.data = sa_text;
+                        sa_sym.modifiers = fnc1 as u32;
+                        symbols.push(sa_sym);
                     }
                 }
             }
         }
+
+        symbols
     }
 }
 
-/// Decode QR codes from an image
-pub(crate) unsafe fn qr_decode(
-    reader: &mut qr_reader,
-    img: &mut zbar_image_t,
-    raw_binary: bool,
-) -> Vec<zbar_symbol_t> {
-    if reader.finder_lines[0].lines.len() < 9 || reader.finder_lines[1].lines.len() < 9 {
-        return vec![];
+fn text_is_ascii(text: &[u8]) -> bool {
+    text.iter().all(|&c| c < 0x80)
+}
+
+fn text_is_latin1(text: &[u8]) -> bool {
+    text.iter().all(|&c| !(0x80..0xA0).contains(&c))
+}
+
+fn text_is_big5(text: &[u8]) -> bool {
+    let mut i = 0;
+    while i < text.len() {
+        if text[i] == 0xFF {
+            return false;
+        } else if text[i] >= 0x80 {
+            i += 1;
+            if i >= text.len() {
+                return false;
+            }
+            if text[i] < 0x40 || (text[i] > 0x7E && text[i] < 0xA1) || text[i] > 0xFE {
+                return false;
+            }
+        }
+        i += 1;
     }
+    true
+}
 
-    let mut centers = qr_finder_centers_locate(reader, 0, 0);
-
-    if centers.len() >= 3 {
-        let bin = binarize(&img.data, img.width as usize, img.height as usize);
-
-        let mut qrlist = qr_code_data_list::default();
-
-        qr_reader_match_centers(
-            reader,
-            &mut qrlist,
-            &mut centers,
-            &bin,
-            img.width as c_int,
-            img.height as c_int,
-        );
-
-        let qrdata = if !qrlist.qrdata.is_empty() {
-            qr_code_data_list_extract_text(&qrlist, raw_binary)
-        } else {
-            vec![]
-        };
-
-        qrlist.qrdata.clear();
-        qrdata
-    } else {
-        vec![]
+fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encoding) {
+    if let Some(pos) = enc_list.iter().position(|&e| e == enc) {
+        let e = enc_list.remove(pos).unwrap();
+        enc_list.push_front(e);
     }
 }

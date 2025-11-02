@@ -1,7 +1,7 @@
 //! Image scanner for finding barcodes in 2D images
 
 use crate::image::Image;
-use crate::img_scanner::{zbar_image_scanner_create, zbar_image_scanner_t};
+use crate::img_scanner::zbar_image_scanner_t;
 use crate::{Error, Result, SymbolType};
 
 /// Configuration options for barcode scanning
@@ -29,7 +29,7 @@ pub struct Scanner {
 impl Scanner {
     /// Create a new image scanner
     pub fn new() -> Self {
-        let ptr = unsafe { zbar_image_scanner_create() };
+        let ptr = unsafe { zbar_image_scanner_t::new() };
         Scanner { ptr }
     }
 

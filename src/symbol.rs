@@ -5,7 +5,9 @@
 //!
 //! Handles symbol lifecycle, reference counting, and data access.
 
-use crate::{img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point};
+use crate::{
+    decoder::ZBAR_ORIENT_UNKNOWN, img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point,
+};
 use libc::{c_int, c_uint};
 use std::fmt::Display;
 
@@ -22,6 +24,16 @@ pub(crate) struct zbar_symbol_t {
 }
 
 impl zbar_symbol_t {
+    /// Create a new symbol
+    pub(crate) fn new(symbol_type: SymbolType) -> zbar_symbol_t {
+        zbar_symbol_t {
+            symbol_type,
+            quality: 1,
+            orient: ZBAR_ORIENT_UNKNOWN,
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn add_point(&mut self, x: c_int, y: c_int) {
         self.pts.push([x, y]);
     }

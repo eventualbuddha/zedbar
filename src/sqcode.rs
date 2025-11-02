@@ -3,9 +3,7 @@
 //! Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Rust port based on the C implementation
 
-use crate::{
-    image_ffi::zbar_image_t, img_scanner::zbar_image_scanner_t, symbol::zbar_symbol_t, SymbolType,
-};
+use crate::{image_ffi::zbar_image_t, symbol::zbar_symbol_t, SymbolType};
 use libc::size_t;
 use std::io::Write;
 
@@ -96,7 +94,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 
 /// Extract text from buffer and add to scanner results
 fn sq_extract_text(buf: &[u8], len: size_t) -> Result<zbar_symbol_t, ()> {
-    let mut sym = zbar_image_scanner_t::alloc_sym(SymbolType::SqCode);
+    let mut sym = zbar_symbol_t::new(SymbolType::SqCode);
 
     let encoded = match base64_encode_buffer(&buf[..len]) {
         Some(e) => e,

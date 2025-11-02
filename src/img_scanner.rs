@@ -6,14 +6,11 @@ use crate::{
     decoder::{
         zbar_decoder_t, ZBAR_CFG_BINARY, ZBAR_CFG_ENABLE, ZBAR_CFG_POSITION,
         ZBAR_CFG_TEST_INVERTED, ZBAR_CFG_UNCERTAINTY, ZBAR_CFG_X_DENSITY, ZBAR_CFG_Y_DENSITY,
-        ZBAR_ORIENT_UNKNOWN,
     },
     finder::{decoder_get_qr_finder_line, decoder_get_sq_finder_config},
     image_ffi::zbar_image_t,
-    line_scanner::{scanner_get_edge, scanner_get_width, zbar_scanner_new, zbar_scanner_t},
-    qrcode::qrdec::{
-        _zbar_qr_create, _zbar_qr_found_line, _zbar_qr_reset, qr_decode, qr_finder_lines,
-    },
+    line_scanner::zbar_scanner_t,
+    qrcode::qrdec::qr_reader,
     sqcode::{sq_decode, SqReader},
     symbol::zbar_symbol_t,
     Error, Result, SymbolType,
@@ -72,13 +69,6 @@ const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
     (a as u32) | ((b as u32) << 8) | ((c as u32) << 16) | ((d as u32) << 24)
 }
 
-pub(crate) struct qr_reader {
-    /// The random number generator used by RANSAC.
-    pub(crate) rng: rand_chacha::ChaCha8Rng,
-    ///  current finder state, horizontal and vertical lines
-    pub(crate) finder_lines: [qr_finder_lines; 2],
-}
-
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_set_t {
     pub(crate) symbols: Vec<zbar_symbol_t>,
@@ -118,6 +108,55 @@ pub(crate) struct zbar_image_scanner_t {
 }
 
 impl zbar_image_scanner_t {
+    /// Create a new image scanner
+    ///
+    /// Allocates and initializes a new image scanner instance with default configuration.
+    ///
+    /// # Returns
+    /// Pointer to new scanner or null on allocation failure
+    pub(crate) unsafe fn new() -> *mut Self {
+        let mut iscn = Box::new(Self::default());
+        let decoder = zbar_decoder_t::new();
+
+        iscn.set_decoder(Some(decoder));
+
+        // Get a pointer to the decoder for the scanner
+        let dcode_ptr = iscn.dcode.as_mut().unwrap() as *mut zbar_decoder_t;
+        let scanner = zbar_scanner_t::new(dcode_ptr as *mut _);
+        iscn.set_scanner(Some(scanner));
+
+        if iscn.decoder().is_none() || iscn.scanner().is_none() {
+            return std::ptr::null_mut();
+        }
+
+        iscn.set_qr_reader(Some(qr_reader::new()));
+        iscn.set_sq_reader(Some(SqReader::new()));
+
+        // Apply default configuration
+        iscn.configs[0] = 1; // ZBAR_CFG_X_DENSITY
+        iscn.configs[1] = 1; // ZBAR_CFG_Y_DENSITY
+
+        iscn.set_config(SymbolType::None, ZBAR_CFG_POSITION, 1);
+        iscn.set_config(SymbolType::None, ZBAR_CFG_UNCERTAINTY, 2);
+        iscn.set_config(SymbolType::None, 65, 0); // ZBAR_CFG_TEST_INVERTED
+        iscn.set_config(SymbolType::QrCode, ZBAR_CFG_UNCERTAINTY, 0);
+        iscn.set_config(SymbolType::QrCode, ZBAR_CFG_BINARY, 0);
+        iscn.set_config(SymbolType::Code128, ZBAR_CFG_UNCERTAINTY, 0);
+        iscn.set_config(SymbolType::Code93, ZBAR_CFG_UNCERTAINTY, 0);
+        iscn.set_config(SymbolType::Code39, ZBAR_CFG_UNCERTAINTY, 0);
+        iscn.set_config(SymbolType::Codabar, ZBAR_CFG_UNCERTAINTY, 1);
+        iscn.set_config(SymbolType::Composite, ZBAR_CFG_UNCERTAINTY, 0);
+
+        let iscn_ptr = Box::into_raw(iscn);
+
+        if let Some(dcode) = (*iscn_ptr).decoder_mut() {
+            dcode.set_userdata(iscn_ptr as *mut c_void);
+            dcode.set_handler(Some(symbol_handler));
+        }
+
+        iscn_ptr
+    }
+
     /// Add a symbol to the scanner's symbol set
     ///
     /// # Arguments
@@ -204,16 +243,6 @@ impl zbar_image_scanner_t {
         Ok(final_nsyms as c_int)
     }
 
-    /// Allocate a new symbol
-    pub(crate) fn alloc_sym(symbol_type: SymbolType) -> zbar_symbol_t {
-        zbar_symbol_t {
-            symbol_type,
-            quality: 1,
-            orient: ZBAR_ORIENT_UNKNOWN,
-            ..Default::default()
-        }
-    }
-
     /// Handle QR code finder line detection
     ///
     /// Processes a QR code finder line from the decoder and forwards it to the QR reader.
@@ -227,12 +256,10 @@ impl zbar_image_scanner_t {
         let Some(scn) = self.scn.as_ref() else {
             return;
         };
-        let mut u = scanner_get_edge(scn, line.pos[0] as c_uint, QR_FINDER_SUBPREC);
-        line.boffs =
-            (u as c_int) - scanner_get_edge(scn, line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
-        line.len = scanner_get_edge(scn, line.len as c_uint, QR_FINDER_SUBPREC) as c_int;
-        line.eoffs =
-            scanner_get_edge(scn, line.eoffs as c_uint, QR_FINDER_SUBPREC) as c_int - line.len;
+        let mut u = scn.get_edge(line.pos[0] as c_uint, QR_FINDER_SUBPREC);
+        line.boffs = (u as c_int) - scn.get_edge(line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
+        line.len = scn.get_edge(line.len as c_uint, QR_FINDER_SUBPREC) as c_int;
+        line.eoffs = scn.get_edge(line.eoffs as c_uint, QR_FINDER_SUBPREC) as c_int - line.len;
         line.len -= u as c_int;
 
         u = (qr_fixed(self.umin, 0) as i64 + (self.du as i64) * (u as i64)) as c_uint;
@@ -246,7 +273,7 @@ impl zbar_image_scanner_t {
         line.pos[(1 - vert) as usize] = qr_fixed(self.v, 1) as c_int;
 
         if let Some(qr) = &mut self.qr {
-            _zbar_qr_found_line(qr, vert, line);
+            qr.found_line(vert, line);
         }
     }
 
@@ -348,7 +375,7 @@ impl zbar_image_scanner_t {
     unsafe fn _zbar_scan_image(&mut self, img: &mut zbar_image_t) -> Option<zbar_symbol_set_t> {
         // Reset QR and SQ decoders
         if let Some(qr) = &mut self.qr {
-            _zbar_qr_reset(qr);
+            qr.reset();
         }
         if let Some(sq) = &mut self.sq {
             sq.reset();
@@ -372,7 +399,7 @@ impl zbar_image_scanner_t {
         let h = img.height;
         let data = img.data.as_ptr();
         let scn = self.scn.as_mut()?;
-        scn.scanner_new_scan();
+        scn.new_scan();
 
         // Horizontal scanning pass
         let density = CFG!(self, ZBAR_CFG_Y_DENSITY);
@@ -493,11 +520,12 @@ impl zbar_image_scanner_t {
         self.dy = 0;
 
         // Decode QR and SQ codes
-        let raw_binary = zbar_image_scanner_get_config(self, SymbolType::QrCode, ZBAR_CFG_BINARY)
+        let raw_binary = self
+            .get_config(SymbolType::QrCode, ZBAR_CFG_BINARY)
             .unwrap_or(0)
             != 0;
         if let Some(qr) = &mut self.qr {
-            let qr_symbols = qr_decode(qr, img, raw_binary);
+            let qr_symbols = qr.decode(img, raw_binary);
             for sym in qr_symbols {
                 self.add_symbol(sym);
             }
@@ -600,114 +628,64 @@ impl zbar_image_scanner_t {
 
         Some(scanner.syms.clone())
     }
-}
 
-/// Create a new image scanner
-///
-/// Allocates and initializes a new image scanner instance with default configuration.
-///
-/// # Returns
-/// Pointer to new scanner or null on allocation failure
-pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
-    let mut iscn = Box::new(zbar_image_scanner_t::default());
-    let decoder = zbar_decoder_t::new();
-
-    iscn.set_decoder(Some(decoder));
-
-    // Get a pointer to the decoder for the scanner
-    let dcode_ptr = iscn.dcode.as_mut().unwrap() as *mut zbar_decoder_t;
-    let scanner = zbar_scanner_new(dcode_ptr as *mut _);
-    iscn.set_scanner(Some(scanner));
-
-    if iscn.decoder().is_none() || iscn.scanner().is_none() {
-        return std::ptr::null_mut();
-    }
-
-    iscn.set_qr_reader(Some(_zbar_qr_create()));
-    iscn.set_sq_reader(Some(SqReader::new()));
-
-    // Apply default configuration
-    iscn.configs[0] = 1; // ZBAR_CFG_X_DENSITY
-    iscn.configs[1] = 1; // ZBAR_CFG_Y_DENSITY
-
-    iscn.set_config(SymbolType::None, ZBAR_CFG_POSITION, 1);
-    iscn.set_config(SymbolType::None, ZBAR_CFG_UNCERTAINTY, 2);
-    iscn.set_config(SymbolType::None, 65, 0); // ZBAR_CFG_TEST_INVERTED
-    iscn.set_config(SymbolType::QrCode, ZBAR_CFG_UNCERTAINTY, 0);
-    iscn.set_config(SymbolType::QrCode, ZBAR_CFG_BINARY, 0);
-    iscn.set_config(SymbolType::Code128, ZBAR_CFG_UNCERTAINTY, 0);
-    iscn.set_config(SymbolType::Code93, ZBAR_CFG_UNCERTAINTY, 0);
-    iscn.set_config(SymbolType::Code39, ZBAR_CFG_UNCERTAINTY, 0);
-    iscn.set_config(SymbolType::Codabar, ZBAR_CFG_UNCERTAINTY, 1);
-    iscn.set_config(SymbolType::Composite, ZBAR_CFG_UNCERTAINTY, 0);
-
-    let iscn_ptr = Box::into_raw(iscn);
-
-    if let Some(dcode) = (*iscn_ptr).decoder_mut() {
-        dcode.set_userdata(iscn_ptr as *mut c_void);
-        dcode.set_handler(Some(symbol_handler));
-    }
-
-    iscn_ptr
-}
-/// Get configuration value for a specific symbology
-///
-/// Retrieves the current configuration value for a particular setting
-/// of a barcode symbology.
-///
-/// # Arguments
-/// * `iscn` - The image scanner instance
-/// * `sym` - The symbology type to query
-/// * `cfg` - The configuration parameter to query
-///
-/// # Returns
-/// `Ok(value)` on success, `Err(1)` on error
-pub(crate) fn zbar_image_scanner_get_config(
-    iscn: &mut zbar_image_scanner_t,
-    sym: SymbolType,
-    cfg: c_int,
-) -> Result<c_int, c_int> {
-    // Return error if symbol doesn't have config
-    if !(SymbolType::Partial..=SymbolType::Code128).contains(&sym) || sym == SymbolType::Composite {
-        return Err(1);
-    }
-
-    if cfg < ZBAR_CFG_UNCERTAINTY {
-        if let Some(dcode) = &mut iscn.dcode.as_mut() {
-            return dcode.get_config(sym, cfg);
-        } else {
-            return Err(1);
-        }
-    }
-
-    if cfg < ZBAR_CFG_POSITION {
-        if sym == SymbolType::Partial {
+    /// Get configuration value for a specific symbology
+    ///
+    /// Retrieves the current configuration value for a particular setting
+    /// of a barcode symbology.
+    ///
+    /// # Arguments
+    /// * `iscn` - The image scanner instance
+    /// * `sym` - The symbology type to query
+    /// * `cfg` - The configuration parameter to query
+    ///
+    /// # Returns
+    /// `Ok(value)` on success, `Err(1)` on error
+    fn get_config(&mut self, sym: SymbolType, cfg: c_int) -> Result<c_int, c_int> {
+        // Return error if symbol doesn't have config
+        if !(SymbolType::Partial..=SymbolType::Code128).contains(&sym)
+            || sym == SymbolType::Composite
+        {
             return Err(1);
         }
 
-        let i = sym.hash();
-        return Ok(iscn.sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize]);
-    }
+        if cfg < ZBAR_CFG_UNCERTAINTY {
+            if let Some(dcode) = &mut self.dcode.as_mut() {
+                return dcode.get_config(sym, cfg);
+            } else {
+                return Err(1);
+            }
+        }
 
-    // Image scanner parameters apply only to ZBAR_PARTIAL
-    if sym > SymbolType::Partial {
-        return Err(1);
-    }
+        if cfg < ZBAR_CFG_POSITION {
+            if sym == SymbolType::Partial {
+                return Err(1);
+            }
 
-    if cfg < ZBAR_CFG_X_DENSITY {
-        return Ok(if (iscn.config & (1 << (cfg - ZBAR_CFG_POSITION))) != 0 {
-            1
-        } else {
-            0
-        });
-    }
+            let i = sym.hash();
+            return Ok(self.sym_configs[(cfg - ZBAR_CFG_UNCERTAINTY) as usize][i as usize]);
+        }
 
-    if cfg <= ZBAR_CFG_Y_DENSITY {
-        // CFG macro: ((iscn)->configs[(cfg) - ZBAR_CFG_X_DENSITY])
-        return Ok(iscn.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize]);
-    }
+        // Image scanner parameters apply only to ZBAR_PARTIAL
+        if sym > SymbolType::Partial {
+            return Err(1);
+        }
 
-    Err(1)
+        if cfg < ZBAR_CFG_X_DENSITY {
+            return Ok(if (self.config & (1 << (cfg - ZBAR_CFG_POSITION))) != 0 {
+                1
+            } else {
+                0
+            });
+        }
+
+        if cfg <= ZBAR_CFG_Y_DENSITY {
+            // CFG macro: ((self)->configs[(cfg) - ZBAR_CFG_X_DENSITY])
+            return Ok(self.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize]);
+        }
+
+        Err(1)
+    }
 }
 
 /// Symbol handler callback for 1D barcode decoding
@@ -732,8 +710,8 @@ pub(crate) unsafe fn symbol_handler(dcode: &mut zbar_decoder_t) {
     // Calculate position if position tracking is enabled
     if TEST_CFG!(iscn, ZBAR_CFG_POSITION) {
         if let Some(scn) = (*iscn).scanner() {
-            let w = scanner_get_width(scn);
-            let u = (*iscn).umin + (*iscn).du * scanner_get_edge(scn, w, 0) as c_int;
+            let w = scn.width();
+            let u = (*iscn).umin + (*iscn).du * scn.get_edge(w, 0) as c_int;
             if (*iscn).dx != 0 {
                 x = u;
                 y = (*iscn).v;
@@ -759,7 +737,7 @@ pub(crate) unsafe fn symbol_handler(dcode: &mut zbar_decoder_t) {
     }
 
     // Allocate new symbol
-    let mut sym = zbar_image_scanner_t::alloc_sym(symbol_type);
+    let mut sym = zbar_symbol_t::new(symbol_type);
     sym.configs = dcode.get_configs(symbol_type);
     sym.modifiers = dcode.get_modifiers();
 

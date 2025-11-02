@@ -961,7 +961,7 @@ impl zbar_decoder_t {
     /// - Appropriate symbol type if width completes decode of a symbol (data is available for retrieval)
     /// - `SymbolType::Partial` as a hint if part of a symbol was decoded
     /// - `SymbolType::None` if no new symbol data is available
-    pub(crate) unsafe fn zbar_decode_width(&mut self, w: c_uint) -> SymbolType {
+    pub(crate) unsafe fn decode_width(&mut self, w: c_uint) -> SymbolType {
         let mut sym = SymbolType::None;
 
         // Store width in circular buffer
