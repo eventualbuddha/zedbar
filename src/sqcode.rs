@@ -3,8 +3,10 @@
 //! Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Rust port based on the C implementation
 
-use crate::{image_ffi::zbar_image_t, img_scanner::zbar_image_scanner_t, SymbolType};
-use libc::{c_int, size_t};
+use crate::{
+    image_ffi::zbar_image_t, img_scanner::zbar_image_scanner_t, symbol::zbar_symbol_t, SymbolType,
+};
+use libc::size_t;
 use std::io::Write;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -93,17 +95,16 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract text from buffer and add to scanner results
-fn sq_extract_text(iscn: &mut zbar_image_scanner_t, buf: &[u8], len: size_t) -> bool {
-    let mut sym = iscn.alloc_sym(SymbolType::SqCode);
+fn sq_extract_text(buf: &[u8], len: size_t) -> Result<zbar_symbol_t, ()> {
+    let mut sym = zbar_image_scanner_t::alloc_sym(SymbolType::SqCode);
 
     let encoded = match base64_encode_buffer(&buf[..len]) {
         Some(e) => e,
-        None => return true,
+        None => return Err(()),
     };
 
     sym.data = encoded;
-    iscn.add_symbol(sym);
-    false
+    Ok(sym)
 }
 
 #[inline]
@@ -324,17 +325,16 @@ unsafe fn find_bottom_dot(
 /// - `img` points to a valid `zbar_image_t` with properly initialized image data
 pub(crate) unsafe fn sq_decode(
     reader: &mut SqReader,
-    iscn: &mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
-) -> c_int {
+) -> Result<Option<zbar_symbol_t>, ()> {
     if !reader.enabled {
-        return 0;
+        return Ok(None);
     }
 
     // Check image format (Y800 = fourcc('Y','8','0','0'))
     if img.format != 0x30303859 {
         let _ = writeln!(std::io::stderr(), "Unexpected image format");
-        return 1;
+        return Err(());
     }
 
     // Find starting pixel
@@ -354,7 +354,7 @@ pub(crate) unsafe fn sq_decode(
     }
 
     if !found_start {
-        return 1;
+        return Err(());
     }
 
     // Scan starting dot
@@ -389,7 +389,7 @@ pub(crate) unsafe fn sq_decode(
     while find_left_dot(img, &top_left_dot, &mut scan_x, &mut scan_y) {
         sq_scan_shape(img, &mut top_left_dot, scan_x as i32, scan_y as i32);
         if top_left_dot.shape_type != Shape::Dot {
-            return 1;
+            return Err(());
         }
         if border_len > 0 {
             border_len += 2;
@@ -407,7 +407,7 @@ pub(crate) unsafe fn sq_decode(
         }
     }
     if top_left_dot.shape_type != Shape::Dot {
-        return 1;
+        return Err(());
     }
 
     // Scan right from starting dot
@@ -419,7 +419,7 @@ pub(crate) unsafe fn sq_decode(
                 break;
             }
             if top_right_dot.shape_type != Shape::Dot {
-                return 1;
+                return Err(());
             }
             border_len += 2;
             top_border.push(top_right_dot.center);
@@ -435,7 +435,7 @@ pub(crate) unsafe fn sq_decode(
     }
 
     if border_len < 3 {
-        return 1;
+        return Err(());
     }
 
     let inc_x = top_border[border_len - 1].x - top_border[border_len - 3].x;
@@ -461,11 +461,11 @@ pub(crate) unsafe fn sq_decode(
             break;
         }
         if bottom_left_dot.shape_type != Shape::Dot {
-            return 1;
+            return Err(());
         }
         cur_len += 2;
         if cur_len > border_len {
-            return 1;
+            return Err(());
         }
         left_border[cur_len - 1] = bottom_left_dot.center;
         let middle = Point {
@@ -476,7 +476,7 @@ pub(crate) unsafe fn sq_decode(
     }
 
     if cur_len != border_len - 3 || bottom_left_dot.shape_type != Shape::Corner {
-        return 1;
+        return Err(());
     }
 
     let inc_x = left_border[cur_len - 1].x - left_border[cur_len - 3].x;
@@ -496,18 +496,18 @@ pub(crate) unsafe fn sq_decode(
     while find_bottom_dot(img, &bottom_right_dot, &mut scan_x, &mut scan_y) {
         sq_scan_shape(img, &mut bottom_right_dot, scan_x as i32, scan_y as i32);
         if bottom_right_dot.shape_type != Shape::Dot {
-            return 1;
+            return Err(());
         }
         if cur_len == 3 {
             cur_len += 1;
             if cur_len > border_len {
-                return 1;
+                return Err(());
             }
             right_border[cur_len - 1] = bottom_right_dot.center;
         } else {
             cur_len += 2;
             if cur_len > border_len {
-                return 1;
+                return Err(());
             }
             right_border[cur_len - 1] = bottom_right_dot.center;
             let middle = Point {
@@ -519,7 +519,7 @@ pub(crate) unsafe fn sq_decode(
     }
 
     if cur_len != border_len || border_len < 6 {
-        return 1;
+        return Err(());
     }
 
     let inc_x = right_border[5].x - right_border[3].x;
@@ -543,10 +543,10 @@ pub(crate) unsafe fn sq_decode(
             break;
         }
         if bottom_left2_dot.shape_type != Shape::Dot {
-            return 1;
+            return Err(());
         }
         if offset < 2 {
-            return 1;
+            return Err(());
         }
         offset -= 2;
         bottom_border[offset] = bottom_left2_dot.center;
@@ -558,7 +558,7 @@ pub(crate) unsafe fn sq_decode(
     }
 
     if offset != 3 || bottom_left2_dot.shape_type != Shape::Corner {
-        return 1;
+        return Err(());
     }
 
     let inc_x = bottom_border[5].x - bottom_border[3].x;
@@ -572,13 +572,13 @@ pub(crate) unsafe fn sq_decode(
 
     // Size check
     if !(8 + 2 * (1 + 2)..=65535).contains(&border_len) {
-        return 1;
+        return Err(());
     }
 
     let bit_side_len = border_len - 2 * (1 + 2);
     let bit_len = bit_side_len * bit_side_len;
     if bit_len % 8 != 0 {
-        return 1;
+        return Err(());
     }
 
     let byte_len = bit_len / 8;
@@ -620,10 +620,5 @@ pub(crate) unsafe fn sq_decode(
         }
     }
 
-    let error = sq_extract_text(iscn, &buf, byte_len);
-    if error {
-        1
-    } else {
-        0
-    }
+    sq_extract_text(&buf, byte_len).map(Some)
 }

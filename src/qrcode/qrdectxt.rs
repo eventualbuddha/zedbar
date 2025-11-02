@@ -8,8 +8,8 @@ use std::os::raw::{c_int, c_uchar};
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
 
-use crate::decoder::{ZBAR_CFG_BINARY, ZBAR_MOD_AIM, ZBAR_MOD_GS1};
-use crate::img_scanner::{zbar_image_scanner_get_config, zbar_image_scanner_t, zbar_symbol_set_t};
+use crate::decoder::{ZBAR_MOD_AIM, ZBAR_MOD_GS1};
+use crate::img_scanner::{zbar_image_scanner_t, zbar_symbol_set_t};
 use crate::qrcode::qrdec::{qr_code_data_list, qr_code_data_payload};
 use crate::symbol::zbar_symbol_t;
 use crate::SymbolType;
@@ -66,14 +66,12 @@ unsafe fn sym_add_point(sym: &mut zbar_symbol_t, x: c_int, y: c_int) {
 /// point to has the expected layout.
 pub(crate) unsafe fn qr_code_data_list_extract_text(
     qrlist: &qr_code_data_list,
-    iscn: &mut zbar_image_scanner_t,
-) -> c_int {
-    let raw_binary: c_int =
-        zbar_image_scanner_get_config(iscn, SymbolType::QrCode, ZBAR_CFG_BINARY).unwrap_or(0);
+    raw_binary: bool,
+) -> Vec<zbar_symbol_t> {
+    let mut symbols = vec![];
 
     let qrdata = &qrlist.qrdata;
     let mut mark = vec![0u8; qrdata.len()];
-    let ntext = 0;
 
     for i in 0..qrdata.len() {
         if mark[i] == 0 {
@@ -166,7 +164,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                 if err {
                     break;
                 }
-                let mut sym = iscn.alloc_sym(SymbolType::QrCode);
+                let mut sym = zbar_image_scanner_t::alloc_sym(SymbolType::QrCode);
 
                 if sa[j] < 0 {
                     sym.symbol_type = SymbolType::Partial;
@@ -179,7 +177,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     if j >= sa_size {
                         break;
                     }
-                    sym = iscn.alloc_sym(SymbolType::QrCode);
+                    sym = zbar_image_scanner_t::alloc_sym(SymbolType::QrCode);
                 }
 
                 let qrdataj = &qrdata[sa[j] as usize];
@@ -205,7 +203,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                                 break;
                             }
                             sa_text.extend_from_slice(res.as_bytes());
-                        } else if raw_binary != 0 {
+                        } else if raw_binary {
                             sa_text.extend_from_slice(&bytebuf);
                         } else {
                             if has_kanji {
@@ -285,7 +283,7 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     } else {
                         sa_text.extend_from_slice(res.as_bytes());
                     }
-                } else if raw_binary != 0 {
+                } else if raw_binary {
                     sa_text.extend_from_slice(&bytebuf);
                 } else {
                     if has_kanji {
@@ -339,22 +337,22 @@ pub(crate) unsafe fn qr_code_data_list_extract_text(
                     if let Some(mut sym) = component_syms.into_iter().next() {
                         sym.data = sa_text;
                         sym.modifiers = fnc1 as u32;
-                        iscn.add_symbol(sym);
+                        symbols.push(sym);
                     }
                 } else {
                     // Multiple QR codes - create structured append symbol
-                    let mut sa_sym = iscn.alloc_sym(SymbolType::QrCode);
+                    let mut sa_sym = zbar_image_scanner_t::alloc_sym(SymbolType::QrCode);
                     let component_set = zbar_symbol_set_t {
                         symbols: component_syms,
                     };
                     sa_sym.components = Some(component_set);
                     sa_sym.data = sa_text;
                     sa_sym.modifiers = fnc1 as u32;
-                    iscn.add_symbol(sa_sym);
+                    symbols.push(sa_sym);
                 }
             }
         }
     }
 
-    ntext
+    symbols
 }

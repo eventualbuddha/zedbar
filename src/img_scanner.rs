@@ -10,10 +10,7 @@ use crate::{
     },
     finder::{decoder_get_qr_finder_line, decoder_get_sq_finder_config},
     image_ffi::zbar_image_t,
-    line_scanner::{
-        scan_y, scanner_flush, scanner_get_edge, scanner_get_width, scanner_new_scan,
-        zbar_scanner_new, zbar_scanner_t,
-    },
+    line_scanner::{scanner_get_edge, scanner_get_width, zbar_scanner_new, zbar_scanner_t},
     qrcode::qrdec::{
         _zbar_qr_create, _zbar_qr_found_line, _zbar_qr_reset, qr_decode, qr_finder_lines,
     },
@@ -188,7 +185,7 @@ impl zbar_image_scanner_t {
     /// # Returns
     /// Number of symbols found, -1 on error
     pub(crate) unsafe fn scan_image(&mut self, img: &mut zbar_image_t) -> Result<c_int> {
-        let Some(syms) = _zbar_scan_image(self, img) else {
+        let Some(syms) = self._zbar_scan_image(img) else {
             return Err(Error::Unknown(-1));
         };
 
@@ -197,7 +194,7 @@ impl zbar_image_scanner_t {
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
         if nsyms == 0 && TEST_CFG!(self, ZBAR_CFG_TEST_INVERTED) {
             if let Some(mut inv) = img.copy(true) {
-                let _ = _zbar_scan_image(self, &mut inv);
+                let _ = self._zbar_scan_image(&mut inv);
                 img.swap_symbols_with(&mut inv);
             }
         }
@@ -207,25 +204,8 @@ impl zbar_image_scanner_t {
         Ok(final_nsyms as c_int)
     }
 
-    /// Flush scanner pipeline and start new scan
-    ///
-    /// This function flushes the scanner pipeline twice and then starts a new scan.
-    /// It's typically called at quiet borders to reset the scanner state.
-    pub(crate) unsafe fn quiet_border(&mut self) {
-        let Some(scn) = self.scn.as_mut() else {
-            return;
-        };
-
-        // Flush scanner pipeline twice
-        scanner_flush(scn);
-        scanner_flush(scn);
-
-        // Start new scan
-        scanner_new_scan(scn);
-    }
-
     /// Allocate a new symbol
-    pub(crate) fn alloc_sym(&mut self, symbol_type: SymbolType) -> zbar_symbol_t {
+    pub(crate) fn alloc_sym(symbol_type: SymbolType) -> zbar_symbol_t {
         zbar_symbol_t {
             symbol_type,
             quality: 1,
@@ -283,6 +263,343 @@ impl zbar_image_scanner_t {
             sq.set_enabled(config != 0);
         }
     }
+
+    /// Set configuration for image scanner
+    ///
+    /// Configures various settings for the scanner and its decoders.
+    ///
+    /// # Arguments
+    /// * `iscn` - Image scanner instance
+    /// * `sym` - Symbol type (0 for all symbols, or specific type)
+    /// * `cfg` - Configuration parameter
+    /// * `val` - Configuration value
+    ///
+    /// # Returns
+    /// 0 on success, 1 on error
+    pub(crate) unsafe fn set_config(&mut self, sym: SymbolType, cfg: c_int, val: c_int) -> c_int {
+        // Handle EAN composite configuration
+        if (sym == SymbolType::None || sym == SymbolType::Composite) && cfg == ZBAR_CFG_ENABLE {
+            self.ean_config = if val != 0 { 1 } else { 0 };
+            if sym != SymbolType::None {
+                return 0;
+            }
+        }
+
+        // Delegate decoder configuration
+        if cfg < ZBAR_CFG_UNCERTAINTY {
+            if let Some(dcode) = self.decoder_mut() {
+                return dcode.set_config(sym, cfg, val);
+            }
+            return 1;
+        }
+
+        // Handle uncertainty and related configs
+        if cfg < ZBAR_CFG_POSITION {
+            if cfg > ZBAR_CFG_UNCERTAINTY {
+                return 1;
+            }
+            let c = (cfg - ZBAR_CFG_UNCERTAINTY) as usize;
+            if sym > SymbolType::Partial {
+                let i = sym.hash() as usize;
+                self.sym_configs[c][i] = val;
+            } else {
+                for i in 0..NUM_SYMS {
+                    self.sym_configs[c][i] = val;
+                }
+            }
+            return 0;
+        }
+
+        // Image scanner parameters apply only to ZBAR_PARTIAL
+        if sym > SymbolType::Partial {
+            return 1;
+        }
+
+        // Handle density configuration
+        if (ZBAR_CFG_X_DENSITY..=ZBAR_CFG_Y_DENSITY).contains(&cfg) {
+            self.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize] = val;
+            return 0;
+        }
+
+        // Handle position and related configuration flags
+        let cfg_bit = cfg - ZBAR_CFG_POSITION;
+
+        if val == 0 {
+            self.config &= !(1 << cfg_bit);
+        } else if val == 1 {
+            self.config |= 1 << cfg_bit;
+        } else {
+            return 1;
+        }
+
+        0
+    }
+
+    /// Internal image scanning implementation
+    ///
+    /// Performs the actual barcode scanning on an image with horizontal and vertical passes.
+    ///
+    /// # Arguments
+    /// * `iscn` - Image scanner instance
+    /// * `img` - Image to scan
+    ///
+    /// # Returns
+    /// Pointer to symbol set on success, null on error
+    unsafe fn _zbar_scan_image(&mut self, img: &mut zbar_image_t) -> Option<zbar_symbol_set_t> {
+        // Reset QR and SQ decoders
+        if let Some(qr) = &mut self.qr {
+            _zbar_qr_reset(qr);
+        }
+        if let Some(sq) = &mut self.sq {
+            sq.reset();
+        }
+
+        // Image must be in grayscale format
+        if img.format != fourcc(b'Y', b'8', b'0', b'0')
+            && img.format != fourcc(b'G', b'R', b'E', b'Y')
+        {
+            return None;
+        }
+
+        // Clear previous symbols for new scan
+        let scanner = &mut *self;
+        scanner.syms.symbols.clear();
+
+        // Share the symbol set with the image (we'll clone it at the end)
+        // For now, we'll handle this differently - the image will get a clone of the results
+
+        let w = img.width;
+        let h = img.height;
+        let data = img.data.as_ptr();
+        let scn = self.scn.as_mut()?;
+        scn.scanner_new_scan();
+
+        // Horizontal scanning pass
+        let density = CFG!(self, ZBAR_CFG_Y_DENSITY);
+        if density > 0 {
+            let mut p = data;
+            let mut x = 0i32;
+            let mut y = 0i32;
+
+            let mut border = ((h - 1) % (density as c_uint)).div_ceil(2);
+            if border > h / 2 {
+                border = h / 2;
+            }
+            c_assert!(border <= h);
+            self.dy = 0;
+
+            // movedelta(0, border)
+            y += border as i32;
+            p = p.offset((border * w) as isize);
+            self.v = y;
+
+            while (y as c_uint) < h {
+                self.dx = 1;
+                self.du = 1;
+                self.umin = 0;
+                while (x as c_uint) < w {
+                    let d = *p;
+                    x += 1;
+                    p = p.offset(1);
+                    scn.scan_y(d as c_int);
+                }
+                scn.quiet_border();
+
+                // movedelta(-1, density)
+                x -= 1;
+                y += density;
+                p = p.offset(-1 + (density * w as i32) as isize);
+                self.v = y;
+                if (y as c_uint) >= h {
+                    break;
+                }
+
+                self.dx = -1;
+                self.du = -1;
+                self.umin = w as c_int;
+                while x >= 0 {
+                    let d = *p;
+                    x -= 1;
+                    p = p.offset(-1);
+                    scn.scan_y(d as c_int);
+                }
+                scn.quiet_border();
+
+                // movedelta(1, density)
+                x += 1;
+                y += density;
+                p = p.offset(1 + (density * w as i32) as isize);
+                self.v = y;
+            }
+        }
+        self.dx = 0;
+
+        // Vertical scanning pass
+        let density = CFG!(self, ZBAR_CFG_X_DENSITY);
+        if density > 0 {
+            let mut p = data;
+            let mut x = 0i32;
+            let mut y = 0i32;
+
+            let mut border = ((w - 1) % (density as c_uint)).div_ceil(2);
+            if border > w / 2 {
+                border = w / 2;
+            }
+            c_assert!(border <= w);
+            // movedelta(border, 0)
+            x += border as i32;
+            p = p.offset(border as isize);
+            self.v = x;
+
+            while (x as c_uint) < w {
+                self.dy = 1;
+                self.du = 1;
+                self.umin = 0;
+                while (y as c_uint) < h {
+                    let d = *p;
+                    y += 1;
+                    p = p.offset(w as isize);
+                    scn.scan_y(d as c_int);
+                }
+                scn.quiet_border();
+
+                // movedelta(density, -1)
+                x += density;
+                y -= 1;
+                p = p.offset((density as isize) - (w as isize));
+                self.v = x;
+                if (x as c_uint) >= w {
+                    break;
+                }
+
+                self.dy = -1;
+                self.du = -1;
+                self.umin = h as c_int;
+                while y >= 0 {
+                    let d = *p;
+                    y -= 1;
+                    p = p.offset(-(w as isize));
+                    scn.scan_y(d as c_int);
+                }
+                scn.quiet_border();
+
+                // movedelta(density, 1)
+                x += density;
+                y += 1;
+                p = p.offset((density as isize) + (w as isize));
+                self.v = x;
+            }
+        }
+        self.dy = 0;
+
+        // Decode QR and SQ codes
+        let raw_binary = zbar_image_scanner_get_config(self, SymbolType::QrCode, ZBAR_CFG_BINARY)
+            .unwrap_or(0)
+            != 0;
+        if let Some(qr) = &mut self.qr {
+            let qr_symbols = qr_decode(qr, img, raw_binary);
+            for sym in qr_symbols {
+                self.add_symbol(sym);
+            }
+        }
+
+        self.sq_handler();
+        if let Some(sq) = &mut self.sq {
+            if let Ok(Some(symbol)) = sq_decode(sq, img) {
+                self.add_symbol(symbol);
+            }
+        }
+
+        // Filter and merge EAN composite results
+        let filter = density == 1 || CFG!(self, ZBAR_CFG_Y_DENSITY) == 1;
+        let scanner = &mut *self;
+
+        // Filter low-quality symbols
+        scanner.syms.symbols.retain(|sym| {
+            let sym_type = sym.symbol_type;
+            if (sym_type < SymbolType::Composite && sym_type > SymbolType::Partial)
+                || sym_type == SymbolType::Databar
+                || sym_type == SymbolType::DatabarExp
+                || sym_type == SymbolType::Codabar
+            {
+                // Keep if quality >= 4 OR if not Codabar and not filtered
+                !((sym_type == SymbolType::Codabar || filter) && sym.quality < 4)
+            } else {
+                true
+            }
+        });
+
+        // Count EAN and add-on symbols for potential merging
+        let mut nean = 0;
+        let mut naddon = 0;
+        for sym in &scanner.syms.symbols {
+            let sym_type = sym.symbol_type;
+            if sym_type < SymbolType::Composite && sym_type != SymbolType::Isbn10 {
+                if sym_type > SymbolType::Ean5 {
+                    nean += 1;
+                } else if sym_type > SymbolType::Partial {
+                    naddon += 1;
+                }
+            }
+        }
+
+        // Merge EAN composite if we have exactly one EAN and one add-on
+        let ean_config = scanner.ean_config;
+        if nean == 1 && naddon == 1 && ean_config != 0 {
+            // Extract EAN and add-on symbols
+            let mut ean_sym: Option<zbar_symbol_t> = None;
+            let mut addon_sym: Option<zbar_symbol_t> = None;
+            let mut other_syms = Vec::new();
+
+            for sym in scanner.syms.symbols.drain(..) {
+                let sym_type = sym.symbol_type;
+                if sym_type < SymbolType::Composite && sym_type > SymbolType::Partial {
+                    if sym_type <= SymbolType::Ean5 {
+                        addon_sym = Some(sym);
+                    } else {
+                        ean_sym = Some(sym);
+                    }
+                } else {
+                    other_syms.push(sym);
+                }
+            }
+
+            if let (Some(ean), Some(addon)) = (ean_sym, addon_sym) {
+                // Create composite symbol
+                let mut composite = zbar_symbol_t {
+                    symbol_type: SymbolType::Composite,
+                    orient: ean.orient,
+                    quality: 1,
+                    ..Default::default()
+                };
+
+                // Copy data from both symbols
+                composite.data.extend_from_slice(&ean.data);
+                composite.data.extend_from_slice(&addon.data);
+
+                // Create component symbol set
+                let mut component_set = zbar_symbol_set_t::default();
+                component_set.symbols.push(ean);
+                component_set.symbols.push(addon);
+                composite.components = Some(component_set);
+
+                // Add composite to results
+                other_syms.push(composite);
+            }
+
+            scanner.syms.symbols = other_syms;
+        }
+
+        // Clone the symbol set to the image
+        let scanner = &mut *self;
+        // Create a clone of the symbol set for the image
+        let img_syms = Box::new(zbar_symbol_set_t {
+            symbols: scanner.syms.symbols.clone(),
+        });
+        img.set_syms(img_syms);
+
+        Some(scanner.syms.clone())
+    }
 }
 
 /// Create a new image scanner
@@ -313,16 +630,16 @@ pub(crate) unsafe fn zbar_image_scanner_create() -> *mut zbar_image_scanner_t {
     iscn.configs[0] = 1; // ZBAR_CFG_X_DENSITY
     iscn.configs[1] = 1; // ZBAR_CFG_Y_DENSITY
 
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::None, ZBAR_CFG_POSITION, 1);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::None, ZBAR_CFG_UNCERTAINTY, 2);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::None, 65, 0); // ZBAR_CFG_TEST_INVERTED
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::QrCode, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::QrCode, ZBAR_CFG_BINARY, 0);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::Code128, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::Code93, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::Code39, ZBAR_CFG_UNCERTAINTY, 0);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::Codabar, ZBAR_CFG_UNCERTAINTY, 1);
-    zbar_image_scanner_set_config(&mut iscn, SymbolType::Composite, ZBAR_CFG_UNCERTAINTY, 0);
+    iscn.set_config(SymbolType::None, ZBAR_CFG_POSITION, 1);
+    iscn.set_config(SymbolType::None, ZBAR_CFG_UNCERTAINTY, 2);
+    iscn.set_config(SymbolType::None, 65, 0); // ZBAR_CFG_TEST_INVERTED
+    iscn.set_config(SymbolType::QrCode, ZBAR_CFG_UNCERTAINTY, 0);
+    iscn.set_config(SymbolType::QrCode, ZBAR_CFG_BINARY, 0);
+    iscn.set_config(SymbolType::Code128, ZBAR_CFG_UNCERTAINTY, 0);
+    iscn.set_config(SymbolType::Code93, ZBAR_CFG_UNCERTAINTY, 0);
+    iscn.set_config(SymbolType::Code39, ZBAR_CFG_UNCERTAINTY, 0);
+    iscn.set_config(SymbolType::Codabar, ZBAR_CFG_UNCERTAINTY, 1);
+    iscn.set_config(SymbolType::Composite, ZBAR_CFG_UNCERTAINTY, 0);
 
     let iscn_ptr = Box::into_raw(iscn);
 
@@ -442,7 +759,7 @@ pub(crate) unsafe fn symbol_handler(dcode: &mut zbar_decoder_t) {
     }
 
     // Allocate new symbol
-    let mut sym = (&mut *iscn).alloc_sym(symbol_type);
+    let mut sym = zbar_image_scanner_t::alloc_sym(symbol_type);
     sym.configs = dcode.get_configs(symbol_type);
     sym.modifiers = dcode.get_modifiers();
 
@@ -461,340 +778,4 @@ pub(crate) unsafe fn symbol_handler(dcode: &mut zbar_decoder_t) {
     }
 
     (*iscn).add_symbol(sym);
-}
-
-/// Set configuration for image scanner
-///
-/// Configures various settings for the scanner and its decoders.
-///
-/// # Arguments
-/// * `iscn` - Image scanner instance
-/// * `sym` - Symbol type (0 for all symbols, or specific type)
-/// * `cfg` - Configuration parameter
-/// * `val` - Configuration value
-///
-/// # Returns
-/// 0 on success, 1 on error
-pub(crate) unsafe fn zbar_image_scanner_set_config(
-    iscn: &mut zbar_image_scanner_t,
-    sym: SymbolType,
-    cfg: c_int,
-    val: c_int,
-) -> c_int {
-    // Handle EAN composite configuration
-    if (sym == SymbolType::None || sym == SymbolType::Composite) && cfg == ZBAR_CFG_ENABLE {
-        iscn.ean_config = if val != 0 { 1 } else { 0 };
-        if sym != SymbolType::None {
-            return 0;
-        }
-    }
-
-    // Delegate decoder configuration
-    if cfg < ZBAR_CFG_UNCERTAINTY {
-        if let Some(dcode) = iscn.decoder_mut() {
-            return dcode.set_config(sym, cfg, val);
-        }
-        return 1;
-    }
-
-    // Handle uncertainty and related configs
-    if cfg < ZBAR_CFG_POSITION {
-        if cfg > ZBAR_CFG_UNCERTAINTY {
-            return 1;
-        }
-        let c = (cfg - ZBAR_CFG_UNCERTAINTY) as usize;
-        if sym > SymbolType::Partial {
-            let i = sym.hash() as usize;
-            iscn.sym_configs[c][i] = val;
-        } else {
-            for i in 0..NUM_SYMS {
-                iscn.sym_configs[c][i] = val;
-            }
-        }
-        return 0;
-    }
-
-    // Image scanner parameters apply only to ZBAR_PARTIAL
-    if sym > SymbolType::Partial {
-        return 1;
-    }
-
-    // Handle density configuration
-    if (ZBAR_CFG_X_DENSITY..=ZBAR_CFG_Y_DENSITY).contains(&cfg) {
-        iscn.configs[(cfg - ZBAR_CFG_X_DENSITY) as usize] = val;
-        return 0;
-    }
-
-    // Handle position and related configuration flags
-    let cfg_bit = cfg - ZBAR_CFG_POSITION;
-
-    if val == 0 {
-        iscn.config &= !(1 << cfg_bit);
-    } else if val == 1 {
-        iscn.config |= 1 << cfg_bit;
-    } else {
-        return 1;
-    }
-
-    0
-}
-
-/// Internal image scanning implementation
-///
-/// Performs the actual barcode scanning on an image with horizontal and vertical passes.
-///
-/// # Arguments
-/// * `iscn` - Image scanner instance
-/// * `img` - Image to scan
-///
-/// # Returns
-/// Pointer to symbol set on success, null on error
-unsafe fn _zbar_scan_image(
-    iscn: *mut zbar_image_scanner_t,
-    img: &mut zbar_image_t,
-) -> Option<zbar_symbol_set_t> {
-    // Reset QR and SQ decoders
-    if let Some(qr) = &mut (*iscn).qr {
-        _zbar_qr_reset(qr);
-    }
-    if let Some(sq) = &mut (*iscn).sq {
-        sq.reset();
-    }
-
-    // Image must be in grayscale format
-    if img.format != fourcc(b'Y', b'8', b'0', b'0') && img.format != fourcc(b'G', b'R', b'E', b'Y')
-    {
-        return None;
-    }
-
-    // Clear previous symbols for new scan
-    let scanner = &mut *iscn;
-    scanner.syms.symbols.clear();
-
-    // Share the symbol set with the image (we'll clone it at the end)
-    // For now, we'll handle this differently - the image will get a clone of the results
-
-    let w = img.width;
-    let h = img.height;
-    let data = img.data.as_ptr();
-    let scn = (*iscn).scn.as_mut()?;
-    scanner_new_scan(scn);
-
-    // Horizontal scanning pass
-    let density = CFG!(iscn, ZBAR_CFG_Y_DENSITY);
-    if density > 0 {
-        let mut p = data;
-        let mut x = 0i32;
-        let mut y = 0i32;
-
-        let mut border = ((h - 1) % (density as c_uint)).div_ceil(2);
-        if border > h / 2 {
-            border = h / 2;
-        }
-        c_assert!(border <= h);
-        (*iscn).dy = 0;
-
-        // movedelta(0, border)
-        y += border as i32;
-        p = p.offset((border * w) as isize);
-        (*iscn).v = y;
-
-        while (y as c_uint) < h {
-            (*iscn).dx = 1;
-            (*iscn).du = 1;
-            (*iscn).umin = 0;
-            while (x as c_uint) < w {
-                let d = *p;
-                x += 1;
-                p = p.offset(1);
-                scan_y(scn, d as c_int);
-            }
-            (&mut *iscn).quiet_border();
-
-            // movedelta(-1, density)
-            x -= 1;
-            y += density;
-            p = p.offset(-1 + (density * w as i32) as isize);
-            (*iscn).v = y;
-            if (y as c_uint) >= h {
-                break;
-            }
-
-            (*iscn).dx = -1;
-            (*iscn).du = -1;
-            (*iscn).umin = w as c_int;
-            while x >= 0 {
-                let d = *p;
-                x -= 1;
-                p = p.offset(-1);
-                scan_y(scn, d as c_int);
-            }
-            (&mut *iscn).quiet_border();
-
-            // movedelta(1, density)
-            x += 1;
-            y += density;
-            p = p.offset(1 + (density * w as i32) as isize);
-            (*iscn).v = y;
-        }
-    }
-    (*iscn).dx = 0;
-
-    // Vertical scanning pass
-    let density = CFG!(iscn, ZBAR_CFG_X_DENSITY);
-    if density > 0 {
-        let mut p = data;
-        let mut x = 0i32;
-        let mut y = 0i32;
-
-        let mut border = ((w - 1) % (density as c_uint)).div_ceil(2);
-        if border > w / 2 {
-            border = w / 2;
-        }
-        c_assert!(border <= w);
-        // movedelta(border, 0)
-        x += border as i32;
-        p = p.offset(border as isize);
-        (*iscn).v = x;
-
-        while (x as c_uint) < w {
-            (*iscn).dy = 1;
-            (*iscn).du = 1;
-            (*iscn).umin = 0;
-            while (y as c_uint) < h {
-                let d = *p;
-                y += 1;
-                p = p.offset(w as isize);
-                scan_y(scn, d as c_int);
-            }
-            (&mut *iscn).quiet_border();
-
-            // movedelta(density, -1)
-            x += density;
-            y -= 1;
-            p = p.offset((density as isize) - (w as isize));
-            (*iscn).v = x;
-            if (x as c_uint) >= w {
-                break;
-            }
-
-            (*iscn).dy = -1;
-            (*iscn).du = -1;
-            (*iscn).umin = h as c_int;
-            while y >= 0 {
-                let d = *p;
-                y -= 1;
-                p = p.offset(-(w as isize));
-                scan_y(scn, d as c_int);
-            }
-            (&mut *iscn).quiet_border();
-
-            // movedelta(density, 1)
-            x += density;
-            y += 1;
-            p = p.offset((density as isize) + (w as isize));
-            (*iscn).v = x;
-        }
-    }
-    (*iscn).dy = 0;
-
-    // Decode QR and SQ codes
-    if let Some(qr) = &mut (*iscn).qr {
-        qr_decode(qr, &mut *iscn, img);
-    }
-
-    (&mut *iscn).sq_handler();
-    if let Some(sq) = &mut (*iscn).sq {
-        sq_decode(sq, &mut *iscn, img);
-    }
-
-    // Filter and merge EAN composite results
-    let filter = density == 1 || CFG!(iscn, ZBAR_CFG_Y_DENSITY) == 1;
-    let scanner = &mut *iscn;
-
-    // Filter low-quality symbols
-    scanner.syms.symbols.retain(|sym| {
-        let sym_type = sym.symbol_type;
-        if (sym_type < SymbolType::Composite && sym_type > SymbolType::Partial)
-            || sym_type == SymbolType::Databar
-            || sym_type == SymbolType::DatabarExp
-            || sym_type == SymbolType::Codabar
-        {
-            // Keep if quality >= 4 OR if not Codabar and not filtered
-            !((sym_type == SymbolType::Codabar || filter) && sym.quality < 4)
-        } else {
-            true
-        }
-    });
-
-    // Count EAN and add-on symbols for potential merging
-    let mut nean = 0;
-    let mut naddon = 0;
-    for sym in &scanner.syms.symbols {
-        let sym_type = sym.symbol_type;
-        if sym_type < SymbolType::Composite && sym_type != SymbolType::Isbn10 {
-            if sym_type > SymbolType::Ean5 {
-                nean += 1;
-            } else if sym_type > SymbolType::Partial {
-                naddon += 1;
-            }
-        }
-    }
-
-    // Merge EAN composite if we have exactly one EAN and one add-on
-    let ean_config = scanner.ean_config;
-    if nean == 1 && naddon == 1 && ean_config != 0 {
-        // Extract EAN and add-on symbols
-        let mut ean_sym: Option<zbar_symbol_t> = None;
-        let mut addon_sym: Option<zbar_symbol_t> = None;
-        let mut other_syms = Vec::new();
-
-        for sym in scanner.syms.symbols.drain(..) {
-            let sym_type = sym.symbol_type;
-            if sym_type < SymbolType::Composite && sym_type > SymbolType::Partial {
-                if sym_type <= SymbolType::Ean5 {
-                    addon_sym = Some(sym);
-                } else {
-                    ean_sym = Some(sym);
-                }
-            } else {
-                other_syms.push(sym);
-            }
-        }
-
-        if let (Some(ean), Some(addon)) = (ean_sym, addon_sym) {
-            // Create composite symbol
-            let mut composite = zbar_symbol_t {
-                symbol_type: SymbolType::Composite,
-                orient: ean.orient,
-                quality: 1,
-                ..Default::default()
-            };
-
-            // Copy data from both symbols
-            composite.data.extend_from_slice(&ean.data);
-            composite.data.extend_from_slice(&addon.data);
-
-            // Create component symbol set
-            let mut component_set = zbar_symbol_set_t::default();
-            component_set.symbols.push(ean);
-            component_set.symbols.push(addon);
-            composite.components = Some(component_set);
-
-            // Add composite to results
-            other_syms.push(composite);
-        }
-
-        scanner.syms.symbols = other_syms;
-    }
-
-    // Clone the symbol set to the image
-    let scanner = &mut *iscn;
-    // Create a clone of the symbol set for the image
-    let img_syms = Box::new(zbar_symbol_set_t {
-        symbols: scanner.syms.symbols.clone(),
-    });
-    img.set_syms(img_syms);
-
-    Some(scanner.syms.clone())
 }

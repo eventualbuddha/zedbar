@@ -13,12 +13,13 @@ use reed_solomon::Decoder as RSDecoder;
 use crate::{
     decoder::qr_finder_line,
     image_ffi::zbar_image_t,
-    img_scanner::{qr_reader, zbar_image_scanner_t},
+    img_scanner::qr_reader,
     qrcode::{
         binarize::binarize,
         qrdectxt::qr_code_data_list_extract_text,
         util::{qr_ihypot, qr_ilog, qr_isqrt},
     },
+    symbol::zbar_symbol_t,
 };
 
 use super::bch15_5::bch15_5_correct;
@@ -4588,11 +4589,11 @@ unsafe fn qr_reader_match_centers(
 /// Decode QR codes from an image
 pub(crate) unsafe fn qr_decode(
     reader: &mut qr_reader,
-    iscn: &mut zbar_image_scanner_t,
     img: &mut zbar_image_t,
-) -> c_int {
+    raw_binary: bool,
+) -> Vec<zbar_symbol_t> {
     if reader.finder_lines[0].lines.len() < 9 || reader.finder_lines[1].lines.len() < 9 {
-        return 0;
+        return vec![];
     }
 
     let mut centers = qr_finder_centers_locate(reader, 0, 0);
@@ -4611,15 +4612,15 @@ pub(crate) unsafe fn qr_decode(
             img.height as c_int,
         );
 
-        let nqrdata = if !qrlist.qrdata.is_empty() {
-            qr_code_data_list_extract_text(&qrlist, iscn)
+        let qrdata = if !qrlist.qrdata.is_empty() {
+            qr_code_data_list_extract_text(&qrlist, raw_binary)
         } else {
-            0
+            vec![]
         };
 
         qrlist.qrdata.clear();
-        nqrdata
+        qrdata
     } else {
-        0
+        vec![]
     }
 }
