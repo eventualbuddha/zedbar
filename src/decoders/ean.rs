@@ -4,7 +4,7 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    decoder::{ean_decoder_t, ean_pass_t, zbar_decoder_t, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE},
+    decoder::{zbar_decoder_t, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE},
     finder::decode_e,
     line_scanner::zbar_color_t,
     SymbolType,
@@ -105,22 +105,6 @@ fn check_width(w0: c_uint, w1: c_uint) -> c_uint {
 #[inline]
 fn test_cfg(config: c_uint, cfg: c_int) -> bool {
     ((config >> cfg) & 1) != 0
-}
-
-/// Get config for a specific symbol type
-#[inline]
-fn ean_get_config(ean: &ean_decoder_t, sym: SymbolType) -> c_uint {
-    match sym {
-        SymbolType::Ean2 => ean.ean2_config,
-        SymbolType::Ean5 => ean.ean5_config,
-        SymbolType::Ean8 => ean.ean8_config,
-        SymbolType::Upce => ean.upce_config,
-        SymbolType::Isbn10 => ean.isbn10_config,
-        SymbolType::Upca => ean.upca_config,
-        SymbolType::Ean13 => ean.ean13_config,
-        SymbolType::Isbn13 => ean.isbn13_config,
-        _ => 0,
-    }
 }
 
 /// Evaluate previous N (>= 2) widths as auxiliary pattern,
@@ -248,20 +232,413 @@ fn decode4(dcode: &zbar_decoder_t) -> i8 {
 // Partial decode functions
 // ============================================================================
 
-/// Handle EAN-2 addon
-fn ean_part_end2(ean: &ean_decoder_t, pass: &ean_pass_t) -> PartialSymbolType {
-    if !test_cfg(ean.ean2_config, ZBAR_CFG_ENABLE) {
-        return PartialSymbolType::None;
+/// EAN pass state
+#[derive(Default)]
+pub(crate) struct ean_pass_t {
+    pub(crate) state: c_char,
+    pub(crate) width: c_uint,
+    pub(crate) raw: [u8; 7],
+}
+
+/// EAN/UPC decoder state
+#[derive(Default)]
+pub(crate) struct ean_decoder_t {
+    pub(crate) pass: [ean_pass_t; 4],
+    pub(crate) left: SymbolType,
+    pub(crate) right: SymbolType,
+    pub(crate) direction: c_int,
+    pub(crate) s4: c_uint,
+    pub(crate) width: c_uint,
+    pub(crate) buf: [c_char; 18],
+    pub(crate) enable: bool,
+    pub(crate) ean13_config: c_uint,
+    pub(crate) ean8_config: c_uint,
+    pub(crate) upca_config: c_uint,
+    pub(crate) upce_config: c_uint,
+    pub(crate) isbn10_config: c_uint,
+    pub(crate) isbn13_config: c_uint,
+    pub(crate) ean5_config: c_uint,
+    pub(crate) ean2_config: c_uint,
+}
+
+impl ean_decoder_t {
+    /// Prepare EAN decoder for new scan
+    pub(crate) fn new_scan(&mut self) {
+        self.pass[0].state = -1;
+        self.pass[1].state = -1;
+        self.pass[2].state = -1;
+        self.pass[3].state = -1;
+        self.s4 = 0;
     }
 
-    // extract parity bits
-    let par = ((pass.raw[1] & 0x10) >> 3) | ((pass.raw[2] & 0x10) >> 4);
-    // calculate "checksum"
-    let chk = (!(((pass.raw[1] & 0xf) * 10) + (pass.raw[2] & 0xf))) & 0x3;
-    if par != chk {
-        return PartialSymbolType::None;
+    /// Reset EAN decoder state
+    pub(crate) fn reset(&mut self) {
+        self.new_scan();
+        self.left = SymbolType::None;
+        self.right = SymbolType::None;
     }
-    PartialSymbolType::Ean2
+
+    /// Get config for a specific symbol type
+    fn ean_get_config(&self, sym: SymbolType) -> c_uint {
+        match sym {
+            SymbolType::Ean2 => self.ean2_config,
+            SymbolType::Ean5 => self.ean5_config,
+            SymbolType::Ean8 => self.ean8_config,
+            SymbolType::Upce => self.upce_config,
+            SymbolType::Isbn10 => self.isbn10_config,
+            SymbolType::Upca => self.upca_config,
+            SymbolType::Ean13 => self.ean13_config,
+            SymbolType::Isbn13 => self.isbn13_config,
+            _ => 0,
+        }
+    }
+
+    /// Handle EAN-13/UPC-E partial
+    fn ean_part_end7(&mut self, pass_index: usize, fwd: u8) -> PartialSymbolType {
+        // calculate parity index
+        let par = if fwd != 0 {
+            ((self.pass[pass_index].raw[1] & 0x10) << 1)
+                | (self.pass[pass_index].raw[2] & 0x10)
+                | ((self.pass[pass_index].raw[3] & 0x10) >> 1)
+                | ((self.pass[pass_index].raw[4] & 0x10) >> 2)
+                | ((self.pass[pass_index].raw[5] & 0x10) >> 3)
+                | ((self.pass[pass_index].raw[6] & 0x10) >> 4)
+        } else {
+            ((self.pass[pass_index].raw[1] & 0x10) >> 4)
+                | ((self.pass[pass_index].raw[2] & 0x10) >> 3)
+                | ((self.pass[pass_index].raw[3] & 0x10) >> 2)
+                | ((self.pass[pass_index].raw[4] & 0x10) >> 1)
+                | (self.pass[pass_index].raw[5] & 0x10)
+                | ((self.pass[pass_index].raw[6] & 0x10) << 1)
+        };
+
+        // lookup parity combination
+        self.pass[pass_index].raw[0] = PARITY_DECODE[(par >> 1) as usize];
+        if (par & 1) != 0 {
+            self.pass[pass_index].raw[0] >>= 4;
+        }
+        self.pass[pass_index].raw[0] &= 0xf;
+
+        if self.pass[pass_index].raw[0] == 0xf {
+            // invalid parity combination
+            return PartialSymbolType::None;
+        }
+
+        if (par != 0) != (fwd != 0) {
+            self.pass[pass_index].state |= STATE_REV;
+            // reverse sampled digits
+            for i in 1..4 {
+                self.pass[pass_index].raw.swap(i, 7 - i);
+            }
+        }
+
+        if test_cfg(self.ean13_config, ZBAR_CFG_ENABLE) {
+            if par == 0 {
+                return PartialSymbolType::Ean13(Side::Right);
+            }
+            if (par & 0x20) != 0 {
+                return PartialSymbolType::Ean13(Side::Left);
+            }
+        }
+
+        if par != 0 && (par & 0x20) == 0 {
+            return PartialSymbolType::Upce;
+        }
+
+        PartialSymbolType::None
+    }
+
+    /// Handle EAN-5 addon
+    fn ean_part_end5(&self, pass_index: usize) -> PartialSymbolType {
+        if !test_cfg(self.ean5_config, ZBAR_CFG_ENABLE) {
+            return PartialSymbolType::None;
+        }
+
+        // extract parity bits
+        let par = (self.pass[pass_index].raw[1] & 0x10)
+            | ((self.pass[pass_index].raw[2] & 0x10) >> 1)
+            | ((self.pass[pass_index].raw[3] & 0x10) >> 2)
+            | ((self.pass[pass_index].raw[4] & 0x10) >> 3)
+            | ((self.pass[pass_index].raw[5] & 0x10) >> 4);
+
+        // calculate checksum
+        let chk = ((((self.pass[pass_index].raw[1] & 0x0f) as c_uint
+            + (self.pass[pass_index].raw[2] & 0x0f) as c_uint * 3
+            + (self.pass[pass_index].raw[3] & 0x0f) as c_uint
+            + (self.pass[pass_index].raw[4] & 0x0f) as c_uint * 3
+            + (self.pass[pass_index].raw[5] & 0x0f) as c_uint)
+            * 3)
+            % 10) as u8;
+
+        let mut parchk = PARITY_DECODE[(par >> 1) as usize];
+        if (par & 1) != 0 {
+            parchk >>= 4;
+        }
+        parchk &= 0xf;
+
+        if parchk != chk {
+            return PartialSymbolType::None;
+        }
+
+        PartialSymbolType::Ean5
+    }
+
+    /// EAN checksum verification
+    fn ean_verify_checksum(&self, n: usize) -> i8 {
+        let mut chk: u8 = 0;
+        for i in 0..n {
+            let d = self.buf[i] as u8;
+            zassert!(d < 10, -1, "i={:x} d={:x} chk={:x}", i, d, chk);
+            chk = chk.wrapping_add(d);
+            if (i ^ n) & 1 != 0 {
+                chk = chk.wrapping_add(d << 1);
+                if chk >= 20 {
+                    chk -= 20;
+                }
+            }
+            if chk >= 10 {
+                chk -= 10;
+            }
+        }
+        zassert!(chk < 10, -1, "chk={:x} n={:x}", chk, n);
+        if chk != 0 {
+            chk = 10 - chk;
+        }
+        let d = self.buf[n] as u8;
+        zassert!(d < 10, -1, "n={:x} d={:x} chk={:x}", n, d, chk);
+        if chk != d {
+            return -1;
+        }
+        0
+    }
+
+    /// Calculate ISBN-10 checksum
+    fn isbn10_calc_checksum(&self) -> c_char {
+        let mut chk: c_uint = 0;
+        for w in (2..=10).rev() {
+            let d = self.buf[13 - w] as u8;
+            zassert!(d < 10, b'?' as c_char, "w={:x} d={:x} chk={:x}", w, d, chk);
+            chk += d as c_uint * w as c_uint;
+        }
+        chk %= 11;
+        if chk == 0 {
+            return b'0' as c_char;
+        }
+        chk = 11 - chk;
+        if chk < 10 {
+            return (chk + b'0' as c_uint) as c_char;
+        }
+        b'X' as c_char
+    }
+
+    /// Expand UPC-E to UPC-A
+    fn ean_expand_upce(&mut self, pass_index: usize) {
+        let mut i = 0;
+
+        // parity encoded digit is checksum
+        self.buf[12] = self.pass[pass_index].raw[i] as c_char;
+        i += 1;
+
+        let decode = self.pass[pass_index].raw[6] & 0xf;
+        self.buf[0] = 0;
+        self.buf[1] = 0;
+        self.buf[2] = (self.pass[pass_index].raw[i] & 0xf) as c_char;
+        i += 1;
+        self.buf[3] = (self.pass[pass_index].raw[i] & 0xf) as c_char;
+        i += 1;
+        self.buf[4] = if decode < 3 {
+            decode as c_char
+        } else {
+            (self.pass[pass_index].raw[i] & 0xf) as c_char
+        };
+        if decode >= 3 {
+            i += 1;
+        }
+        self.buf[5] = if decode < 4 {
+            0
+        } else {
+            (self.pass[pass_index].raw[i] & 0xf) as c_char
+        };
+        if decode >= 4 {
+            i += 1;
+        }
+        self.buf[6] = if decode < 5 {
+            0
+        } else {
+            (self.pass[pass_index].raw[i] & 0xf) as c_char
+        };
+        if decode >= 5 {
+            i += 1;
+        }
+        self.buf[7] = 0;
+        self.buf[8] = 0;
+        self.buf[9] = if decode < 3 {
+            (self.pass[pass_index].raw[i] & 0xf) as c_char
+        } else {
+            0
+        };
+        if decode < 3 {
+            i += 1;
+        }
+        self.buf[10] = if decode < 4 {
+            (self.pass[pass_index].raw[i] & 0xf) as c_char
+        } else {
+            0
+        };
+        if decode < 4 {
+            i += 1;
+        }
+        self.buf[11] = if decode < 5 {
+            (self.pass[pass_index].raw[i] & 0xf) as c_char
+        } else {
+            decode as c_char
+        };
+    }
+
+    /// Integrate partial decode results
+    fn integrate_partial(&mut self, pass_index: usize, mut part: PartialSymbolType) -> SymbolType {
+        // if same partial is not consistent, reset others
+        if (self.left != SymbolType::None && (SymbolType::from(part) != self.left))
+            || (self.right != SymbolType::None && (SymbolType::from(part) != self.right))
+        {
+            // partial mismatch - reset collected parts
+            self.left = SymbolType::None;
+            self.right = SymbolType::None;
+        }
+
+        if (self.left != SymbolType::None || self.right != SymbolType::None)
+            && check_width(self.width, self.pass[pass_index].width) == 0
+        {
+            self.left = SymbolType::None;
+            self.right = SymbolType::None;
+        }
+
+        if part.side() == Some(Side::Right) {
+            let mut j = i32::from(part) - 1;
+            let mut i = i32::from(part) >> 1;
+            while i > 0 {
+                let digit = (self.pass[pass_index].raw[i as usize] & 0xf) as c_char;
+                if self.right != SymbolType::None && self.buf[j as usize] != digit {
+                    // partial mismatch - reset collected parts
+                    self.left = SymbolType::None;
+                    self.right = SymbolType::None;
+                }
+                self.buf[j as usize] = digit;
+                i -= 1;
+                j -= 1;
+            }
+            self.right = part.into();
+            part = part
+                .replace_symbol_type(self.left)
+                .expect("left and right should be compatible"); // FIXME!?
+        } else if matches!(
+            part,
+            PartialSymbolType::Ean13(_) | PartialSymbolType::Ean8(_)
+        ) {
+            // EAN_LEFT
+            let mut j = (i32::from(part) - 1) >> 1;
+            let mut i = i32::from(part) >> 1;
+            while j >= 0 {
+                let digit = (self.pass[pass_index].raw[i as usize] & 0xf) as c_char;
+                if self.left != SymbolType::None && self.buf[j as usize] != digit {
+                    // partial mismatch - reset collected parts
+                    self.left = SymbolType::None;
+                    self.right = SymbolType::None;
+                }
+                self.buf[j as usize] = digit;
+                i -= 1;
+                j -= 1;
+            }
+            self.left = part.into();
+            part = part
+                .replace_symbol_type(self.right)
+                .expect("left and right should be compatible"); // FIXME!?
+        } else if part != PartialSymbolType::Upce {
+            // add-ons
+            for i in (1..=(i32::from(part) as usize)).rev() {
+                self.buf[i - 1] = (self.pass[pass_index].raw[i] & 0xf) as c_char;
+            }
+            self.left = part.into();
+        } else {
+            self.ean_expand_upce(pass_index);
+        }
+
+        self.width = self.pass[pass_index].width;
+
+        // Initialize symbol_type from part, then override for special cases
+        let mut symbol_type = SymbolType::from(part);
+
+        if part == PartialSymbolType::None {
+            symbol_type = SymbolType::Partial;
+        }
+
+        if (matches!(part, PartialSymbolType::Ean13(_) | PartialSymbolType::Upce)
+            && self.ean_verify_checksum(12) != 0)
+            || (matches!(part, PartialSymbolType::Ean8(_)) && self.ean_verify_checksum(7) != 0)
+        {
+            // invalid checksum
+            if self.right != SymbolType::None {
+                self.left = SymbolType::None;
+            } else {
+                self.right = SymbolType::None;
+            }
+            symbol_type = SymbolType::None;
+        }
+
+        if matches!(part, PartialSymbolType::Ean13(_)) {
+            // special case self-13 subsets
+            if self.buf[0] == 0 && test_cfg(self.upca_config, ZBAR_CFG_ENABLE) {
+                symbol_type = SymbolType::Upca;
+            } else if self.buf[0] == 9 && self.buf[1] == 7 {
+                if (self.buf[2] == 8 || self.buf[2] == 9)
+                    && test_cfg(self.isbn13_config, ZBAR_CFG_ENABLE)
+                {
+                    symbol_type = SymbolType::Isbn13;
+                } else if self.buf[2] == 8 && test_cfg(self.isbn10_config, ZBAR_CFG_ENABLE) {
+                    symbol_type = SymbolType::Isbn10;
+                }
+            }
+        } else if matches!(part, PartialSymbolType::Upce) {
+            if test_cfg(self.upce_config, ZBAR_CFG_ENABLE) {
+                // UPC-E was decompressed for checksum verification,
+                // but user requested compressed result
+                self.buf[0] = 0;
+                self.buf[1] = 0;
+                for i in 2..8 {
+                    self.buf[i] = (self.pass[pass_index].raw[i - 1] & 0xf) as c_char;
+                }
+                self.buf[8] = (self.pass[pass_index].raw[0] & 0xf) as c_char;
+            } else if test_cfg(self.upca_config, ZBAR_CFG_ENABLE) {
+                // UPC-E reported as UPC-A has priority over self-13
+                symbol_type = SymbolType::Upca;
+            } else if test_cfg(self.ean13_config, ZBAR_CFG_ENABLE) {
+                symbol_type = SymbolType::Ean13;
+            } else {
+                symbol_type = SymbolType::None;
+            }
+        }
+
+        symbol_type
+    }
+
+    /// Handle EAN-2 addon
+    fn ean_part_end2(&mut self, pass_index: usize) -> PartialSymbolType {
+        if !test_cfg(self.ean2_config, ZBAR_CFG_ENABLE) {
+            return PartialSymbolType::None;
+        }
+
+        // extract parity bits
+        let par = ((self.pass[pass_index].raw[1] & 0x10) >> 3)
+            | ((self.pass[pass_index].raw[2] & 0x10) >> 4);
+        // calculate "checksum"
+        let chk = (!(((self.pass[pass_index].raw[1] & 0xf) * 10)
+            + (self.pass[pass_index].raw[2] & 0xf)))
+            & 0x3;
+        if par != chk {
+            return PartialSymbolType::None;
+        }
+        PartialSymbolType::Ean2
+    }
 }
 
 /// Handle EAN-8 partial (left or right half)
@@ -289,41 +666,6 @@ fn ean_part_end4(pass: &mut ean_pass_t, fwd: u8) -> PartialSymbolType {
     } else {
         PartialSymbolType::Ean8(Side::Left)
     }
-}
-
-/// Handle EAN-5 addon
-fn ean_part_end5(ean: &ean_decoder_t, pass: &ean_pass_t) -> PartialSymbolType {
-    if !test_cfg(ean.ean5_config, ZBAR_CFG_ENABLE) {
-        return PartialSymbolType::None;
-    }
-
-    // extract parity bits
-    let par = (pass.raw[1] & 0x10)
-        | ((pass.raw[2] & 0x10) >> 1)
-        | ((pass.raw[3] & 0x10) >> 2)
-        | ((pass.raw[4] & 0x10) >> 3)
-        | ((pass.raw[5] & 0x10) >> 4);
-
-    // calculate checksum
-    let chk = ((((pass.raw[1] & 0x0f) as c_uint
-        + (pass.raw[2] & 0x0f) as c_uint * 3
-        + (pass.raw[3] & 0x0f) as c_uint
-        + (pass.raw[4] & 0x0f) as c_uint * 3
-        + (pass.raw[5] & 0x0f) as c_uint)
-        * 3)
-        % 10) as u8;
-
-    let mut parchk = PARITY_DECODE[(par >> 1) as usize];
-    if (par & 1) != 0 {
-        parchk >>= 4;
-    }
-    parchk &= 0xf;
-
-    if parchk != chk {
-        return PartialSymbolType::None;
-    }
-
-    PartialSymbolType::Ean5
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,304 +725,8 @@ impl From<PartialSymbolType> for i32 {
     }
 }
 
-/// Handle EAN-13/UPC-E partial
-fn ean_part_end7(ean: &ean_decoder_t, pass: &mut ean_pass_t, fwd: u8) -> PartialSymbolType {
-    // calculate parity index
-    let par = if fwd != 0 {
-        ((pass.raw[1] & 0x10) << 1)
-            | (pass.raw[2] & 0x10)
-            | ((pass.raw[3] & 0x10) >> 1)
-            | ((pass.raw[4] & 0x10) >> 2)
-            | ((pass.raw[5] & 0x10) >> 3)
-            | ((pass.raw[6] & 0x10) >> 4)
-    } else {
-        ((pass.raw[1] & 0x10) >> 4)
-            | ((pass.raw[2] & 0x10) >> 3)
-            | ((pass.raw[3] & 0x10) >> 2)
-            | ((pass.raw[4] & 0x10) >> 1)
-            | (pass.raw[5] & 0x10)
-            | ((pass.raw[6] & 0x10) << 1)
-    };
-
-    // lookup parity combination
-    pass.raw[0] = PARITY_DECODE[(par >> 1) as usize];
-    if (par & 1) != 0 {
-        pass.raw[0] >>= 4;
-    }
-    pass.raw[0] &= 0xf;
-
-    if pass.raw[0] == 0xf {
-        // invalid parity combination
-        return PartialSymbolType::None;
-    }
-
-    if (par != 0) != (fwd != 0) {
-        pass.state |= STATE_REV;
-        // reverse sampled digits
-        for i in 1..4 {
-            pass.raw.swap(i, 7 - i);
-        }
-    }
-
-    if test_cfg(ean.ean13_config, ZBAR_CFG_ENABLE) {
-        if par == 0 {
-            return PartialSymbolType::Ean13(Side::Right);
-        }
-        if (par & 0x20) != 0 {
-            return PartialSymbolType::Ean13(Side::Left);
-        }
-    }
-
-    if par != 0 && (par & 0x20) == 0 {
-        return PartialSymbolType::Upce;
-    }
-
-    PartialSymbolType::None
-}
-
-/// EAN checksum verification
-fn ean_verify_checksum(ean: &ean_decoder_t, n: usize) -> i8 {
-    let mut chk: u8 = 0;
-    for i in 0..n {
-        let d = ean.buf[i] as u8;
-        zassert!(d < 10, -1, "i={:x} d={:x} chk={:x}", i, d, chk);
-        chk = chk.wrapping_add(d);
-        if (i ^ n) & 1 != 0 {
-            chk = chk.wrapping_add(d << 1);
-            if chk >= 20 {
-                chk -= 20;
-            }
-        }
-        if chk >= 10 {
-            chk -= 10;
-        }
-    }
-    zassert!(chk < 10, -1, "chk={:x} n={:x}", chk, n);
-    if chk != 0 {
-        chk = 10 - chk;
-    }
-    let d = ean.buf[n] as u8;
-    zassert!(d < 10, -1, "n={:x} d={:x} chk={:x}", n, d, chk);
-    if chk != d {
-        return -1;
-    }
-    0
-}
-
-/// Calculate ISBN-10 checksum
-fn isbn10_calc_checksum(ean: &ean_decoder_t) -> c_char {
-    let mut chk: c_uint = 0;
-    for w in (2..=10).rev() {
-        let d = ean.buf[13 - w] as u8;
-        zassert!(d < 10, b'?' as c_char, "w={:x} d={:x} chk={:x}", w, d, chk);
-        chk += d as c_uint * w as c_uint;
-    }
-    chk %= 11;
-    if chk == 0 {
-        return b'0' as c_char;
-    }
-    chk = 11 - chk;
-    if chk < 10 {
-        return (chk + b'0' as c_uint) as c_char;
-    }
-    b'X' as c_char
-}
-
-/// Expand UPC-E to UPC-A
-fn ean_expand_upce(ean: &mut ean_decoder_t, pass: &ean_pass_t) {
-    let mut i = 0;
-
-    // parity encoded digit is checksum
-    ean.buf[12] = pass.raw[i] as c_char;
-    i += 1;
-
-    let decode = pass.raw[6] & 0xf;
-    ean.buf[0] = 0;
-    ean.buf[1] = 0;
-    ean.buf[2] = (pass.raw[i] & 0xf) as c_char;
-    i += 1;
-    ean.buf[3] = (pass.raw[i] & 0xf) as c_char;
-    i += 1;
-    ean.buf[4] = if decode < 3 {
-        decode as c_char
-    } else {
-        (pass.raw[i] & 0xf) as c_char
-    };
-    if decode >= 3 {
-        i += 1;
-    }
-    ean.buf[5] = if decode < 4 {
-        0
-    } else {
-        (pass.raw[i] & 0xf) as c_char
-    };
-    if decode >= 4 {
-        i += 1;
-    }
-    ean.buf[6] = if decode < 5 {
-        0
-    } else {
-        (pass.raw[i] & 0xf) as c_char
-    };
-    if decode >= 5 {
-        i += 1;
-    }
-    ean.buf[7] = 0;
-    ean.buf[8] = 0;
-    ean.buf[9] = if decode < 3 {
-        (pass.raw[i] & 0xf) as c_char
-    } else {
-        0
-    };
-    if decode < 3 {
-        i += 1;
-    }
-    ean.buf[10] = if decode < 4 {
-        (pass.raw[i] & 0xf) as c_char
-    } else {
-        0
-    };
-    if decode < 4 {
-        i += 1;
-    }
-    ean.buf[11] = if decode < 5 {
-        (pass.raw[i] & 0xf) as c_char
-    } else {
-        decode as c_char
-    };
-}
-
-/// Integrate partial decode results
-fn integrate_partial(
-    ean: &mut ean_decoder_t,
-    pass: &mut ean_pass_t,
-    mut part: PartialSymbolType,
-) -> SymbolType {
-    // if same partial is not consistent, reset others
-    if (ean.left != SymbolType::None && (SymbolType::from(part) != ean.left))
-        || (ean.right != SymbolType::None && (SymbolType::from(part) != ean.right))
-    {
-        // partial mismatch - reset collected parts
-        ean.left = SymbolType::None;
-        ean.right = SymbolType::None;
-    }
-
-    if (ean.left != SymbolType::None || ean.right != SymbolType::None)
-        && check_width(ean.width, pass.width) == 0
-    {
-        ean.left = SymbolType::None;
-        ean.right = SymbolType::None;
-    }
-
-    if part.side() == Some(Side::Right) {
-        let mut j = i32::from(part) - 1;
-        let mut i = i32::from(part) >> 1;
-        while i > 0 {
-            let digit = (pass.raw[i as usize] & 0xf) as c_char;
-            if ean.right != SymbolType::None && ean.buf[j as usize] != digit {
-                // partial mismatch - reset collected parts
-                ean.left = SymbolType::None;
-                ean.right = SymbolType::None;
-            }
-            ean.buf[j as usize] = digit;
-            i -= 1;
-            j -= 1;
-        }
-        ean.right = part.into();
-        part = part
-            .replace_symbol_type(ean.left)
-            .expect("left and right should be compatible"); // FIXME!?
-    } else if matches!(
-        part,
-        PartialSymbolType::Ean13(_) | PartialSymbolType::Ean8(_)
-    ) {
-        // EAN_LEFT
-        let mut j = (i32::from(part) - 1) >> 1;
-        let mut i = i32::from(part) >> 1;
-        while j >= 0 {
-            let digit = (pass.raw[i as usize] & 0xf) as c_char;
-            if ean.left != SymbolType::None && ean.buf[j as usize] != digit {
-                // partial mismatch - reset collected parts
-                ean.left = SymbolType::None;
-                ean.right = SymbolType::None;
-            }
-            ean.buf[j as usize] = digit;
-            i -= 1;
-            j -= 1;
-        }
-        ean.left = part.into();
-        part = part
-            .replace_symbol_type(ean.right)
-            .expect("left and right should be compatible"); // FIXME!?
-    } else if part != PartialSymbolType::Upce {
-        // add-ons
-        for i in (1..=(i32::from(part) as usize)).rev() {
-            ean.buf[i - 1] = (pass.raw[i] & 0xf) as c_char;
-        }
-        ean.left = part.into();
-    } else {
-        ean_expand_upce(ean, pass);
-    }
-
-    ean.width = pass.width;
-
-    // Initialize symbol_type from part, then override for special cases
-    let mut symbol_type = SymbolType::from(part);
-
-    if part == PartialSymbolType::None {
-        symbol_type = SymbolType::Partial;
-    }
-
-    if (matches!(part, PartialSymbolType::Ean13(_) | PartialSymbolType::Upce)
-        && ean_verify_checksum(ean, 12) != 0)
-        || (matches!(part, PartialSymbolType::Ean8(_)) && ean_verify_checksum(ean, 7) != 0)
-    {
-        // invalid checksum
-        if ean.right != SymbolType::None {
-            ean.left = SymbolType::None;
-        } else {
-            ean.right = SymbolType::None;
-        }
-        symbol_type = SymbolType::None;
-    }
-
-    if matches!(part, PartialSymbolType::Ean13(_)) {
-        // special case EAN-13 subsets
-        if ean.buf[0] == 0 && test_cfg(ean.upca_config, ZBAR_CFG_ENABLE) {
-            symbol_type = SymbolType::Upca;
-        } else if ean.buf[0] == 9 && ean.buf[1] == 7 {
-            if (ean.buf[2] == 8 || ean.buf[2] == 9) && test_cfg(ean.isbn13_config, ZBAR_CFG_ENABLE)
-            {
-                symbol_type = SymbolType::Isbn13;
-            } else if ean.buf[2] == 8 && test_cfg(ean.isbn10_config, ZBAR_CFG_ENABLE) {
-                symbol_type = SymbolType::Isbn10;
-            }
-        }
-    } else if matches!(part, PartialSymbolType::Upce) {
-        if test_cfg(ean.upce_config, ZBAR_CFG_ENABLE) {
-            // UPC-E was decompressed for checksum verification,
-            // but user requested compressed result
-            ean.buf[0] = 0;
-            ean.buf[1] = 0;
-            for i in 2..8 {
-                ean.buf[i] = (pass.raw[i - 1] & 0xf) as c_char;
-            }
-            ean.buf[8] = (pass.raw[0] & 0xf) as c_char;
-        } else if test_cfg(ean.upca_config, ZBAR_CFG_ENABLE) {
-            // UPC-E reported as UPC-A has priority over EAN-13
-            symbol_type = SymbolType::Upca;
-        } else if test_cfg(ean.ean13_config, ZBAR_CFG_ENABLE) {
-            symbol_type = SymbolType::Ean13;
-        } else {
-            symbol_type = SymbolType::None;
-        }
-    }
-
-    symbol_type
-}
-
 /// Copy result to output buffer
-unsafe fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
+fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
     let mut j: usize = 0;
     let new_direction;
     let base;
@@ -710,7 +756,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
 
             if base == SymbolType::Isbn10
                 || (calc_base > SymbolType::Ean5
-                    && !test_cfg(ean_get_config(ean, sym), ZBAR_CFG_EMIT_CHECK))
+                    && !test_cfg(ean.ean_get_config(sym), ZBAR_CFG_EMIT_CHECK))
             {
                 calc_base = (calc_base as i32 - 1).into();
             }
@@ -727,7 +773,7 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
                 && j == 9
                 && test_cfg(ean.isbn10_config, ZBAR_CFG_EMIT_CHECK);
             isbn10_check_digit = if needs_isbn10_check {
-                isbn10_calc_checksum(ean) as u8
+                ean.isbn10_calc_checksum() as u8
             } else {
                 0
             };
@@ -768,21 +814,21 @@ unsafe fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
 }
 
 /// Update state for one of 4 parallel passes
-fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> PartialSymbolType {
-    pass.state = pass.state.wrapping_add(1);
-    let idx = pass.state & STATE_IDX;
-    let fwd = (pass.state & 1) as u8;
+fn decode_pass(dcode: &mut zbar_decoder_t, pass_index: usize) -> PartialSymbolType {
+    dcode.ean.pass[pass_index].state = dcode.ean.pass[pass_index].state.wrapping_add(1);
+    let idx = dcode.ean.pass[pass_index].state & STATE_IDX;
+    let fwd = (dcode.ean.pass[pass_index].state & 1) as u8;
 
     if dcode.color() == zbar_color_t::ZBAR_SPACE {
-        if (pass.state & STATE_ADDON) != 0 {
+        if (dcode.ean.pass[pass_index].state & STATE_ADDON) != 0 {
             if idx == 0x09 || idx == 0x21 {
                 let qz = dcode.get_width(0);
                 let s = calc_s(dcode, 1, 4);
                 let part = if qz == 0 || qz >= s * 3 / 4 {
                     if idx == 0x09 {
-                        ean_part_end2(&dcode.ean, pass)
+                        dcode.ean.ean_part_end2(pass_index)
                     } else {
-                        ean_part_end5(&dcode.ean, pass)
+                        dcode.ean.ean_part_end5(pass_index)
                     }
                 } else {
                     PartialSymbolType::None
@@ -791,63 +837,70 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> PartialSymb
                 if part != PartialSymbolType::None || idx == 0x21 {
                     let ean = &mut dcode.ean;
                     ean.direction = 0;
-                    pass.state = -1;
+                    dcode.ean.pass[pass_index].state = -1;
                     return part;
                 }
             }
             if (idx & 7) == 1 {
-                pass.state += 2;
+                dcode.ean.pass[pass_index].state += 2;
             }
         } else if (idx == 0x10 || idx == 0x11)
             && test_cfg(dcode.ean.ean8_config, ZBAR_CFG_ENABLE)
             && aux_end(dcode, fwd) == 0
         {
-            let part = ean_part_end4(pass, fwd);
+            let part = ean_part_end4(&mut dcode.ean.pass[pass_index], fwd);
             if part != PartialSymbolType::None {
-                let ean = &mut dcode.ean;
-                ean.direction = if (pass.state & STATE_REV) != 0 { 1 } else { 0 };
+                dcode.ean.direction = if (dcode.ean.pass[pass_index].state & STATE_REV) != 0 {
+                    1
+                } else {
+                    0
+                };
             }
-            pass.state = -1;
+            dcode.ean.pass[pass_index].state = -1;
             return part;
         } else if idx == 0x18 || idx == 0x19 {
             let mut part = PartialSymbolType::None;
-            if aux_end(dcode, fwd) == 0 && pass.raw[5] != 0xff {
-                part = ean_part_end7(&dcode.ean, pass, fwd);
+            if aux_end(dcode, fwd) == 0 && dcode.ean.pass[pass_index].raw[5] != 0xff {
+                part = dcode.ean.ean_part_end7(pass_index, fwd);
             }
             if part != PartialSymbolType::None {
-                let ean = &mut dcode.ean;
-                ean.direction = if (pass.state & STATE_REV) != 0 { 1 } else { 0 };
+                dcode.ean.direction = if (dcode.ean.pass[pass_index].state & STATE_REV) != 0 {
+                    1
+                } else {
+                    0
+                };
             }
-            pass.state = -1;
+            dcode.ean.pass[pass_index].state = -1;
             return part;
         }
     }
 
     let mut idx = idx;
-    if (pass.state & STATE_ADDON) != 0 {
+    if (dcode.ean.pass[pass_index].state & STATE_ADDON) != 0 {
         idx >>= 1;
     }
 
     if (idx & 0x03) == 0 && idx <= 0x14 {
         let mut code: i8 = -1;
-        let mut w = pass.width;
+        let mut w = dcode.ean.pass[pass_index].width;
 
         if dcode.ean.s4 == 0 {
             return PartialSymbolType::None;
         }
 
         // validate guard bars before decoding first char of symbol
-        if pass.state == 0 {
-            pass.state = aux_start(dcode);
-            pass.width = dcode.ean.s4;
-            if pass.state < 0 {
+        if dcode.ean.pass[pass_index].state == 0 {
+            dcode.ean.pass[pass_index].state = aux_start(dcode);
+            dcode.ean.pass[pass_index].width = dcode.ean.s4;
+            if dcode.ean.pass[pass_index].state < 0 {
                 return PartialSymbolType::None;
             }
-            idx = pass.state & STATE_IDX;
+            idx = dcode.ean.pass[pass_index].state & STATE_IDX;
         } else {
             w = check_width(w, dcode.ean.s4);
             if w != 0 {
-                pass.width = (pass.width + dcode.ean.s4 * 3) / 4;
+                dcode.ean.pass[pass_index].width =
+                    (dcode.ean.pass[pass_index].width + dcode.ean.s4 * 3) / 4;
             }
         }
 
@@ -856,14 +909,16 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> PartialSymb
         }
 
         if (code < 0 && idx != 0x10)
-            || (idx > 0 && (pass.state & STATE_ADDON) != 0 && aux_mid(dcode) != 0)
+            || (idx > 0
+                && (dcode.ean.pass[pass_index].state & STATE_ADDON) != 0
+                && aux_mid(dcode) != 0)
         {
-            pass.state = -1;
+            dcode.ean.pass[pass_index].state = -1;
         } else if code < 0 {
-            pass.raw[5] = 0xff;
+            dcode.ean.pass[pass_index].raw[5] = 0xff;
         } else {
             let raw_idx = ((idx >> 2) + 1) as usize;
-            pass.raw[raw_idx] = DIGITS[code as usize];
+            dcode.ean.pass[pass_index].raw[raw_idx] = DIGITS[code as usize];
         }
     }
 
@@ -875,7 +930,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass: &mut ean_pass_t) -> PartialSymb
 // ============================================================================
 
 /// Main EAN/UPC decoder entry point
-pub(crate) unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType {
     // process up to 4 separate passes
     let mut sym = SymbolType::None;
     let pass_idx = (dcode.idx & 3) as usize;
@@ -885,14 +940,11 @@ pub(crate) unsafe fn _zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType 
     dcode.ean.s4 = dcode.ean.s4.wrapping_add(dcode.get_width(0));
 
     for i in 0..4 {
-        let pass = unsafe { &mut *(&mut dcode.ean.pass[i] as *mut ean_pass_t) };
-        if pass.state >= 0 || i == pass_idx {
-            let part = decode_pass(dcode, pass);
+        if dcode.ean.pass[i].state >= 0 || i == pass_idx {
+            let part = decode_pass(dcode, i);
             if part != PartialSymbolType::None {
                 // update accumulated data from new partial decode
-                let ean = unsafe { &mut *(&mut dcode.ean as *mut ean_decoder_t) };
-                let pass = unsafe { &mut *(&mut dcode.ean.pass[i] as *mut ean_pass_t) };
-                sym = integrate_partial(ean, pass, part);
+                sym = dcode.ean.integrate_partial(i, part);
                 if sym != SymbolType::None {
                     // this pass valid => _reset_ all passes
                     dcode.ean.pass[0].state = -1;

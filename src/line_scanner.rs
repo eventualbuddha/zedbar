@@ -136,7 +136,7 @@ impl zbar_scanner_t {
         self.last_edge = 0;
         self.width = 0;
 
-        unsafe { decoder.new_scan() };
+        decoder.new_scan();
         edge
     }
 

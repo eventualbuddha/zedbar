@@ -9,8 +9,12 @@ use libc::{c_char, c_int, c_short, c_uint};
 
 use crate::{
     decoders::{
-        codabar::_zbar_decode_codabar, code128::_zbar_decode_code128, code39::_zbar_decode_code39,
-        code93::_zbar_decode_code93, databar::_zbar_decode_databar, ean::_zbar_decode_ean,
+        codabar::_zbar_decode_codabar,
+        code128::_zbar_decode_code128,
+        code39::_zbar_decode_code39,
+        code93::_zbar_decode_code93,
+        databar::_zbar_decode_databar,
+        ean::{ean_decoder_t, zbar_decode_ean},
         i25::_zbar_decode_i25,
     },
     finder::find_qr,
@@ -652,53 +656,6 @@ impl databar_decoder_t {
     }
 }
 
-/// EAN pass state
-#[derive(Default)]
-pub(crate) struct ean_pass_t {
-    pub(crate) state: c_char,
-    pub(crate) width: c_uint,
-    pub(crate) raw: [u8; 7],
-}
-
-/// EAN/UPC decoder state
-#[derive(Default)]
-pub(crate) struct ean_decoder_t {
-    pub(crate) pass: [ean_pass_t; 4],
-    pub(crate) left: SymbolType,
-    pub(crate) right: SymbolType,
-    pub(crate) direction: c_int,
-    pub(crate) s4: c_uint,
-    pub(crate) width: c_uint,
-    pub(crate) buf: [c_char; 18],
-    pub(crate) enable: bool,
-    pub(crate) ean13_config: c_uint,
-    pub(crate) ean8_config: c_uint,
-    pub(crate) upca_config: c_uint,
-    pub(crate) upce_config: c_uint,
-    pub(crate) isbn10_config: c_uint,
-    pub(crate) isbn13_config: c_uint,
-    pub(crate) ean5_config: c_uint,
-    pub(crate) ean2_config: c_uint,
-}
-
-impl ean_decoder_t {
-    /// Prepare EAN decoder for new scan
-    pub(crate) fn new_scan(&mut self) {
-        self.pass[0].state = -1;
-        self.pass[1].state = -1;
-        self.pass[2].state = -1;
-        self.pass[3].state = -1;
-        self.s4 = 0;
-    }
-
-    /// Reset EAN decoder state
-    pub(crate) fn reset(&mut self) {
-        self.new_scan();
-        self.left = SymbolType::None;
-        self.right = SymbolType::None;
-    }
-}
-
 /// QR finder line (from qrcode.h)
 #[derive(Default, Copy, Clone)]
 pub(crate) struct qr_finder_line {
@@ -933,7 +890,7 @@ impl zbar_decoder_t {
     ///
     /// Clears any intra-symbol state and resets color to ZBAR_SPACE.
     /// Any partially decoded symbol state is retained.
-    pub(crate) unsafe fn new_scan(&mut self) {
+    pub(crate) fn new_scan(&mut self) {
         // Soft reset decoder
         self.w.fill(0);
         self.lock = SymbolType::None;
@@ -996,7 +953,7 @@ impl zbar_decoder_t {
         }
 
         if self.ean.enable {
-            let tmp = _zbar_decode_ean(&mut *self);
+            let tmp = zbar_decode_ean(&mut *self);
             if tmp != SymbolType::None {
                 sym = tmp;
             }
@@ -1041,7 +998,7 @@ impl zbar_decoder_t {
         }
 
         if test_cfg(self.i25.config, ZBAR_CFG_ENABLE) {
-            let tmp = _zbar_decode_i25(&mut *self);
+            let tmp = _zbar_decode_i25(self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }

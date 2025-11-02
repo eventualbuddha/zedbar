@@ -138,7 +138,7 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
 
 /// Acquire lock and copy holding buffer
 #[inline]
-unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
+fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
     // Lock shared resources
     if !dcode.acquire_lock(SymbolType::I25) {
         dcode.i25.set_character(-1);
@@ -150,7 +150,7 @@ unsafe fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
 
 /// Decode end pattern and validate
 #[inline]
-unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
     let width = dcode.i25.width;
     let direction = dcode.i25.direction();
     let character = dcode.i25.character();
@@ -214,7 +214,7 @@ unsafe fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
 }
 
 /// Main I25 decode function
-pub(crate) unsafe fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Update latest character width
     let w10 = dcode.get_width(10);
     let w0 = dcode.get_width(0);

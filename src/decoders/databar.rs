@@ -21,7 +21,7 @@ fn var_max(len: i32, offset: i32) -> i32 {
 }
 
 #[inline]
-unsafe fn feed_bits(
+fn feed_bits(
     d: &mut u64,
     bit_count: &mut i32,
     len: &mut i32,
@@ -205,7 +205,7 @@ fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     }
 }
 
-unsafe fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
+fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
     let mut data_ptr = data;
     let first = data_ptr[0] as u64;
     data_ptr = &mut data_ptr[1..];
@@ -690,7 +690,7 @@ fn check_width(wf: u32, wd: u32, n: u32) -> c_int {
 }
 
 /// Merge or update a DataBar segment with existing segments
-unsafe fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
+fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
     let csegs = db.csegs();
     let epoch = db.epoch();
 
@@ -751,7 +751,7 @@ unsafe fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
 }
 
 /// Match DataBar segment to find complete symbol
-unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg_idx: usize) -> SymbolType {
+fn match_segment(dcode: &mut zbar_decoder_t, seg_idx: usize) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
@@ -889,7 +889,7 @@ unsafe fn match_segment(dcode: &mut zbar_decoder_t, seg_idx: usize) -> SymbolTyp
 
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
-unsafe fn lookup_sequence(
+fn lookup_sequence(
     seg: &mut databar_segment_t,
     fixed: i32,
     seq: &mut [i32],
@@ -939,7 +939,7 @@ unsafe fn lookup_sequence(
     }
 }
 
-unsafe fn match_segment_exp(dcode: &mut zbar_decoder_t, seg_idx: usize, dir: c_int) -> SymbolType {
+fn match_segment_exp(dcode: &mut zbar_decoder_t, seg_idx: usize, dir: c_int) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     if csegs == 0 {
@@ -1306,12 +1306,7 @@ fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -
 }
 
 /// Decode a DataBar character from width measurements
-unsafe fn decode_char(
-    dcode: &mut zbar_decoder_t,
-    seg_idx: usize,
-    off: c_int,
-    dir: c_int,
-) -> SymbolType {
+fn decode_char(dcode: &mut zbar_decoder_t, seg_idx: usize, off: c_int, dir: c_int) -> SymbolType {
     // Read segment values we need before taking other borrows
     let seg_exp = dcode.databar.seg(seg_idx).exp();
     let seg_side = dcode.databar.seg(seg_idx).side();
@@ -1469,7 +1464,7 @@ unsafe fn decode_char(
 
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
-unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
+fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
     let mut maxage = 0u32;
     let csegs = db.csegs();
     let epoch = db.epoch();
@@ -1525,7 +1520,7 @@ unsafe fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
 }
 
 /// Decode DataBar finder pattern
-unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
     let e0 = dcode.pair_width(1);
     let e2 = dcode.pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
@@ -1615,7 +1610,7 @@ unsafe fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
     rc
 }
 
-pub(crate) unsafe fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> SymbolType {
     let i = dcode.idx & 0xf;
 
     let mut sym = decode_finder(dcode);

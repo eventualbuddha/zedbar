@@ -596,9 +596,6 @@ pub(crate) struct qr_hom {
 ///
 /// Computes both the forward and inverse homography transformations
 /// from the given corner points to a square domain.
-///
-/// # Safety
-/// This function is unsafe because it dereferences the raw _hom pointer.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn qr_hom_init(
     _hom: &mut qr_hom,
@@ -1167,9 +1164,6 @@ impl qr_finder {
     /// _height: The distance between UL and DL in the square domain.
     ///
     /// Returns 0 on success, or -1 if the module size or version could not be estimated.
-    ///
-    /// # Safety
-    /// This function is unsafe because it dereferences the raw _f pointer.
     fn estimate_module_size_and_version(&mut self, _width: c_int, _height: c_int) -> c_int {
         let mut offs = qr_point::default();
         let mut sums: [c_int; 4] = [0; 4];
@@ -1280,9 +1274,6 @@ impl qr_finder {
 ///
 /// Uses the RANSAC (RANdom SAmple Consensus) algorithm to identify inliers
 /// among the edge points and eliminate outliers.
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers.
 fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e: c_int) {
     let edge_idx = _e as usize;
     let n = _f.edge_pts[edge_idx].len() as c_int;
@@ -1381,9 +1372,6 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
 }
 
 /// Perform a least-squares line fit to an edge of a finder pattern using the inliers found by RANSAC.
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers.
 fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: c_int, _res: c_int) -> c_int {
     let npts = _f.ninliers[_e as usize] as usize;
     if npts < 2 {
@@ -1408,9 +1396,6 @@ fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: c_int, _res: c_
 ///
 /// Unlike a normal edge fit, we guarantee that this one succeeds by creating at
 /// least one point on each edge using the estimated module size if it has no inliers.
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers.
 fn qr_line_fit_finder_pair(
     _l: &mut qr_line,
     _aff: &qr_aff,
@@ -2079,9 +2064,6 @@ const BCH18_6_CODES: [c_uint; 34] = [
 ///
 /// Reads the 18-bit version information pattern (6 data bits + 12 parity bits)
 /// from the specified direction and uses BCH error correction to recover the version.
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers and accesses image data.
 fn qr_finder_version_decode(
     _f: &qr_finder,
     _hom: &qr_hom,
@@ -2142,9 +2124,6 @@ fn qr_finder_version_decode(
 /// from around the three finder patterns and uses BCH(15,5) error correction
 /// to decode it. The function tries all combinations of duplicate samples and
 /// picks the most popular valid code.
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers and accesses image data.
 fn qr_finder_fmt_info_decode(
     _ul: &qr_finder,
     _ur: &qr_finder,
@@ -2447,9 +2426,6 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
 /// Sets up the sampling grid for reading QR code data bits from an image.
 /// This includes creating homography cells, masking function patterns,
 /// and locating alignment patterns.
-///
-/// # Safety
-/// This function is unsafe because it allocates memory and dereferences raw pointers.
 #[allow(clippy::too_many_arguments)]
 fn qr_sampling_grid_init(
     _grid: &mut qr_sampling_grid,
@@ -2770,9 +2746,6 @@ fn qr_sampling_grid_sample(
 /// Takes the bit data read from the QR code and groups it into bytes,
 /// distributing those bytes across the Reed-Solomon blocks.
 /// The block pointers are advanced by this routine.
-///
-/// # Safety
-/// This function is unsafe because it dereferences and modifies raw pointers.
 pub(crate) fn qr_samples_unpack(
     block_data: &mut [u8],
     mut block_positions: Vec<usize>,
@@ -4163,9 +4136,6 @@ impl qr_code_data {
     ///
     /// Decodes the various data modes (numeric, alphanumeric, byte, Kanji, etc.)
     /// and populates the qr_code_data structure.
-    ///
-    /// # Safety
-    /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
     pub(crate) fn parse(&mut self, _version: c_int, data: &[u8]) -> c_int {
         // The number of bits used to encode the character count for each version range and data mode
         const LEN_BITS: [[c_int; 4]; 3] = [
@@ -4478,9 +4448,6 @@ impl qr_code_data {
     /// 3. Groups bits into Reed-Solomon codewords
     /// 4. Performs error correction on each block
     /// 5. Parses the corrected data
-    ///
-    /// # Safety
-    /// This function is unsafe because it dereferences raw pointers and performs memory allocation.
     #[allow(clippy::too_many_arguments)]
     fn decode(
         &mut self,
@@ -4635,11 +4602,6 @@ pub(crate) struct qr_code_data_list {
 }
 
 impl qr_code_data_list {
-    /// # Safety
-    ///
-    /// This function is unsafe because it dereferences raw pointers passed from C.
-    /// The caller must ensure that the pointers are valid and that the data they
-    /// point to has the expected layout.
     pub(crate) fn extract_text(&self, raw_binary: bool) -> Vec<zbar_symbol_t> {
         let mut symbols = vec![];
 

@@ -28,28 +28,6 @@ fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
     (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
 }
 
-// C assert function
-extern "C" {
-    fn __assert_fail(assertion: *const u8, file: *const u8, line: c_uint, function: *const u8)
-        -> !;
-}
-
-// Helper macro to call C assert for compatibility
-macro_rules! c_assert {
-    ($cond:expr) => {
-        if !$cond {
-            unsafe {
-                __assert_fail(
-                    concat!(stringify!($cond), "\0").as_ptr(),
-                    concat!(file!(), "\0").as_ptr(),
-                    line!(),
-                    concat!("", "\0").as_ptr(),
-                )
-            }
-        }
-    };
-}
-
 // Helper macros for configuration access
 macro_rules! CFG {
     ($iscn:expr, $cfg:expr) => {
@@ -211,7 +189,7 @@ impl zbar_image_scanner_t {
     ///
     /// Processes a QR code finder line from the decoder and forwards it to the QR reader.
     /// Adjusts edge positions based on scanner state and transforms coordinates.
-    pub(crate) unsafe fn qr_handler(&mut self) {
+    pub(crate) fn qr_handler(&mut self) {
         let line = decoder_get_qr_finder_line(&mut self.dcode);
 
         let mut u = self.scn.get_edge(line.pos[0] as c_uint, QR_FINDER_SUBPREC);
@@ -350,7 +328,7 @@ impl zbar_image_scanner_t {
             if border > h / 2 {
                 border = h / 2;
             }
-            c_assert!(border <= h);
+            assert!(border <= h);
             self.dy = 0;
 
             // movedelta(0, border)
@@ -410,7 +388,7 @@ impl zbar_image_scanner_t {
             if border > w / 2 {
                 border = w / 2;
             }
-            c_assert!(border <= w);
+            assert!(border <= w);
             // movedelta(border, 0)
             x += border as i32;
             p += border as isize;
