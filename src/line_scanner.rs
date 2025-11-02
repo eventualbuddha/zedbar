@@ -40,7 +40,6 @@ impl From<u8> for zbar_color_t {
 /// Scanner state structure - must match the C layout exactly
 #[derive(Default)]
 pub(crate) struct zbar_scanner_t {
-    decoder: *mut zbar_decoder_t,
     y1_min_thresh: c_uint,
     x: c_uint,
     y0: [i32; 4],
@@ -55,9 +54,8 @@ impl zbar_scanner_t {
     /// Create a new scanner instance (owned version)
     ///
     /// Initializes a new scanner with the specified decoder.
-    pub(crate) fn new(dcode: *mut zbar_decoder_t) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            decoder: dcode,
             y1_min_thresh: ZBAR_SCANNER_THRESH_MIN,
             ..Self::default()
         }
@@ -66,12 +64,6 @@ impl zbar_scanner_t {
     /// Get the width of the most recent bar or space
     pub(crate) fn width(&self) -> c_uint {
         self.width
-    }
-
-    /// Get a mutable reference to the decoder (if present)
-    #[inline]
-    pub(crate) fn decoder_mut(&mut self) -> Option<&mut zbar_decoder_t> {
-        unsafe { self.decoder.as_mut() }
     }
 
     /// Calculate the current threshold for edge detection
@@ -105,7 +97,7 @@ impl zbar_scanner_t {
 
     /// Flush the scanner state
     #[inline]
-    pub(crate) fn scanner_flush(&mut self) -> SymbolType {
+    pub(crate) fn scanner_flush(&mut self, decoder: &mut zbar_decoder_t) -> SymbolType {
         if self.y1_sign == 0 {
             return SymbolType::None;
         }
@@ -113,7 +105,7 @@ impl zbar_scanner_t {
         let x = (self.x << ZBAR_FIXED) + ROUND;
 
         if self.cur_edge != x || self.y1_sign > 0 {
-            let edge = self.process_edge();
+            let edge = self.process_edge(decoder);
             self.cur_edge = x;
             self.y1_sign = -self.y1_sign;
             return edge;
@@ -121,19 +113,15 @@ impl zbar_scanner_t {
 
         self.y1_sign = 0;
         self.width = 0;
-        if let Some(decoder) = self.decoder_mut() {
-            unsafe { decoder.decode_width(0) }
-        } else {
-            SymbolType::Partial
-        }
+        unsafe { decoder.decode_width(0) }
     }
 
     /// Start a new scan
-    pub(crate) fn new_scan(&mut self) -> SymbolType {
+    pub(crate) fn new_scan(&mut self, decoder: &mut zbar_decoder_t) -> SymbolType {
         let mut edge = SymbolType::None;
 
         while self.y1_sign != 0 {
-            let tmp = self.scanner_flush();
+            let tmp = self.scanner_flush(decoder);
             if tmp > edge {
                 edge = tmp;
             }
@@ -148,14 +136,12 @@ impl zbar_scanner_t {
         self.last_edge = 0;
         self.width = 0;
 
-        if let Some(decoder) = self.decoder_mut() {
-            unsafe { decoder.new_scan() };
-        }
+        unsafe { decoder.new_scan() };
         edge
     }
 
     /// Process a single pixel intensity value
-    pub(crate) fn scan_y(&mut self, y: c_int) -> SymbolType {
+    pub(crate) fn scan_y(&mut self, y: c_int, decoder: &mut zbar_decoder_t) -> SymbolType {
         // retrieve short value history
         let x = self.x;
         let mut y0_1 = self.y0[((x.wrapping_sub(1)) & 3) as usize];
@@ -200,7 +186,7 @@ impl zbar_scanner_t {
 
             if y1_rev {
                 // intensity change reversal - finalize previous edge
-                edge = self.process_edge();
+                edge = self.process_edge(decoder);
             }
 
             if y1_rev || (self.y1_sign.abs() < y1_1.abs()) {
@@ -235,13 +221,13 @@ impl zbar_scanner_t {
     ///
     /// This function flushes the scanner pipeline twice and then starts a new scan.
     /// It's typically called at quiet borders to reset the scanner state.
-    pub(crate) unsafe fn quiet_border(&mut self) {
+    pub(crate) fn quiet_border(&mut self, decoder: &mut zbar_decoder_t) {
         // Flush scanner pipeline twice
-        self.scanner_flush();
-        self.scanner_flush();
+        self.scanner_flush(decoder);
+        self.scanner_flush(decoder);
 
         // Start new scan
-        self.new_scan();
+        self.new_scan(decoder);
     }
 
     /// Get the interpolated position of the last edge
@@ -264,7 +250,7 @@ impl zbar_scanner_t {
     ///
     /// This function is called when an edge (transition) is detected.
     /// It calculates the width of the element and passes it to the decoder.
-    fn process_edge(&mut self) -> SymbolType {
+    fn process_edge(&mut self, decoder: &mut zbar_decoder_t) -> SymbolType {
         if self.y1_sign == 0 {
             self.last_edge = (1 << ZBAR_FIXED) + ROUND;
             self.cur_edge = (1 << ZBAR_FIXED) + ROUND;
@@ -277,10 +263,6 @@ impl zbar_scanner_t {
 
         // pass to decoder
         let width = self.width;
-        if let Some(decoder) = self.decoder_mut() {
-            unsafe { decoder.decode_width(width) }
-        } else {
-            SymbolType::Partial
-        }
+        unsafe { decoder.decode_width(width) }
     }
 }

@@ -3548,17 +3548,19 @@ pub(crate) struct qr_reader {
     pub(crate) finder_lines: [qr_finder_lines; 2],
 }
 
-impl qr_reader {
+impl Default for qr_reader {
     /// Allocates a client reader handle.
-    pub(crate) fn new() -> qr_reader {
-        qr_reader {
+    fn default() -> Self {
+        Self {
             rng: ChaCha8Rng::from_seed([0u8; 32]),
             finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
         }
     }
+}
 
+impl qr_reader {
     /// reset finder state between scans
-    pub(crate) unsafe fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.finder_lines[0].lines.clear();
         self.finder_lines[1].lines.clear();
     }
@@ -3863,7 +3865,7 @@ impl qr_reader {
     }
 
     /// Match finder centers and decode QR codes
-    unsafe fn match_centers(
+    fn match_centers(
         &mut self,
         _qrlist: &mut qr_code_data_list,
         _centers: &mut [qr_finder_center],
@@ -3988,7 +3990,7 @@ impl qr_reader {
     }
 
     /// Decode QR codes from an image
-    pub(crate) unsafe fn decode(
+    pub(crate) fn decode(
         &mut self,
         img: &mut zbar_image_t,
         raw_binary: bool,
@@ -4638,7 +4640,7 @@ impl qr_code_data_list {
     /// This function is unsafe because it dereferences raw pointers passed from C.
     /// The caller must ensure that the pointers are valid and that the data they
     /// point to has the expected layout.
-    pub(crate) unsafe fn extract_text(&self, raw_binary: bool) -> Vec<zbar_symbol_t> {
+    pub(crate) fn extract_text(&self, raw_binary: bool) -> Vec<zbar_symbol_t> {
         let mut symbols = vec![];
 
         let qrdata = &self.qrdata;

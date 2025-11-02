@@ -2,7 +2,7 @@
 
 use crate::image::Image;
 use crate::img_scanner::zbar_image_scanner_t;
-use crate::{Error, Result, SymbolType};
+use crate::{Result, SymbolType};
 
 /// Configuration options for barcode scanning
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,38 +23,25 @@ pub enum Config {
 
 /// Image scanner that can find barcodes in 2D images
 pub struct Scanner {
-    ptr: *mut zbar_image_scanner_t,
+    scanner: zbar_image_scanner_t,
 }
 
 impl Scanner {
     /// Create a new image scanner
     pub fn new() -> Self {
-        let ptr = unsafe { zbar_image_scanner_t::new() };
-        Scanner { ptr }
+        Scanner {
+            scanner: zbar_image_scanner_t::default(),
+        }
     }
 
     /// Configure the scanner for a specific symbology
     pub fn set_config(&mut self, symbology: SymbolType, config: Config, value: i32) -> Result<()> {
-        let result = unsafe { (&mut *self.ptr).set_config(symbology, config as i32, value) };
-
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(Error::Invalid)
-        }
+        self.scanner.set_config(symbology, config as i32, value)
     }
 
     /// Scan an image for barcodes
     pub fn scan(&mut self, image: &mut Image) -> Result<i32> {
-        unsafe { (*self.ptr).scan_image(image.as_mut_image()) }
-    }
-}
-
-impl Drop for Scanner {
-    fn drop(&mut self) {
-        if !self.ptr.is_null() {
-            unsafe { drop(Box::from_raw(self.ptr)) }
-        }
+        self.scanner.scan_image(image.as_mut_image())
     }
 }
 
