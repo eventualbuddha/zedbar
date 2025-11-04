@@ -689,9 +689,9 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
             .get_length_limits(SymbolType::Code128)
             .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
 
-        if validate_checksum(dcode) || postprocess(dcode) {
-            sym = SymbolType::None;
-        } else if dcode.code128.character() < min_len as i16
+        if validate_checksum(dcode)
+            || postprocess(dcode)
+            || dcode.code128.character() < min_len as i16
             || (max_len > 0 && dcode.code128.character() > max_len as i16)
         {
             sym = SymbolType::None;
