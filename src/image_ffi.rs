@@ -11,7 +11,6 @@ use crate::img_scanner::zbar_symbol_set_t;
 
 #[derive(Default)]
 pub struct zbar_image_t {
-    pub format: u32,
     pub width: c_uint,
     pub height: c_uint,
     pub data: Vec<u8>,
@@ -36,15 +35,7 @@ impl zbar_image_t {
     }
 
     pub(crate) fn copy(&self, inverted: bool) -> Option<Self> {
-        const FOURCC_Y800: u32 = 0x30303859; // fourcc('Y', '8', '0', '0')
-        const FOURCC_GREY: u32 = 0x59455247; // fourcc('G', 'R', 'E', 'Y')
-
-        if inverted && self.format != FOURCC_Y800 && self.format != FOURCC_GREY {
-            return None;
-        }
-
         let mut dst = Self {
-            format: self.format,
             width: self.width,
             height: self.height,
             data: vec![0; self.data.len()],

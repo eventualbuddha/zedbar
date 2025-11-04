@@ -24,12 +24,6 @@ fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
     (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
 }
 
-// FourCC code for image formats
-#[inline]
-const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
-    (a as u32) | ((b as u32) << 8) | ((c as u32) << 16) | ((d as u32) << 24)
-}
-
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_set_t {
     pub(crate) symbols: Vec<zbar_symbol_t>,
@@ -241,13 +235,6 @@ impl zbar_image_scanner_t {
 
         self.qr.reset();
         self.sq.reset();
-
-        // Image must be in grayscale format
-        if img.format != fourcc(b'Y', b'8', b'0', b'0')
-            && img.format != fourcc(b'G', b'R', b'E', b'Y')
-        {
-            return None;
-        }
 
         // Clear previous symbols for new scan
         let scanner = &mut *self;

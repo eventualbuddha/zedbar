@@ -5,7 +5,6 @@
 
 use crate::{image_ffi::zbar_image_t, symbol::zbar_symbol_t, SymbolType};
 use libc::size_t;
-use std::io::Write;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Shape {
@@ -57,12 +56,6 @@ impl SqReader {
     pub(crate) fn decode(&mut self, img: &mut zbar_image_t) -> Result<Option<zbar_symbol_t>, ()> {
         if !self.enabled {
             return Ok(None);
-        }
-
-        // Check image format (Y800 = fourcc('Y','8','0','0'))
-        if img.format != 0x30303859 {
-            let _ = writeln!(std::io::stderr(), "Unexpected image format");
-            return Err(());
         }
 
         // Find starting pixel
