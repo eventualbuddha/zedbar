@@ -3,8 +3,7 @@
 use clap::Parser;
 use std::io::Write;
 use std::process;
-use zbar::SymbolType;
-use zbar::{Image, Scanner};
+use zbar::{config::*, DecoderConfig, Image, Scanner};
 
 /// Scan and decode bar codes from one or more image files
 #[derive(Parser)]
@@ -20,6 +19,102 @@ struct Args {
     #[arg(long)]
     raw: bool,
 
+    /// Disable all symbologies (use with --enable-* to select specific ones)
+    #[arg(long)]
+    disable_all: bool,
+
+    /// Enable EAN-13 barcode
+    #[arg(long)]
+    enable_ean13: bool,
+
+    /// Enable EAN-8 barcode
+    #[arg(long)]
+    enable_ean8: bool,
+
+    /// Enable EAN-2 add-on
+    #[arg(long)]
+    enable_ean2: bool,
+
+    /// Enable EAN-5 add-on
+    #[arg(long)]
+    enable_ean5: bool,
+
+    /// Enable UPC-A barcode
+    #[arg(long)]
+    enable_upca: bool,
+
+    /// Enable UPC-E barcode
+    #[arg(long)]
+    enable_upce: bool,
+
+    /// Enable ISBN-10
+    #[arg(long)]
+    enable_isbn10: bool,
+
+    /// Enable ISBN-13
+    #[arg(long)]
+    enable_isbn13: bool,
+
+    /// Enable Code 39
+    #[arg(long)]
+    enable_code39: bool,
+
+    /// Enable Code 93
+    #[arg(long)]
+    enable_code93: bool,
+
+    /// Enable Code 128
+    #[arg(long)]
+    enable_code128: bool,
+
+    /// Enable Interleaved 2 of 5
+    #[arg(long)]
+    enable_i25: bool,
+
+    /// Enable Codabar
+    #[arg(long)]
+    enable_codabar: bool,
+
+    /// Enable DataBar (RSS-14)
+    #[arg(long)]
+    enable_databar: bool,
+
+    /// Enable DataBar Expanded
+    #[arg(long)]
+    enable_databar_exp: bool,
+
+    /// Enable QR Code
+    #[arg(long)]
+    enable_qr: bool,
+
+    /// Enable SQ Code
+    #[arg(long)]
+    enable_sq: bool,
+
+    /// Disable EAN-13 barcode
+    #[arg(long)]
+    disable_ean13: bool,
+
+    /// Disable EAN-8 barcode
+    #[arg(long)]
+    disable_ean8: bool,
+
+    /// Disable Code 39
+    #[arg(long)]
+    disable_code39: bool,
+
+    /// Disable Code 93
+    #[arg(long)]
+    disable_code93: bool,
+
+    /// Disable Code 128
+    #[arg(long)]
+    disable_code128: bool,
+
+    /// Disable QR Code
+    #[arg(long)]
+    disable_qr: bool,
+
     /// Image files to scan
     #[arg(required = true)]
     files: Vec<String>,
@@ -27,6 +122,143 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+
+    // Build configuration based on command-line arguments
+    let config = if args.disable_all {
+        // Start with all symbologies disabled, then enable selected ones
+        let mut cfg = DecoderConfig::new().disable_all();
+
+        // Apply enable flags
+        if args.enable_ean13 {
+            cfg = cfg.enable(Ean13);
+        }
+        if args.enable_ean8 {
+            cfg = cfg.enable(Ean8);
+        }
+        if args.enable_ean2 {
+            cfg = cfg.enable(Ean2);
+        }
+        if args.enable_ean5 {
+            cfg = cfg.enable(Ean5);
+        }
+        if args.enable_upca {
+            cfg = cfg.enable(Upca);
+        }
+        if args.enable_upce {
+            cfg = cfg.enable(Upce);
+        }
+        if args.enable_isbn10 {
+            cfg = cfg.enable(Isbn10);
+        }
+        if args.enable_isbn13 {
+            cfg = cfg.enable(Isbn13);
+        }
+        if args.enable_code39 {
+            cfg = cfg.enable(Code39);
+        }
+        if args.enable_code93 {
+            cfg = cfg.enable(Code93);
+        }
+        if args.enable_code128 {
+            cfg = cfg.enable(Code128);
+        }
+        if args.enable_i25 {
+            cfg = cfg.enable(I25);
+        }
+        if args.enable_codabar {
+            cfg = cfg.enable(Codabar);
+        }
+        if args.enable_databar {
+            cfg = cfg.enable(Databar);
+        }
+        if args.enable_databar_exp {
+            cfg = cfg.enable(DatabarExp);
+        }
+        if args.enable_qr {
+            cfg = cfg.enable(QrCode);
+        }
+        if args.enable_sq {
+            cfg = cfg.enable(SqCode);
+        }
+        cfg
+    } else {
+        // Start with default configuration (all enabled), then apply changes
+        let mut cfg = DecoderConfig::new();
+
+        // Apply enable flags (redundant but harmless)
+        if args.enable_ean13 {
+            cfg = cfg.enable(Ean13);
+        }
+        if args.enable_ean8 {
+            cfg = cfg.enable(Ean8);
+        }
+        if args.enable_ean2 {
+            cfg = cfg.enable(Ean2);
+        }
+        if args.enable_ean5 {
+            cfg = cfg.enable(Ean5);
+        }
+        if args.enable_upca {
+            cfg = cfg.enable(Upca);
+        }
+        if args.enable_upce {
+            cfg = cfg.enable(Upce);
+        }
+        if args.enable_isbn10 {
+            cfg = cfg.enable(Isbn10);
+        }
+        if args.enable_isbn13 {
+            cfg = cfg.enable(Isbn13);
+        }
+        if args.enable_code39 {
+            cfg = cfg.enable(Code39);
+        }
+        if args.enable_code93 {
+            cfg = cfg.enable(Code93);
+        }
+        if args.enable_code128 {
+            cfg = cfg.enable(Code128);
+        }
+        if args.enable_i25 {
+            cfg = cfg.enable(I25);
+        }
+        if args.enable_codabar {
+            cfg = cfg.enable(Codabar);
+        }
+        if args.enable_databar {
+            cfg = cfg.enable(Databar);
+        }
+        if args.enable_databar_exp {
+            cfg = cfg.enable(DatabarExp);
+        }
+        if args.enable_qr {
+            cfg = cfg.enable(QrCode);
+        }
+        if args.enable_sq {
+            cfg = cfg.enable(SqCode);
+        }
+
+        // Apply disable flags
+        if args.disable_ean13 {
+            cfg = cfg.disable(Ean13);
+        }
+        if args.disable_ean8 {
+            cfg = cfg.disable(Ean8);
+        }
+        if args.disable_code39 {
+            cfg = cfg.disable(Code39);
+        }
+        if args.disable_code93 {
+            cfg = cfg.disable(Code93);
+        }
+        if args.disable_code128 {
+            cfg = cfg.disable(Code128);
+        }
+        if args.disable_qr {
+            cfg = cfg.disable(QrCode);
+        }
+        cfg
+    };
 
     let mut total_symbols = 0;
 
@@ -66,16 +298,8 @@ fn main() {
             }
         };
 
-        // Create scanner and configure for all symbologies
-        let mut scanner = Scanner::new();
-
-        // Enable all barcode types
-        if let Err(e) = scanner.set_config(SymbolType::None, zbar::scanner::Config::Enable, 1) {
-            if !args.quiet {
-                eprintln!("Failed to configure scanner: {}", e);
-            }
-            process::exit(1);
-        }
+        // Create scanner with configured symbologies
+        let mut scanner = Scanner::with_config(config.clone());
 
         // Scan the image
         let num_symbols = match scanner.scan(&mut zbar_img) {

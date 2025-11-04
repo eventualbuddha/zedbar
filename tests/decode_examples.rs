@@ -94,7 +94,7 @@ fn decode_with_rqrr(path: &str) -> Option<(String, String)> {
 fn test_qr_simple() {
     let expected = Some((
         "QR-Code".to_string(),
-        "Hello, simplified zbar!\n".to_string()
+        "Hello, simplified zbar!\n".to_string(),
     ));
 
     let result_this = decode_image("examples/test-qr.png");
@@ -109,7 +109,11 @@ fn test_qr_simple() {
 
     // rqrr should match if it succeeds (it may not decode all QR codes)
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -117,7 +121,7 @@ fn test_qr_simple() {
 fn test_qr_jpg() {
     let expected = Some((
         "QR-Code".to_string(),
-        "Hello, simplified zbar!\n".to_string()
+        "Hello, simplified zbar!\n".to_string(),
     ));
 
     let result_this = decode_image("examples/test-qr.jpg");
@@ -129,7 +133,11 @@ fn test_qr_jpg() {
     assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -137,7 +145,7 @@ fn test_qr_jpg() {
 fn test_qr_wifi_sharing() {
     let expected = Some((
         "QR-Code".to_string(),
-        "WIFI:S:Not a real network;T:SAE;P:password;H:false;;".to_string()
+        "WIFI:S:Not a real network;T:SAE;P:password;H:false;;".to_string(),
     ));
 
     let result_this = decode_image("examples/pixel-wifi-sharing-qr-code.png");
@@ -149,7 +157,11 @@ fn test_qr_wifi_sharing() {
     assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -157,7 +169,7 @@ fn test_qr_wifi_sharing() {
 fn test_qr_capstone_interference() {
     let expected = Some((
         "QR-Code".to_string(),
-        "http://txz.qq.com/p?k=T8sZMvS*JxhU0kQFseMOMQZAKuE7An3u&f=716027609".to_string()
+        "http://txz.qq.com/p?k=T8sZMvS*JxhU0kQFseMOMQZAKuE7An3u&f=716027609".to_string(),
     ));
 
     let result_this = decode_image("examples/qr-code-capstone-interference.png");
@@ -169,7 +181,11 @@ fn test_qr_capstone_interference() {
     assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -194,7 +210,11 @@ fn test_qr_color_bands() {
 
     // rqrr should match if it succeeds
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), result_this, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            result_this,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -202,7 +222,7 @@ fn test_qr_color_bands() {
 fn test_qr_low_contrast() {
     let expected = Some((
         "QR-Code".to_string(),
-        "72f7f23bf1e7428ccaba5366a938f420".to_string()
+        "72f7f23bf1e7428ccaba5366a938f420".to_string(),
     ));
 
     let result_this = decode_image("examples/qr-code-low-contrast.png");
@@ -214,7 +234,11 @@ fn test_qr_low_contrast() {
     assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -222,7 +246,7 @@ fn test_qr_low_contrast() {
 fn test_qr_pacman() {
     let expected = Some((
         "QR-Code".to_string(),
-        "http://weixin.qq.com/r/gkgQCDrEc2cMrX5r9x2Q".to_string()
+        "http://weixin.qq.com/r/gkgQCDrEc2cMrX5r9x2Q".to_string(),
     ));
 
     let result_this = decode_image("examples/qr-code-pacman.png");
@@ -234,7 +258,11 @@ fn test_qr_pacman() {
     assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -357,7 +385,11 @@ fn test_rqrr_crash_2() {
 
     // rqrr should match if it succeeds
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), result_this, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            result_this,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -375,7 +407,11 @@ fn test_rqrr_crash_3() {
     assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), expected, "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
     }
 }
 
@@ -522,12 +558,23 @@ fn test_rqrr_crash_4_binary() {
     // Note: lengths may differ due to padding/encoding differences between implementations
     if let Some((zbars_symbol_type, zbars_data)) = result_zbars {
         assert_eq!(zbars_symbol_type, "QR-Code");
-        assert_eq!(&zbars_data[..4], &[0x07, 0xC3, 0x84, 0x18], "zbars should decode to similar binary data");
-        assert!(zbars_data.len() >= 2000, "zbars binary data should be substantial");
+        assert_eq!(
+            &zbars_data[..4],
+            &[0x07, 0xC3, 0x84, 0x18],
+            "zbars should decode to similar binary data"
+        );
+        assert!(
+            zbars_data.len() >= 2000,
+            "zbars binary data should be substantial"
+        );
     }
 
     // rqrr must match exactly if it succeeds (strict check)
     if let Some(rqrr_result) = result_rqrr {
-        assert_eq!(Some(rqrr_result), result_this.clone(), "rqrr decoded but gave different result");
+        assert_eq!(
+            Some(rqrr_result),
+            result_this.clone(),
+            "rqrr decoded but gave different result"
+        );
     }
 }

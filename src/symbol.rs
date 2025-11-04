@@ -14,7 +14,6 @@ use std::fmt::Display;
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_t {
     pub(crate) symbol_type: SymbolType,
-    pub(crate) configs: c_uint,
     pub(crate) modifiers: c_uint,
     pub(crate) data: Vec<u8>,
     pub(crate) pts: Vec<qr_point>,
@@ -41,7 +40,7 @@ impl zbar_symbol_t {
 
 // High-level Rust API types
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub enum SymbolType {
     #[default]
     None = 0,
@@ -86,30 +85,6 @@ impl SymbolType {
         SymbolType::QrCode,
         SymbolType::SqCode,
     ];
-
-    pub(crate) fn hash(self) -> i8 {
-        match self {
-            Self::SqCode => 1,
-            Self::Code128 => 2,
-            Self::Ean13 => 3,
-            Self::Upca => 4,
-            Self::Ean8 => 5,
-            Self::Upce => 6,
-            Self::Isbn13 => 7,
-            Self::Isbn10 => 8,
-            Self::Code39 => 9,
-            Self::I25 => 10,
-            Self::QrCode => 12,
-            Self::Databar => 13,
-            Self::DatabarExp => 14,
-            Self::Code93 => 15,
-            Self::Ean2 => 16,
-            Self::Ean5 => 17,
-            Self::Composite => 18,
-            Self::Codabar => 19,
-            _ => -1,
-        }
-    }
 }
 
 impl Display for SymbolType {

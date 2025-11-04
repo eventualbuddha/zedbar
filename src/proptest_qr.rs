@@ -4,7 +4,7 @@
 //! and verify that the decoder can correctly decode it back.
 //! Also verifies that zbar matches rqrr's decoding results.
 
-use crate::{scanner, Image, Scanner, SymbolType};
+use crate::{Image, Scanner};
 use image::{GrayImage, Luma};
 use proptest::prelude::*;
 use proptest::test_runner::TestCaseError;
@@ -56,11 +56,8 @@ fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     let mut zbar_img = Image::from_gray(data, width, height)
         .map_err(|e| format!("Failed to create ZBar image: {e:?}"))?;
 
-    // Create scanner and configure for QR codes
+    // Create scanner (QR codes enabled by default)
     let mut scanner = Scanner::new();
-    scanner
-        .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-        .map_err(|e| format!("Failed to configure scanner: {e:?}"))?;
 
     // Scan the image
     scanner

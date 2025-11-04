@@ -2,8 +2,7 @@ use libc::{c_int, c_uint};
 
 use crate::{
     decoder::{
-        _zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, zbar_decoder_t,
-        ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE, ZBAR_MOD_GS1,
+        _zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, zbar_decoder_t, ZBAR_MOD_GS1,
     },
     line_scanner::zbar_color_t,
     SymbolType,
@@ -565,7 +564,7 @@ fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
 fn postprocess(dcode: &mut zbar_decoder_t, mut d: [c_uint; 4]) {
     // Get config before borrowing buffer
-    let emit_check = ((dcode.databar.config() >> ZBAR_CFG_EMIT_CHECK) & 1) != 0;
+    let emit_check = dcode.should_emit_checksum(SymbolType::Databar);
 
     let buf = match dcode.buffer_mut_slice(16) {
         Ok(buf) => buf,
@@ -1560,13 +1559,11 @@ fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
         + FINDER_HASH[((sig >> 1) & 0x1f) as usize])
         & 0x1f;
     if finder == 0x1f
-        || (((if finder < 9 {
-            dcode.databar.config()
+        || !dcode.is_enabled(if finder < 9 {
+            SymbolType::Databar
         } else {
-            dcode.databar.config_exp()
-        }) >> ZBAR_CFG_ENABLE)
-            & 1)
-            == 0
+            SymbolType::DatabarExp
+        })
     {
         return SymbolType::None;
     }

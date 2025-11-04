@@ -2,12 +2,7 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::{
-    decoder::{code39_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
-    finder::decode_e,
-    line_scanner::zbar_color_t,
-    SymbolType,
-};
+use crate::{decoder::zbar_decoder_t, finder::decode_e, line_scanner::zbar_color_t, SymbolType};
 use libc::{c_int, c_uint};
 
 // Number of characters in Code 39
@@ -293,16 +288,6 @@ static CODE39_ENCODINGS: [Char39; NUM_CHARS] = [
 static CODE39_CHARACTERS: &[u8; NUM_CHARS] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%*";
 
 // ============================================================================
-// Helper functions from decoder.h
-// ============================================================================
-
-/// Access config value by index
-#[inline]
-fn cfg(decoder: &code39_decoder_t, cfg: c_int) -> c_int {
-    decoder.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize]
-}
-
-// ============================================================================
 // Code 39 Decoder functions
 // ============================================================================
 
@@ -490,8 +475,9 @@ pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
             if space != 0 && space < dcode.code39.width / 2 {
                 // Failed quiet zone check
             } else {
-                let min_len = cfg(&dcode.code39, ZBAR_CFG_MIN_LEN);
-                let max_len = cfg(&dcode.code39, ZBAR_CFG_MAX_LEN);
+                let (min_len, max_len) = dcode
+                    .get_length_limits(SymbolType::Code39)
+                    .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
 
                 if character < min_len as i16 || (max_len > 0 && character > max_len as i16) {
                     // Failed length check

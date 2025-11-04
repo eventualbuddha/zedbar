@@ -2,14 +2,7 @@
 //!
 //! This module implements decoding for Codabar barcodes.
 
-use crate::{
-    decoder::{
-        codabar_decoder_t, zbar_decoder_t, ZBAR_CFG_ADD_CHECK, ZBAR_CFG_EMIT_CHECK,
-        ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN,
-    },
-    line_scanner::zbar_color_t,
-    SymbolType,
-};
+use crate::{decoder::zbar_decoder_t, line_scanner::zbar_color_t, SymbolType};
 use libc::{c_int, c_uint};
 
 // Buffer constants
@@ -88,18 +81,6 @@ fn decode_sortn(dcode: &zbar_decoder_t, n: i32, i0: u8) -> c_uint {
         sort |= (i0 as c_uint) + (jmin as c_uint) * 2;
     }
     sort
-}
-
-/// Access config value by index
-#[inline]
-fn cfg(decoder: &codabar_decoder_t, cfg: c_int) -> c_int {
-    decoder.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize]
-}
-
-/// Test config bit
-#[inline]
-fn test_cfg(config: c_uint, cfg: c_int) -> bool {
-    ((config >> cfg) & 1) != 0
 }
 
 // ============================================================================
@@ -314,8 +295,8 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> SymbolType {
     // Cache all values we need from dcode before taking mutable borrow of buffer
     let copy_len = n.min(NIBUF);
     let temp_buf = dcode.codabar.buf; // Copy the small array
-    let has_checksum = test_cfg(dcode.codabar.config, ZBAR_CFG_ADD_CHECK);
-    let emit_check = test_cfg(dcode.codabar.config, ZBAR_CFG_EMIT_CHECK);
+    let has_checksum = dcode.should_validate_checksum(SymbolType::Codabar);
+    let emit_check = dcode.should_emit_checksum(SymbolType::Codabar);
 
     // Get a mutable slice to the buffer, ensuring it has space for n bytes plus null terminator
     let buffer = match dcode.buffer_mut_slice(n + 1) {
@@ -436,8 +417,9 @@ pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
         }
 
         let n = dcode.codabar.character();
-        let min_len = cfg(&dcode.codabar, ZBAR_CFG_MIN_LEN);
-        let max_len = cfg(&dcode.codabar, ZBAR_CFG_MAX_LEN);
+        let (min_len, max_len) = dcode
+            .get_length_limits(SymbolType::Codabar)
+            .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
         if n < min_len as i16 || (max_len > 0 && n > max_len as i16) {
             // goto reset
             let character = dcode.codabar.character();

@@ -2,12 +2,7 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::{
-    decoder::{code93_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
-    finder::decode_e,
-    line_scanner::zbar_color_t,
-    SymbolType,
-};
+use crate::{decoder::zbar_decoder_t, finder::decode_e, line_scanner::zbar_color_t, SymbolType};
 use libc::{c_int, c_uint};
 
 // Checksum constant
@@ -35,16 +30,6 @@ static CODE93_HASH: [i8; 0x40] = [
 
 static CODE93_GRAPH: &[u8; 7] = b"-. $/+%";
 static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`\x7f\x7f\x7f";
-
-// ============================================================================
-// Helper functions from decoder.h
-// ============================================================================
-
-/// Access config value by index
-#[inline]
-fn cfg(decoder: &code93_decoder_t, cfg: c_int) -> c_int {
-    decoder.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize]
-}
 
 // ============================================================================
 // Code 93 Decoder functions
@@ -195,9 +180,11 @@ fn decode_abort(dcode: &mut zbar_decoder_t) -> SymbolType {
 fn check_stop(dcode: &zbar_decoder_t) -> bool {
     let n = dcode.code93.character() as i32;
     let s = dcode.s6;
-    let max_len = cfg(&dcode.code93, ZBAR_CFG_MAX_LEN);
+    let (min_len, max_len) = dcode
+        .get_length_limits(SymbolType::Code93)
+        .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
 
-    if n < 2 || n < cfg(&dcode.code93, ZBAR_CFG_MIN_LEN) || (max_len != 0 && n > max_len) {
+    if n < 2 || n < min_len as i32 || (max_len != 0 && n > max_len as i32) {
         return false;
     }
 

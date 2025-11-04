@@ -4,10 +4,8 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    decoder::{zbar_decoder_t, ZBAR_CFG_EMIT_CHECK, ZBAR_CFG_ENABLE},
-    finder::decode_e,
-    line_scanner::zbar_color_t,
-    SymbolType,
+    config::internal::DecoderState, decoder::zbar_decoder_t, finder::decode_e,
+    line_scanner::zbar_color_t, SymbolType,
 };
 use libc::{c_char, c_int, c_uint};
 
@@ -99,12 +97,6 @@ fn check_width(w0: c_uint, w1: c_uint) -> c_uint {
     } else {
         0
     }
-}
-
-/// Test if a config flag is enabled
-#[inline]
-fn test_cfg(config: c_uint, cfg: c_int) -> bool {
-    ((config >> cfg) & 1) != 0
 }
 
 /// Evaluate previous N (>= 2) widths as auxiliary pattern,
@@ -251,14 +243,6 @@ pub(crate) struct ean_decoder_t {
     pub(crate) width: c_uint,
     pub(crate) buf: [c_char; 18],
     pub(crate) enable: bool,
-    pub(crate) ean13_config: c_uint,
-    pub(crate) ean8_config: c_uint,
-    pub(crate) upca_config: c_uint,
-    pub(crate) upce_config: c_uint,
-    pub(crate) isbn10_config: c_uint,
-    pub(crate) isbn13_config: c_uint,
-    pub(crate) ean5_config: c_uint,
-    pub(crate) ean2_config: c_uint,
 }
 
 impl ean_decoder_t {
@@ -278,23 +262,15 @@ impl ean_decoder_t {
         self.right = SymbolType::None;
     }
 
-    /// Get config for a specific symbol type
-    fn ean_get_config(&self, sym: SymbolType) -> c_uint {
-        match sym {
-            SymbolType::Ean2 => self.ean2_config,
-            SymbolType::Ean5 => self.ean5_config,
-            SymbolType::Ean8 => self.ean8_config,
-            SymbolType::Upce => self.upce_config,
-            SymbolType::Isbn10 => self.isbn10_config,
-            SymbolType::Upca => self.upca_config,
-            SymbolType::Ean13 => self.ean13_config,
-            SymbolType::Isbn13 => self.isbn13_config,
-            _ => 0,
-        }
-    }
+    // Removed ean_get_config - now use dcode.is_enabled() and related helpers
 
     /// Handle EAN-13/UPC-E partial
-    fn ean_part_end7(&mut self, pass_index: usize, fwd: u8) -> PartialSymbolType {
+    fn ean_part_end7(
+        &mut self,
+        config: &DecoderState,
+        pass_index: usize,
+        fwd: u8,
+    ) -> PartialSymbolType {
         // calculate parity index
         let par = if fwd != 0 {
             ((self.pass[pass_index].raw[1] & 0x10) << 1)
@@ -332,7 +308,7 @@ impl ean_decoder_t {
             }
         }
 
-        if test_cfg(self.ean13_config, ZBAR_CFG_ENABLE) {
+        if config.is_enabled(SymbolType::Ean13) {
             if par == 0 {
                 return PartialSymbolType::Ean13(Side::Right);
             }
@@ -349,8 +325,8 @@ impl ean_decoder_t {
     }
 
     /// Handle EAN-5 addon
-    fn ean_part_end5(&self, pass_index: usize) -> PartialSymbolType {
-        if !test_cfg(self.ean5_config, ZBAR_CFG_ENABLE) {
+    fn ean_part_end5(&self, config: &DecoderState, pass_index: usize) -> PartialSymbolType {
+        if !config.is_enabled(SymbolType::Ean5) {
             return PartialSymbolType::None;
         }
 
@@ -496,7 +472,12 @@ impl ean_decoder_t {
     }
 
     /// Integrate partial decode results
-    fn integrate_partial(&mut self, pass_index: usize, mut part: PartialSymbolType) -> SymbolType {
+    fn integrate_partial(
+        &mut self,
+        config: &DecoderState,
+        pass_index: usize,
+        mut part: PartialSymbolType,
+    ) -> SymbolType {
         // if same partial is not consistent, reset others
         if (self.left != SymbolType::None && (SymbolType::from(part) != self.left))
             || (self.right != SymbolType::None && (SymbolType::from(part) != self.right))
@@ -586,20 +567,18 @@ impl ean_decoder_t {
         }
 
         if matches!(part, PartialSymbolType::Ean13(_)) {
-            // special case self-13 subsets
-            if self.buf[0] == 0 && test_cfg(self.upca_config, ZBAR_CFG_ENABLE) {
+            // special case ean-13 subsets
+            if self.buf[0] == 0 && config.is_enabled(SymbolType::Upca) {
                 symbol_type = SymbolType::Upca;
             } else if self.buf[0] == 9 && self.buf[1] == 7 {
-                if (self.buf[2] == 8 || self.buf[2] == 9)
-                    && test_cfg(self.isbn13_config, ZBAR_CFG_ENABLE)
-                {
+                if (self.buf[2] == 8 || self.buf[2] == 9) && config.is_enabled(SymbolType::Isbn13) {
                     symbol_type = SymbolType::Isbn13;
-                } else if self.buf[2] == 8 && test_cfg(self.isbn10_config, ZBAR_CFG_ENABLE) {
+                } else if self.buf[2] == 8 && config.is_enabled(SymbolType::Isbn10) {
                     symbol_type = SymbolType::Isbn10;
                 }
             }
         } else if matches!(part, PartialSymbolType::Upce) {
-            if test_cfg(self.upce_config, ZBAR_CFG_ENABLE) {
+            if config.is_enabled(SymbolType::Upce) {
                 // UPC-E was decompressed for checksum verification,
                 // but user requested compressed result
                 self.buf[0] = 0;
@@ -608,10 +587,10 @@ impl ean_decoder_t {
                     self.buf[i] = (self.pass[pass_index].raw[i - 1] & 0xf) as c_char;
                 }
                 self.buf[8] = (self.pass[pass_index].raw[0] & 0xf) as c_char;
-            } else if test_cfg(self.upca_config, ZBAR_CFG_ENABLE) {
-                // UPC-E reported as UPC-A has priority over self-13
+            } else if config.is_enabled(SymbolType::Upca) {
+                // UPC-E reported as UPC-A has priority over ean-13
                 symbol_type = SymbolType::Upca;
-            } else if test_cfg(self.ean13_config, ZBAR_CFG_ENABLE) {
+            } else if config.is_enabled(SymbolType::Ean13) {
                 symbol_type = SymbolType::Ean13;
             } else {
                 symbol_type = SymbolType::None;
@@ -622,8 +601,8 @@ impl ean_decoder_t {
     }
 
     /// Handle EAN-2 addon
-    fn ean_part_end2(&mut self, pass_index: usize) -> PartialSymbolType {
-        if !test_cfg(self.ean2_config, ZBAR_CFG_ENABLE) {
+    fn ean_part_end2(&mut self, config: &DecoderState, pass_index: usize) -> PartialSymbolType {
+        if !config.is_enabled(SymbolType::Ean2) {
             return PartialSymbolType::None;
         }
 
@@ -755,8 +734,7 @@ fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
             }
 
             if base == SymbolType::Isbn10
-                || (calc_base > SymbolType::Ean5
-                    && !test_cfg(ean.ean_get_config(sym), ZBAR_CFG_EMIT_CHECK))
+                || (calc_base > SymbolType::Ean5 && !dcode.should_emit_checksum(sym))
             {
                 calc_base = (calc_base as i32 - 1).into();
             }
@@ -771,7 +749,7 @@ fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
 
             needs_isbn10_check = base == SymbolType::Isbn10
                 && j == 9
-                && test_cfg(ean.isbn10_config, ZBAR_CFG_EMIT_CHECK);
+                && dcode.should_emit_checksum(SymbolType::Isbn10);
             isbn10_check_digit = if needs_isbn10_check {
                 ean.isbn10_calc_checksum() as u8
             } else {
@@ -826,9 +804,9 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass_index: usize) -> PartialSymbolTy
                 let s = calc_s(dcode, 1, 4);
                 let part = if qz == 0 || qz >= s * 3 / 4 {
                     if idx == 0x09 {
-                        dcode.ean.ean_part_end2(pass_index)
+                        dcode.ean.ean_part_end2(&dcode.config, pass_index)
                     } else {
-                        dcode.ean.ean_part_end5(pass_index)
+                        dcode.ean.ean_part_end5(&dcode.config, pass_index)
                     }
                 } else {
                     PartialSymbolType::None
@@ -845,7 +823,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass_index: usize) -> PartialSymbolTy
                 dcode.ean.pass[pass_index].state += 2;
             }
         } else if (idx == 0x10 || idx == 0x11)
-            && test_cfg(dcode.ean.ean8_config, ZBAR_CFG_ENABLE)
+            && dcode.is_enabled(SymbolType::Ean8)
             && aux_end(dcode, fwd) == 0
         {
             let part = ean_part_end4(&mut dcode.ean.pass[pass_index], fwd);
@@ -861,7 +839,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass_index: usize) -> PartialSymbolTy
         } else if idx == 0x18 || idx == 0x19 {
             let mut part = PartialSymbolType::None;
             if aux_end(dcode, fwd) == 0 && dcode.ean.pass[pass_index].raw[5] != 0xff {
-                part = dcode.ean.ean_part_end7(pass_index, fwd);
+                part = dcode.ean.ean_part_end7(&dcode.config, pass_index, fwd);
             }
             if part != PartialSymbolType::None {
                 dcode.ean.direction = if (dcode.ean.pass[pass_index].state & STATE_REV) != 0 {
@@ -944,7 +922,7 @@ pub(crate) fn zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType {
             let part = decode_pass(dcode, i);
             if part != PartialSymbolType::None {
                 // update accumulated data from new partial decode
-                sym = dcode.ean.integrate_partial(i, part);
+                sym = dcode.ean.integrate_partial(&dcode.config, i, part);
                 if sym != SymbolType::None {
                     // this pass valid => _reset_ all passes
                     dcode.ean.pass[0].state = -1;

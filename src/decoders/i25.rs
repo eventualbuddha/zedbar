@@ -2,23 +2,8 @@
 //!
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
-use crate::{
-    decoder::{i25_decoder_t, zbar_decoder_t, ZBAR_CFG_MAX_LEN, ZBAR_CFG_MIN_LEN},
-    finder::decode_e,
-    line_scanner::zbar_color_t,
-    SymbolType,
-};
+use crate::{decoder::zbar_decoder_t, finder::decode_e, line_scanner::zbar_color_t, SymbolType};
 use libc::{c_int, c_uint};
-
-// ============================================================================
-// Helper functions from decoder.h
-// ============================================================================
-
-/// Access config value by index
-#[inline]
-fn cfg(decoder: &i25_decoder_t, cfg: c_int) -> c_int {
-    decoder.configs[(cfg - ZBAR_CFG_MIN_LEN) as usize]
-}
 
 // ============================================================================
 // I25 Decoder functions
@@ -184,9 +169,8 @@ fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
 
     let char_count = character as usize;
 
-    // Cache config values before taking mutable borrow
-    let min_len = cfg(&dcode.i25, ZBAR_CFG_MIN_LEN);
-    let max_len = cfg(&dcode.i25, ZBAR_CFG_MAX_LEN);
+    // Get length limits from config
+    let (min_len, max_len) = dcode.get_length_limits(SymbolType::I25).unwrap_or((6, 0)); // Default: min=6, max=0 (unlimited)
 
     let buffer = &mut dcode.i25.buffer;
 

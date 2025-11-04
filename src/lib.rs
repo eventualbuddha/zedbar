@@ -6,6 +6,7 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(non_camel_case_types)]
 
+pub mod config;
 pub mod decoder;
 pub mod decoders;
 pub mod error;
@@ -13,6 +14,7 @@ pub mod finder;
 pub mod image;
 pub mod image_ffi;
 pub mod img_scanner;
+pub mod img_scanner_config;
 pub mod line_scanner;
 pub mod qrcode;
 pub mod scanner;
@@ -20,6 +22,7 @@ pub mod sqcode;
 pub mod symbol;
 
 // Re-export main types
+pub use config::DecoderConfig;
 pub use error::{Error, Result};
 pub use image::Image;
 pub use scanner::Scanner;
@@ -51,11 +54,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
-        // Create scanner and configure for QR codes
+        // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         // Scan the image
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -125,11 +125,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
-        // Create scanner and configure for QR codes
+        // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         // Scan the image
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
@@ -201,14 +198,10 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(&inverted, width, height).expect("Failed to create ZBar image");
 
-        // Configure scanner for QR codes
-        let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
-        scanner
-            .set_config(SymbolType::None, scanner::Config::TestInverted, 1)
-            .expect("Failed to enable inverted testing");
+        // Configure scanner for QR codes with inverted testing
+        use crate::config::*;
+        let config = DecoderConfig::new().enable(QrCode).test_inverted(true);
+        let mut scanner = Scanner::with_config(config);
 
         // Scan the inverted image
         let num_symbols = scanner
@@ -282,10 +275,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (EAN-13 enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Ean13, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -316,10 +307,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (EAN-8 enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Ean8, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -360,10 +349,10 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
-        let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Upca, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
+        // Create scanner with UPC-A explicitly enabled
+        use crate::config::*;
+        let config = DecoderConfig::new().enable(Upca);
+        let mut scanner = Scanner::with_config(config);
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -393,10 +382,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (Code128 enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Code128, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -426,10 +413,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (Code39 enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Code39, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -459,10 +444,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (Code93 enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Code93, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -492,10 +475,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (Codabar enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::Codabar, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -525,10 +506,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (I25 enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::I25, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(num_symbols > 0, "Expected to find at least one I25 barcode");
@@ -556,10 +535,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(
@@ -587,10 +564,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(data, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(num_symbols > 0, "Expected to find at least one QR code");
@@ -644,10 +619,8 @@ mod tests {
         let mut zbar_img =
             Image::from_gray(&normalized, width, height).expect("Failed to create ZBar image");
 
+        // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
-        scanner
-            .set_config(SymbolType::QrCode, scanner::Config::Enable, 1)
-            .expect("Failed to configure scanner");
 
         let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
         assert!(num_symbols > 0, "Expected to find at least one QR code");
