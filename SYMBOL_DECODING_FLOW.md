@@ -47,9 +47,9 @@ classDiagram
     ImageScanner "1" --> "1" LineScanner: owns
     ImageScanner "1" --> "1" Decoder: owns
     ImageScanner "1" --> "1" SymbolSet: owns
-    Decoder "1" -.-> "1" ImageScanner: userdata (UNSAFE!)
+    Decoder "1" ..> "1" ImageScanner: userdata (UNSAFE!)
 
-    note for Decoder "The userdata pointer creates\na circular reference that\nviolates Rust's borrow rules"
+    note for Decoder "The userdata pointer creates a circular reference that violates Rust's borrow rules"
 ```
 
 ## Complete Call Chain with Borrow States
