@@ -8,7 +8,6 @@ use crate::{
     finder::decoder_get_qr_finder_line,
     image_ffi::zbar_image_t,
     img_scanner_config::ImageScannerConfig,
-    line_scanner::zbar_scanner_t,
     qrcode::qrdec::qr_reader,
     sqcode::SqReader,
     symbol::zbar_symbol_t,
@@ -24,6 +23,14 @@ fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
     (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
 }
 
+// Scanner constants from line_scanner.rs
+const ZBAR_FIXED: i32 = 5;
+const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
+const ZBAR_SCANNER_THRESH_FADE: u32 = 8;
+const ZBAR_SCANNER_THRESH_MIN: c_uint = 4;
+const EWMA_WEIGHT: c_uint = 25;
+const THRESH_INIT: c_uint = 14;
+
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_set_t {
     pub(crate) symbols: Vec<zbar_symbol_t>,
@@ -31,8 +38,15 @@ pub(crate) struct zbar_symbol_set_t {
 
 /// image scanner state
 pub(crate) struct zbar_image_scanner_t {
-    /// associated linear intensity scanner
-    scn: zbar_scanner_t,
+    /// Scanner state fields (formerly zbar_scanner_t)
+    y1_min_thresh: c_uint,
+    x: c_uint,
+    y0: [i32; 4],
+    y1_sign: i32,
+    y1_thresh: c_uint,
+    cur_edge: c_uint,
+    last_edge: c_uint,
+    width: c_uint,
 
     /// associated symbol decoder
     dcode: zbar_decoder_t,
@@ -64,7 +78,14 @@ impl Default for zbar_image_scanner_t {
     /// Pointer to new scanner or null on allocation failure
     fn default() -> Self {
         Self {
-            scn: zbar_scanner_t::new(),
+            y1_min_thresh: ZBAR_SCANNER_THRESH_MIN,
+            x: 0,
+            y0: [0; 4],
+            y1_sign: 0,
+            y1_thresh: 0,
+            cur_edge: 0,
+            last_edge: 0,
+            width: 0,
             dcode: zbar_decoder_t::default(),
             qr: qr_reader::default(),
             sq: SqReader::default(),
@@ -112,7 +133,14 @@ impl zbar_image_scanner_t {
         }
 
         Self {
-            scn: zbar_scanner_t::new(),
+            y1_min_thresh: ZBAR_SCANNER_THRESH_MIN,
+            x: 0,
+            y0: [0; 4],
+            y1_sign: 0,
+            y1_thresh: 0,
+            cur_edge: 0,
+            last_edge: 0,
+            width: 0,
             dcode: zbar_decoder_t::with_config(decoder_state),
             qr: qr_reader::default(),
             sq: SqReader::default(),
@@ -146,11 +174,209 @@ impl zbar_image_scanner_t {
             .find(|sym| sym.symbol_type == symbol_type && sym.data == data)
     }
 
-    // Accessor methods for pointer fields
+    /// Get the width of the most recent bar or space
+    pub(crate) fn width(&self) -> c_uint {
+        self.width
+    }
 
+    /// Calculate the current threshold for edge detection
+    ///
+    /// Implements adaptive threshold calculation that slowly fades back to minimum.
+    /// This helps with noise rejection while maintaining sensitivity.
+    pub(crate) fn calc_thresh(&mut self) -> c_uint {
+        // threshold 1st to improve noise rejection
+        let thresh = self.y1_thresh;
+
+        if thresh <= self.y1_min_thresh || self.width == 0 {
+            return self.y1_min_thresh;
+        }
+
+        // slowly return threshold to min
+        let dx = (self.x << ZBAR_FIXED) - self.last_edge;
+        let mut t = thresh as u64 * dx as u64;
+        t /= self.width as u64;
+        t /= ZBAR_SCANNER_THRESH_FADE as u64;
+
+        if thresh > t as c_uint {
+            let new_thresh = thresh - t as c_uint;
+            if new_thresh > self.y1_min_thresh {
+                return new_thresh;
+            }
+        }
+
+        self.y1_thresh = self.y1_min_thresh;
+        self.y1_min_thresh
+    }
+
+    /// Flush the scanner state
     #[inline]
-    pub(crate) fn scanner(&self) -> &zbar_scanner_t {
-        &self.scn
+    pub(crate) fn scanner_flush(&mut self) -> SymbolType {
+        if self.y1_sign == 0 {
+            return SymbolType::None;
+        }
+
+        let x = (self.x << ZBAR_FIXED) + ROUND;
+
+        if self.cur_edge != x || self.y1_sign > 0 {
+            let edge = self.process_edge();
+            self.cur_edge = x;
+            self.y1_sign = -self.y1_sign;
+            return edge;
+        }
+
+        self.y1_sign = 0;
+        self.width = 0;
+        unsafe { self.dcode.decode_width(0) }
+    }
+
+    /// Start a new scan
+    pub(crate) fn new_scan(&mut self) -> SymbolType {
+        let mut edge = SymbolType::None;
+
+        while self.y1_sign != 0 {
+            let tmp = self.scanner_flush();
+            if tmp > edge {
+                edge = tmp;
+            }
+        }
+
+        // reset scanner and associated decoder
+        self.x = 0;
+        self.y0 = Default::default();
+        self.y1_sign = 0;
+        self.y1_thresh = self.y1_min_thresh;
+        self.cur_edge = 0;
+        self.last_edge = 0;
+        self.width = 0;
+
+        self.dcode.new_scan();
+        edge
+    }
+
+    /// Process a single pixel intensity value
+    pub(crate) fn scan_y(&mut self, y: c_int) -> SymbolType {
+        // retrieve short value history
+        let x = self.x;
+        let mut y0_1 = self.y0[((x.wrapping_sub(1)) & 3) as usize];
+        let mut y0_0 = y0_1;
+
+        if x != 0 {
+            // update weighted moving average
+            y0_0 += ((y - y0_1) * EWMA_WEIGHT as i32) >> ZBAR_FIXED;
+            self.y0[(x & 3) as usize] = y0_0;
+        } else {
+            y0_0 = y;
+            y0_1 = y;
+            self.y0[0] = y;
+            self.y0[1] = y;
+            self.y0[2] = y;
+            self.y0[3] = y;
+        }
+
+        let y0_2 = self.y0[((x.wrapping_sub(2)) & 3) as usize];
+        let y0_3 = self.y0[((x.wrapping_sub(3)) & 3) as usize];
+
+        // 1st differential @ x-1
+        let mut y1_1 = y0_1 - y0_2;
+        {
+            let y1_2 = y0_2 - y0_3;
+            if y1_1.abs() < y1_2.abs() && ((y1_1 >= 0) == (y1_2 >= 0)) {
+                y1_1 = y1_2;
+            }
+        }
+
+        // 2nd differentials @ x-1 & x-2
+        let y2_1 = y0_0 - (y0_1 * 2) + y0_2;
+        let y2_2 = y0_1 - (y0_2 * 2) + y0_3;
+
+        let mut edge = SymbolType::None;
+
+        // 2nd zero-crossing is 1st local min/max - could be edge
+        if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (self.calc_thresh() <= y1_1.unsigned_abs())
+        {
+            // check for 1st sign change
+            let y1_rev = if self.y1_sign > 0 { y1_1 < 0 } else { y1_1 > 0 };
+
+            if y1_rev {
+                // intensity change reversal - finalize previous edge
+                edge = self.process_edge();
+            }
+
+            if y1_rev || (self.y1_sign.abs() < y1_1.abs()) {
+                self.y1_sign = y1_1;
+
+                // adaptive thresholding
+                // start at multiple of new min/max
+                self.y1_thresh =
+                    ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
+                if self.y1_thresh < self.y1_min_thresh {
+                    self.y1_thresh = self.y1_min_thresh;
+                }
+
+                // update current edge
+                let d = y2_1 - y2_2;
+                self.cur_edge = 1 << ZBAR_FIXED;
+                if d == 0 {
+                    self.cur_edge >>= 1;
+                } else if y2_1 != 0 {
+                    // interpolate zero crossing
+                    self.cur_edge -= (((y2_1 << ZBAR_FIXED) + 1) / d) as c_uint;
+                }
+                self.cur_edge += x << ZBAR_FIXED;
+            }
+        }
+
+        self.x = x + 1;
+        edge
+    }
+
+    /// Flush scanner pipeline and start new scan
+    ///
+    /// This function flushes the scanner pipeline twice and then starts a new scan.
+    /// It's typically called at quiet borders to reset the scanner state.
+    pub(crate) fn quiet_border(&mut self) {
+        // Flush scanner pipeline twice
+        self.scanner_flush();
+        self.scanner_flush();
+
+        // Start new scan
+        self.new_scan();
+    }
+
+    /// Get the interpolated position of the last edge
+    pub(crate) fn get_edge(&self, offset: c_uint, prec: c_int) -> c_uint {
+        let edge = self
+            .last_edge
+            .wrapping_sub(offset)
+            .wrapping_sub(1 << ZBAR_FIXED)
+            .wrapping_sub(ROUND);
+        let prec = ZBAR_FIXED - prec;
+
+        match prec {
+            1.. => edge >> prec,
+            0 => edge,
+            _ => edge << (-prec),
+        }
+    }
+
+    /// Process an edge and pass the width to the decoder
+    ///
+    /// This function is called when an edge (transition) is detected.
+    /// It calculates the width of the element and passes it to the decoder.
+    fn process_edge(&mut self) -> SymbolType {
+        if self.y1_sign == 0 {
+            self.last_edge = (1 << ZBAR_FIXED) + ROUND;
+            self.cur_edge = (1 << ZBAR_FIXED) + ROUND;
+        } else if self.last_edge == 0 {
+            self.last_edge = self.cur_edge;
+        }
+
+        self.width = self.cur_edge - self.last_edge;
+        self.last_edge = self.cur_edge;
+
+        // pass to decoder
+        let width = self.width;
+        unsafe { self.dcode.decode_width(width) }
     }
 
     /// Public wrapper for zbar_scan_image
@@ -188,12 +414,24 @@ impl zbar_image_scanner_t {
     /// Adjusts edge positions based on scanner state and transforms coordinates.
     pub(crate) fn qr_handler(&mut self) {
         let line = decoder_get_qr_finder_line(&mut self.dcode);
-
-        let mut u = self.scn.get_edge(line.pos[0] as c_uint, QR_FINDER_SUBPREC);
-        line.boffs =
-            (u as c_int) - self.scn.get_edge(line.boffs as c_uint, QR_FINDER_SUBPREC) as c_int;
-        line.len = self.scn.get_edge(line.len as c_uint, QR_FINDER_SUBPREC) as c_int;
-        line.eoffs = self.scn.get_edge(line.eoffs as c_uint, QR_FINDER_SUBPREC) as c_int - line.len;
+        
+        // Extract values we need before calling get_edge
+        let pos0 = line.pos[0] as c_uint;
+        let boffs_in = line.boffs as c_uint;
+        let len_in = line.len as c_uint;
+        let eoffs_in = line.eoffs as c_uint;
+        
+        // Now we can safely call get_edge
+        let mut u = self.get_edge(pos0, QR_FINDER_SUBPREC);
+        let boffs_edge = self.get_edge(boffs_in, QR_FINDER_SUBPREC);
+        let len_edge = self.get_edge(len_in, QR_FINDER_SUBPREC);
+        let eoffs_edge = self.get_edge(eoffs_in, QR_FINDER_SUBPREC);
+        
+        // Get line again to modify it
+        let line = decoder_get_qr_finder_line(&mut self.dcode);
+        line.boffs = (u as c_int) - boffs_edge as c_int;
+        line.len = len_edge as c_int;
+        line.eoffs = eoffs_edge as c_int - line.len;
         line.len -= u as c_int;
 
         u = (qr_fixed(self.umin, 0) as i64 + (self.du as i64) * (u as i64)) as c_uint;
@@ -246,7 +484,7 @@ impl zbar_image_scanner_t {
         let w = img.width;
         let h = img.height;
         let data = img.data.as_slice();
-        self.scn.new_scan(&mut self.dcode);
+        self.new_scan();
 
         // Horizontal scanning pass
         let density = self.config.y_density;
@@ -275,9 +513,9 @@ impl zbar_image_scanner_t {
                     let d = data[p as usize];
                     x += 1;
                     p += 1;
-                    self.scn.scan_y(d as c_int, &mut self.dcode);
+                    self.scan_y(d as c_int);
                 }
-                self.scn.quiet_border(&mut self.dcode);
+                self.quiet_border();
 
                 // movedelta(-1, density)
                 x -= 1;
@@ -295,9 +533,9 @@ impl zbar_image_scanner_t {
                     let d = data[p as usize];
                     x -= 1;
                     p -= 1;
-                    self.scn.scan_y(d as c_int, &mut self.dcode);
+                    self.scan_y(d as c_int);
                 }
-                self.scn.quiet_border(&mut self.dcode);
+                self.quiet_border();
 
                 // movedelta(1, density)
                 x += 1;
@@ -333,9 +571,9 @@ impl zbar_image_scanner_t {
                     let d = data[p as usize];
                     y += 1;
                     p += w as isize;
-                    self.scn.scan_y(d as c_int, &mut self.dcode);
+                    self.scan_y(d as c_int);
                 }
-                self.scn.quiet_border(&mut self.dcode);
+                self.quiet_border();
 
                 // movedelta(density, -1)
                 x += density as i32;
@@ -353,9 +591,9 @@ impl zbar_image_scanner_t {
                     let d = data[p as usize];
                     y -= 1;
                     p -= w as isize;
-                    self.scn.scan_y(d as c_int, &mut self.dcode);
+                    self.scan_y(d as c_int);
                 }
-                self.scn.quiet_border(&mut self.dcode);
+                self.quiet_border();
 
                 // movedelta(density, 1)
                 x += density as i32;
@@ -490,9 +728,8 @@ pub(crate) unsafe fn symbol_handler(dcode: &mut zbar_decoder_t) {
 
     // Calculate position if position tracking is enabled
     if (*iscn).config.position_tracking {
-        let scn = (*iscn).scanner();
-        let w = scn.width();
-        let u = (*iscn).umin + (*iscn).du * scn.get_edge(w, 0) as c_int;
+        let w = (*iscn).width();
+        let u = (*iscn).umin + (*iscn).du * (*iscn).get_edge(w, 0) as c_int;
         if (*iscn).dx != 0 {
             x = u;
             y = (*iscn).v;
