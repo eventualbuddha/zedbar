@@ -3,8 +3,9 @@
 //! This module implements decoding for Code 128 barcodes.
 
 use crate::{
-    decoder::{zbar_decoder_t, ZBAR_MOD_AIM, ZBAR_MOD_GS1},
+    decoder::{ZBAR_MOD_AIM, ZBAR_MOD_GS1},
     finder::decode_e,
+    img_scanner::zbar_image_scanner_t,
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -200,7 +201,7 @@ fn calc_check(c: u8) -> u8 {
 
 /// Decode 6 elements
 #[inline]
-fn decode6(dcode: &zbar_decoder_t) -> i8 {
+fn decode6(dcode: &zbar_image_scanner_t) -> i8 {
     let s = dcode.code128.s6;
     if s < 5 {
         return -1;
@@ -252,7 +253,7 @@ fn decode6(dcode: &zbar_decoder_t) -> i8 {
 
 /// Validate checksum
 #[inline]
-fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
+fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
     if dcode.code128.character() < 3 {
         return true;
     }
@@ -318,7 +319,7 @@ fn validate_checksum(dcode: &zbar_decoder_t) -> bool {
 
 /// Expand and decode character set C
 #[inline]
-fn postprocess_c(dcode: &mut zbar_decoder_t, start: usize, end: usize, dst: usize) -> c_uint {
+fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst: usize) -> c_uint {
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
     let old_len = dcode.code128.character() as usize;
@@ -383,7 +384,7 @@ fn postprocess_c(dcode: &mut zbar_decoder_t, start: usize, end: usize, dst: usiz
 
 /// Resolve scan direction and convert to ASCII
 #[inline]
-fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
+fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
     dcode.modifiers = 0;
     dcode.direction = 1 - 2 * (dcode.code128.direction() as c_int);
     let character_count = dcode.code128.character() as usize;
@@ -586,7 +587,7 @@ fn postprocess(dcode: &mut zbar_decoder_t) -> bool {
 }
 
 /// Main Code 128 decode function
-pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     // Update latest character width
     dcode.code128.s6 = dcode
         .code128

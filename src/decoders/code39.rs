@@ -2,7 +2,9 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::{decoder::zbar_decoder_t, finder::decode_e, line_scanner::zbar_color_t, SymbolType};
+use crate::{
+    finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
+};
 use libc::{c_int, c_uint};
 
 // Number of characters in Code 39
@@ -307,7 +309,7 @@ fn code39_decode1(enc: u8, e: c_uint, s: c_uint) -> u8 {
 
 /// Decode 9 elements into a character (5 bars + 4 spaces or vice versa)
 #[inline]
-fn code39_decode9(dcode: &mut zbar_decoder_t) -> i8 {
+fn code39_decode9(dcode: &mut zbar_image_scanner_t) -> i8 {
     let s9 = dcode.code39.s9;
 
     if s9 < 9 {
@@ -370,7 +372,7 @@ fn code39_decode9(dcode: &mut zbar_decoder_t) -> i8 {
 
 /// Decode start pattern
 #[inline]
-fn code39_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn code39_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let c = code39_decode9(dcode);
     if c != 0x19 && c != 0x2b {
         return SymbolType::None;
@@ -392,7 +394,7 @@ fn code39_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
 
 /// Post-process decoded buffer
 #[inline]
-fn code39_postprocess(dcode: &mut zbar_decoder_t) -> i32 {
+fn code39_postprocess(dcode: &mut zbar_image_scanner_t) -> i32 {
     let character = dcode.code39.character() as usize;
     let direction = dcode.code39.direction();
 
@@ -429,7 +431,7 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 }
 
 /// Main Code 39 decode function
-pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     // Update latest character width
     let w9 = dcode.get_width(9);
     let w0 = dcode.get_width(0);

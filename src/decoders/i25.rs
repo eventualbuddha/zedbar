@@ -2,7 +2,9 @@
 //!
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
-use crate::{decoder::zbar_decoder_t, finder::decode_e, line_scanner::zbar_color_t, SymbolType};
+use crate::{
+    finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
+};
 use libc::{c_int, c_uint};
 
 // ============================================================================
@@ -25,7 +27,7 @@ fn i25_decode1(enc: u8, e: c_uint, s: c_uint) -> u8 {
 
 /// Decode 10 elements into a digit (5 bars + 5 spaces)
 #[inline]
-fn i25_decode10(dcode: &zbar_decoder_t, offset: u8) -> u8 {
+fn i25_decode10(dcode: &zbar_image_scanner_t, offset: u8) -> u8 {
     let dcode25 = &dcode.i25;
 
     if dcode25.s10 < 10 {
@@ -77,7 +79,7 @@ fn i25_decode10(dcode: &zbar_decoder_t, offset: u8) -> u8 {
 
 /// Decode start pattern
 #[inline]
-fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let s10 = dcode.i25.s10;
 
     if s10 < 10 {
@@ -123,7 +125,7 @@ fn i25_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
 
 /// Acquire lock and copy holding buffer
 #[inline]
-fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
+fn i25_acquire_lock(dcode: &mut zbar_image_scanner_t) -> bool {
     // Lock shared resources
     if !dcode.acquire_lock(SymbolType::I25) {
         dcode.i25.set_character(-1);
@@ -135,7 +137,7 @@ fn i25_acquire_lock(dcode: &mut zbar_decoder_t) -> bool {
 
 /// Decode end pattern and validate
 #[inline]
-fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn i25_decode_end(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let width = dcode.i25.width;
     let direction = dcode.i25.direction();
     let character = dcode.i25.character();
@@ -198,7 +200,7 @@ fn i25_decode_end(dcode: &mut zbar_decoder_t) -> SymbolType {
 }
 
 /// Main I25 decode function
-pub(crate) fn _zbar_decode_i25(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_i25(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     // Update latest character width
     let w10 = dcode.get_width(10);
     let w0 = dcode.get_width(0);

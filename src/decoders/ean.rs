@@ -4,7 +4,7 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    config::internal::DecoderState, decoder::zbar_decoder_t, finder::decode_e,
+    config::internal::DecoderState, finder::decode_e, img_scanner::zbar_image_scanner_t,
     line_scanner::zbar_color_t, SymbolType,
 };
 use libc::{c_char, c_int, c_uint};
@@ -75,7 +75,7 @@ static PARITY_DECODE: [u8; 64] = [
 
 /// Calculate total character width "s"
 #[inline]
-fn calc_s(dcode: &zbar_decoder_t, mut offset: u8, mut n: u8) -> c_uint {
+fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> c_uint {
     let mut s = 0;
     while n > 0 {
         s += dcode.get_width(offset);
@@ -101,7 +101,7 @@ fn check_width(w0: c_uint, w1: c_uint) -> c_uint {
 
 /// Evaluate previous N (>= 2) widths as auxiliary pattern,
 /// using preceding 4 as character width
-fn aux_end(dcode: &zbar_decoder_t, fwd: u8) -> i8 {
+fn aux_end(dcode: &zbar_image_scanner_t, fwd: u8) -> i8 {
     // reference width from previous character
     let s = calc_s(dcode, 4 + fwd, 4);
 
@@ -124,7 +124,7 @@ fn aux_end(dcode: &zbar_decoder_t, fwd: u8) -> i8 {
 }
 
 /// Determine possible auxiliary pattern using current 4 as possible character
-fn aux_start(dcode: &zbar_decoder_t) -> i8 {
+fn aux_start(dcode: &zbar_image_scanner_t) -> i8 {
     // FIXME NB add-on has no guard in reverse
     let e2 = dcode.get_width(5) + dcode.get_width(6);
 
@@ -166,13 +166,13 @@ fn aux_start(dcode: &zbar_decoder_t) -> i8 {
 
 /// Check addon delimiter using current 4 as character
 #[inline]
-fn aux_mid(dcode: &zbar_decoder_t) -> i8 {
+fn aux_mid(dcode: &zbar_image_scanner_t) -> i8 {
     let e = dcode.get_width(4) + dcode.get_width(5);
     decode_e(e, dcode.ean.s4, 7) as i8
 }
 
 /// Attempt to decode previous 4 widths (2 bars and 2 spaces) as a character
-fn decode4(dcode: &zbar_decoder_t) -> i8 {
+fn decode4(dcode: &zbar_image_scanner_t) -> i8 {
     // calculate similar edge measurements
     let e1 = if dcode.color() == zbar_color_t::ZBAR_BAR {
         dcode.get_width(0) + dcode.get_width(1)
@@ -705,7 +705,7 @@ impl From<PartialSymbolType> for i32 {
 }
 
 /// Copy result to output buffer
-fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
+fn postprocess(dcode: &mut zbar_image_scanner_t, sym: SymbolType) {
     let mut j: usize = 0;
     let new_direction;
     let base;
@@ -792,7 +792,7 @@ fn postprocess(dcode: &mut zbar_decoder_t, sym: SymbolType) {
 }
 
 /// Update state for one of 4 parallel passes
-fn decode_pass(dcode: &mut zbar_decoder_t, pass_index: usize) -> PartialSymbolType {
+fn decode_pass(dcode: &mut zbar_image_scanner_t, pass_index: usize) -> PartialSymbolType {
     dcode.ean.pass[pass_index].state = dcode.ean.pass[pass_index].state.wrapping_add(1);
     let idx = dcode.ean.pass[pass_index].state & STATE_IDX;
     let fwd = (dcode.ean.pass[pass_index].state & 1) as u8;
@@ -908,7 +908,7 @@ fn decode_pass(dcode: &mut zbar_decoder_t, pass_index: usize) -> PartialSymbolTy
 // ============================================================================
 
 /// Main EAN/UPC decoder entry point
-pub(crate) fn zbar_decode_ean(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn zbar_decode_ean(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     // process up to 4 separate passes
     let mut sym = SymbolType::None;
     let pass_idx = (dcode.idx & 3) as usize;

@@ -1,9 +1,8 @@
 use libc::{c_int, c_uint};
 
 use crate::{
-    decoder::{
-        _zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, zbar_decoder_t, ZBAR_MOD_GS1,
-    },
+    decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, ZBAR_MOD_GS1},
+    img_scanner::zbar_image_scanner_t,
     line_scanner::zbar_color_t,
     SymbolType,
 };
@@ -204,7 +203,7 @@ fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     }
 }
 
-fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
+fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int {
     let mut data_ptr = data;
     let first = data_ptr[0] as u64;
     data_ptr = &mut data_ptr[1..];
@@ -562,7 +561,7 @@ fn postprocess_exp(dcode: &mut zbar_decoder_t, data: &mut [i32]) -> c_int {
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-fn postprocess(dcode: &mut zbar_decoder_t, mut d: [c_uint; 4]) {
+fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [c_uint; 4]) {
     // Get config before borrowing buffer
     let emit_check = dcode.should_emit_checksum(SymbolType::Databar);
 
@@ -750,7 +749,7 @@ fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
 }
 
 /// Match DataBar segment to find complete symbol
-fn match_segment(dcode: &mut zbar_decoder_t, seg_idx: usize) -> SymbolType {
+fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
@@ -938,7 +937,7 @@ fn lookup_sequence(
     }
 }
 
-fn match_segment_exp(dcode: &mut zbar_decoder_t, seg_idx: usize, dir: c_int) -> SymbolType {
+fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: c_int) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     if csegs == 0 {
@@ -1305,7 +1304,12 @@ fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -
 }
 
 /// Decode a DataBar character from width measurements
-fn decode_char(dcode: &mut zbar_decoder_t, seg_idx: usize, off: c_int, dir: c_int) -> SymbolType {
+fn decode_char(
+    dcode: &mut zbar_image_scanner_t,
+    seg_idx: usize,
+    off: c_int,
+    dir: c_int,
+) -> SymbolType {
     // Read segment values we need before taking other borrows
     let seg_exp = dcode.databar.seg(seg_idx).exp();
     let seg_side = dcode.databar.seg(seg_idx).side();
@@ -1519,7 +1523,7 @@ fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
 }
 
 /// Decode DataBar finder pattern
-fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let e0 = dcode.pair_width(1);
     let e2 = dcode.pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
@@ -1607,7 +1611,7 @@ fn decode_finder(dcode: &mut zbar_decoder_t) -> SymbolType {
     rc
 }
 
-pub(crate) fn _zbar_decode_databar(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_databar(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let i = dcode.idx & 0xf;
 
     let mut sym = decode_finder(dcode);

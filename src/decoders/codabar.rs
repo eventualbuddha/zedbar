@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Codabar barcodes.
 
-use crate::{decoder::zbar_decoder_t, line_scanner::zbar_color_t, SymbolType};
+use crate::{img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType};
 use libc::{c_int, c_uint};
 
 // Buffer constants
@@ -33,7 +33,7 @@ static CODABAR_CHARACTERS: &[u8; 20] = b"0123456789-$:/.+ABCD";
 
 /// Sort 3 like-colored elements and return ordering
 #[inline]
-fn decode_sort3(dcode: &zbar_decoder_t, i0: u8) -> c_uint {
+fn decode_sort3(dcode: &zbar_image_scanner_t, i0: u8) -> c_uint {
     let w0 = dcode.get_width(i0);
     let w2 = dcode.get_width(i0 + 2);
     let w4 = dcode.get_width(i0 + 4);
@@ -57,7 +57,7 @@ fn decode_sort3(dcode: &zbar_decoder_t, i0: u8) -> c_uint {
 
 /// Sort N like-colored elements and return ordering
 #[inline]
-fn decode_sortn(dcode: &zbar_decoder_t, n: i32, i0: u8) -> c_uint {
+fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
     let mut mask: c_uint = 0;
     let mut sort: c_uint = 0;
 
@@ -98,7 +98,7 @@ fn check_width(ref_width: c_uint, w: c_uint) -> bool {
 
 /// Decode 7 elements into a character
 #[inline]
-fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
+fn codabar_decode7(dcode: &zbar_image_scanner_t) -> i8 {
     let codabar = &dcode.codabar;
     let s = codabar.s7;
     if s < 7 {
@@ -209,7 +209,7 @@ fn codabar_decode7(dcode: &zbar_decoder_t) -> i8 {
 
 /// Decode start pattern
 #[inline]
-fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn codabar_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let s = dcode.codabar.s7;
     if s < 8 {
         return SymbolType::None;
@@ -287,7 +287,7 @@ fn codabar_decode_start(dcode: &mut zbar_decoder_t) -> SymbolType {
 
 /// Post-process decoded buffer
 #[inline]
-fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> SymbolType {
+fn codabar_postprocess(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let dir = dcode.codabar.direction();
     dcode.direction = 1 - 2 * (dir as c_int);
     let mut n = dcode.codabar.character() as usize;
@@ -344,7 +344,7 @@ fn codabar_postprocess(dcode: &mut zbar_decoder_t) -> SymbolType {
 }
 
 /// Main Codabar decode function
-pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_decoder_t) -> SymbolType {
+pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     // Update latest character width
     let w8 = dcode.get_width(8);
     let w1 = dcode.get_width(1);
