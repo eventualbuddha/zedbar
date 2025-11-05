@@ -1,6 +1,7 @@
 use libc::{c_int, c_uint};
 
 use crate::{
+    color::Color,
     config::{internal::DecoderState, DecoderConfig},
     decoder::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
@@ -18,7 +19,6 @@ use crate::{
     finder::find_qr,
     image_ffi::zbar_image_t,
     img_scanner_config::ImageScannerConfig,
-    line_scanner::zbar_color_t,
     qrcode::qrdec::qr_reader,
     sqcode::SqReader,
     symbol::zbar_symbol_t,
@@ -442,7 +442,7 @@ impl zbar_image_scanner_t {
         self.ean.enable = self.config.ean_enabled();
     }
 
-    pub(crate) fn color(&self) -> zbar_color_t {
+    pub(crate) fn color(&self) -> Color {
         self.idx.into()
     }
 

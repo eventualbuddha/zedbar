@@ -4,7 +4,7 @@
 
 use libc::{c_char, c_int, c_short, c_uint};
 
-use crate::line_scanner::zbar_color_t;
+use crate::color::Color;
 
 /// Window size for bar width history (must be power of 2)
 pub(crate) const DECODE_WINDOW: usize = 16;
@@ -422,13 +422,13 @@ impl databar_segment_t {
     }
 
     #[inline]
-    pub(crate) fn color(&self) -> zbar_color_t {
+    pub(crate) fn color(&self) -> Color {
         // color is bit 6
         (((self.bitfields >> 6) & 1) as u8).into()
     }
 
     #[inline]
-    pub(crate) fn set_color(&mut self, val: zbar_color_t) {
+    pub(crate) fn set_color(&mut self, val: Color) {
         self.bitfields = (self.bitfields & !(1 << 6)) | ((val as c_uint) << 6);
     }
 

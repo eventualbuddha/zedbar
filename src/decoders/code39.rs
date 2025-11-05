@@ -2,9 +2,7 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::{
-    finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
-};
+use crate::{color::Color, finder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
 use libc::c_int;
 
 // Number of characters in Code 39
@@ -438,7 +436,7 @@ pub(crate) fn _zbar_decode_code39(dcode: &mut zbar_image_scanner_t) -> SymbolTyp
     dcode.code39.s9 = dcode.code39.s9.wrapping_sub(w9).wrapping_add(w0);
 
     if dcode.code39.character() < 0 {
-        if dcode.color() != zbar_color_t::ZBAR_BAR {
+        if dcode.color() != Color::Bar {
             return SymbolType::None;
         }
         return code39_decode_start(dcode);

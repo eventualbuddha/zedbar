@@ -4,8 +4,8 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    config::internal::DecoderState, finder::decode_e, img_scanner::zbar_image_scanner_t,
-    line_scanner::zbar_color_t, SymbolType,
+    color::Color, config::internal::DecoderState, finder::decode_e,
+    img_scanner::zbar_image_scanner_t, SymbolType,
 };
 use libc::{c_char, c_uint};
 
@@ -140,7 +140,7 @@ fn aux_start(dcode: &zbar_image_scanner_t) -> i8 {
     let e1 = dcode.get_width(4) + dcode.get_width(5);
     let e1_code = decode_e(e1, dcode.ean.s4, 7);
 
-    if dcode.color() == zbar_color_t::ZBAR_BAR {
+    if dcode.color() == Color::Bar {
         // check for quiet-zone
         let qz = dcode.get_width(7);
         if qz == 0 || qz > dcode.ean.s4 * 3 / 4 {
@@ -174,7 +174,7 @@ fn aux_mid(dcode: &zbar_image_scanner_t) -> i8 {
 /// Attempt to decode previous 4 widths (2 bars and 2 spaces) as a character
 fn decode4(dcode: &zbar_image_scanner_t) -> i8 {
     // calculate similar edge measurements
-    let e1 = if dcode.color() == zbar_color_t::ZBAR_BAR {
+    let e1 = if dcode.color() == Color::Bar {
         dcode.get_width(0) + dcode.get_width(1)
     } else {
         dcode.get_width(2) + dcode.get_width(3)
@@ -200,7 +200,7 @@ fn decode4(dcode: &zbar_image_scanner_t) -> i8 {
     // E1E2 == 44 (1010)
     if ((1 << code) & 0x0660) != 0 {
         // use sum of bar widths
-        let d2 = if dcode.color() == zbar_color_t::ZBAR_BAR {
+        let d2 = if dcode.color() == Color::Bar {
             dcode.get_width(0) + dcode.get_width(2)
         } else {
             dcode.get_width(1) + dcode.get_width(3)
@@ -797,7 +797,7 @@ fn decode_pass(dcode: &mut zbar_image_scanner_t, pass_index: usize) -> PartialSy
     let idx = dcode.ean.pass[pass_index].state & STATE_IDX;
     let fwd = (dcode.ean.pass[pass_index].state & 1) as u8;
 
-    if dcode.color() == zbar_color_t::ZBAR_SPACE {
+    if dcode.color() == Color::Space {
         if (dcode.ean.pass[pass_index].state & STATE_ADDON) != 0 {
             if idx == 0x09 || idx == 0x21 {
                 let qz = dcode.get_width(0);

@@ -1,9 +1,9 @@
 use libc::{c_int, c_uint};
 
 use crate::{
+    color::Color,
     decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, ZBAR_MOD_GS1},
     img_scanner::zbar_image_scanner_t,
-    line_scanner::zbar_color_t,
     Error, Result, SymbolType,
 };
 
@@ -798,7 +798,7 @@ fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType
                 continue;
             }
 
-            let mut chkf = if seg_color != zbar_color_t::ZBAR_SPACE {
+            let mut chkf = if seg_color != Color::Space {
                 seg_finder as i32 + s1.finder() as i32 * 9
             } else {
                 s1.finder() as i32 + seg_finder as i32 * 9
@@ -1304,12 +1304,7 @@ fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> c_int {
 }
 
 /// Decode a DataBar character from width measurements
-fn decode_char(
-    dcode: &mut zbar_image_scanner_t,
-    seg_idx: usize,
-    off: i32,
-    dir: i32,
-) -> SymbolType {
+fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: i32) -> SymbolType {
     // Read segment values we need before taking other borrows
     let seg_exp = dcode.databar.seg(seg_idx).exp();
     let seg_side = dcode.databar.seg(seg_idx).side();
@@ -1432,7 +1427,7 @@ fn decode_char(
             return SymbolType::None;
         }
         chk = calc_check(sig0, sig1, side as c_uint, 211);
-        if seg_finder != 0 || seg_color != zbar_color_t::ZBAR_SPACE || seg_side != 0 {
+        if seg_finder != 0 || seg_color != Color::Space || seg_side != 0 {
             let i = (seg_finder as i32) * 2 - (side as i32) + (seg_color as i32);
             if !(0..12).contains(&i) {
                 return SymbolType::None;
@@ -1445,7 +1440,7 @@ fn decode_char(
         }
     } else {
         chk = calc_check(sig0, sig1, seg_side as c_uint, 79);
-        if seg_color != zbar_color_t::ZBAR_SPACE {
+        if seg_color != Color::Space {
             chk = (chk * 16) % 79;
         }
     }

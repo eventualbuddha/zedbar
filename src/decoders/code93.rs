@@ -2,9 +2,7 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::{
-    finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
-};
+use crate::{color::Color, finder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
 use libc::c_int;
 
 // Checksum constant
@@ -341,7 +339,7 @@ fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
 /// Main Code 93 decode function
 pub(crate) fn _zbar_decode_code93(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     if dcode.code93.character() < 0 {
-        if dcode.color() != zbar_color_t::ZBAR_BAR {
+        if dcode.color() != Color::Bar {
             return SymbolType::None;
         }
         return decode_start(dcode);

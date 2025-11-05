@@ -6,6 +6,7 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(non_camel_case_types)]
 
+pub mod color;
 pub mod config;
 pub mod decoder;
 pub mod decoders;
@@ -15,7 +16,6 @@ pub mod image;
 pub mod image_ffi;
 pub mod img_scanner;
 pub mod img_scanner_config;
-pub mod line_scanner;
 pub mod qrcode;
 pub mod scanner;
 pub mod sqcode;

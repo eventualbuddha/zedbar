@@ -3,10 +3,10 @@
 //! This module implements decoding for Code 128 barcodes.
 
 use crate::{
+    color::Color,
     decoder::{ZBAR_MOD_AIM, ZBAR_MOD_GS1},
     finder::decode_e,
     img_scanner::zbar_image_scanner_t,
-    line_scanner::zbar_color_t,
     SymbolType,
 };
 use libc::{c_int, c_uint};
@@ -208,7 +208,7 @@ fn decode6(dcode: &zbar_image_scanner_t) -> i8 {
     }
 
     // Build edge signature of character
-    let sig = if dcode.color() == zbar_color_t::ZBAR_BAR {
+    let sig = if dcode.color() == Color::Bar {
         (decode_e(dcode.get_width(0) + dcode.get_width(1), s, 11) << 12)
             | (decode_e(dcode.get_width(1) + dcode.get_width(2), s, 11) << 8)
             | (decode_e(dcode.get_width(2) + dcode.get_width(3), s, 11) << 4)
@@ -236,7 +236,7 @@ fn decode6(dcode: &zbar_image_scanner_t) -> i8 {
     }
 
     // Character validation
-    let bars = if dcode.color() == zbar_color_t::ZBAR_BAR {
+    let bars = if dcode.color() == Color::Bar {
         dcode.get_width(0) + dcode.get_width(2) + dcode.get_width(4)
     } else {
         dcode.get_width(1) + dcode.get_width(3) + dcode.get_width(5)
@@ -590,7 +590,7 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_image_scanner_t) -> SymbolTy
         .wrapping_sub(dcode.get_width(6))
         .wrapping_add(dcode.get_width(0));
 
-    if (dcode.code128.character() < 0 && dcode.color() != zbar_color_t::ZBAR_SPACE)
+    if (dcode.code128.character() < 0 && dcode.color() != Color::Space)
         || (dcode.code128.character() >= 0
             && (dcode.code128.element() + 1 != 6
                 || dcode.color() as u8 != dcode.code128.direction()))
@@ -615,10 +615,10 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_image_scanner_t) -> SymbolTy
         // Decoded valid start/stop - initialize state
         dcode.code128.set_character(1);
         if c == STOP_REV as i8 {
-            dcode.code128.set_direction(zbar_color_t::ZBAR_BAR as u8);
+            dcode.code128.set_direction(Color::Bar as u8);
             dcode.code128.set_element(7);
         } else {
-            dcode.code128.set_direction(zbar_color_t::ZBAR_SPACE as u8);
+            dcode.code128.set_direction(Color::Space as u8);
         }
         dcode.code128.set_start(c as u8);
         dcode.code128.width = dcode.code128.s6;

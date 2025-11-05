@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Codabar barcodes.
 
-use crate::{img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType};
+use crate::{color::Color, img_scanner::zbar_image_scanner_t, SymbolType};
 use libc::{c_int, c_uint};
 
 // Buffer constants
@@ -350,7 +350,7 @@ pub(crate) fn _zbar_decode_codabar(dcode: &mut zbar_image_scanner_t) -> SymbolTy
     let w1 = dcode.get_width(1);
     dcode.codabar.s7 = dcode.codabar.s7.wrapping_sub(w8).wrapping_add(w1);
 
-    if dcode.color() != zbar_color_t::ZBAR_SPACE {
+    if dcode.color() != Color::Space {
         return SymbolType::None;
     }
 

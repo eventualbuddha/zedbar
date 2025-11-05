@@ -2,9 +2,7 @@
 //!
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
-use crate::{
-    finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
-};
+use crate::{color::Color, finder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
 use libc::c_int;
 
 // ============================================================================
@@ -96,7 +94,7 @@ fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     enc = i25_decode1(enc, dcode.get_width(i), s10);
     i += 1;
 
-    let valid = if dcode.color() == zbar_color_t::ZBAR_BAR {
+    let valid = if dcode.color() == Color::Bar {
         enc == 4
     } else {
         enc = i25_decode1(enc, dcode.get_width(i), s10);
@@ -115,9 +113,7 @@ fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
         return SymbolType::None;
     }
 
-    dcode
-        .i25
-        .set_direction(dcode.color() != zbar_color_t::ZBAR_SPACE);
+    dcode.i25.set_direction(dcode.color() != Color::Space);
     dcode.i25.set_element(1);
     dcode.i25.set_character(0);
     SymbolType::Partial
