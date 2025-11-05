@@ -26,7 +26,7 @@ pub use config::DecoderConfig;
 pub use error::{Error, Result};
 pub use image::Image;
 pub use scanner::Scanner;
-pub use symbol::SymbolType;
+pub use symbol::{Orientation, SymbolType};
 
 #[cfg(test)]
 mod proptest_qr;

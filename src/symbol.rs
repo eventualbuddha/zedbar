@@ -6,10 +6,18 @@
 //! Original C code copyright (C) 2007-2010 Jeff Brown <spadix@users.sourceforge.net>
 //! Licensed under LGPL 3.0 or later
 
-use crate::{
-    decoder::ZBAR_ORIENT_UNKNOWN, img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point,
-};
+use crate::{img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point};
 use std::fmt::Display;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+pub enum Orientation {
+    #[default]
+    Unknown,
+    Up,
+    Right,
+    Down,
+    Left,
+}
 
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_t {
@@ -17,7 +25,7 @@ pub(crate) struct zbar_symbol_t {
     pub(crate) modifiers: u32,
     pub(crate) data: Vec<u8>,
     pub(crate) pts: Vec<qr_point>,
-    pub(crate) orient: i32,
+    pub(crate) orientation: Orientation,
     pub(crate) components: Option<zbar_symbol_set_t>,
     pub(crate) quality: i32,
 }
@@ -28,7 +36,6 @@ impl zbar_symbol_t {
         zbar_symbol_t {
             symbol_type,
             quality: 1,
-            orient: ZBAR_ORIENT_UNKNOWN,
             ..Default::default()
         }
     }
@@ -175,6 +182,11 @@ impl<'a> Symbol<'a> {
     /// Get the decoded data as a string (if valid UTF-8)
     pub fn data_string(&self) -> Option<&str> {
         std::str::from_utf8(self.data()).ok()
+    }
+
+    /// Get the orientation of the barcode
+    pub fn orientation(&self) -> Orientation {
+        self.inner.orientation
     }
 
     /// Get the component symbols (for composite symbols like EAN+add-on or QR structured append)

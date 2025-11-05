@@ -21,7 +21,7 @@ use crate::{
     img_scanner_config::ImageScannerConfig,
     qrcode::qrdec::qr_reader,
     sqcode::SqReader,
-    symbol::zbar_symbol_t,
+    symbol::{zbar_symbol_t, Orientation},
     Error, Result, SymbolType,
 };
 
@@ -995,7 +995,7 @@ impl zbar_image_scanner_t {
                 // Create composite symbol
                 let mut composite = zbar_symbol_t {
                     symbol_type: SymbolType::Composite,
-                    orient: ean.orient,
+                    orientation: ean.orientation,
                     quality: 1,
                     ..Default::default()
                 };
@@ -1091,7 +1091,15 @@ impl zbar_image_scanner_t {
         // Set orientation
         let dir = self.direction;
         if dir != 0 {
-            sym.orient = (if self.dy != 0 { 1 } else { 0 }) + ((self.du ^ dir) & 2);
+            let base = if self.dy != 0 { 1 } else { 0 };
+            let offset = (self.du ^ dir) & 2;
+            sym.orientation = match base + offset {
+                0 => Orientation::Up,
+                1 => Orientation::Down,
+                2 => Orientation::Right,
+                3 => Orientation::Left,
+                _ => Orientation::Unknown,
+            };
         }
 
         self.add_symbol(sym);

@@ -1027,12 +1027,7 @@ fn qr_hom_fit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.
-pub(crate) fn qr_hom_fproject(
-    _hom: &qr_hom,
-    mut _x: i32,
-    mut _y: i32,
-    mut _w: i32,
-) -> qr_point {
+pub(crate) fn qr_hom_fproject(_hom: &qr_hom, mut _x: i32, mut _y: i32, mut _w: i32) -> qr_point {
     if _w == 0 {
         [
             if _x < 0 { c_int::MIN } else { c_int::MAX },
@@ -3131,13 +3126,7 @@ fn qr_hom_cell_init(
 ///
 /// Samples a pixel from the binarized image, with coordinates in QR_FINDER_SUBPREC
 /// subpixel units. Clamps coordinates to valid image bounds.
-pub(crate) fn qr_img_get_bit(
-    img: &[u8],
-    width: i32,
-    height: i32,
-    mut x: i32,
-    mut y: i32,
-) -> c_int {
+pub(crate) fn qr_img_get_bit(img: &[u8], width: i32, height: i32, mut x: i32, mut y: i32) -> c_int {
     x >>= QR_FINDER_SUBPREC;
     y >>= QR_FINDER_SUBPREC;
     let y_clamped = y.clamp(0, height - 1);
@@ -3154,12 +3143,7 @@ pub(crate) fn qr_img_get_bit(
 /// normal 2-D representation.
 /// In loops, we can avoid many multiplies by computing the homogeneous _x, _y,
 /// and _w incrementally, but we cannot avoid the divisions, done here.
-fn qr_hom_cell_fproject(
-    _cell: &qr_hom_cell,
-    mut _x: i32,
-    mut _y: i32,
-    mut _w: i32,
-) -> qr_point {
+fn qr_hom_cell_fproject(_cell: &qr_hom_cell, mut _x: i32, mut _y: i32, mut _w: i32) -> qr_point {
     if _w == 0 {
         [
             if _x < 0 { c_int::MIN } else { c_int::MAX },
