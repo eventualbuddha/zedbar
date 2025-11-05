@@ -508,7 +508,7 @@ impl Default for databar_decoder_t {
     fn default() -> Self {
         Self {
             epoch: 0,
-            segs: Vec::new(),
+            segs: vec![Default::default(); 4],
             chars: [-1; 16],
         }
     }

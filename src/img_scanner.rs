@@ -4,7 +4,7 @@ use crate::{
     config::{internal::DecoderState, DecoderConfig},
     decoder::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-        databar_decoder_t, databar_segment_t, i25_decoder_t, qr_finder_t, DECODE_WINDOW,
+        databar_decoder_t, i25_decoder_t, qr_finder_t, DECODE_WINDOW,
     },
     decoders::{
         codabar::_zbar_decode_codabar,
@@ -115,8 +115,6 @@ impl Default for zbar_image_scanner_t {
     /// # Returns
     /// Pointer to new scanner or null on allocation failure
     fn default() -> Self {
-        let decoder_config = DecoderState::default();
-
         let mut scanner = Self {
             // Scanner fields
             y1_min_thresh: ZBAR_SCANNER_THRESH_MIN,
@@ -137,7 +135,7 @@ impl Default for zbar_image_scanner_t {
             direction: 0,
             s6: 0,
             buffer: Vec::with_capacity(BUFFER_MIN),
-            config: decoder_config.clone(),
+            config: DecoderState::default(),
             ean: ean_decoder_t::default(),
             i25: i25_decoder_t::default(),
             databar: databar_decoder_t::default(),
@@ -160,7 +158,6 @@ impl Default for zbar_image_scanner_t {
         };
 
         scanner.sync_config_to_decoders();
-        scanner.databar.segs = vec![databar_segment_t::default(); 4];
         scanner.decoder_reset();
 
         scanner
@@ -200,49 +197,12 @@ impl zbar_image_scanner_t {
         }
 
         let mut scanner = Self {
-            // Scanner fields
-            y1_min_thresh: ZBAR_SCANNER_THRESH_MIN,
-            x: 0,
-            y0: [0; 4],
-            y1_sign: 0,
-            y1_thresh: 0,
-            cur_edge: 0,
-            last_edge: 0,
-            width: 0,
-
-            // Decoder fields
-            idx: 0,
-            w: Default::default(),
-            type_: SymbolType::default(),
-            lock: SymbolType::default(),
-            modifiers: 0,
-            direction: 0,
-            s6: 0,
-            buffer: Vec::with_capacity(BUFFER_MIN),
-            config: decoder_state.clone(),
-            ean: ean_decoder_t::default(),
-            i25: i25_decoder_t::default(),
-            databar: databar_decoder_t::default(),
-            codabar: codabar_decoder_t::default(),
-            code39: code39_decoder_t::default(),
-            code93: code93_decoder_t::default(),
-            code128: code128_decoder_t::default(),
-            qrf: qr_finder_t::default(),
-
-            // Scanner-specific fields
-            qr: qr_reader::default(),
-            sq: SqReader::default(),
-            dx: 0,
-            dy: 0,
-            du: 0,
-            umin: 0,
-            v: 0,
-            syms: zbar_symbol_set_t::default(),
+            config: decoder_state,
             scanner_config,
+            ..Default::default()
         };
 
         scanner.sync_config_to_decoders();
-        scanner.databar.segs = vec![databar_segment_t::default(); 4];
         scanner.decoder_reset();
 
         scanner
