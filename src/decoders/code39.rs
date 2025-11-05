@@ -5,7 +5,7 @@
 use crate::{
     finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
 };
-use libc::{c_int, c_uint};
+use libc::c_int;
 
 // Number of characters in Code 39
 const NUM_CHARS: usize = 0x2c;
@@ -295,7 +295,7 @@ static CODE39_CHARACTERS: &[u8; NUM_CHARS] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVW
 
 /// Decode a single element
 #[inline]
-fn code39_decode1(enc: u8, e: c_uint, s: c_uint) -> u8 {
+fn code39_decode1(enc: u8, e: u32, s: u32) -> u8 {
     let e_val = decode_e(e, s, 72);
     if !(0..=18).contains(&e_val) {
         return 0xff;
@@ -423,7 +423,7 @@ fn code39_postprocess(dcode: &mut zbar_image_scanner_t) -> i32 {
 
 /// Check width against reference
 #[inline]
-fn check_width(ref_width: c_uint, w: c_uint) -> bool {
+fn check_width(ref_width: u32, w: u32) -> bool {
     let dref = ref_width;
     let ref_4 = ref_width * 4;
     let w_4 = w * 4;

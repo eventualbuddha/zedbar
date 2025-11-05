@@ -3,7 +3,6 @@
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
 use crate::{img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType};
-use libc::c_uint;
 
 // ============================================================================
 // Helper functions from decoder.h
@@ -19,7 +18,7 @@ use libc::c_uint;
 /// Returns encoded number of units - 2 (for use as zero based index)
 /// or -1 if invalid
 #[inline]
-pub(crate) fn decode_e(e: c_uint, s: c_uint, n: c_uint) -> i32 {
+pub(crate) fn decode_e(e: u32, s: u32, n: u32) -> i32 {
     let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if e_val >= n - 3 {
         -1

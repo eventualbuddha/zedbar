@@ -5,7 +5,7 @@
 use crate::{
     finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
 };
-use libc::{c_int, c_uint};
+use libc::c_int;
 
 // ============================================================================
 // I25 Decoder functions
@@ -13,7 +13,7 @@ use libc::{c_int, c_uint};
 
 /// Decode a single element
 #[inline]
-fn i25_decode1(enc: u8, e: c_uint, s: c_uint) -> u8 {
+fn i25_decode1(enc: u8, e: u32, s: u32) -> u8 {
     let e_val = decode_e(e, s, 45);
     if e_val > 7 {
         return 0xff;

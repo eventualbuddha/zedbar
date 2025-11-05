@@ -7,7 +7,7 @@ use crate::{
     config::internal::DecoderState, finder::decode_e, img_scanner::zbar_image_scanner_t,
     line_scanner::zbar_color_t, SymbolType,
 };
-use libc::{c_char, c_int, c_uint};
+use libc::{c_char, c_uint};
 
 // State constants for ean_pass_t
 const STATE_REV: i8 = -0x80; // 0x80 as signed
@@ -87,7 +87,7 @@ fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> c_uint {
 
 /// Check if two widths are within tolerance
 #[inline]
-fn check_width(w0: c_uint, w1: c_uint) -> c_uint {
+fn check_width(w0: u32, w1: u32) -> c_uint {
     let dw0 = w0;
     let w0_scaled = w0 * 8;
     let w1_scaled = w1 * 8;
@@ -228,7 +228,7 @@ fn decode4(dcode: &zbar_image_scanner_t) -> i8 {
 #[derive(Default)]
 pub(crate) struct ean_pass_t {
     pub(crate) state: c_char,
-    pub(crate) width: c_uint,
+    pub(crate) width: u32,
     pub(crate) raw: [u8; 7],
 }
 
@@ -238,9 +238,9 @@ pub(crate) struct ean_decoder_t {
     pub(crate) pass: [ean_pass_t; 4],
     pub(crate) left: SymbolType,
     pub(crate) right: SymbolType,
-    pub(crate) direction: c_int,
-    pub(crate) s4: c_uint,
-    pub(crate) width: c_uint,
+    pub(crate) direction: i32,
+    pub(crate) s4: u32,
+    pub(crate) width: u32,
     pub(crate) buf: [c_char; 18],
     pub(crate) enable: bool,
 }
@@ -390,7 +390,7 @@ impl ean_decoder_t {
 
     /// Calculate ISBN-10 checksum
     fn isbn10_calc_checksum(&self) -> c_char {
-        let mut chk: c_uint = 0;
+        let mut chk: u32 = 0;
         for w in (2..=10).rev() {
             let d = self.buf[13 - w] as u8;
             zassert!(d < 10, b'?' as c_char, "w={:x} d={:x} chk={:x}", w, d, chk);

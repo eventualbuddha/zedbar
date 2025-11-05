@@ -5,7 +5,7 @@
 use crate::{
     finder::decode_e, img_scanner::zbar_image_scanner_t, line_scanner::zbar_color_t, SymbolType,
 };
-use libc::{c_int, c_uint};
+use libc::c_int;
 
 // Checksum constant
 const CHKMOD: i32 = 47;
@@ -39,7 +39,7 @@ static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`
 
 /// Check width variance
 #[inline]
-fn check_width(cur: c_uint, prev: c_uint) -> bool {
+fn check_width(cur: u32, prev: u32) -> bool {
     let dw = prev.abs_diff(cur);
     let dw = dw * 4;
     dw > prev

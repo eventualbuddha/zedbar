@@ -1,14 +1,13 @@
 //! Error types and handling
 
-use libc::{c_int, c_uint};
 use std::fmt;
 
-pub const ZBAR_VERSION_MAJOR: c_uint = 0;
-pub const ZBAR_VERSION_MINOR: c_uint = 23;
-pub const ZBAR_VERSION_PATCH: c_uint = 93;
+pub const ZBAR_VERSION_MAJOR: u32 = 0;
+pub const ZBAR_VERSION_MINOR: u32 = 23;
+pub const ZBAR_VERSION_PATCH: u32 = 93;
 
 /// Global verbosity level
-pub static mut ZBAR_VERBOSITY: c_int = 0;
+pub static mut ZBAR_VERBOSITY: i32 = 0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {

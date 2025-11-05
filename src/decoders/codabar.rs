@@ -58,8 +58,8 @@ fn decode_sort3(dcode: &zbar_image_scanner_t, i0: u8) -> c_uint {
 /// Sort N like-colored elements and return ordering
 #[inline]
 fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
-    let mut mask: c_uint = 0;
-    let mut sort: c_uint = 0;
+    let mut mask: u32 = 0;
+    let mut sort: u32 = 0;
 
     for _i in (0..n).rev() {
         let mut wmin = c_uint::MAX;
@@ -89,7 +89,7 @@ fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
 
 /// Check width against reference
 #[inline]
-fn check_width(ref_width: c_uint, w: c_uint) -> bool {
+fn check_width(ref_width: u32, w: u32) -> bool {
     let dref = ref_width;
     let ref_4 = ref_width * 4;
     let w_4 = w * 4;
@@ -314,7 +314,7 @@ fn codabar_postprocess(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 
     if has_checksum {
         // Validate checksum (read-only operation on buffer)
-        let mut chk: c_uint = 0;
+        let mut chk: u32 = 0;
         for c in buffer.iter().take(n) {
             chk += *c as c_uint;
         }

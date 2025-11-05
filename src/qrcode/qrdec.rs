@@ -32,36 +32,36 @@ pub(crate) type qr_line = [c_int; 3];
 pub(crate) type qr_point = [c_int; 2];
 
 /// Number of bits in an int (typically 32)
-const QR_INT_BITS: c_int = c_int::BITS as c_int;
+const QR_INT_BITS: i32 = c_int::BITS as c_int;
 
 /// Log2 of QR_INT_BITS (typically 5 for 32-bit ints)
-const QR_INT_LOGBITS: c_int = 5; // qr_ilog(32) = 5
+const QR_INT_LOGBITS: i32 = 5; // qr_ilog(32) = 5
 
 /// Number of bits of sub-module precision for alignment pattern search
-const QR_ALIGN_SUBPREC: c_int = 2;
+const QR_ALIGN_SUBPREC: i32 = 2;
 
 /// Number of bits of sub-module precision for finder pattern coordinates
-const QR_FINDER_SUBPREC: c_int = 2;
+const QR_FINDER_SUBPREC: i32 = 2;
 
 /// A 14 bit resolution for a homography ensures that the ideal module size for a
 /// version 40 code differs from that of a version 39 code by at least 2.
-const QR_HOM_BITS: c_int = 14;
+const QR_HOM_BITS: i32 = 14;
 
 /// The amount that the estimated version numbers are allowed to differ from the
 /// real version number and still be considered valid.
 #[allow(dead_code)] // Used in functions not yet ported to Rust
-const QR_SMALL_VERSION_SLACK: c_int = 1;
+const QR_SMALL_VERSION_SLACK: i32 = 1;
 
 /// Since cell phone cameras can have severe radial distortion, the estimated
 /// version for larger versions can be off by larger amounts.
-const QR_LARGE_VERSION_SLACK: c_int = 3;
+const QR_LARGE_VERSION_SLACK: i32 = 3;
 
 /// Helper function: divide with exact rounding
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
 /// For x/y where the fractional part is exactly 0.5, rounds away from zero.
 #[inline]
-fn qr_divround(x: c_int, y: c_int) -> c_int {
+fn qr_divround(x: i32, y: i32) -> c_int {
     x.wrapping_add(x.signum().wrapping_mul(y >> 1)) / y
 }
 
@@ -70,7 +70,7 @@ fn qr_divround(x: c_int, y: c_int) -> c_int {
 /// Multiplies 32-bit numbers a and b, adds r, and takes bits [s, s+31] of the result.
 /// This is used for fixed-point arithmetic to avoid overflow.
 #[inline]
-fn qr_fixmul(a: c_int, b: c_int, r: i64, s: c_int) -> c_int {
+fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> c_int {
     ((a as i64 * b as i64 + r) >> s) as c_int
 }
 
@@ -78,7 +78,7 @@ fn qr_fixmul(a: c_int, b: c_int, r: i64, s: c_int) -> c_int {
 ///
 /// This matches C macro QR_EXTMUL.
 #[inline]
-fn qr_extmul(a: c_int, b: c_int, r: i64) -> i64 {
+fn qr_extmul(a: i32, b: i32, r: i64) -> i64 {
     a as i64 * b as i64 + r
 }
 
@@ -97,7 +97,7 @@ fn qr_signmask(x: i64) -> i64 {
 fn qr_hom_project_alignment_to_corner(
     p: &[qr_point],
     p3: &qr_point,
-    dim: c_int,
+    dim: i32,
 ) -> Result<(c_int, c_int), c_int> {
     let p0 = &p[0];
     let p1 = &p[1];
@@ -164,7 +164,7 @@ fn qr_hom_fit_edge_line(
     npts: usize,
     finder: &qr_finder,
     aff: &qr_aff,
-    edge_axis: c_int,
+    edge_axis: i32,
 ) {
     if npts > 1 {
         qr_line_fit_points(line, pts, npts, aff.res);
@@ -210,13 +210,13 @@ struct qr_hom_cell {
     /// Forward transformation matrix [3][3]
     pub(crate) fwd: [[c_int; 3]; 3],
     /// X offset in image space
-    pub(crate) x0: c_int,
+    pub(crate) x0: i32,
     /// Y offset in image space
-    pub(crate) y0: c_int,
+    pub(crate) y0: i32,
     /// U offset in code space
-    pub(crate) u0: c_int,
+    pub(crate) u0: i32,
     /// V offset in code space
-    pub(crate) v0: c_int,
+    pub(crate) v0: i32,
 }
 
 /// Sampling grid for QR code module extraction
@@ -302,7 +302,7 @@ pub(crate) struct qr_finder_edge_pt {
     /// The (signed) perpendicular distance of the edge point from a line parallel
     /// to the edge passing through the finder center, in (u,v) coordinates.
     /// This is also re-used by RANSAC to store inlier flags.*/
-    extent: c_int,
+    extent: i32,
 }
 
 /// The center of a finder pattern obtained from the crossing of one or more
@@ -331,7 +331,7 @@ pub(crate) fn qr_finder_lines_are_crossing(hline: &qr_finder_line, vline: &qr_fi
 /// Translate a point by the given offsets
 ///
 /// Adds dx to the x coordinate and dy to the y coordinate.
-pub(crate) fn qr_point_translate(point: &qr_point, dx: c_int, dy: c_int) -> qr_point {
+pub(crate) fn qr_point_translate(point: &qr_point, dx: i32, dy: i32) -> qr_point {
     [point[0] + dx, point[1] + dy]
 }
 
@@ -366,11 +366,11 @@ pub(crate) fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> c_int
 ///
 /// Given a line defined by the equation A*x + B*y + C = 0,
 /// this returns the value A*x + B*y + C for the given coordinates.
-pub(crate) fn qr_line_eval(line: &qr_line, x: c_int, y: c_int) -> c_int {
+pub(crate) fn qr_line_eval(line: &qr_line, x: i32, y: i32) -> c_int {
     line[0] * x + line[1] * y + line[2]
 }
 
-pub(crate) fn qr_line_orient(_l: &mut qr_line, _x: c_int, _y: c_int) {
+pub(crate) fn qr_line_orient(_l: &mut qr_line, _x: i32, _y: i32) {
     if qr_line_eval(_l, _x, _y) < 0 {
         _l[0] = -_l[0];
         _l[1] = -_l[1];
@@ -409,12 +409,12 @@ pub(crate) fn qr_line_isect(_l0: &qr_line, _l1: &qr_line) -> Option<qr_point> {
 /// # Returns
 /// Line equation (Ax + By + C = 0)
 pub(crate) fn qr_line_fit(
-    _x0: c_int,
-    _y0: c_int,
-    _sxx: c_int,
-    _sxy: c_int,
-    _syy: c_int,
-    _res: c_int,
+    _x0: i32,
+    _y0: i32,
+    _sxx: i32,
+    _sxy: i32,
+    _syy: i32,
+    _res: i32,
 ) -> qr_line {
     let u = (_sxx - _syy).abs();
     let v = -_sxy << 1;
@@ -448,9 +448,9 @@ pub(crate) fn qr_line_fit(
 /// - `_p`: Array of points
 /// - `_np`: Number of points
 /// - `_res`: Resolution bits for scaling
-pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usize, _res: c_int) {
-    let mut sx: c_int = 0;
-    let mut sy: c_int = 0;
+pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usize, _res: i32) {
+    let mut sx: i32 = 0;
+    let mut sy: i32 = 0;
     let mut xmin = c_int::MAX;
     let mut xmax = c_int::MIN;
     let mut ymin = c_int::MAX;
@@ -485,9 +485,9 @@ pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usi
     let sround = (1 << sshift) >> 1;
 
     // Compute covariance matrix
-    let mut sxx: c_int = 0;
-    let mut sxy: c_int = 0;
-    let mut syy: c_int = 0;
+    let mut sxx: i32 = 0;
+    let mut sxy: i32 = 0;
+    let mut syy: i32 = 0;
     for point in _p.iter().take(_np) {
         let dx = (point[0] - xbar + sround) >> sshift;
         let dy = (point[1] - ybar + sround) >> sshift;
@@ -509,13 +509,13 @@ pub(crate) struct qr_aff {
     /// Inverse transformation matrix [2][2]
     pub(crate) inv: [[c_int; 2]; 2],
     /// X offset
-    pub(crate) x0: c_int,
+    pub(crate) x0: i32,
     /// Y offset
-    pub(crate) y0: c_int,
+    pub(crate) y0: i32,
     /// Resolution bits
-    pub(crate) res: c_int,
+    pub(crate) res: i32,
     /// Inverse resolution bits
-    pub(crate) ires: c_int,
+    pub(crate) ires: i32,
 }
 
 pub(crate) fn qr_aff_init(
@@ -523,7 +523,7 @@ pub(crate) fn qr_aff_init(
     _p0: &qr_point,
     _p1: &qr_point,
     _p2: &qr_point,
-    _res: c_int,
+    _res: i32,
 ) {
     // det is ensured to be positive by our caller.
     let dx1 = _p1[0] - _p0[0];
@@ -547,7 +547,7 @@ pub(crate) fn qr_aff_init(
 }
 
 /// Map from the image (at subpel resolution) into the square domain.
-pub(crate) fn qr_aff_unproject(_aff: &qr_aff, _x: c_int, _y: c_int) -> qr_point {
+pub(crate) fn qr_aff_unproject(_aff: &qr_aff, _x: i32, _y: i32) -> qr_point {
     let x = (_aff.inv[0][0]
         .wrapping_mul(_x.wrapping_sub(_aff.x0))
         .wrapping_add(_aff.inv[0][1].wrapping_mul(_y.wrapping_sub(_aff.y0)))
@@ -562,7 +562,7 @@ pub(crate) fn qr_aff_unproject(_aff: &qr_aff, _x: c_int, _y: c_int) -> qr_point 
 }
 
 /// Map from the square domain into the image (at subpel resolution).
-pub(crate) fn qr_aff_project(_aff: &qr_aff, _u: c_int, _v: c_int) -> qr_point {
+pub(crate) fn qr_aff_project(_aff: &qr_aff, _u: i32, _v: i32) -> qr_point {
     let x = ((_aff.fwd[0][0]
         .wrapping_mul(_u)
         .wrapping_add(_aff.fwd[0][1].wrapping_mul(_v))
@@ -585,11 +585,11 @@ pub(crate) fn qr_aff_project(_aff: &qr_aff, _u: c_int, _v: c_int) -> qr_point {
 pub(crate) struct qr_hom {
     fwd: [[c_int; 2]; 3],
     inv: [[c_int; 2]; 3],
-    fwd22: c_int,
-    inv22: c_int,
-    x0: c_int,
-    y0: c_int,
-    res: c_int,
+    fwd22: i32,
+    inv22: i32,
+    x0: i32,
+    y0: i32,
+    res: i32,
 }
 
 /// Initialize a homography mapping from four corner points
@@ -599,15 +599,15 @@ pub(crate) struct qr_hom {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn qr_hom_init(
     _hom: &mut qr_hom,
-    _x0: c_int,
-    _y0: c_int,
-    _x1: c_int,
-    _y1: c_int,
-    _x2: c_int,
-    _y2: c_int,
-    _x3: c_int,
-    _y3: c_int,
-    _res: c_int,
+    _x0: i32,
+    _y0: i32,
+    _x1: i32,
+    _y1: i32,
+    _x2: i32,
+    _y2: i32,
+    _x3: i32,
+    _y3: i32,
+    _res: i32,
 ) {
     let dx10 = _x1 - _x0;
     let dx20 = _x2 - _x0;
@@ -702,8 +702,8 @@ fn qr_hom_fit(
     _aff: &qr_aff,
     rng: &mut ChaCha8Rng,
     img: &[u8],
-    _width: c_int,
-    _height: c_int,
+    _width: i32,
+    _height: i32,
 ) -> c_int {
     let mut l: [qr_line; 4] = [[0; 3]; 4];
 
@@ -1027,9 +1027,9 @@ fn qr_hom_fit(
 /// and _w incrementally, but we cannot avoid the divisions, done here.
 pub(crate) fn qr_hom_fproject(
     _hom: &qr_hom,
-    mut _x: c_int,
-    mut _y: c_int,
-    mut _w: c_int,
+    mut _x: i32,
+    mut _y: i32,
+    mut _w: i32,
 ) -> qr_point {
     if _w == 0 {
         [
@@ -1164,7 +1164,7 @@ impl qr_finder {
     /// _height: The distance between UL and DL in the square domain.
     ///
     /// Returns 0 on success, or -1 if the module size or version could not be estimated.
-    fn estimate_module_size_and_version(&mut self, _width: c_int, _height: c_int) -> c_int {
+    fn estimate_module_size_and_version(&mut self, _width: i32, _height: i32) -> c_int {
         let mut offs = qr_point::default();
         let mut sums: [c_int; 4] = [0; 4];
         let mut nsums: [c_int; 4] = [0; 4];
@@ -1173,7 +1173,7 @@ impl qr_finder {
             let n = self.edge_pts[e].len() as c_int;
             if n > 0 {
                 // Average the samples for this edge, dropping the top and bottom 25%
-                let mut sum: c_int = 0;
+                let mut sum: i32 = 0;
                 let start = (n >> 2) as usize;
                 let end = (n - (n >> 2)) as usize;
                 for i in start..end {
@@ -1274,7 +1274,7 @@ impl qr_finder {
 ///
 /// Uses the RANSAC (RANdom SAmple Consensus) algorithm to identify inliers
 /// among the edge points and eliminate outliers.
-fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e: c_int) {
+fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e: i32) {
     let edge_idx = _e as usize;
     let n = _f.edge_pts[edge_idx].len() as c_int;
     let mut best_ninliers = 0;
@@ -1372,7 +1372,7 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
 }
 
 /// Perform a least-squares line fit to an edge of a finder pattern using the inliers found by RANSAC.
-fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: c_int, _res: c_int) -> c_int {
+fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: i32, _res: i32) -> c_int {
     let npts = _f.ninliers[_e as usize] as usize;
     if npts < 2 {
         return -1;
@@ -1401,7 +1401,7 @@ fn qr_line_fit_finder_pair(
     _aff: &qr_aff,
     _f0: &qr_finder,
     _f1: &qr_finder,
-    _e: c_int,
+    _e: i32,
 ) {
     let mut n0 = _f0.ninliers[_e as usize] as usize;
     let n1 = _f1.ninliers[_e as usize] as usize;
@@ -1443,8 +1443,8 @@ fn qr_line_fit_finder_pair(
 /// otherwise returns `Ok(point)` with the projected coordinates.
 pub(crate) fn qr_hom_unproject(
     _hom: &qr_hom,
-    mut _x: c_int,
-    mut _y: c_int,
+    mut _x: i32,
+    mut _y: i32,
 ) -> Result<qr_point, qr_point> {
     _x = _x.wrapping_sub(_hom.x0);
     _y = _y.wrapping_sub(_hom.y0);
@@ -1481,15 +1481,15 @@ pub(crate) fn qr_hom_unproject(
 /// Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.
 pub(crate) struct qr_pack_buf<'a> {
     buf: &'a [c_uchar],
-    endbyte: c_int,
-    endbit: c_int,
+    endbyte: i32,
+    endbit: i32,
 }
 
 /// Read bits from the pack buffer
 ///
 /// Assumes 0 <= _bits <= 16
 /// Returns the read value, or `None` if there aren't enough bits available
-pub(crate) fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: c_int) -> Option<c_int> {
+pub(crate) fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: i32) -> Option<c_int> {
     let m = 16 - _bits;
     let bits = _bits + _b.endbit;
     let storage = _b.buf.len() as c_int;
@@ -1532,7 +1532,7 @@ pub(crate) fn qr_pack_buf_avail(_b: &qr_pack_buf) -> c_int {
 ///
 /// This is a compact calculation that avoids a lookup table.
 /// Returns the total number of data and error correction codewords.
-pub(crate) fn qr_code_ncodewords(_version: c_uint) -> usize {
+pub(crate) fn qr_code_ncodewords(_version: u32) -> usize {
     if _version == 1 {
         return 26;
     }
@@ -1554,7 +1554,7 @@ pub(crate) fn qr_code_ncodewords(_version: c_uint) -> usize {
 ///
 /// # Returns
 /// A ClusteredLines structure containing the lines and their clusters.
-fn qr_finder_cluster_lines(lines: Vec<qr_finder_line>, _v: c_int) -> ClusteredLines {
+fn qr_finder_cluster_lines(lines: Vec<qr_finder_line>, _v: i32) -> ClusteredLines {
     let nlines = lines.len();
     let mut clustered = ClusteredLines::new(lines);
 
@@ -1838,11 +1838,11 @@ pub(crate) fn qr_finder_find_crossings(
 /// We store bits column-wise, since that's how they're read out of the grid.
 fn qr_sampling_grid_fp_mask_rect(
     _grid: &mut qr_sampling_grid,
-    _dim: c_int,
-    _u: c_int,
-    _v: c_int,
-    _w: c_int,
-    _h: c_int,
+    _dim: i32,
+    _u: i32,
+    _v: i32,
+    _w: i32,
+    _h: i32,
 ) {
     let stride = (_dim + QR_INT_BITS - 1) >> QR_INT_LOGBITS;
     for j in _u..(_u + _w) {
@@ -1856,7 +1856,7 @@ fn qr_sampling_grid_fp_mask_rect(
 /// Determine if a given grid location is inside a function pattern
 ///
 /// Returns whether the location (_u, _v) is part of a function pattern.
-fn qr_sampling_grid_is_in_fp(_grid: &qr_sampling_grid, _dim: usize, _u: c_int, _v: c_int) -> bool {
+fn qr_sampling_grid_is_in_fp(_grid: &qr_sampling_grid, _dim: usize, _u: i32, _v: i32) -> bool {
     let idx = _u as usize * ((_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize)
         + (_v as usize >> QR_INT_LOGBITS as usize);
     ((_grid.fpmask[idx]) >> (_v & (QR_INT_BITS - 1)) & 1) == 1
@@ -1936,13 +1936,13 @@ pub(crate) static QR_RS_NBLOCKS: [[c_uchar; 4]; 40] = [
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn qr_finder_quick_crossing_check(
     _img: &[u8],
-    _width: c_int,
-    _height: c_int,
-    _x0: c_int,
-    _y0: c_int,
-    _x1: c_int,
-    _y1: c_int,
-    _v: c_int,
+    _width: i32,
+    _height: i32,
+    _x0: i32,
+    _y0: i32,
+    _x1: i32,
+    _y1: i32,
+    _v: i32,
 ) -> c_int {
     // The points must be inside the image, and have a !_v:_v:!_v pattern.
     // We don't scan the whole line initially, but quickly reject if the endpoints
@@ -1991,8 +1991,8 @@ pub(crate) fn qr_finder_quick_crossing_check(
 pub(crate) fn qr_aff_line_step(
     aff: &qr_aff,
     line: &qr_line,
-    v: c_int,
-    du: c_int,
+    v: i32,
+    du: i32,
 ) -> Result<c_int, c_int> {
     let l0 = line[0];
     let l1 = line[1];
@@ -2037,7 +2037,7 @@ pub(crate) fn qr_aff_line_step(
 ///
 /// Counts the number of bit positions where the values differ,
 /// up to a maximum of maxdiff.
-pub(crate) fn qr_hamming_dist(y1: c_uint, y2: c_uint, maxdiff: c_int) -> c_int {
+pub(crate) fn qr_hamming_dist(y1: u32, y2: u32, maxdiff: i32) -> c_int {
     let mut y = y1 ^ y2;
     let mut ret = 0;
 
@@ -2068,12 +2068,12 @@ fn qr_finder_version_decode(
     _f: &qr_finder,
     _hom: &qr_hom,
     _img: &[u8],
-    _width: c_int,
-    _height: c_int,
-    _dir: c_int,
+    _width: i32,
+    _height: i32,
+    _dir: i32,
 ) -> c_int {
     let mut q = qr_point::default();
-    let mut v: c_uint = 0;
+    let mut v: u32 = 0;
 
     // Calculate starting point for version info block
     q[_dir as usize] = _f.o[_dir as usize] - 7 * _f.size[_dir as usize];
@@ -2130,8 +2130,8 @@ fn qr_finder_fmt_info_decode(
     _dl: &qr_finder,
     _hom: &qr_hom,
     _img: &[u8],
-    _width: c_int,
-    _height: c_int,
+    _width: i32,
+    _height: i32,
 ) -> c_int {
     let mut lo: [c_uint; 2] = [0; 2];
     let mut hi: [c_uint; 2] = [0; 2];
@@ -2281,7 +2281,7 @@ fn qr_finder_fmt_info_decode(
 ///
 /// Fills a buffer with the specified data mask pattern. The mask is stored
 /// column-wise since that's how bits are read out of the QR code grid.
-pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
+pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
     let data_word_count = _dim * ((_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize);
     let mut _mask = vec![0; data_word_count];
     let stride = (_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize;
@@ -2293,7 +2293,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //            10101010
         //            01010101
         0 => {
-            let mut m: c_uint = 0x55;
+            let mut m: u32 = 0x55;
             for j in 0.._dim {
                 // Replicate byte value across all bytes of c_uint (like memset does)
                 let replicated = m * 0x01010101;
@@ -2314,7 +2314,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //            10010010
         //            10010010
         2 => {
-            let mut m: c_uint = 0xFF;
+            let mut m: u32 = 0xFF;
             for j in 0.._dim {
                 // Replicate byte value across all bytes of c_uint (like memset does)
                 let replicated = (m & 0xFF) * 0x01010101;
@@ -2327,7 +2327,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //            01001001
         //            10010010
         3 => {
-            let mut mj: c_uint = 0;
+            let mut mj: u32 = 0;
             for i in 0..((QR_INT_BITS + 2) / 3) {
                 mj |= 1 << (3 * i);
             }
@@ -2345,7 +2345,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //            00011100
         //            00011100
         4 => {
-            let mut m: c_uint = 7;
+            let mut m: u32 = 7;
             for j in 0.._dim {
                 // Replicate byte value across all bytes of c_uint (like memset does)
                 let replicated = ((0xCC ^ (m & 1).wrapping_neg()) & 0xFF) * 0x01010101;
@@ -2359,7 +2359,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //            10101010
         5 => {
             for j in 0.._dim {
-                let mut m: c_uint = 0;
+                let mut m: u32 = 0;
                 for i in 0..6 {
                     m |= ((((i * j) % 6) == 0) as c_uint) << i;
                 }
@@ -2380,7 +2380,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //            10101010
         6 => {
             for j in 0.._dim {
-                let mut m: c_uint = 0;
+                let mut m: u32 = 0;
                 for i in 0..6 {
                     m |= ((((i * j) % 3 + i * j + 1) & 1) as c_uint) << i;
                 }
@@ -2401,7 +2401,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
         //                       01010101
         _ => {
             for j in 0.._dim {
-                let mut m: c_uint = 0;
+                let mut m: u32 = 0;
                 for i in 0..6 {
                     m |= ((((i * j) % 3 + i + j + 1) & 1) as c_uint) << i;
                 }
@@ -2429,14 +2429,14 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: c_int) -> Vec<c_uint> {
 #[allow(clippy::too_many_arguments)]
 fn qr_sampling_grid_init(
     _grid: &mut qr_sampling_grid,
-    _version: c_int,
+    _version: i32,
     _ul_pos: &qr_point,
     _ur_pos: &qr_point,
     _dl_pos: &qr_point,
     _p: &mut [qr_point],
     _img: &[u8],
-    _width: c_int,
-    _height: c_int,
+    _width: i32,
+    _height: i32,
 ) {
     let mut base_cell = qr_hom_cell {
         fwd: [[0; 3]; 3],
@@ -2687,10 +2687,10 @@ fn qr_sampling_grid_init(
 fn qr_sampling_grid_sample(
     _grid: &qr_sampling_grid,
     _dim: usize,
-    _fmt_info: c_int,
+    _fmt_info: i32,
     _img: &[u8],
-    _width: c_int,
-    _height: c_int,
+    _width: i32,
+    _height: i32,
 ) -> Vec<c_uint> {
     // We initialize the buffer with the data mask and XOR bits into it as we read
     // them out of the image instead of unmasking in a separate step
@@ -2763,7 +2763,7 @@ pub(crate) fn qr_samples_unpack(
         _nshort_blocks = 0;
     }
 
-    let mut bits: c_uint = 0;
+    let mut bits: u32 = 0;
     let mut biti = 0;
     let mut blocki = 0;
     let mut blockj = 0;
@@ -2892,7 +2892,7 @@ enum Bch18_6CorrectError {
 /// Returns:
 /// - `Ok((corrected_value, num_errors))` where `num_errors` is 0-3
 /// - `Err(Bch18_6CorrectError::Unrecoverable)` if more than 3 errors were detected
-fn bch18_6_correct(y: c_uint) -> Result<(c_uint, c_int), Bch18_6CorrectError> {
+fn bch18_6_correct(y: u32) -> Result<(c_uint, c_int), Bch18_6CorrectError> {
     // Check the easy case first: see if the data bits were uncorrupted
     let x = y >> 12;
     if (7..=40).contains(&x) {
@@ -2926,22 +2926,22 @@ fn bch18_6_correct(y: c_uint) -> Result<(c_uint, c_int), Bch18_6CorrectError> {
 #[allow(clippy::too_many_arguments)]
 fn qr_hom_cell_init(
     cell: &mut qr_hom_cell,
-    u0: c_int,
-    v0: c_int,
-    u1: c_int,
-    v1: c_int,
-    u2: c_int,
-    v2: c_int,
-    u3: c_int,
-    v3: c_int,
-    x0: c_int,
-    y0: c_int,
-    x1: c_int,
-    y1: c_int,
-    x2: c_int,
-    y2: c_int,
-    x3: c_int,
-    y3: c_int,
+    u0: i32,
+    v0: i32,
+    u1: i32,
+    v1: i32,
+    u2: i32,
+    v2: i32,
+    u3: i32,
+    v3: i32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    y2: i32,
+    x3: i32,
+    y3: i32,
 ) {
     // Compute deltas for source points (code space)
     let du10 = u1 - u0;
@@ -3131,10 +3131,10 @@ fn qr_hom_cell_init(
 /// subpixel units. Clamps coordinates to valid image bounds.
 pub(crate) fn qr_img_get_bit(
     img: &[u8],
-    width: c_int,
-    height: c_int,
-    mut x: c_int,
-    mut y: c_int,
+    width: i32,
+    height: i32,
+    mut x: i32,
+    mut y: i32,
 ) -> c_int {
     x >>= QR_FINDER_SUBPREC;
     y >>= QR_FINDER_SUBPREC;
@@ -3154,9 +3154,9 @@ pub(crate) fn qr_img_get_bit(
 /// and _w incrementally, but we cannot avoid the divisions, done here.
 fn qr_hom_cell_fproject(
     _cell: &qr_hom_cell,
-    mut _x: c_int,
-    mut _y: c_int,
-    mut _w: c_int,
+    mut _x: i32,
+    mut _y: i32,
+    mut _w: i32,
 ) -> qr_point {
     if _w == 0 {
         [
@@ -3176,7 +3176,7 @@ fn qr_hom_cell_fproject(
     }
 }
 
-fn qr_hom_cell_project(_cell: &qr_hom_cell, mut _u: c_int, mut _v: c_int, _res: c_int) -> qr_point {
+fn qr_hom_cell_project(_cell: &qr_hom_cell, mut _u: i32, mut _v: i32, _res: i32) -> qr_point {
     _u -= _cell.u0 << _res;
     _v -= _cell.v0 << _res;
     qr_hom_cell_fproject(
@@ -3196,13 +3196,13 @@ fn qr_hom_cell_project(_cell: &qr_hom_cell, mut _u: c_int, mut _v: c_int, _res: 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn qr_finder_locate_crossing(
     img: &[u8],
-    width: c_int,
-    _height: c_int,
-    x0: c_int,
-    y0: c_int,
-    x1: c_int,
-    y1: c_int,
-    v: c_int,
+    width: i32,
+    _height: i32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    v: i32,
     p: &mut qr_point,
 ) -> c_int {
     let mut x0_pos = [x0, y0];
@@ -3261,11 +3261,11 @@ pub(crate) fn qr_finder_locate_crossing(
 /// in p, returning the result as a packed 25-bit unsigned integer.
 fn qr_alignment_pattern_fetch(
     p: &[[qr_point; 5]; 5],
-    x0: c_int,
-    y0: c_int,
+    x0: i32,
+    y0: i32,
     img: &[u8],
-    width: c_int,
-    height: c_int,
+    width: i32,
+    height: i32,
 ) -> c_uint {
     let dx = x0 - p[2][2][0];
     let dy = y0 - p[2][2][1];
@@ -3288,12 +3288,12 @@ fn qr_alignment_pattern_fetch(
 fn qr_alignment_pattern_search(
     p: &mut qr_point,
     cell: &qr_hom_cell,
-    _u: c_int,
-    _v: c_int,
-    r: c_int,
+    _u: i32,
+    _v: i32,
+    r: i32,
     img: &[u8],
-    width: c_int,
-    height: c_int,
+    width: i32,
+    height: i32,
 ) -> c_int {
     let mut pattern: [[qr_point; 5]; 5] = [[Default::default(); 5]; 5];
     let mut nc = [0 as c_int; 4];
@@ -3549,13 +3549,13 @@ impl qr_reader {
         &mut self,
         qrdata: &mut qr_code_data,
         img: &[u8],
-        _width: c_int,
-        _height: c_int,
+        _width: i32,
+        _height: i32,
         centers: &mut [qr_finder_center],
         centers_indexes: [usize; 3],
     ) -> c_int {
         let mut ci: [usize; 7] = [0; 7];
-        let mut maxd: c_uint;
+        let mut maxd: u32;
 
         let mut i0: usize;
 
@@ -3608,8 +3608,8 @@ impl qr_reader {
             let mut dl = qr_finder::default();
             let mut bbox: [qr_point; 4] = Default::default();
 
-            let ur_version: c_int;
-            let mut fmt_info: c_int;
+            let ur_version: i32;
+            let mut fmt_info: i32;
 
             // FIXME: stop cloning these values
             ul.set_center(centers[centers_indexes[ci[i]]].clone());
@@ -3622,7 +3622,7 @@ impl qr_reader {
             // estimate it there.
             // Although it should be the same along both axes, we keep separate
             // estimates to account for any remaining projective distortion.
-            let res: c_int = QR_INT_BITS
+            let res: i32 = QR_INT_BITS
                 - 2
                 - QR_FINDER_SUBPREC
                 - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
@@ -3832,7 +3832,7 @@ impl qr_reader {
     }
 
     /// Add a found finder line to the reader's line list
-    pub(crate) fn found_line(&mut self, dir: c_int, line: &qr_finder_line) -> c_int {
+    pub(crate) fn found_line(&mut self, dir: i32, line: &qr_finder_line) -> c_int {
         self.finder_lines[dir as usize].lines.push(*line);
         0
     }
@@ -3843,8 +3843,8 @@ impl qr_reader {
         _qrlist: &mut qr_code_data_list,
         _centers: &mut [qr_finder_center],
         img: &[u8],
-        _width: c_int,
-        _height: c_int,
+        _width: i32,
+        _height: i32,
     ) {
         // The number of centers should be small, so an O(n^3) exhaustive search of
         // which ones go together should be reasonable.
@@ -4006,8 +4006,8 @@ impl qr_reader {
     /// then locates the centers where horizontal and vertical clusters intersect.
     pub(crate) fn finder_centers_locate(
         &mut self,
-        _width: c_int,
-        _height: c_int,
+        _width: i32,
+        _height: i32,
     ) -> Vec<qr_finder_center> {
         // Take ownership of the horizontal lines and cluster them
         let hlines = std::mem::take(&mut self.finder_lines[0].lines);
@@ -4059,7 +4059,7 @@ pub(crate) enum qr_mode {
 impl TryFrom<c_int> for qr_mode {
     type Error = ();
 
-    fn try_from(value: c_int) -> Result<Self, Self::Error> {
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
         Ok(match value {
             1 => Self::Num,
             2 => Self::Alnum,
@@ -4136,7 +4136,7 @@ impl qr_code_data {
     ///
     /// Decodes the various data modes (numeric, alphanumeric, byte, Kanji, etc.)
     /// and populates the qr_code_data structure.
-    pub(crate) fn parse(&mut self, _version: c_int, data: &[u8]) -> c_int {
+    pub(crate) fn parse(&mut self, _version: i32, data: &[u8]) -> c_int {
         // The number of bits used to encode the character count for each version range and data mode
         const LEN_BITS: [[c_int; 4]; 3] = [
             [10, 9, 8, 8],    // Versions 1-9
@@ -4144,7 +4144,7 @@ impl qr_code_data {
             [14, 13, 16, 12], // Versions 27-40
         ];
 
-        let mut self_parity: c_uint = 0;
+        let mut self_parity: u32 = 0;
 
         // Entries are stored directly in the struct during parsing
         self.entries = vec![];
@@ -4454,11 +4454,11 @@ impl qr_code_data {
         _ul_pos: &qr_point,
         _ur_pos: &qr_point,
         _dl_pos: &qr_point,
-        version: c_int,
-        _fmt_info: c_int,
+        version: i32,
+        _fmt_info: i32,
         _img: &[u8],
-        _width: c_int,
-        _height: c_int,
+        _width: i32,
+        _height: i32,
     ) -> c_int {
         let mut grid: qr_sampling_grid = qr_sampling_grid {
             cells: Vec::new(),

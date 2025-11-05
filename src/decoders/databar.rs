@@ -937,7 +937,7 @@ fn lookup_sequence(
     }
 }
 
-fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: c_int) -> SymbolType {
+fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: i32) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     if csegs == 0 {
@@ -1159,7 +1159,7 @@ fn calc_check(mut sig0: u32, mut sig1: u32, side: u32, mod_val: u32) -> u32 {
 
 /// Calculate DataBar character value from 4-element signature
 /// Returns -1 on error
-fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -> c_int {
+fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> c_int {
     let mut v = 0u32;
     n = n.wrapping_sub(1);
 
@@ -1307,8 +1307,8 @@ fn calc_value4(sig: c_uint, mut n: c_uint, wmax: c_uint, mut nonarrow: c_uint) -
 fn decode_char(
     dcode: &mut zbar_image_scanner_t,
     seg_idx: usize,
-    off: c_int,
-    dir: c_int,
+    off: i32,
+    dir: i32,
 ) -> SymbolType {
     // Read segment values we need before taking other borrows
     let seg_exp = dcode.databar.seg(seg_idx).exp();
@@ -1471,7 +1471,7 @@ fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
     let mut maxage = 0u32;
     let csegs = db.csegs();
     let epoch = db.epoch();
-    let mut old: c_int = -1;
+    let mut old: i32 = -1;
 
     // First pass: look for empty slots or very old segments
     for i in 0..csegs {

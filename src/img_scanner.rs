@@ -26,21 +26,21 @@ use crate::{
 };
 
 // QR Code finder precision constant
-const QR_FINDER_SUBPREC: c_int = 2;
+const QR_FINDER_SUBPREC: i32 = 2;
 
 // QR_FIXED macro: ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
 #[inline]
-fn qr_fixed(v: c_int, rnd: c_int) -> c_uint {
+fn qr_fixed(v: i32, rnd: i32) -> c_uint {
     (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
 }
 
 // Scanner constants from line_scanner.rs
 const ZBAR_FIXED: i32 = 5;
-const ROUND: c_uint = 1 << (ZBAR_FIXED - 1); // 16
+const ROUND: u32 = 1 << (ZBAR_FIXED - 1); // 16
 const ZBAR_SCANNER_THRESH_FADE: u32 = 8;
-const ZBAR_SCANNER_THRESH_MIN: c_uint = 4;
-const EWMA_WEIGHT: c_uint = 25;
-const THRESH_INIT: c_uint = 14;
+const ZBAR_SCANNER_THRESH_MIN: u32 = 4;
+const EWMA_WEIGHT: u32 = 25;
+const THRESH_INIT: u32 = 14;
 
 // Decoder constants from decoder.rs
 const BUFFER_MIN: usize = 0x20;
@@ -54,23 +54,23 @@ pub(crate) struct zbar_symbol_set_t {
 /// image scanner state
 pub(crate) struct zbar_image_scanner_t {
     /// Scanner state fields (formerly zbar_scanner_t)
-    y1_min_thresh: c_uint,
-    x: c_uint,
+    y1_min_thresh: u32,
+    x: u32,
     y0: [i32; 4],
     y1_sign: i32,
-    y1_thresh: c_uint,
-    cur_edge: c_uint,
-    last_edge: c_uint,
-    width: c_uint,
+    y1_thresh: u32,
+    cur_edge: u32,
+    last_edge: u32,
+    width: u32,
 
     /// Decoder state fields (formerly zbar_decoder_t)
     pub(crate) idx: u8,
     pub(crate) w: [c_uint; DECODE_WINDOW],
     pub(crate) type_: SymbolType,
     pub(crate) lock: SymbolType,
-    pub(crate) modifiers: c_uint,
-    pub(crate) direction: c_int,
-    pub(crate) s6: c_uint,
+    pub(crate) modifiers: u32,
+    pub(crate) direction: i32,
+    pub(crate) s6: u32,
 
     // Buffer management
     buffer: Vec<u8>,
@@ -94,11 +94,11 @@ pub(crate) struct zbar_image_scanner_t {
     sq: SqReader,
 
     /// current scan direction
-    dx: c_int,
-    dy: c_int,
-    du: c_int,
-    umin: c_int,
-    v: c_int,
+    dx: i32,
+    dy: i32,
+    du: i32,
+    umin: i32,
+    v: i32,
 
     /// previous decode results
     syms: zbar_symbol_set_t,
@@ -308,7 +308,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Process a single pixel intensity value
-    pub(crate) fn scan_y(&mut self, y: c_int) -> SymbolType {
+    pub(crate) fn scan_y(&mut self, y: i32) -> SymbolType {
         // retrieve short value history
         let x = self.x;
         let mut y0_1 = self.y0[((x.wrapping_sub(1)) & 3) as usize];
@@ -398,7 +398,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Get the interpolated position of the last edge
-    pub(crate) fn get_edge(&self, offset: c_uint, prec: c_int) -> c_uint {
+    pub(crate) fn get_edge(&self, offset: u32, prec: i32) -> c_uint {
         let edge = self
             .last_edge
             .wrapping_sub(offset)
@@ -612,7 +612,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Process next bar/space width from input stream
-    pub(crate) fn decode_width(&mut self, w: c_uint) -> SymbolType {
+    pub(crate) fn decode_width(&mut self, w: u32) -> SymbolType {
         let mut sym = SymbolType::None;
 
         // Store width in circular buffer
@@ -767,7 +767,7 @@ impl zbar_image_scanner_t {
             u = u.wrapping_sub(line.len as c_uint);
         }
 
-        let vert: c_int = if self.dx != 0 { 0 } else { 1 };
+        let vert: i32 = if self.dx != 0 { 0 } else { 1 };
         line.pos[vert as usize] = u as c_int;
         line.pos[(1 - vert) as usize] = qr_fixed(self.v, 1) as c_int;
 

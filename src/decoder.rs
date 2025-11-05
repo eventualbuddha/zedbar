@@ -12,7 +12,7 @@ pub(crate) const DECODE_WINDOW: usize = 16;
 
 /// Decode element width into a discrete value
 /// Returns -1 if the element width is invalid
-pub(crate) fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
+pub(crate) fn _zbar_decoder_decode_e(e: u32, s: u32, n: u32) -> c_int {
     let big_e = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if big_e >= n - 3 {
         -1
@@ -29,14 +29,14 @@ pub(crate) fn _zbar_decoder_decode_e(e: c_uint, s: c_uint, n: c_uint) -> c_int {
 // Modifier constants
 // ============================================================================
 
-pub(crate) const ZBAR_MOD_GS1: c_int = 0;
-pub(crate) const ZBAR_MOD_AIM: c_int = 1;
+pub(crate) const ZBAR_MOD_GS1: i32 = 0;
+pub(crate) const ZBAR_MOD_AIM: i32 = 1;
 
 // ============================================================================
 // Orientation constants
 // ============================================================================
 
-pub(crate) const ZBAR_ORIENT_UNKNOWN: c_int = -1;
+pub(crate) const ZBAR_ORIENT_UNKNOWN: i32 = -1;
 
 // ============================================================================
 // Buffer size constants
@@ -52,9 +52,9 @@ pub(crate) struct i25_decoder_t {
     // Bitfields packed into first 32 bits:
     // direction: 1 bit, element: 4 bits, character: 12 bits = 17 bits used
     // We'll use a u32 and provide accessor methods
-    bitfields: c_uint,
-    pub(crate) s10: c_uint,
-    pub(crate) width: c_uint,
+    bitfields: u32,
+    pub(crate) s10: u32,
+    pub(crate) width: u32,
     pub(crate) buffer: Vec<u8>,
 }
 
@@ -116,9 +116,9 @@ impl i25_decoder_t {
 #[derive(Default)]
 pub(crate) struct code39_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
-    bitfields: c_uint,
-    pub s9: c_uint,
-    pub width: c_uint,
+    bitfields: u32,
+    pub s9: u32,
+    pub width: u32,
     pub buffer: Vec<u8>,
 }
 
@@ -180,8 +180,8 @@ impl code39_decoder_t {
 #[derive(Default)]
 pub(crate) struct code93_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12
-    bitfields: c_uint,
-    pub(crate) width: c_uint,
+    bitfields: u32,
+    pub(crate) width: u32,
     pub(crate) buf: u8,
 }
 
@@ -235,9 +235,9 @@ impl code93_decoder_t {
 #[derive(Default)]
 pub(crate) struct codabar_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
-    bitfields: c_uint,
-    pub(crate) s7: c_uint,
-    pub(crate) width: c_uint,
+    bitfields: u32,
+    pub(crate) s7: u32,
+    pub(crate) width: u32,
     pub(crate) buf: [u8; 6],
 }
 
@@ -294,9 +294,9 @@ pub(crate) struct code128_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12 (16 bits)
     // start: 8 bits - packed into same u32
     // Total: 24 bits used in first u32
-    bitfields_and_start: c_uint,
-    pub(crate) s6: c_uint,
-    pub(crate) width: c_uint,
+    bitfields_and_start: u32,
+    pub(crate) s6: u32,
+    pub(crate) width: u32,
 }
 
 impl code128_decoder_t {
@@ -369,7 +369,7 @@ pub(crate) struct databar_segment_t {
     // First 32 bits of bitfields:
     // finder: 5, exp: 1, color: 1, side: 1,
     // partial: 1, count: 7, epoch: 8, check: 8 = 32 bits
-    bitfields: c_uint,
+    bitfields: u32,
     pub(crate) data: c_short,
     pub(crate) width: c_short,
 }
@@ -575,15 +575,15 @@ impl databar_decoder_t {
 #[derive(Default, Copy, Clone)]
 pub(crate) struct qr_finder_line {
     pub(crate) pos: [c_int; 2], // qr_point
-    pub(crate) len: c_int,
-    pub(crate) boffs: c_int,
-    pub(crate) eoffs: c_int,
+    pub(crate) len: i32,
+    pub(crate) boffs: i32,
+    pub(crate) eoffs: i32,
 }
 
 /// QR Code finder state
 #[derive(Default)]
 pub(crate) struct qr_finder_t {
-    pub(crate) s5: c_uint,
+    pub(crate) s5: u32,
     pub(crate) line: qr_finder_line,
 }
 

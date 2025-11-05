@@ -5,17 +5,16 @@
 
 use std::mem::swap;
 
-use libc::{c_int, c_uint};
 
 use crate::img_scanner::zbar_symbol_set_t;
 
 #[derive(Default)]
 pub struct zbar_image_t {
-    pub width: c_uint,
-    pub height: c_uint,
+    pub width: u32,
+    pub height: u32,
     pub data: Vec<u8>,
-    pub refcnt: c_int,
-    pub seq: c_uint,
+    pub refcnt: i32,
+    pub seq: u32,
     syms: Option<Box<zbar_symbol_set_t>>,
 }
 

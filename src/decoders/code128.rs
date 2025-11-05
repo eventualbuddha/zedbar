@@ -272,7 +272,7 @@ fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
     }
 
     // Calculate sum in reverse to avoid multiply operations
-    let mut acc: c_uint = 0;
+    let mut acc: u32 = 0;
     for i in (1..(dcode.code128.character() - 2) as usize).rev() {
         zassert!(
             sum < 103,

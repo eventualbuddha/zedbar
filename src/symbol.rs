@@ -8,18 +8,17 @@
 use crate::{
     decoder::ZBAR_ORIENT_UNKNOWN, img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point,
 };
-use libc::{c_int, c_uint};
 use std::fmt::Display;
 
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_t {
     pub(crate) symbol_type: SymbolType,
-    pub(crate) modifiers: c_uint,
+    pub(crate) modifiers: u32,
     pub(crate) data: Vec<u8>,
     pub(crate) pts: Vec<qr_point>,
-    pub(crate) orient: c_int,
+    pub(crate) orient: i32,
     pub(crate) components: Option<zbar_symbol_set_t>,
-    pub(crate) quality: c_int,
+    pub(crate) quality: i32,
 }
 
 impl zbar_symbol_t {
@@ -33,7 +32,7 @@ impl zbar_symbol_t {
         }
     }
 
-    pub(crate) fn add_point(&mut self, x: c_int, y: c_int) {
+    pub(crate) fn add_point(&mut self, x: i32, y: i32) {
         self.pts.push([x, y]);
     }
 }
