@@ -28,8 +28,6 @@ pub use image::Image;
 pub use scanner::Scanner;
 pub use symbol::SymbolType;
 
-mod ffi;
-
 #[cfg(test)]
 mod proptest_qr;
 

@@ -5,7 +5,6 @@
 
 use std::mem::swap;
 
-
 use crate::img_scanner::zbar_symbol_set_t;
 
 #[derive(Default)]
@@ -13,7 +12,6 @@ pub struct zbar_image_t {
     pub width: u32,
     pub height: u32,
     pub data: Vec<u8>,
-    pub refcnt: i32,
     pub seq: u32,
     syms: Option<Box<zbar_symbol_set_t>>,
 }
