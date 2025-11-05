@@ -5,8 +5,23 @@
 //! - System zbar (via zbarimg command)
 //! - rqrr (for QR codes only)
 
+use image::{DynamicImage, GenericImageView, GrayImage};
 use std::path::Path;
 use zbar::{Image, Scanner};
+
+/// Downscale an image if it exceeds the maximum dimension
+fn downscale_if_needed(img: DynamicImage, max_dimension: u32) -> DynamicImage {
+    let (width, height) = img.dimensions();
+
+    if width > max_dimension || height > max_dimension {
+        let scale = (max_dimension as f32 / width.max(height) as f32).min(1.0);
+        let new_width = (width as f32 * scale) as u32;
+        let new_height = (height as f32 * scale) as u32;
+        img.resize(new_width, new_height, image::imageops::FilterType::Triangle)
+    } else {
+        img
+    }
+}
 
 /// Helper function to decode an image file and return the first symbol found
 fn decode_image(path: &str) -> Option<(String, String)> {
@@ -15,7 +30,9 @@ fn decode_image(path: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let img = image::open(path).ok()?.to_luma8();
+    let img = image::open(path).ok()?;
+    let img = downscale_if_needed(img, 1280).to_luma8();
+
     let mut scanner = Scanner::new();
 
     // Create a zbar Image from the image buffer
@@ -77,7 +94,9 @@ fn decode_with_rqrr(path: &str) -> Option<(String, String)> {
         return None;
     }
 
-    let img = image::open(path).ok()?.to_luma8();
+    let img = image::open(path).ok()?;
+    let img = downscale_if_needed(img, 1280).to_luma8();
+
     let mut prepared_img = rqrr::PreparedImage::prepare(img);
     let grids = prepared_img.detect_grids();
 
@@ -446,7 +465,9 @@ fn decode_image_binary(path: &str) -> Option<(String, Vec<u8>)> {
         return None;
     }
 
-    let img = image::open(path).ok()?.to_luma8();
+    let img = image::open(path).ok()?;
+    let img = downscale_if_needed(img, 1280).to_luma8();
+
     let mut scanner = Scanner::new();
 
     // Create a zbar Image from the image buffer

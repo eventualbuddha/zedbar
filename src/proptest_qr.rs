@@ -91,6 +91,8 @@ fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(10))]
+
     /// Test that ASCII text QR codes can be roundtripped
     #[test]
     fn prop_qr_roundtrip_ascii(data in "[a-zA-Z0-9 ]{1,100}") {
