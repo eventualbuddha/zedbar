@@ -5,7 +5,7 @@
 //! - System zbar (via zbarimg command)
 //! - rqrr (for QR codes only)
 
-use image::{DynamicImage, GenericImageView, GrayImage};
+use image::{DynamicImage, GenericImageView};
 use std::path::Path;
 use zbar::{Image, Scanner};
 
