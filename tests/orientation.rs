@@ -58,9 +58,8 @@ fn test_orientation_all_variants() {
         let mut zbar_image = Image::from_gray(rotated.as_raw(), rotated.width(), rotated.height())
             .expect("Failed to create zbar image");
 
-        scanner.scan(&mut zbar_image).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_image);
 
-        let symbols: Vec<_> = zbar_image.symbols().iter().collect();
         assert!(
             !symbols.is_empty(),
             "Failed to decode barcode at orientation: {}",

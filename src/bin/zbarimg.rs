@@ -302,20 +302,11 @@ fn main() {
         let mut scanner = Scanner::with_config(config.clone());
 
         // Scan the image
-        let num_symbols = match scanner.scan(&mut zbar_img) {
-            Ok(n) => n,
-            Err(e) => {
-                if !args.quiet {
-                    eprintln!("Failed to scan image: {}", e);
-                }
-                process::exit(1);
-            }
-        };
+        let symbols = scanner.scan(&mut zbar_img);
 
-        total_symbols += num_symbols;
+        total_symbols += symbols.len();
 
         // Print results
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data_bytes = symbol.data();

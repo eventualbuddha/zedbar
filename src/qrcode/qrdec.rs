@@ -17,12 +17,11 @@ use reed_solomon::Decoder as RSDecoder;
 use crate::{
     decoder::{qr_finder_line, ZBAR_MOD_AIM, ZBAR_MOD_GS1},
     image_ffi::zbar_image_t,
-    img_scanner::zbar_symbol_set_t,
     qrcode::{
         binarize::binarize,
         util::{qr_ihypot, qr_ilog, qr_isqrt},
     },
-    symbol::zbar_symbol_t,
+    symbol::Symbol,
     SymbolType,
 };
 
@@ -3949,11 +3948,7 @@ impl qr_reader {
     }
 
     /// Decode QR codes from an image
-    pub(crate) fn decode(
-        &mut self,
-        img: &mut zbar_image_t,
-        raw_binary: bool,
-    ) -> Vec<zbar_symbol_t> {
+    pub(crate) fn decode(&mut self, img: &mut zbar_image_t, raw_binary: bool) -> Vec<Symbol> {
         if self.finder_lines[0].lines.len() < 9 || self.finder_lines[1].lines.len() < 9 {
             return vec![];
         }
@@ -4588,7 +4583,7 @@ pub(crate) struct qr_code_data_list {
 }
 
 impl qr_code_data_list {
-    pub(crate) fn extract_text(&self, raw_binary: bool) -> Vec<zbar_symbol_t> {
+    pub(crate) fn extract_text(&self, raw_binary: bool) -> Vec<Symbol> {
         let mut symbols = vec![];
 
         let qrdata = &self.qrdata;
@@ -4685,11 +4680,10 @@ impl qr_code_data_list {
                     if err {
                         break;
                     }
-                    let mut sym = zbar_symbol_t::new(SymbolType::QrCode);
+                    let mut sym = Symbol::new(SymbolType::QrCode);
 
                     if sa[j] < 0 {
-                        sym.symbol_type = SymbolType::Partial;
-                        component_syms.push(sym);
+                        component_syms.push(Symbol::new(SymbolType::Partial));
                         let mut k = j + 1;
                         while k < sa_size && sa[k] < 0 {
                             k += 1;
@@ -4698,7 +4692,6 @@ impl qr_code_data_list {
                         if j >= sa_size {
                             break;
                         }
-                        sym = zbar_symbol_t::new(SymbolType::QrCode);
                     }
 
                     let qrdataj = &qrdata[sa[j] as usize];
@@ -4863,11 +4856,8 @@ impl qr_code_data_list {
                         }
                     } else {
                         // Multiple QR codes - create structured append symbol
-                        let mut sa_sym = zbar_symbol_t::new(SymbolType::QrCode);
-                        let component_set = zbar_symbol_set_t {
-                            symbols: component_syms,
-                        };
-                        sa_sym.components = Some(component_set);
+                        let mut sa_sym = Symbol::new(SymbolType::QrCode);
+                        sa_sym.components = component_syms;
                         sa_sym.data = sa_text;
                         sa_sym.modifiers = fnc1 as u32;
                         symbols.push(sa_sym);

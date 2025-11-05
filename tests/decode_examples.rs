@@ -22,12 +22,9 @@ fn decode_image(path: &str) -> Option<(String, String)> {
     let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).ok()?;
 
     // Scan the image
-    scanner.scan(&mut zbar_image).ok()?;
+    let symbols = scanner.scan(&mut zbar_image);
 
-    // Get the symbols
-    let symbols = zbar_image.symbols();
-
-    symbols.iter().next().map(|symbol| {
+    symbols.first().map(|symbol| {
         let symbol_type = symbol.symbol_type().to_string();
         let data = String::from_utf8_lossy(symbol.data())
             .trim_end_matches('\0') // Remove null terminators
@@ -456,12 +453,9 @@ fn decode_image_binary(path: &str) -> Option<(String, Vec<u8>)> {
     let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).ok()?;
 
     // Scan the image
-    scanner.scan(&mut zbar_image).ok()?;
+    let symbols = scanner.scan(&mut zbar_image);
 
-    // Get the symbols
-    let symbols = zbar_image.symbols();
-
-    symbols.iter().next().map(|symbol| {
+    symbols.first().map(|symbol| {
         let symbol_type = symbol.symbol_type().to_string();
         let data = symbol.data().to_vec();
         (symbol_type, data)

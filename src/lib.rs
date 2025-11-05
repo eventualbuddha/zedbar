@@ -56,12 +56,7 @@ mod tests {
         let mut scanner = Scanner::new();
 
         // Scan the image
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-
-        println!("Found {num_symbols} symbols with zbar");
-
-        // Get and verify symbols
-        let symbols = zbar_img.symbols();
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
         let mut zbar_results = Vec::new();
@@ -127,12 +122,7 @@ mod tests {
         let mut scanner = Scanner::new();
 
         // Scan the image
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-
-        println!("Found {num_symbols} symbols with zbar");
-
-        // Get and verify symbols
-        let symbols = zbar_img.symbols();
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
         let mut zbar_results = Vec::new();
@@ -202,13 +192,7 @@ mod tests {
         let mut scanner = Scanner::with_config(config);
 
         // Scan the inverted image
-        let num_symbols = scanner
-            .scan(&mut zbar_img)
-            .expect("Failed to scan inverted image");
-        println!("Found {num_symbols} symbols in inverted image with zbar");
-
-        // Gather decoded symbols
-        let symbols = zbar_img.symbols();
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
             !symbols.is_empty(),
             "Expected to find at least one QR code in inverted image"
@@ -276,13 +260,12 @@ mod tests {
         // Create scanner (EAN-13 enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one EAN-13 barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::Ean13);
             println!("Decoded EAN-13: {}", symbol.data_string().unwrap_or(""));
@@ -308,13 +291,12 @@ mod tests {
         // Create scanner (EAN-8 enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one EAN-8 barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             let decoded_data = symbol.data_string().unwrap_or("");
             println!("Decoded as {:?}: {}", symbol.symbol_type(), decoded_data);
@@ -352,13 +334,12 @@ mod tests {
         let config = DecoderConfig::new().enable(Upca);
         let mut scanner = Scanner::with_config(config);
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one UPC-A barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::Upca);
             println!("Decoded UPC-A: {}", symbol.data_string().unwrap_or(""));
@@ -383,13 +364,12 @@ mod tests {
         // Create scanner (Code128 enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one Code128 barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::Code128);
             println!("Decoded Code128: {}", symbol.data_string().unwrap_or(""));
@@ -414,13 +394,12 @@ mod tests {
         // Create scanner (Code39 enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one Code39 barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::Code39);
             println!("Decoded Code39: {}", symbol.data_string().unwrap_or(""));
@@ -445,13 +424,12 @@ mod tests {
         // Create scanner (Code93 enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one Code93 barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::Code93);
             println!("Decoded Code93: {}", symbol.data_string().unwrap_or(""));
@@ -476,13 +454,12 @@ mod tests {
         // Create scanner (Codabar enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one Codabar barcode"
         );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::Codabar);
             println!("Decoded Codabar: {}", symbol.data_string().unwrap_or(""));
@@ -507,10 +484,12 @@ mod tests {
         // Create scanner (I25 enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one I25 barcode");
+        let symbols = scanner.scan(&mut zbar_img);
+        assert!(
+            !symbols.is_empty(),
+            "Expected to find at least one I25 barcode"
+        );
 
-        let symbols = zbar_img.symbols();
         for symbol in symbols {
             assert_eq!(symbol.symbol_type(), SymbolType::I25);
             println!("Decoded I25: {}", symbol.data_string().unwrap_or(""));
@@ -536,13 +515,13 @@ mod tests {
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
+        let symbols = scanner.scan(&mut zbar_img);
         assert!(
-            num_symbols > 0,
+            !symbols.is_empty(),
             "Expected to find at least one QR code in pixel-wifi-sharing-qr-code.png"
         );
 
-        let symbol = zbar_img.symbols().into_iter().next().unwrap();
+        let symbol = symbols.into_iter().next().unwrap();
         assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
         let data = symbol.data_string().unwrap_or("");
         assert_eq!(data, "WIFI:S:Not a real network;T:SAE;P:password;H:false;;");
@@ -565,10 +544,10 @@ mod tests {
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one QR code");
+        let symbols = scanner.scan(&mut zbar_img);
+        assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
-        let symbol = zbar_img.symbols().into_iter().next().unwrap();
+        let symbol = symbols.into_iter().next().unwrap();
         assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
         let data = symbol.data_string().unwrap_or("");
         assert_eq!(
@@ -620,10 +599,10 @@ mod tests {
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
 
-        let num_symbols = scanner.scan(&mut zbar_img).expect("Failed to scan image");
-        assert!(num_symbols > 0, "Expected to find at least one QR code");
+        let symbols = scanner.scan(&mut zbar_img);
+        assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
-        let symbol = zbar_img.symbols().into_iter().next().unwrap();
+        let symbol = symbols.into_iter().next().unwrap();
         assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
         let data = symbol.data_string().unwrap_or("");
         assert_eq!(

@@ -6,8 +6,8 @@
 //! Original C code copyright (C) 2007-2010 Jeff Brown <spadix@users.sourceforge.net>
 //! Licensed under LGPL 3.0 or later
 
-use crate::{img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point};
-use std::fmt::Display;
+use crate::qrcode::qrdec::qr_point;
+use std::{fmt::Display, str::from_utf8};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Orientation {
@@ -20,22 +20,34 @@ pub enum Orientation {
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct zbar_symbol_t {
-    pub(crate) symbol_type: SymbolType,
+pub struct Symbol {
+    symbol_type: SymbolType,
     pub(crate) modifiers: u32,
     pub(crate) data: Vec<u8>,
     pub(crate) pts: Vec<qr_point>,
     pub(crate) orientation: Orientation,
-    pub(crate) components: Option<zbar_symbol_set_t>,
+    pub(crate) components: Vec<Symbol>,
     pub(crate) quality: i32,
 }
 
-impl zbar_symbol_t {
+// Internal API
+impl Symbol {
     /// Create a new symbol
-    pub(crate) fn new(symbol_type: SymbolType) -> zbar_symbol_t {
-        zbar_symbol_t {
+    pub(crate) fn new(symbol_type: SymbolType) -> Self {
+        Self {
             symbol_type,
             quality: 1,
+            ..Default::default()
+        }
+    }
+
+    /// Create a composite symbol from two symbols.
+    pub(crate) fn composite(self, other: Self) -> Self {
+        Self {
+            symbol_type: SymbolType::Composite,
+            orientation: self.orientation,
+            data: self.data.iter().chain(&other.data).cloned().collect(),
+            components: vec![self, other],
             ..Default::default()
         }
     }
@@ -45,7 +57,33 @@ impl zbar_symbol_t {
     }
 }
 
-// High-level Rust API types
+// Public API
+impl Symbol {
+    /// Get the symbol type of this symbol.
+    pub fn symbol_type(&self) -> SymbolType {
+        self.symbol_type
+    }
+
+    /// Get the decoded data as bytes
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Get the decoded data as a string, if decodable.
+    pub fn data_string(&self) -> Option<&str> {
+        from_utf8(&self.data).ok()
+    }
+
+    /// Get the orientation of the barcode
+    pub fn orientation(&self) -> Orientation {
+        self.orientation
+    }
+
+    /// Get the component symbols (for composite symbols like EAN+add-on or QR structured append)
+    pub fn components(&self) -> &[Symbol] {
+        &self.components
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub enum SymbolType {
@@ -74,23 +112,23 @@ pub enum SymbolType {
 
 impl SymbolType {
     pub(crate) const ALL: [Self; 17] = [
-        SymbolType::Ean13,
-        SymbolType::Ean2,
-        SymbolType::Ean5,
-        SymbolType::Ean8,
-        SymbolType::Upca,
-        SymbolType::Upce,
-        SymbolType::Isbn10,
-        SymbolType::Isbn13,
-        SymbolType::I25,
-        SymbolType::Databar,
-        SymbolType::DatabarExp,
-        SymbolType::Codabar,
-        SymbolType::Code39,
-        SymbolType::Code93,
-        SymbolType::Code128,
-        SymbolType::QrCode,
-        SymbolType::SqCode,
+        Self::Ean13,
+        Self::Ean2,
+        Self::Ean5,
+        Self::Ean8,
+        Self::Upca,
+        Self::Upce,
+        Self::Isbn10,
+        Self::Isbn13,
+        Self::I25,
+        Self::Databar,
+        Self::DatabarExp,
+        Self::Codabar,
+        Self::Code39,
+        Self::Code93,
+        Self::Code128,
+        Self::QrCode,
+        Self::SqCode,
     ];
 }
 
@@ -155,96 +193,6 @@ impl From<i32> for SymbolType {
             93 => Self::Code93,
             128 => Self::Code128,
             _ => Self::None,
-        }
-    }
-}
-
-/// A reference to a decoded barcode symbol
-pub struct Symbol<'a> {
-    inner: &'a zbar_symbol_t,
-}
-
-impl<'a> Symbol<'a> {
-    pub(crate) fn from_ref(sym: &'a zbar_symbol_t) -> Self {
-        Symbol { inner: sym }
-    }
-
-    /// Get the symbol type
-    pub fn symbol_type(&self) -> SymbolType {
-        self.inner.symbol_type
-    }
-
-    /// Get the decoded data as bytes
-    pub fn data(&self) -> &[u8] {
-        &self.inner.data
-    }
-
-    /// Get the decoded data as a string (if valid UTF-8)
-    pub fn data_string(&self) -> Option<&str> {
-        std::str::from_utf8(self.data()).ok()
-    }
-
-    /// Get the orientation of the barcode
-    pub fn orientation(&self) -> Orientation {
-        self.inner.orientation
-    }
-
-    /// Get the component symbols (for composite symbols like EAN+add-on or QR structured append)
-    pub fn components(&self) -> Option<SymbolSet<'_>> {
-        self.inner.components.as_ref().map(|set| SymbolSet {
-            symbols: &set.symbols,
-        })
-    }
-}
-
-/// Iterator over symbols
-pub struct SymbolIterator<'a> {
-    iter: std::slice::Iter<'a, zbar_symbol_t>,
-}
-
-impl<'a> Iterator for SymbolIterator<'a> {
-    type Item = Symbol<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(Symbol::from_ref)
-    }
-}
-
-/// Collection of decoded symbols
-pub struct SymbolSet<'a> {
-    symbols: &'a [zbar_symbol_t],
-}
-
-impl<'a> SymbolSet<'a> {
-    pub(crate) fn from_slice(symbols: &'a [zbar_symbol_t]) -> Self {
-        Self { symbols }
-    }
-
-    /// Get an iterator over the symbols
-    pub fn iter(&self) -> SymbolIterator<'a> {
-        SymbolIterator {
-            iter: self.symbols.iter(),
-        }
-    }
-
-    /// Check if there are any symbols
-    pub fn is_empty(&self) -> bool {
-        self.symbols.is_empty()
-    }
-
-    /// Get the number of symbols
-    pub fn len(&self) -> usize {
-        self.symbols.len()
-    }
-}
-
-impl<'a> IntoIterator for SymbolSet<'a> {
-    type Item = Symbol<'a>;
-    type IntoIter = SymbolIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        SymbolIterator {
-            iter: self.symbols.iter(),
         }
     }
 }

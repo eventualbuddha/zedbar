@@ -4,7 +4,7 @@
 //! Original C code copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Licensed under LGPL 3.0 or later
 
-use crate::{image_ffi::zbar_image_t, symbol::zbar_symbol_t, SymbolType};
+use crate::{image_ffi::zbar_image_t, symbol::Symbol, SymbolType};
 use libc::size_t;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -54,7 +54,7 @@ impl SqReader {
     /// - `reader` points to a valid `SqReader` instance
     /// - `iscn` points to a valid `zbar_image_scanner_t` instance
     /// - `img` points to a valid `zbar_image_t` with properly initialized image data
-    pub(crate) fn decode(&mut self, img: &mut zbar_image_t) -> Result<Option<zbar_symbol_t>, ()> {
+    pub(crate) fn decode(&mut self, img: &mut zbar_image_t) -> Result<Option<Symbol>, ()> {
         if !self.enabled {
             return Ok(None);
         }
@@ -390,8 +390,8 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract text from buffer and add to scanner results
-fn sq_extract_text(buf: &[u8], len: size_t) -> Result<zbar_symbol_t, ()> {
-    let mut sym = zbar_symbol_t::new(SymbolType::SqCode);
+fn sq_extract_text(buf: &[u8], len: size_t) -> Result<Symbol, ()> {
+    let mut sym = Symbol::new(SymbolType::SqCode);
 
     let encoded = match base64_encode_buffer(&buf[..len]) {
         Some(e) => e,

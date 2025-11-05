@@ -60,12 +60,9 @@ fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     let mut scanner = Scanner::new();
 
     // Scan the image
-    scanner
-        .scan(&mut zbar_img)
-        .map_err(|e| format!("Failed to scan image: {e:?}"))?;
+    let symbols = scanner.scan(&mut zbar_img);
 
     // Get symbols
-    let symbols = zbar_img.symbols();
     if symbols.is_empty() {
         return Err("No symbols found".to_string());
     }

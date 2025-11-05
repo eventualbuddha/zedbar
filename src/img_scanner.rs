@@ -1,3 +1,5 @@
+use std::mem::swap;
+
 use libc::{c_int, c_uint};
 
 use crate::{
@@ -21,8 +23,8 @@ use crate::{
     img_scanner_config::ImageScannerConfig,
     qrcode::qrdec::qr_reader,
     sqcode::SqReader,
-    symbol::{zbar_symbol_t, Orientation},
-    Error, Result, SymbolType,
+    symbol::{Orientation, Symbol},
+    Result, SymbolType,
 };
 
 // QR Code finder precision constant
@@ -45,11 +47,6 @@ const THRESH_INIT: u32 = 14;
 // Decoder constants from decoder.rs
 const BUFFER_MIN: usize = 0x20;
 const BUFFER_MAX: usize = 0x100;
-
-#[derive(Default, Clone)]
-pub(crate) struct zbar_symbol_set_t {
-    pub(crate) symbols: Vec<zbar_symbol_t>,
-}
 
 /// image scanner state
 pub(crate) struct zbar_image_scanner_t {
@@ -101,7 +98,7 @@ pub(crate) struct zbar_image_scanner_t {
     v: i32,
 
     /// previous decode results
-    syms: zbar_symbol_set_t,
+    syms: Vec<Symbol>,
 
     /// Type-safe scanner configuration
     scanner_config: ImageScannerConfig,
@@ -153,7 +150,7 @@ impl Default for zbar_image_scanner_t {
             du: 0,
             umin: 0,
             v: 0,
-            syms: zbar_symbol_set_t::default(),
+            syms: vec![],
             scanner_config: ImageScannerConfig::default(),
         };
 
@@ -212,20 +209,18 @@ impl zbar_image_scanner_t {
     ///
     /// # Arguments
     /// * `sym` - The symbol to add
-    pub(crate) fn add_symbol(&mut self, sym: zbar_symbol_t) {
-        let syms = &mut self.syms;
-        syms.symbols.push(sym);
+    pub(crate) fn add_symbol(&mut self, sym: Symbol) {
+        self.syms.push(sym);
     }
 
     pub(crate) fn find_duplicate_symbol(
         &mut self,
         symbol_type: SymbolType,
         data: &[u8],
-    ) -> Option<&mut zbar_symbol_t> {
+    ) -> Option<&mut Symbol> {
         self.syms
-            .symbols
             .iter_mut()
-            .find(|sym| sym.symbol_type == symbol_type && sym.data == data)
+            .find(|sym| sym.symbol_type() == symbol_type && sym.data == data)
     }
 
     /// Get the width of the most recent bar or space
@@ -706,33 +701,18 @@ impl zbar_image_scanner_t {
         self.modifiers
     }
 
-    /// Public wrapper for zbar_scan_image
-    ///
     /// Scans an image for barcodes, with optional inverted image retry.
-    ///
-    /// # Arguments
-    /// * `img` - Image to scan
-    ///
-    /// # Returns
-    /// Number of symbols found, -1 on error
-    pub(crate) fn scan_image(&mut self, img: &mut zbar_image_t) -> Result<c_int> {
-        let Some(syms) = self.scan_image_internal(img) else {
-            return Err(Error::Unknown(-1));
-        };
-
-        let nsyms = syms.symbols.len();
+    pub(crate) fn scan_image(&mut self, img: &mut zbar_image_t) -> Vec<Symbol> {
+        let symbols = self.scan_image_internal(img);
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
-        if nsyms == 0 && self.scanner_config.test_inverted {
+        if symbols.is_empty() && self.scanner_config.test_inverted {
             if let Some(mut inv) = img.copy(true) {
-                let _ = self.scan_image_internal(&mut inv);
-                img.swap_symbols_with(&mut inv);
+                return self.scan_image_internal(&mut inv);
             }
         }
 
-        // Call user handler if symbols found
-        let final_nsyms = img.syms().map_or(0, |s| s.symbols.len());
-        Ok(final_nsyms as c_int)
+        symbols
     }
 
     /// Handle QR code finder line detection
@@ -792,13 +772,12 @@ impl zbar_image_scanner_t {
     ///
     /// # Returns
     /// Pointer to symbol set on success, null on error
-    fn scan_image_internal(&mut self, img: &mut zbar_image_t) -> Option<zbar_symbol_set_t> {
+    fn scan_image_internal(&mut self, img: &mut zbar_image_t) -> Vec<Symbol> {
         self.qr.reset();
         self.sq.reset();
 
         // Clear previous symbols for new scan
-        let scanner = &mut *self;
-        scanner.syms.symbols.clear();
+        self.syms.clear();
 
         // Share the symbol set with the image (we'll clone it at the end)
         // For now, we'll handle this differently - the image will get a clone of the results
@@ -943,8 +922,8 @@ impl zbar_image_scanner_t {
         let scanner = &mut *self;
 
         // Filter low-quality symbols
-        scanner.syms.symbols.retain(|sym| {
-            let sym_type = sym.symbol_type;
+        scanner.syms.retain(|sym| {
+            let sym_type = sym.symbol_type();
             if (sym_type < SymbolType::Composite && sym_type > SymbolType::Partial)
                 || sym_type == SymbolType::Databar
                 || sym_type == SymbolType::DatabarExp
@@ -960,8 +939,8 @@ impl zbar_image_scanner_t {
         // Count EAN and add-on symbols for potential merging
         let mut nean = 0;
         let mut naddon = 0;
-        for sym in &scanner.syms.symbols {
-            let sym_type = sym.symbol_type;
+        for sym in &scanner.syms {
+            let sym_type = sym.symbol_type();
             if sym_type < SymbolType::Composite && sym_type != SymbolType::Isbn10 {
                 if sym_type > SymbolType::Ean5 {
                     nean += 1;
@@ -974,12 +953,12 @@ impl zbar_image_scanner_t {
         // Merge EAN composite if we have exactly one EAN and one add-on
         if nean == 1 && naddon == 1 && scanner.scanner_config.ean_composite {
             // Extract EAN and add-on symbols
-            let mut ean_sym: Option<zbar_symbol_t> = None;
-            let mut addon_sym: Option<zbar_symbol_t> = None;
+            let mut ean_sym: Option<Symbol> = None;
+            let mut addon_sym: Option<Symbol> = None;
             let mut other_syms = Vec::new();
 
-            for sym in scanner.syms.symbols.drain(..) {
-                let sym_type = sym.symbol_type;
+            for sym in scanner.syms.drain(..) {
+                let sym_type = sym.symbol_type();
                 if sym_type < SymbolType::Composite && sym_type > SymbolType::Partial {
                     if sym_type <= SymbolType::Ean5 {
                         addon_sym = Some(sym);
@@ -992,40 +971,15 @@ impl zbar_image_scanner_t {
             }
 
             if let (Some(ean), Some(addon)) = (ean_sym, addon_sym) {
-                // Create composite symbol
-                let mut composite = zbar_symbol_t {
-                    symbol_type: SymbolType::Composite,
-                    orientation: ean.orientation,
-                    quality: 1,
-                    ..Default::default()
-                };
-
-                // Copy data from both symbols
-                composite.data.extend_from_slice(&ean.data);
-                composite.data.extend_from_slice(&addon.data);
-
-                // Create component symbol set
-                let mut component_set = zbar_symbol_set_t::default();
-                component_set.symbols.push(ean);
-                component_set.symbols.push(addon);
-                composite.components = Some(component_set);
-
-                // Add composite to results
-                other_syms.push(composite);
+                other_syms.push(Symbol::composite(ean, addon));
             }
 
-            scanner.syms.symbols = other_syms;
+            scanner.syms = other_syms;
         }
 
-        // Clone the symbol set to the image
-        let scanner = &mut *self;
-        // Create a clone of the symbol set for the image
-        let img_syms = Box::new(zbar_symbol_set_t {
-            symbols: scanner.syms.symbols.clone(),
-        });
-        img.set_syms(img_syms);
-
-        Some(scanner.syms.clone())
+        let mut symbols = vec![];
+        swap(&mut symbols, &mut scanner.syms);
+        symbols
     }
 
     /// Symbol handler callback for 1D barcode decoding
@@ -1077,7 +1031,7 @@ impl zbar_image_scanner_t {
         }
 
         // Allocate new symbol
-        let mut sym = zbar_symbol_t::new(symbol_type);
+        let mut sym = Symbol::new(symbol_type);
         sym.modifiers = self.get_modifiers();
 
         // Copy data

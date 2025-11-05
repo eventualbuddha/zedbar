@@ -3,7 +3,7 @@
 use crate::config::DecoderConfig;
 use crate::image::Image;
 use crate::img_scanner::zbar_image_scanner_t;
-use crate::Result;
+use crate::symbol::Symbol;
 
 /// Image scanner that can find barcodes in 2D images
 ///
@@ -25,7 +25,7 @@ use crate::Result;
 /// // Scan an image
 /// let data = vec![0u8; 640 * 480];
 /// let mut image = Image::from_gray(&data, 640, 480).unwrap();
-/// let num_symbols = scanner.scan(&mut image).unwrap();
+/// let symbols = scanner.scan(&mut image);
 /// ```
 pub struct Scanner {
     scanner: zbar_image_scanner_t,
@@ -65,9 +65,7 @@ impl Scanner {
     }
 
     /// Scan an image for barcodes
-    ///
-    /// Returns the number of symbols found in the image.
-    pub fn scan(&mut self, image: &mut Image) -> Result<i32> {
+    pub fn scan(&mut self, image: &mut Image) -> Vec<Symbol> {
         self.scanner.scan_image(image.as_mut_image())
     }
 }

@@ -1,7 +1,6 @@
 //! Image handling and format support
 
 use crate::image_ffi::zbar_image_t;
-use crate::symbol::SymbolSet;
 use crate::{Error, Result};
 
 /// An image containing barcode data
@@ -41,14 +40,5 @@ impl Image {
     /// Get access to the raw image data
     pub fn data(&self) -> &[u8] {
         &self.image.data
-    }
-
-    /// Get the symbols found in this image (if it has been scanned)
-    pub fn symbols(&self) -> SymbolSet<'_> {
-        if let Some(syms) = self.image.syms() {
-            SymbolSet::from_slice(&syms.symbols)
-        } else {
-            SymbolSet::from_slice(&[])
-        }
     }
 }
