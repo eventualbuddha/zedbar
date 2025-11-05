@@ -1,56 +1,53 @@
-# zbar - Simplified for Rust Migration
+# zbar
 
-This is a simplified fork of the [ZBar bar code reader](https://github.com/mchehab/zbar) library, focused on QR code scanning and being migrated to Rust.
+A Rust implementation of barcode scanning, based on the [ZBar bar code reader](https://github.com/mchehab/zbar) library.
 
-## Project Goal
+## Features
 
-This project aims to:
-
-1. Simplify the original ZBar C codebase by removing unnecessary complexity
-2. Gradually migrate functionality to Rust
-3. Maintain QR code scanning capabilities throughout the transition
-4. Eventually create a pure Rust implementation
-
-## Current Status
-
-The codebase has been significantly simplified from the original ZBar:
-
-- Removed autotools build system in favor of simple Makefile
-- Removed threading, video capture, and GUI components
-- Removed C++ bindings and language wrappers
-- Focused on core QR code decoding functionality
-- Simple command-line tool (`zbarimg`) for testing
+- QR code decoding
+- Support for multiple barcode formats (EAN, UPC, Code128, Code39, etc.)
+- Pure Rust implementation
+- Command-line tool (`zbarimg`) for scanning images
 
 ## Building
 
-### C Implementation (current)
-
 ```bash
-make clean && make
+cargo build --release
 ```
 
-This builds:
+## Usage
 
-- `libzbar.a` - Static library with barcode decoding
-- `zbarimg/zbarimg` - Command-line tool for decoding images
-
-### Testing
+### Command-line tool
 
 ```bash
-./zbarimg/zbarimg examples/test-qr.png
-./zbarimg/zbarimg examples/test-qr.jpg
+cargo run --bin zbarimg examples/test-qr.png
+cargo run --bin zbarimg examples/test-qr.jpg
 ```
 
-## Dependencies
+### Library
 
-- Standard C library and math library
+```rust
+use zbar::{Scanner, Image};
 
-## Rust Migration
+let img = image::open("examples/test-qr.png")?;
+let gray = img.to_luma8();
+let (width, height) = gray.dimensions();
 
-The `rust-wrapper` branch contains initial work on Rust FFI bindings and a gradual migration path. The goal is to eventually replace all C code with safe Rust implementations.
+let mut zbar_img = Image::from_gray(gray.as_raw(), width, height)?;
+let mut scanner = Scanner::new();
+let num_symbols = scanner.scan(&mut zbar_img)?;
+
+for symbol in zbar_img.symbols() {
+    println!("Decoded {}: {}", symbol.symbol_type(), symbol.data_string()?);
+}
+```
+
+## Testing
+
+```bash
+cargo test
+```
 
 ## License
 
-LGPL 2.1 - See LICENSE.md for details.
-
-This is a fork for educational/experimental purposes focused on Rust migration, not intended as a replacement for the upstream ZBar project.
+LGPL 3.0 or later - See LICENSE for details.

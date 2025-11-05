@@ -1,7 +1,7 @@
-//! ZBar Barcode Scanning Library (Rust Port)
+//! ZBar Barcode Scanning Library
 //!
-//! This crate provides barcode scanning functionality, originally based on the C ZBar library.
-//! The conversion to Rust is being done incrementally.
+//! This crate provides barcode scanning functionality for various barcode formats including
+//! QR codes, EAN, UPC, Code128, Code39, and more.
 
 #![allow(clippy::missing_safety_doc)]
 #![allow(non_camel_case_types)]
@@ -581,8 +581,8 @@ mod tests {
     #[ignore = "QR decoder cannot decode low-contrast color QR codes - finder patterns detected but data extraction fails"]
     fn test_qr_code_color_bands() {
         // This QR code has colored bands that result in very low contrast when converted to grayscale
-        // (grayscale range 145-255 instead of 0-255). The C zbar library can decode it, but the Rust
-        // port's QR decoder fails during data extraction even though it successfully:
+        // (grayscale range 145-255 instead of 0-255). The QR decoder fails during data extraction
+        // even though it successfully:
         // - Detects finder patterns (180 horizontal, 191 vertical lines)
         // - Locates the 3 finder centers
         // - Applies histogram stretching to improve contrast

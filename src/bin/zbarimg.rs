@@ -1,4 +1,4 @@
-//! Command-line barcode scanner (Rust port of zbarimg)
+//! Command-line barcode scanner
 
 use clap::Parser;
 use std::io::Write;

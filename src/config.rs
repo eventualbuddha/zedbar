@@ -205,7 +205,7 @@ impl DecoderConfig {
             y_density: 1,
         };
 
-        // Enable common symbologies by default (matching original C behavior)
+        // Enable common symbologies by default
         config.enabled.insert(SymbolType::Ean13);
         config.enabled.insert(SymbolType::Ean8);
         // Note: UPC-A, UPC-E, ISBN-10, ISBN-13 are NOT enabled by default

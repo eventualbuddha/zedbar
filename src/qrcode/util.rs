@@ -3,8 +3,9 @@
 //! Mathematical utility functions for QR code decoding, including integer
 //! square root, hypotenuse calculation, and logarithm computation.
 //!
-//! Copyright (C) 2008-2009 Timothy B. Terriberry (tterribe@xiph.org)
-//! Licensed under LGPL 2.1 or later
+//! Rust port based on C code from the ZBar library.
+//! Original C code copyright (C) 2008-2009 Timothy B. Terriberry (tterribe@xiph.org)
+//! Licensed under LGPL 3.0 or later
 
 /// Computes floor(sqrt(val)) exactly using binary search
 ///
@@ -210,8 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn test_c_ffi() {
-        // Test C FFI exports work correctly
+    fn test_math_functions() {
         assert_eq!(qr_isqrt(100), 10);
         assert_eq!(qr_ihypot(3, 4), 5);
         assert_eq!(qr_ilog(256), 9);

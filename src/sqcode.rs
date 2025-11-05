@@ -1,7 +1,8 @@
 //! SQCode decoder module
 //!
-//! Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
-//! Rust port based on the C implementation
+//! Rust port based on C code from the ZBar library.
+//! Original C code copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
+//! Licensed under LGPL 3.0 or later
 
 use crate::{image_ffi::zbar_image_t, symbol::zbar_symbol_t, SymbolType};
 use libc::size_t;

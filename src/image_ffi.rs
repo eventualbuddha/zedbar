@@ -1,7 +1,6 @@
-//! ZBar Barcode Scanning Library (Rust Port)
+//! ZBar Image Module
 //!
-//! This crate provides barcode scanning functionality, originally based on the C ZBar library.
-//! The conversion to Rust is being done incrementally.
+//! This module provides image handling and barcode scanning functionality.
 
 use std::mem::swap;
 

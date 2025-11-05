@@ -2,6 +2,9 @@
 //!
 //! This module provides low-level QR code decoding functions including
 //! point geometry operations and error correction.
+//!
+//! Rust port based on C code from the ZBar library.
+//! Licensed under LGPL 3.0 or later
 
 use std::{collections::VecDeque, mem::swap};
 
@@ -49,7 +52,6 @@ const QR_HOM_BITS: i32 = 14;
 
 /// The amount that the estimated version numbers are allowed to differ from the
 /// real version number and still be considered valid.
-#[allow(dead_code)] // Used in functions not yet ported to Rust
 const QR_SMALL_VERSION_SLACK: i32 = 1;
 
 /// Since cell phone cameras can have severe radial distortion, the estimated
@@ -1477,8 +1479,8 @@ pub(crate) fn qr_hom_unproject(
 
 /// Bit reading buffer for QR code data
 ///
-/// Bit reading code adapted from libogg/libtheora
-/// Portions (C) Xiph.Org Foundation 1994-2008, BSD-style license.
+/// Bit reading code adapted from libogg/libtheora.
+/// Original bit reading code copyright (C) Xiph.Org Foundation 1994-2008, BSD-style license.
 pub(crate) struct qr_pack_buf<'a> {
     buf: &'a [c_uchar],
     endbyte: i32,

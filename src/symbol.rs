@@ -1,9 +1,10 @@
 //! Symbol management module
 //!
-//! Copyright 2007-2010 (c) Jeff Brown <spadix@users.sourceforge.net>
-//! Rust port based on the C implementation
-//!
 //! Handles symbol lifecycle, reference counting, and data access.
+//!
+//! Rust port based on C code from the ZBar library.
+//! Original C code copyright (C) 2007-2010 Jeff Brown <spadix@users.sourceforge.net>
+//! Licensed under LGPL 3.0 or later
 
 use crate::{
     decoder::ZBAR_ORIENT_UNKNOWN, img_scanner::zbar_symbol_set_t, qrcode::qrdec::qr_point,

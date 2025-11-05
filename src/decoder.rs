@@ -1,7 +1,6 @@
 //! Decoder type definitions
 //!
-//! This module contains Rust definitions for all the barcode decoder types
-//! that mirror the C struct layouts exactly for FFI compatibility.
+//! This module contains type definitions for all the barcode decoder types.
 
 use libc::{c_char, c_int, c_short, c_uint};
 

@@ -8,8 +8,9 @@
 //! like Sauvola or Gatos for QR codes, as it doesn't over-shrink isolated black
 //! dots inside the code.
 //!
-//! Copyright (C) 2008-2009 Timothy B. Terriberry (tterribe@xiph.org)
-//! Licensed under LGPL 2.1 or later
+//! Rust port based on C code from the ZBar library.
+//! Original C code copyright (C) 2008-2009 Timothy B. Terriberry (tterribe@xiph.org)
+//! Licensed under LGPL 3.0 or later
 
 use std::cmp::{max, min};
 

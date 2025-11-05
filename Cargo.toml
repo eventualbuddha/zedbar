@@ -2,8 +2,8 @@
 name = "zbar-rust"
 version = "0.1.0"
 edition = "2021"
-description = "Rust port of ZBar barcode scanning library"
-license = "LGPL-2.1-or-later"
+description = "ZBar barcode scanning library"
+license = "LGPL-3.0-or-later"
 repository = "https://github.com/eventualbuddha/zbar"
 
 [lib]
@@ -19,7 +19,6 @@ clap = { version = "4.5", features = ["derive"] }
 rand = "0.9"
 rand_chacha = "0.9"
 
-# For incremental migration - keep C dependencies during transition
 [[bin]]
 name = "zbarimg"
 path = "src/bin/zbarimg.rs"

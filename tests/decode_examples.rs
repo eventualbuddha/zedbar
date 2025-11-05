@@ -2,7 +2,7 @@
 //!
 //! These tests compare results from multiple decoders:
 //! - This crate (zbar-rust)
-//! - System zbar (via zbarimg command) - The original C library
+//! - System zbar (via zbarimg command)
 //! - rqrr (for QR codes only)
 
 use std::path::Path;
