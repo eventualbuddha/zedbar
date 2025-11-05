@@ -4,12 +4,11 @@
 
 use crate::{
     color::Color,
+    decoder::decode_e,
     decoder::{ZBAR_MOD_AIM, ZBAR_MOD_GS1},
-    finder::decode_e,
     img_scanner::zbar_image_scanner_t,
     SymbolType,
 };
-use libc::{c_int, c_uint};
 
 // Character count
 const NUM_CHARS: usize = 108;
@@ -261,7 +260,7 @@ fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
     } else {
         0
     };
-    let mut sum = buf[idx] as c_uint;
+    let mut sum = buf[idx] as u32;
     if sum >= 103 {
         sum -= 103;
     }
@@ -283,7 +282,7 @@ fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
         } else {
             i
         };
-        acc += buf[idx] as c_uint;
+        acc += buf[idx] as u32;
         if acc >= 103 {
             acc -= 103;
         }
@@ -308,23 +307,23 @@ fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
     } else {
         (dcode.code128.character() - 2) as usize
     };
-    let check = buf[idx] as c_uint;
+    let check = buf[idx] as u32;
     sum != check
 }
 
 /// Expand and decode character set C
-fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst: usize) -> c_uint {
+fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst: usize) -> u32 {
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
     let old_len = dcode.code128.character() as usize;
     let newlen = old_len + delta;
     if dcode.set_buffer_capacity(newlen).is_err() {
-        return SymbolType::None as c_uint;
+        return SymbolType::None as u32;
     }
 
     let buf = match dcode.buffer_mut_slice(newlen) {
         Ok(buf) => buf,
-        Err(_) => return SymbolType::None as c_uint,
+        Err(_) => return SymbolType::None as u32,
     };
 
     // Relocate unprocessed data to end of buffer
@@ -353,7 +352,7 @@ fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst
         }
         zassert!(
             buf[j] <= b'9',
-            delta as c_uint,
+            delta as u32,
             "start={:x} end={:x} i={:x} j={:x}\n",
             start,
             end,
@@ -362,7 +361,7 @@ fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst
         );
         zassert!(
             code <= 9,
-            delta as c_uint,
+            delta as u32,
             "start={:x} end={:x} i={:x} j={:x}\n",
             start,
             end,
@@ -373,13 +372,13 @@ fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst
     }
 
     dcode.code128.set_character(newlen as i16);
-    delta as c_uint
+    delta as u32
 }
 
 /// Resolve scan direction and convert to ASCII
 fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
     dcode.modifiers = 0;
-    dcode.direction = 1 - 2 * (dcode.code128.direction() as c_int);
+    dcode.direction = 1 - 2 * (dcode.code128.direction() as i32);
     let character_count = dcode.code128.character() as usize;
     let direction = dcode.code128.direction();
 

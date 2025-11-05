@@ -24,8 +24,12 @@
 //! }
 //! ```
 
+#[cfg(feature = "qrcode")]
 use crate::qrcode::qrdec::qr_point;
 use std::{fmt::Display, str::from_utf8};
+
+#[cfg(not(feature = "qrcode"))]
+pub(crate) type qr_point = [i32; 2];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Orientation {

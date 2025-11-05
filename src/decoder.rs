@@ -2,8 +2,18 @@
 //!
 //! This module contains type definitions for all the barcode decoder types.
 
-use libc::{c_char, c_int, c_short, c_uint};
 
+#[cfg(any(
+    feature = "i25",
+    feature = "code39",
+    feature = "code93",
+    feature = "codabar",
+    feature = "code128",
+    feature = "databar",
+    feature = "qrcode"
+))]
+
+#[cfg(feature = "databar")]
 use crate::color::Color;
 
 /// Window size for bar width history (must be power of 2)
@@ -11,12 +21,30 @@ pub(crate) const DECODE_WINDOW: usize = 16;
 
 /// Decode element width into a discrete value
 /// Returns -1 if the element width is invalid
-pub(crate) fn _zbar_decoder_decode_e(e: u32, s: u32, n: u32) -> c_int {
+pub(crate) fn _zbar_decoder_decode_e(e: u32, s: u32, n: u32) -> i32 {
     let big_e = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if big_e >= n - 3 {
         -1
     } else {
-        big_e as c_int
+        big_e as i32
+    }
+}
+
+/// Fixed character width decode assist
+///
+/// Bar+space width are compared as a fraction of the reference dimension "x"
+/// - +/- 1/2 x tolerance
+/// - measured total character width (s) compared to symbology baseline (n)
+/// - bar+space *pair width* "e" is used to factor out bad "exposures"
+///
+/// Returns encoded number of units - 2 (for use as zero based index)
+/// or -1 if invalid
+pub(crate) fn decode_e(e: u32, s: u32, n: u32) -> i32 {
+    let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
+    if e_val >= n - 3 {
+        -1
+    } else {
+        e_val as i32
     }
 }
 
@@ -40,6 +68,7 @@ pub(crate) const ZBAR_MOD_AIM: i32 = 1;
 // ============================================================================
 
 /// Interleaved 2 of 5 decoder state
+#[cfg(feature = "i25")]
 #[derive(Default)]
 pub(crate) struct i25_decoder_t {
     // Bitfields packed into first 32 bits:
@@ -51,13 +80,14 @@ pub(crate) struct i25_decoder_t {
     pub(crate) buffer: Vec<u8>,
 }
 
+#[cfg(feature = "i25")]
 impl i25_decoder_t {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
     pub(crate) fn set_direction(&mut self, val: bool) {
-        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+        self.bitfields = (self.bitfields & !0x1) | (val as u32);
     }
 
     pub(crate) fn element(&self) -> u8 {
@@ -65,7 +95,7 @@ impl i25_decoder_t {
     }
 
     pub(crate) fn set_element(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
+        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as u32 & 0xF) << 1);
     }
 
     pub(crate) fn character(&self) -> i16 {
@@ -80,7 +110,7 @@ impl i25_decoder_t {
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
-        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as u32) & 0xFFF) << 5);
     }
 
     /// Reset i25 decoder state
@@ -100,6 +130,7 @@ impl i25_decoder_t {
 }
 
 /// Code 39 decoder state
+#[cfg(feature = "code39")]
 #[derive(Default)]
 pub(crate) struct code39_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
@@ -109,13 +140,14 @@ pub(crate) struct code39_decoder_t {
     pub buffer: Vec<u8>,
 }
 
+#[cfg(feature = "code39")]
 impl code39_decoder_t {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
     pub(crate) fn set_direction(&mut self, val: bool) {
-        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+        self.bitfields = (self.bitfields & !0x1) | (val as u32);
     }
 
     pub(crate) fn element(&self) -> u8 {
@@ -123,7 +155,7 @@ impl code39_decoder_t {
     }
 
     pub(crate) fn set_element(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
+        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as u32 & 0xF) << 1);
     }
 
     pub(crate) fn character(&self) -> i16 {
@@ -138,7 +170,7 @@ impl code39_decoder_t {
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
-        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as u32) & 0xFFF) << 5);
     }
 
     /// Reset code39 decoder state
@@ -158,6 +190,7 @@ impl code39_decoder_t {
 }
 
 /// Code 93 decoder state
+#[cfg(feature = "code93")]
 #[derive(Default)]
 pub(crate) struct code93_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12
@@ -166,13 +199,14 @@ pub(crate) struct code93_decoder_t {
     pub(crate) buf: u8,
 }
 
+#[cfg(feature = "code93")]
 impl code93_decoder_t {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
     pub(crate) fn set_direction(&mut self, val: bool) {
-        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+        self.bitfields = (self.bitfields & !0x1) | (val as u32);
     }
 
     pub(crate) fn element(&self) -> u8 {
@@ -180,7 +214,7 @@ impl code93_decoder_t {
     }
 
     pub(crate) fn set_element(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
+        self.bitfields = (self.bitfields & !(0x7 << 1)) | ((val as u32 & 0x7) << 1);
     }
 
     pub(crate) fn character(&self) -> i16 {
@@ -195,7 +229,7 @@ impl code93_decoder_t {
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
-        self.bitfields = (self.bitfields & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
+        self.bitfields = (self.bitfields & !(0xFFF << 4)) | (((val as u32) & 0xFFF) << 4);
     }
 
     /// Reset code93 decoder state
@@ -207,6 +241,7 @@ impl code93_decoder_t {
 }
 
 /// Codabar decoder state
+#[cfg(feature = "codabar")]
 #[derive(Default)]
 pub(crate) struct codabar_decoder_t {
     // Bitfields: direction: 1, element: 4, character: 12
@@ -216,13 +251,14 @@ pub(crate) struct codabar_decoder_t {
     pub(crate) buf: [u8; 6],
 }
 
+#[cfg(feature = "codabar")]
 impl codabar_decoder_t {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
     pub(crate) fn set_direction(&mut self, val: bool) {
-        self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
+        self.bitfields = (self.bitfields & !0x1) | (val as u32);
     }
 
     pub(crate) fn element(&self) -> u8 {
@@ -230,7 +266,7 @@ impl codabar_decoder_t {
     }
 
     pub(crate) fn set_element(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
+        self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as u32 & 0xF) << 1);
     }
 
     pub(crate) fn character(&self) -> i16 {
@@ -245,7 +281,7 @@ impl codabar_decoder_t {
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
-        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
+        self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as u32) & 0xFFF) << 5);
     }
 
     /// Reset codabar decoder state
@@ -258,6 +294,7 @@ impl codabar_decoder_t {
 }
 
 /// Code 128 decoder state
+#[cfg(feature = "code128")]
 #[derive(Default)]
 pub(crate) struct code128_decoder_t {
     // Bitfields: direction: 1, element: 3, character: 12 (16 bits)
@@ -268,13 +305,14 @@ pub(crate) struct code128_decoder_t {
     pub(crate) width: u32,
 }
 
+#[cfg(feature = "code128")]
 impl code128_decoder_t {
     pub(crate) fn direction(&self) -> u8 {
         (self.bitfields_and_start & 0x1) as u8
     }
 
     pub(crate) fn set_direction(&mut self, val: u8) {
-        self.bitfields_and_start = (self.bitfields_and_start & !0x1) | (val as c_uint & 0x1);
+        self.bitfields_and_start = (self.bitfields_and_start & !0x1) | (val as u32 & 0x1);
     }
 
     pub(crate) fn element(&self) -> u8 {
@@ -283,7 +321,7 @@ impl code128_decoder_t {
 
     pub(crate) fn set_element(&mut self, val: u8) {
         self.bitfields_and_start =
-            (self.bitfields_and_start & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
+            (self.bitfields_and_start & !(0x7 << 1)) | ((val as u32 & 0x7) << 1);
     }
 
     pub(crate) fn character(&self) -> i16 {
@@ -299,7 +337,7 @@ impl code128_decoder_t {
 
     pub(crate) fn set_character(&mut self, val: i16) {
         self.bitfields_and_start =
-            (self.bitfields_and_start & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
+            (self.bitfields_and_start & !(0xFFF << 4)) | (((val as u32) & 0xFFF) << 4);
     }
 
     pub(crate) fn start(&self) -> u8 {
@@ -308,7 +346,7 @@ impl code128_decoder_t {
 
     pub(crate) fn set_start(&mut self, val: u8) {
         self.bitfields_and_start =
-            (self.bitfields_and_start & !(0xFF << 16)) | ((val as c_uint) << 16);
+            (self.bitfields_and_start & !(0xFF << 16)) | ((val as u32) << 16);
     }
 
     /// Reset code128 decoder state
@@ -325,16 +363,18 @@ impl code128_decoder_t {
 // ============================================================================
 
 /// DataBar segment (partial)
+#[cfg(feature = "databar")]
 #[derive(Clone)]
 pub(crate) struct databar_segment_t {
     // First 32 bits of bitfields:
     // finder: 5, exp: 1, color: 1, side: 1,
     // partial: 1, count: 7, epoch: 8, check: 8 = 32 bits
     bitfields: u32,
-    pub(crate) data: c_short,
-    pub(crate) width: c_short,
+    pub(crate) data: i16,
+    pub(crate) width: i16,
 }
 
+#[cfg(feature = "databar")]
 impl databar_segment_t {
     pub(crate) fn finder(&self) -> i8 {
         // finder is a signed 5-bit field (bits 0-4)
@@ -348,7 +388,7 @@ impl databar_segment_t {
     }
 
     pub(crate) fn set_finder(&mut self, val: i8) {
-        self.bitfields = (self.bitfields & !0x1F) | ((val as c_uint) & 0x1F);
+        self.bitfields = (self.bitfields & !0x1F) | ((val as u32) & 0x1F);
     }
 
     pub(crate) fn partial(&self) -> bool {
@@ -383,7 +423,7 @@ impl databar_segment_t {
     }
 
     pub(crate) fn set_color(&mut self, val: Color) {
-        self.bitfields = (self.bitfields & !(1 << 6)) | ((val as c_uint) << 6);
+        self.bitfields = (self.bitfields & !(1 << 6)) | ((val as u32) << 6);
     }
 
     pub(crate) fn side(&self) -> u8 {
@@ -392,7 +432,7 @@ impl databar_segment_t {
     }
 
     pub(crate) fn set_side(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(1 << 7)) | (((val & 1) as c_uint) << 7);
+        self.bitfields = (self.bitfields & !(1 << 7)) | (((val & 1) as u32) << 7);
     }
 
     pub(crate) fn count(&self) -> u8 {
@@ -401,7 +441,7 @@ impl databar_segment_t {
     }
 
     pub(crate) fn set_count(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0x7F << 9)) | (((val & 0x7F) as c_uint) << 9);
+        self.bitfields = (self.bitfields & !(0x7F << 9)) | (((val & 0x7F) as u32) << 9);
     }
 
     pub(crate) fn epoch(&self) -> u8 {
@@ -410,7 +450,7 @@ impl databar_segment_t {
     }
 
     pub(crate) fn set_epoch(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0xFF << 16)) | ((val as c_uint) << 16);
+        self.bitfields = (self.bitfields & !(0xFF << 16)) | ((val as u32) << 16);
     }
 
     pub(crate) fn check(&self) -> u8 {
@@ -419,7 +459,7 @@ impl databar_segment_t {
     }
 
     pub(crate) fn set_check(&mut self, val: u8) {
-        self.bitfields = (self.bitfields & !(0xFF << 24)) | ((val as c_uint) << 24);
+        self.bitfields = (self.bitfields & !(0xFF << 24)) | ((val as u32) << 24);
     }
 
     pub(crate) fn segment_index(&self) -> i32 {
@@ -429,6 +469,7 @@ impl databar_segment_t {
     }
 }
 
+#[cfg(feature = "databar")]
 impl Default for databar_segment_t {
     fn default() -> Self {
         let mut seg = Self {
@@ -442,12 +483,14 @@ impl Default for databar_segment_t {
 }
 
 /// DataBar decoder state
+#[cfg(feature = "databar")]
 pub(crate) struct databar_decoder_t {
     epoch: u8,
     pub(crate) segs: Vec<databar_segment_t>,
-    chars: [c_char; 16],
+    chars: [i8; 16],
 }
 
+#[cfg(feature = "databar")]
 impl Default for databar_decoder_t {
     fn default() -> Self {
         Self {
@@ -458,6 +501,7 @@ impl Default for databar_decoder_t {
     }
 }
 
+#[cfg(feature = "databar")]
 impl databar_decoder_t {
     pub(crate) fn csegs(&self) -> usize {
         self.segs.len()
@@ -471,11 +515,11 @@ impl databar_decoder_t {
         &mut self.segs[index]
     }
 
-    pub(crate) fn char(&self, index: usize) -> c_char {
+    pub(crate) fn char(&self, index: usize) -> i8 {
         self.chars[index]
     }
 
-    pub(crate) fn set_char(&mut self, index: usize, value: c_char) {
+    pub(crate) fn set_char(&mut self, index: usize, value: i8) {
         self.chars[index] = value;
     }
 
@@ -516,21 +560,24 @@ impl databar_decoder_t {
 }
 
 /// QR finder line (from qrcode.h)
+#[cfg(feature = "qrcode")]
 #[derive(Default, Copy, Clone)]
 pub(crate) struct qr_finder_line {
-    pub(crate) pos: [c_int; 2], // qr_point
+    pub(crate) pos: [i32; 2], // qr_point
     pub(crate) len: i32,
     pub(crate) boffs: i32,
     pub(crate) eoffs: i32,
 }
 
 /// QR Code finder state
+#[cfg(feature = "qrcode")]
 #[derive(Default)]
 pub(crate) struct qr_finder_t {
     pub(crate) s5: u32,
     pub(crate) line: qr_finder_line,
 }
 
+#[cfg(feature = "qrcode")]
 impl qr_finder_t {
     /// Reset QR finder state
     pub(crate) fn reset(&mut self) {

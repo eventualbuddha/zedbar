@@ -3,7 +3,6 @@
 //! This module implements decoding for Codabar barcodes.
 
 use crate::{color::Color, img_scanner::zbar_image_scanner_t, SymbolType};
-use libc::{c_int, c_uint};
 
 // Buffer constants
 const NIBUF: usize = 6;
@@ -32,35 +31,35 @@ static CODABAR_CHARACTERS: &[u8; 20] = b"0123456789-$:/.+ABCD";
 // ============================================================================
 
 /// Sort 3 like-colored elements and return ordering
-fn decode_sort3(dcode: &zbar_image_scanner_t, i0: u8) -> c_uint {
+fn decode_sort3(dcode: &zbar_image_scanner_t, i0: u8) -> u32 {
     let w0 = dcode.get_width(i0);
     let w2 = dcode.get_width(i0 + 2);
     let w4 = dcode.get_width(i0 + 4);
 
     if w0 < w2 {
         if w2 < w4 {
-            ((i0 as c_uint) << 8) | (((i0 + 2) as c_uint) << 4) | ((i0 + 4) as c_uint)
+            ((i0 as u32) << 8) | (((i0 + 2) as u32) << 4) | ((i0 + 4) as u32)
         } else if w0 < w4 {
-            ((i0 as c_uint) << 8) | (((i0 + 4) as c_uint) << 4) | ((i0 + 2) as c_uint)
+            ((i0 as u32) << 8) | (((i0 + 4) as u32) << 4) | ((i0 + 2) as u32)
         } else {
-            (((i0 + 4) as c_uint) << 8) | ((i0 as c_uint) << 4) | ((i0 + 2) as c_uint)
+            (((i0 + 4) as u32) << 8) | ((i0 as u32) << 4) | ((i0 + 2) as u32)
         }
     } else if w4 < w2 {
-        (((i0 + 4) as c_uint) << 8) | (((i0 + 2) as c_uint) << 4) | (i0 as c_uint)
+        (((i0 + 4) as u32) << 8) | (((i0 + 2) as u32) << 4) | (i0 as u32)
     } else if w0 < w4 {
-        (((i0 + 2) as c_uint) << 8) | ((i0 as c_uint) << 4) | ((i0 + 4) as c_uint)
+        (((i0 + 2) as u32) << 8) | ((i0 as u32) << 4) | ((i0 + 4) as u32)
     } else {
-        (((i0 + 2) as c_uint) << 8) | (((i0 + 4) as c_uint) << 4) | (i0 as c_uint)
+        (((i0 + 2) as u32) << 8) | (((i0 + 4) as u32) << 4) | (i0 as u32)
     }
 }
 
 /// Sort N like-colored elements and return ordering
-fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
+fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> u32 {
     let mut mask: u32 = 0;
     let mut sort: u32 = 0;
 
     for _i in (0..n).rev() {
-        let mut wmin = c_uint::MAX;
+        let mut wmin = u32::MAX;
         let mut jmin: i32 = -1;
 
         for j in (0..n).rev() {
@@ -76,7 +75,7 @@ fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
         zassert!(jmin >= 0, 0, "sortn({},{}) jmin={}", n, i0, jmin);
         sort <<= 4;
         mask |= 1 << jmin;
-        sort |= (i0 as c_uint) + (jmin as c_uint) * 2;
+        sort |= (i0 as u32) + (jmin as u32) * 2;
     }
     sort
 }
@@ -175,7 +174,7 @@ fn codabar_decode7(dcode: &zbar_image_scanner_t) -> i8 {
             return -1;
         }
         let ispc = (((ispc & 0xf) as u8) >> 1) - 1;
-        let mut ic = ((ispc as c_uint) << 2) | ibar;
+        let mut ic = ((ispc as u32) << 2) | ibar;
         if codabar.direction() {
             ic = 11 - ic;
         }
@@ -259,7 +258,7 @@ fn codabar_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let ibar = (((ibar & 0xf) as u8) - 1) >> 1;
 
     // Decode combination
-    let ic = ispc * 4 + (ibar as c_uint);
+    let ic = ispc * 4 + (ibar as u32);
     zassert!(
         ic < 8,
         SymbolType::None,
@@ -283,7 +282,7 @@ fn codabar_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 /// Post-process decoded buffer
 fn codabar_postprocess(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let dir = dcode.codabar.direction();
-    dcode.direction = 1 - 2 * (dir as c_int);
+    dcode.direction = 1 - 2 * (dir as i32);
     let mut n = dcode.codabar.character() as usize;
 
     // Cache all values we need from dcode before taking mutable borrow of buffer
@@ -310,7 +309,7 @@ fn codabar_postprocess(dcode: &mut zbar_image_scanner_t) -> SymbolType {
         // Validate checksum (read-only operation on buffer)
         let mut chk: u32 = 0;
         for c in buffer.iter().take(n) {
-            chk += *c as c_uint;
+            chk += *c as u32;
         }
         if (chk & 0xf) != 0 {
             return SymbolType::None;

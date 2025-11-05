@@ -5,7 +5,6 @@
 //! Licensed under LGPL 3.0 or later
 
 use crate::{image_ffi::zbar_image_t, symbol::Symbol, SymbolType};
-use libc::size_t;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Shape {
@@ -390,7 +389,7 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Extract text from buffer and add to scanner results
-fn sq_extract_text(buf: &[u8], len: size_t) -> Result<Symbol, ()> {
+fn sq_extract_text(buf: &[u8], len: usize) -> Result<Symbol, ()> {
     let mut sym = Symbol::new(SymbolType::SqCode);
 
     let encoded = match base64_encode_buffer(&buf[..len]) {

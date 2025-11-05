@@ -1,38 +1,59 @@
 use std::mem::swap;
 
-use libc::{c_int, c_uint};
 
 use crate::{
     color::Color,
     config::{internal::DecoderState, DecoderConfig},
-    decoder::{
-        codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-        databar_decoder_t, i25_decoder_t, qr_finder_t, DECODE_WINDOW,
-    },
-    decoders::{
-        codabar::_zbar_decode_codabar,
-        code128::_zbar_decode_code128,
-        code39::_zbar_decode_code39,
-        code93::_zbar_decode_code93,
-        databar::_zbar_decode_databar,
-        ean::{ean_decoder_t, zbar_decode_ean},
-        i25::_zbar_decode_i25,
-    },
-    finder::find_qr,
+    decoder::DECODE_WINDOW,
     image_ffi::zbar_image_t,
     img_scanner_config::ImageScannerConfig,
-    qrcode::qrdec::qr_reader,
-    sqcode::SqReader,
     symbol::{Orientation, Symbol},
     Result, SymbolType,
 };
+
+#[cfg(feature = "codabar")]
+use crate::decoder::codabar_decoder_t;
+#[cfg(feature = "code128")]
+use crate::decoder::code128_decoder_t;
+#[cfg(feature = "code39")]
+use crate::decoder::code39_decoder_t;
+#[cfg(feature = "code93")]
+use crate::decoder::code93_decoder_t;
+#[cfg(feature = "databar")]
+use crate::decoder::databar_decoder_t;
+#[cfg(feature = "i25")]
+use crate::decoder::i25_decoder_t;
+#[cfg(feature = "qrcode")]
+use crate::decoder::qr_finder_t;
+
+#[cfg(feature = "qrcode")]
+use crate::finder::find_qr;
+#[cfg(feature = "qrcode")]
+use crate::qrcode::qrdec::qr_reader;
+#[cfg(feature = "sqcode")]
+use crate::sqcode::SqReader;
+
+#[cfg(feature = "codabar")]
+use crate::decoders::codabar::_zbar_decode_codabar;
+#[cfg(feature = "code128")]
+use crate::decoders::code128::_zbar_decode_code128;
+#[cfg(feature = "code39")]
+use crate::decoders::code39::_zbar_decode_code39;
+#[cfg(feature = "code93")]
+use crate::decoders::code93::_zbar_decode_code93;
+#[cfg(feature = "databar")]
+use crate::decoders::databar::_zbar_decode_databar;
+#[cfg(feature = "ean")]
+use crate::decoders::ean::{ean_decoder_t, zbar_decode_ean};
+#[cfg(feature = "i25")]
+use crate::decoders::i25::_zbar_decode_i25;
 
 // QR Code finder precision constant
 const QR_FINDER_SUBPREC: i32 = 2;
 
 // QR_FIXED macro: ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
-fn qr_fixed(v: i32, rnd: i32) -> c_uint {
-    (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
+fn qr_fixed(v: i32, rnd: i32) -> u32 {
+    (((v as u32) << 1) + (rnd as u32)) << (QR_FINDER_SUBPREC - 1)
 }
 
 // Scanner constants from line_scanner.rs
@@ -61,7 +82,7 @@ pub(crate) struct zbar_image_scanner_t {
 
     /// Decoder state fields (formerly zbar_decoder_t)
     pub(crate) idx: u8,
-    pub(crate) w: [c_uint; DECODE_WINDOW],
+    pub(crate) w: [u32; DECODE_WINDOW],
     pub(crate) type_: SymbolType,
     pub(crate) lock: SymbolType,
     pub(crate) modifiers: u32,
@@ -75,18 +96,28 @@ pub(crate) struct zbar_image_scanner_t {
     pub(crate) config: DecoderState,
 
     // Symbology-specific decoders
+    #[cfg(feature = "ean")]
     pub(crate) ean: ean_decoder_t,
+    #[cfg(feature = "i25")]
     pub(crate) i25: i25_decoder_t,
+    #[cfg(feature = "databar")]
     pub(crate) databar: databar_decoder_t,
+    #[cfg(feature = "codabar")]
     pub(crate) codabar: codabar_decoder_t,
+    #[cfg(feature = "code39")]
     pub(crate) code39: code39_decoder_t,
+    #[cfg(feature = "code93")]
     pub(crate) code93: code93_decoder_t,
+    #[cfg(feature = "code128")]
     pub(crate) code128: code128_decoder_t,
+    #[cfg(feature = "qrcode")]
     pub(crate) qrf: qr_finder_t,
 
     /// QR Code 2D reader
+    #[cfg(feature = "qrcode")]
     qr: qr_reader,
     /// SQ Code 2D reader
+    #[cfg(feature = "sqcode")]
     sq: SqReader,
 
     /// current scan direction
@@ -132,17 +163,27 @@ impl Default for zbar_image_scanner_t {
             s6: 0,
             buffer: Vec::with_capacity(BUFFER_MIN),
             config: DecoderState::default(),
+            #[cfg(feature = "ean")]
             ean: ean_decoder_t::default(),
+            #[cfg(feature = "i25")]
             i25: i25_decoder_t::default(),
+            #[cfg(feature = "databar")]
             databar: databar_decoder_t::default(),
+            #[cfg(feature = "codabar")]
             codabar: codabar_decoder_t::default(),
+            #[cfg(feature = "code39")]
             code39: code39_decoder_t::default(),
+            #[cfg(feature = "code93")]
             code93: code93_decoder_t::default(),
+            #[cfg(feature = "code128")]
             code128: code128_decoder_t::default(),
+            #[cfg(feature = "qrcode")]
             qrf: qr_finder_t::default(),
 
             // Scanner-specific fields
+            #[cfg(feature = "qrcode")]
             qr: qr_reader::default(),
+            #[cfg(feature = "sqcode")]
             sq: SqReader::default(),
             dx: 0,
             dy: 0,
@@ -223,7 +264,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Get the width of the most recent bar or space
-    pub(crate) fn width(&self) -> c_uint {
+    pub(crate) fn width(&self) -> u32 {
         self.width
     }
 
@@ -231,7 +272,7 @@ impl zbar_image_scanner_t {
     ///
     /// Implements adaptive threshold calculation that slowly fades back to minimum.
     /// This helps with noise rejection while maintaining sensitivity.
-    pub(crate) fn calc_thresh(&mut self) -> c_uint {
+    pub(crate) fn calc_thresh(&mut self) -> u32 {
         // threshold 1st to improve noise rejection
         let thresh = self.y1_thresh;
 
@@ -245,8 +286,8 @@ impl zbar_image_scanner_t {
         t /= self.width as u64;
         t /= ZBAR_SCANNER_THRESH_FADE as u64;
 
-        if thresh > t as c_uint {
-            let new_thresh = thresh - t as c_uint;
+        if thresh > t as u32 {
+            let new_thresh = thresh - t as u32;
             if new_thresh > self.y1_min_thresh {
                 return new_thresh;
             }
@@ -355,7 +396,7 @@ impl zbar_image_scanner_t {
                 // adaptive thresholding
                 // start at multiple of new min/max
                 self.y1_thresh =
-                    ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED) as c_uint;
+                    ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED);
                 if self.y1_thresh < self.y1_min_thresh {
                     self.y1_thresh = self.y1_min_thresh;
                 }
@@ -367,7 +408,7 @@ impl zbar_image_scanner_t {
                     self.cur_edge >>= 1;
                 } else if y2_1 != 0 {
                     // interpolate zero crossing
-                    self.cur_edge -= (((y2_1 << ZBAR_FIXED) + 1) / d) as c_uint;
+                    self.cur_edge -= (((y2_1 << ZBAR_FIXED) + 1) / d) as u32;
                 }
                 self.cur_edge += x << ZBAR_FIXED;
             }
@@ -391,7 +432,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Get the interpolated position of the last edge
-    pub(crate) fn get_edge(&self, offset: u32, prec: i32) -> c_uint {
+    pub(crate) fn get_edge(&self, offset: u32, prec: i32) -> u32 {
         let edge = self
             .last_edge
             .wrapping_sub(offset)
@@ -432,7 +473,10 @@ impl zbar_image_scanner_t {
 
     /// Sync EAN enable flag from configuration
     fn sync_config_to_decoders(&mut self) {
-        self.ean.enable = self.config.ean_enabled();
+        #[cfg(feature = "ean")]
+        {
+            self.ean.enable = self.config.ean_enabled();
+        }
     }
 
     pub(crate) fn color(&self) -> Color {
@@ -440,17 +484,17 @@ impl zbar_image_scanner_t {
     }
 
     /// Get width of a specific element from the decoder's history window
-    pub(crate) fn get_width(&self, offset: u8) -> c_uint {
+    pub(crate) fn get_width(&self, offset: u8) -> u32 {
         self.w[((self.idx as usize).wrapping_sub(offset as usize)) & (DECODE_WINDOW - 1)]
     }
 
     /// Get the combined width of two consecutive elements
-    pub(crate) fn pair_width(&self, offset: u8) -> c_uint {
+    pub(crate) fn pair_width(&self, offset: u8) -> u32 {
         self.get_width(offset) + self.get_width(offset + 1)
     }
 
     /// Calculate sum of n consecutive element widths
-    pub(crate) fn calc_s(&self, mut offset: u8, mut n: u8) -> c_uint {
+    pub(crate) fn calc_s(&self, mut offset: u8, mut n: u8) -> u32 {
         let mut s = 0;
         while n > 0 {
             s += self.get_width(offset);
@@ -548,13 +592,21 @@ impl zbar_image_scanner_t {
         self.s6 = 0;
         self.set_buffer_len(0);
 
+        #[cfg(feature = "ean")]
         self.ean.reset();
+        #[cfg(feature = "i25")]
         self.i25.reset();
+        #[cfg(feature = "databar")]
         self.databar.reset();
+        #[cfg(feature = "codabar")]
         self.codabar.reset();
+        #[cfg(feature = "code39")]
         self.code39.reset();
+        #[cfg(feature = "code93")]
         self.code93.reset();
+        #[cfg(feature = "code128")]
         self.code128.reset();
+        #[cfg(feature = "qrcode")]
         self.qrf.reset();
     }
 
@@ -565,13 +617,21 @@ impl zbar_image_scanner_t {
         self.idx = 0;
         self.s6 = 0;
 
+        #[cfg(feature = "ean")]
         self.ean.new_scan();
+        #[cfg(feature = "i25")]
         self.i25.reset();
+        #[cfg(feature = "databar")]
         self.databar.reset();
+        #[cfg(feature = "codabar")]
         self.codabar.reset();
+        #[cfg(feature = "code39")]
         self.code39.reset();
+        #[cfg(feature = "code93")]
         self.code93.reset();
+        #[cfg(feature = "code128")]
         self.code128.reset();
+        #[cfg(feature = "qrcode")]
         self.qrf.reset();
     }
 
@@ -603,6 +663,7 @@ impl zbar_image_scanner_t {
         self.s6 = self.s6.wrapping_add(self.get_width(1));
 
         // Each decoder processes width stream in parallel
+        #[cfg(feature = "qrcode")]
         if self.is_enabled(SymbolType::QrCode) {
             let tmp = find_qr(self);
             if tmp > SymbolType::Partial {
@@ -610,6 +671,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "ean")]
         if self.ean.enable {
             let tmp = zbar_decode_ean(&mut *self);
             if tmp != SymbolType::None {
@@ -617,6 +679,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "code39")]
         if self.is_enabled(SymbolType::Code39) {
             let tmp = _zbar_decode_code39(&mut *self);
             if tmp > SymbolType::Partial {
@@ -624,6 +687,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "code93")]
         if self.is_enabled(SymbolType::Code93) {
             let tmp = _zbar_decode_code93(&mut *self);
             if tmp > SymbolType::Partial {
@@ -631,6 +695,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "code128")]
         if self.is_enabled(SymbolType::Code128) {
             let tmp = _zbar_decode_code128(&mut *self);
             if tmp > SymbolType::Partial {
@@ -638,6 +703,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "databar")]
         if self.is_enabled(SymbolType::Databar) || self.is_enabled(SymbolType::DatabarExp) {
             let tmp = _zbar_decode_databar(&mut *self);
             if tmp > SymbolType::Partial {
@@ -645,6 +711,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "codabar")]
         if self.is_enabled(SymbolType::Codabar) {
             let tmp = _zbar_decode_codabar(&mut *self);
             if tmp > SymbolType::Partial {
@@ -652,6 +719,7 @@ impl zbar_image_scanner_t {
             }
         }
 
+        #[cfg(feature = "i25")]
         if self.is_enabled(SymbolType::I25) {
             let tmp = _zbar_decode_i25(self);
             if tmp > SymbolType::Partial {
@@ -682,7 +750,7 @@ impl zbar_image_scanner_t {
         self.type_
     }
 
-    pub(crate) fn get_modifiers(&self) -> c_uint {
+    pub(crate) fn get_modifiers(&self) -> u32 {
         self.modifiers
     }
 
@@ -704,14 +772,15 @@ impl zbar_image_scanner_t {
     ///
     /// Processes a QR code finder line from the decoder and forwards it to the QR reader.
     /// Adjusts edge positions based on scanner state and transforms coordinates.
+    #[cfg(feature = "qrcode")]
     pub(crate) fn qr_handler(&mut self) {
         let line = &mut self.qrf.line;
 
         // Extract values we need before calling get_edge
-        let pos0 = line.pos[0] as c_uint;
-        let boffs_in = line.boffs as c_uint;
-        let len_in = line.len as c_uint;
-        let eoffs_in = line.eoffs as c_uint;
+        let pos0 = line.pos[0] as u32;
+        let boffs_in = line.boffs as u32;
+        let len_in = line.len as u32;
+        let eoffs_in = line.eoffs as u32;
 
         // Now we can safely call get_edge
         let mut u = self.get_edge(pos0, QR_FINDER_SUBPREC);
@@ -721,20 +790,20 @@ impl zbar_image_scanner_t {
 
         // Get line again to modify it
         let line = &mut self.qrf.line;
-        line.boffs = (u as c_int) - boffs_edge as c_int;
-        line.len = len_edge as c_int;
-        line.eoffs = eoffs_edge as c_int - line.len;
-        line.len -= u as c_int;
+        line.boffs = (u as i32) - boffs_edge as i32;
+        line.len = len_edge as i32;
+        line.eoffs = eoffs_edge as i32 - line.len;
+        line.len -= u as i32;
 
-        u = (qr_fixed(self.umin, 0) as i64 + (self.du as i64) * (u as i64)) as c_uint;
+        u = (qr_fixed(self.umin, 0) as i64 + (self.du as i64) * (u as i64)) as u32;
         if self.du < 0 {
             std::mem::swap(&mut line.boffs, &mut line.eoffs);
-            u = u.wrapping_sub(line.len as c_uint);
+            u = u.wrapping_sub(line.len as u32);
         }
 
         let vert: i32 = if self.dx != 0 { 0 } else { 1 };
-        line.pos[vert as usize] = u as c_int;
-        line.pos[(1 - vert) as usize] = qr_fixed(self.v, 1) as c_int;
+        line.pos[vert as usize] = u as i32;
+        line.pos[(1 - vert) as usize] = qr_fixed(self.v, 1) as i32;
 
         self.qr.found_line(vert, line);
     }
@@ -743,6 +812,7 @@ impl zbar_image_scanner_t {
     ///
     /// Gets the current SQ finder configuration from the decoder and passes it
     /// to the SQ reader for processing.
+    #[cfg(feature = "sqcode")]
     pub(crate) fn sq_handler(&mut self) {
         self.sq.set_enabled(self.is_enabled(SymbolType::SqCode));
     }
@@ -758,7 +828,9 @@ impl zbar_image_scanner_t {
     /// # Returns
     /// Pointer to symbol set on success, null on error
     fn scan_image_internal(&mut self, img: &mut zbar_image_t) -> Vec<Symbol> {
+        #[cfg(feature = "qrcode")]
         self.qr.reset();
+        #[cfg(feature = "sqcode")]
         self.sq.reset();
 
         // Clear previous symbols for new scan
@@ -779,7 +851,7 @@ impl zbar_image_scanner_t {
             let mut x = 0i32;
             let mut y = 0i32;
 
-            let mut border = ((h - 1) % (density as c_uint)).div_ceil(2);
+            let mut border = ((h - 1) % density).div_ceil(2);
             if border > h / 2 {
                 border = h / 2;
             }
@@ -791,15 +863,15 @@ impl zbar_image_scanner_t {
             p += (border * w) as isize;
             self.v = y;
 
-            while (y as c_uint) < h {
+            while (y as u32) < h {
                 self.dx = 1;
                 self.du = 1;
                 self.umin = 0;
-                while (x as c_uint) < w {
+                while (x as u32) < w {
                     let d = data[p as usize];
                     x += 1;
                     p += 1;
-                    self.scan_y(d as c_int);
+                    self.scan_y(d as i32);
                 }
                 self.quiet_border();
 
@@ -808,18 +880,18 @@ impl zbar_image_scanner_t {
                 y += density as i32;
                 p += -1 + (density as i32 * w as i32) as isize;
                 self.v = y;
-                if (y as c_uint) >= h {
+                if (y as u32) >= h {
                     break;
                 }
 
                 self.dx = -1;
                 self.du = -1;
-                self.umin = w as c_int;
+                self.umin = w as i32;
                 while x >= 0 {
                     let d = data[p as usize];
                     x -= 1;
                     p -= 1;
-                    self.scan_y(d as c_int);
+                    self.scan_y(d as i32);
                 }
                 self.quiet_border();
 
@@ -839,7 +911,7 @@ impl zbar_image_scanner_t {
             let mut x = 0i32;
             let mut y = 0i32;
 
-            let mut border = ((w - 1) % (density as c_uint)).div_ceil(2);
+            let mut border = ((w - 1) % density).div_ceil(2);
             if border > w / 2 {
                 border = w / 2;
             }
@@ -849,15 +921,15 @@ impl zbar_image_scanner_t {
             p += border as isize;
             self.v = x;
 
-            while (x as c_uint) < w {
+            while (x as u32) < w {
                 self.dy = 1;
                 self.du = 1;
                 self.umin = 0;
-                while (y as c_uint) < h {
+                while (y as u32) < h {
                     let d = data[p as usize];
                     y += 1;
                     p += w as isize;
-                    self.scan_y(d as c_int);
+                    self.scan_y(d as i32);
                 }
                 self.quiet_border();
 
@@ -866,18 +938,18 @@ impl zbar_image_scanner_t {
                 y -= 1;
                 p += (density as isize) - (w as isize);
                 self.v = x;
-                if (x as c_uint) >= w {
+                if (x as u32) >= w {
                     break;
                 }
 
                 self.dy = -1;
                 self.du = -1;
-                self.umin = h as c_int;
+                self.umin = h as i32;
                 while y >= 0 {
                     let d = data[p as usize];
                     y -= 1;
                     p -= w as isize;
-                    self.scan_y(d as c_int);
+                    self.scan_y(d as i32);
                 }
                 self.quiet_border();
 
@@ -891,15 +963,21 @@ impl zbar_image_scanner_t {
         self.dy = 0;
 
         // Decode QR and SQ codes
-        let raw_binary = self.is_binary_mode(SymbolType::QrCode);
-        let qr_symbols = self.qr.decode(img, raw_binary);
-        for sym in qr_symbols {
-            self.add_symbol(sym);
+        #[cfg(feature = "qrcode")]
+        {
+            let raw_binary = self.is_binary_mode(SymbolType::QrCode);
+            let qr_symbols = self.qr.decode(img, raw_binary);
+            for sym in qr_symbols {
+                self.add_symbol(sym);
+            }
         }
 
-        self.sq_handler();
-        if let Ok(Some(symbol)) = self.sq.decode(img) {
-            self.add_symbol(symbol);
+        #[cfg(feature = "sqcode")]
+        {
+            self.sq_handler();
+            if let Ok(Some(symbol)) = self.sq.decode(img) {
+                self.add_symbol(symbol);
+            }
         }
 
         // Filter and merge EAN composite results
@@ -980,8 +1058,14 @@ impl zbar_image_scanner_t {
         let mut y = 0;
 
         // QR codes are handled separately
+        #[cfg(feature = "qrcode")]
         if symbol_type == SymbolType::QrCode {
             self.qr_handler();
+            return;
+        }
+
+        #[cfg(not(feature = "qrcode"))]
+        if symbol_type == SymbolType::QrCode {
             return;
         }
 
@@ -989,7 +1073,7 @@ impl zbar_image_scanner_t {
         let position_tracking = self.scanner_config.position_tracking;
         if position_tracking {
             let w = self.width();
-            let u = self.umin + self.du * self.get_edge(w, 0) as c_int;
+            let u = self.umin + self.du * self.get_edge(w, 0) as i32;
             if self.dx != 0 {
                 x = u;
                 y = self.v;

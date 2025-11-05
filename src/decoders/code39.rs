@@ -2,8 +2,7 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::{color::Color, finder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
-use libc::c_int;
+use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
 
 // Number of characters in Code 39
 const NUM_CHARS: usize = 0x2c;
@@ -392,7 +391,7 @@ fn code39_postprocess(dcode: &mut zbar_image_scanner_t) -> i32 {
     let character = dcode.code39.character() as usize;
     let direction = dcode.code39.direction();
 
-    dcode.direction = 1 - 2 * (direction as c_int);
+    dcode.direction = 1 - 2 * (direction as i32);
 
     let buffer = &mut dcode.code39.buffer[..character];
 

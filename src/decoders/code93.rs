@@ -2,8 +2,7 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::{color::Color, finder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
-use libc::c_int;
+use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
 
 // Checksum constant
 const CHKMOD: i32 = 47;
@@ -271,7 +270,7 @@ fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
     let n = dcode.code93.character() as usize;
     let direction = dcode.code93.direction();
 
-    dcode.direction = 1 - 2 * (direction as c_int);
+    dcode.direction = 1 - 2 * (direction as i32);
 
     // Get mutable slice for processing
     let buffer = match dcode.buffer_mut_slice(n) {

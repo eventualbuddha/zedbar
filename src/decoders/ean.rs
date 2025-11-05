@@ -4,10 +4,9 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    color::Color, config::internal::DecoderState, finder::decode_e,
+    color::Color, config::internal::DecoderState, decoder::decode_e,
     img_scanner::zbar_image_scanner_t, SymbolType,
 };
-use libc::{c_char, c_uint};
 
 // State constants for ean_pass_t
 const STATE_REV: i8 = -0x80; // 0x80 as signed
@@ -74,7 +73,7 @@ static PARITY_DECODE: [u8; 64] = [
 // ============================================================================
 
 /// Calculate total character width "s"
-fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> c_uint {
+fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> u32 {
     let mut s = 0;
     while n > 0 {
         s += dcode.get_width(offset);
@@ -85,7 +84,7 @@ fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> c_uint {
 }
 
 /// Check if two widths are within tolerance
-fn check_width(w0: u32, w1: u32) -> c_uint {
+fn check_width(w0: u32, w1: u32) -> u32 {
     let dw0 = w0;
     let w0_scaled = w0 * 8;
     let w1_scaled = w1 * 8;
@@ -224,7 +223,7 @@ fn decode4(dcode: &zbar_image_scanner_t) -> i8 {
 /// EAN pass state
 #[derive(Default)]
 pub(crate) struct ean_pass_t {
-    pub(crate) state: c_char,
+    pub(crate) state: i8,
     pub(crate) width: u32,
     pub(crate) raw: [u8; 7],
 }
@@ -238,7 +237,7 @@ pub(crate) struct ean_decoder_t {
     pub(crate) direction: i32,
     pub(crate) s4: u32,
     pub(crate) width: u32,
-    pub(crate) buf: [c_char; 18],
+    pub(crate) buf: [i8; 18],
     pub(crate) enable: bool,
 }
 
@@ -335,11 +334,11 @@ impl ean_decoder_t {
             | ((self.pass[pass_index].raw[5] & 0x10) >> 4);
 
         // calculate checksum
-        let chk = ((((self.pass[pass_index].raw[1] & 0x0f) as c_uint
-            + (self.pass[pass_index].raw[2] & 0x0f) as c_uint * 3
-            + (self.pass[pass_index].raw[3] & 0x0f) as c_uint
-            + (self.pass[pass_index].raw[4] & 0x0f) as c_uint * 3
-            + (self.pass[pass_index].raw[5] & 0x0f) as c_uint)
+        let chk = ((((self.pass[pass_index].raw[1] & 0x0f) as u32
+            + (self.pass[pass_index].raw[2] & 0x0f) as u32 * 3
+            + (self.pass[pass_index].raw[3] & 0x0f) as u32
+            + (self.pass[pass_index].raw[4] & 0x0f) as u32 * 3
+            + (self.pass[pass_index].raw[5] & 0x0f) as u32)
             * 3)
             % 10) as u8;
 
@@ -386,22 +385,22 @@ impl ean_decoder_t {
     }
 
     /// Calculate ISBN-10 checksum
-    fn isbn10_calc_checksum(&self) -> c_char {
+    fn isbn10_calc_checksum(&self) -> i8 {
         let mut chk: u32 = 0;
         for w in (2..=10).rev() {
             let d = self.buf[13 - w] as u8;
-            zassert!(d < 10, b'?' as c_char, "w={:x} d={:x} chk={:x}", w, d, chk);
-            chk += d as c_uint * w as c_uint;
+            zassert!(d < 10, b'?' as i8, "w={:x} d={:x} chk={:x}", w, d, chk);
+            chk += d as u32 * w as u32;
         }
         chk %= 11;
         if chk == 0 {
-            return b'0' as c_char;
+            return b'0' as i8;
         }
         chk = 11 - chk;
         if chk < 10 {
-            return (chk + b'0' as c_uint) as c_char;
+            return (chk + b'0' as u32) as i8;
         }
-        b'X' as c_char
+        b'X' as i8
     }
 
     /// Expand UPC-E to UPC-A
@@ -409,20 +408,20 @@ impl ean_decoder_t {
         let mut i = 0;
 
         // parity encoded digit is checksum
-        self.buf[12] = self.pass[pass_index].raw[i] as c_char;
+        self.buf[12] = self.pass[pass_index].raw[i] as i8;
         i += 1;
 
         let decode = self.pass[pass_index].raw[6] & 0xf;
         self.buf[0] = 0;
         self.buf[1] = 0;
-        self.buf[2] = (self.pass[pass_index].raw[i] & 0xf) as c_char;
+        self.buf[2] = (self.pass[pass_index].raw[i] & 0xf) as i8;
         i += 1;
-        self.buf[3] = (self.pass[pass_index].raw[i] & 0xf) as c_char;
+        self.buf[3] = (self.pass[pass_index].raw[i] & 0xf) as i8;
         i += 1;
         self.buf[4] = if decode < 3 {
-            decode as c_char
+            decode as i8
         } else {
-            (self.pass[pass_index].raw[i] & 0xf) as c_char
+            (self.pass[pass_index].raw[i] & 0xf) as i8
         };
         if decode >= 3 {
             i += 1;
@@ -430,7 +429,7 @@ impl ean_decoder_t {
         self.buf[5] = if decode < 4 {
             0
         } else {
-            (self.pass[pass_index].raw[i] & 0xf) as c_char
+            (self.pass[pass_index].raw[i] & 0xf) as i8
         };
         if decode >= 4 {
             i += 1;
@@ -438,7 +437,7 @@ impl ean_decoder_t {
         self.buf[6] = if decode < 5 {
             0
         } else {
-            (self.pass[pass_index].raw[i] & 0xf) as c_char
+            (self.pass[pass_index].raw[i] & 0xf) as i8
         };
         if decode >= 5 {
             i += 1;
@@ -446,7 +445,7 @@ impl ean_decoder_t {
         self.buf[7] = 0;
         self.buf[8] = 0;
         self.buf[9] = if decode < 3 {
-            (self.pass[pass_index].raw[i] & 0xf) as c_char
+            (self.pass[pass_index].raw[i] & 0xf) as i8
         } else {
             0
         };
@@ -454,7 +453,7 @@ impl ean_decoder_t {
             i += 1;
         }
         self.buf[10] = if decode < 4 {
-            (self.pass[pass_index].raw[i] & 0xf) as c_char
+            (self.pass[pass_index].raw[i] & 0xf) as i8
         } else {
             0
         };
@@ -462,9 +461,9 @@ impl ean_decoder_t {
             i += 1;
         }
         self.buf[11] = if decode < 5 {
-            (self.pass[pass_index].raw[i] & 0xf) as c_char
+            (self.pass[pass_index].raw[i] & 0xf) as i8
         } else {
-            decode as c_char
+            decode as i8
         };
     }
 
@@ -495,7 +494,7 @@ impl ean_decoder_t {
             let mut j = i32::from(part) - 1;
             let mut i = i32::from(part) >> 1;
             while i > 0 {
-                let digit = (self.pass[pass_index].raw[i as usize] & 0xf) as c_char;
+                let digit = (self.pass[pass_index].raw[i as usize] & 0xf) as i8;
                 if self.right != SymbolType::None && self.buf[j as usize] != digit {
                     // partial mismatch - reset collected parts
                     self.left = SymbolType::None;
@@ -517,7 +516,7 @@ impl ean_decoder_t {
             let mut j = (i32::from(part) - 1) >> 1;
             let mut i = i32::from(part) >> 1;
             while j >= 0 {
-                let digit = (self.pass[pass_index].raw[i as usize] & 0xf) as c_char;
+                let digit = (self.pass[pass_index].raw[i as usize] & 0xf) as i8;
                 if self.left != SymbolType::None && self.buf[j as usize] != digit {
                     // partial mismatch - reset collected parts
                     self.left = SymbolType::None;
@@ -534,7 +533,7 @@ impl ean_decoder_t {
         } else if part != PartialSymbolType::Upce {
             // add-ons
             for i in (1..=(i32::from(part) as usize)).rev() {
-                self.buf[i - 1] = (self.pass[pass_index].raw[i] & 0xf) as c_char;
+                self.buf[i - 1] = (self.pass[pass_index].raw[i] & 0xf) as i8;
             }
             self.left = part.into();
         } else {
@@ -581,9 +580,9 @@ impl ean_decoder_t {
                 self.buf[0] = 0;
                 self.buf[1] = 0;
                 for i in 2..8 {
-                    self.buf[i] = (self.pass[pass_index].raw[i - 1] & 0xf) as c_char;
+                    self.buf[i] = (self.pass[pass_index].raw[i - 1] & 0xf) as i8;
                 }
-                self.buf[8] = (self.pass[pass_index].raw[0] & 0xf) as c_char;
+                self.buf[8] = (self.pass[pass_index].raw[0] & 0xf) as i8;
             } else if config.is_enabled(SymbolType::Upca) {
                 // UPC-E reported as UPC-A has priority over ean-13
                 symbol_type = SymbolType::Upca;
@@ -770,7 +769,7 @@ fn postprocess(dcode: &mut zbar_image_scanner_t, sym: SymbolType) {
 
         // Copy from temp buffer
         for k in 0..buf_len {
-            buffer[k] = (temp_buf[k] + b'0' as c_char) as u8;
+            buffer[k] = (temp_buf[k] + b'0' as i8) as u8;
         }
 
         if needs_isbn10_check {

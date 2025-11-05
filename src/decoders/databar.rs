@@ -1,4 +1,3 @@
-use libc::{c_int, c_uint};
 
 use crate::{
     color::Color,
@@ -559,7 +558,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [c_uint; 4]) {
+fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [u32; 4]) {
     // Get config before borrowing buffer
     let emit_check = dcode.should_emit_checksum(SymbolType::Databar);
 
@@ -584,13 +583,13 @@ fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [c_uint; 4]) {
 
     // First conversion
     let mut r = (d[0] as u64) * 1597 + (d[1] as u64);
-    d[1] = (r / 10000) as c_uint;
+    d[1] = (r / 10000) as u32;
     r %= 10000;
     r = r * 2841 + (d[2] as u64);
-    d[2] = (r / 10000) as c_uint;
+    d[2] = (r / 10000) as u32;
     r %= 10000;
     r = r * 1597 + (d[3] as u64);
-    d[3] = (r / 10000) as c_uint;
+    d[3] = (r / 10000) as u32;
 
     // Extract 4 decimal digits
     for i in (0..4).rev() {
@@ -608,10 +607,10 @@ fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [c_uint; 4]) {
 
     // Second conversion
     r = (d[1] as u64) * 2841 + (d[2] as u64);
-    d[2] = (r / 10000) as c_uint;
+    d[2] = (r / 10000) as u32;
     r %= 10000;
     r = r * 1597 + (d[3] as u64);
-    d[3] = (r / 10000) as c_uint;
+    d[3] = (r / 10000) as u32;
 
     // Extract 4 more decimal digits
     for i in (0..4).rev() {
@@ -669,7 +668,7 @@ fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [c_uint; 4]) {
 ///
 /// # Returns
 /// 1 if widths match within tolerance, 0 otherwise
-fn check_width(wf: u32, wd: u32, n: u32) -> c_int {
+fn check_width(wf: u32, wd: u32, n: u32) -> i32 {
     let dwf = wf.wrapping_mul(3);
     let wd = wd.wrapping_mul(14);
     let wf = wf.wrapping_mul(n);
@@ -777,7 +776,7 @@ fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType
             || s0.color() != seg_color
             || s0.side() == seg_side
             || (s0.partial() && s0.count() < 4)
-            || check_width(seg_width as c_uint, s0.width as c_uint, 14) == 0
+            || check_width(seg_width as u32, s0.width as u32, 14) == 0
         {
             continue;
         }
@@ -791,7 +790,7 @@ fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType
                 || s1.exp()
                 || s1.color() == seg_color
                 || (s1.partial() && s1.count() < 4)
-                || check_width(seg_width as c_uint, s1.width as c_uint, 14) == 0
+                || check_width(seg_width as u32, s1.width as u32, 14) == 0
             {
                 continue;
             }
@@ -830,7 +829,7 @@ fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType
                     || s2.side() == s1.side()
                     || s2.check() as i32 != chk
                     || (s2.partial() && s2.count() < 4)
-                    || check_width(seg_width as c_uint, s2.width as c_uint, 14) == 0
+                    || check_width(seg_width as u32, s2.width as u32, 14) == 0
                 {
                     continue;
                 }
@@ -1157,7 +1156,7 @@ fn calc_check(mut sig0: u32, mut sig1: u32, side: u32, mod_val: u32) -> u32 {
 
 /// Calculate DataBar character value from 4-element signature
 /// Returns -1 on error
-fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> c_int {
+fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> i32 {
     let mut v = 0u32;
     n = n.wrapping_sub(1);
 
@@ -1298,7 +1297,7 @@ fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> c_int {
         return -1;
     }
 
-    v as c_int
+    v as i32
 }
 
 /// Decode a DataBar character from width measurements
@@ -1325,7 +1324,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
     };
     emin[1] = -(n as i32);
 
-    if s < 13 || check_width(seg_width as c_uint, s, n) == 0 {
+    if s < 13 || check_width(seg_width as u32, s, n) == 0 {
         return SymbolType::None;
     }
 
@@ -1373,7 +1372,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
     sum0 &= 0xf;
     sum1 &= 0xf;
 
-    if sum0.wrapping_add(sum1).wrapping_add(8) as c_int != n as c_int {
+    if sum0.wrapping_add(sum1).wrapping_add(8) as i32 != n as i32 {
         return SymbolType::None;
     }
 
@@ -1390,8 +1389,8 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
     let vodd = calc_value4(
         sig0.wrapping_add(0x1111),
         sum0.wrapping_add(4),
-        g.wmax as c_uint,
-        (!(n as i32) & 1) as c_uint,
+        g.wmax as u32,
+        (!(n as i32) & 1) as u32,
     );
     if vodd < 0 || vodd > g.todd as i32 {
         return SymbolType::None;
@@ -1400,8 +1399,8 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
     let veven = calc_value4(
         sig1.wrapping_add(0x1111),
         sum1.wrapping_add(4),
-        (9 - g.wmax) as c_uint,
-        (n & 1) as c_uint,
+        (9 - g.wmax) as u32,
+        ((n & 1)),
     );
     if veven < 0 || veven > g.teven as i32 {
         return SymbolType::None;
@@ -1424,7 +1423,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
         if v >= 4096 {
             return SymbolType::None;
         }
-        chk = calc_check(sig0, sig1, side as c_uint, 211);
+        chk = calc_check(sig0, sig1, side as u32, 211);
         if seg_finder != 0 || seg_color != Color::Space || seg_side != 0 {
             let i = (seg_finder as i32) * 2 - (side as i32) + (seg_color as i32);
             if !(0..12).contains(&i) {
@@ -1437,7 +1436,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
             chk = 0;
         }
     } else {
-        chk = calc_check(sig0, sig1, seg_side as c_uint, 79);
+        chk = calc_check(sig0, sig1, seg_side as u32, 79);
         if seg_color != Color::Space {
             chk = (chk * 16) % 79;
         }
@@ -1460,7 +1459,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
 
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
-fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
+fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> i32 {
     let mut maxage = 0u32;
     let csegs = db.csegs();
     let epoch = db.epoch();
@@ -1471,13 +1470,13 @@ fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
         let seg = db.seg_mut(i);
 
         if seg.finder() < 0 {
-            return i as c_int;
+            return i as i32;
         }
 
         let age = epoch.wrapping_sub(seg.epoch());
         if age >= 128 && seg.count() < 2 {
             seg.set_finder(-1);
-            return i as c_int;
+            return i as i32;
         }
 
         // Score based on both age and count
@@ -1489,7 +1488,7 @@ fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
 
         if maxage < score as u32 {
             maxage = score as u32;
-            old = i as c_int;
+            old = i as i32;
         }
     }
 
@@ -1504,7 +1503,7 @@ fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> c_int {
         if new_csegs != csegs {
             // Grow the segment array
             db.resize_segs(new_csegs);
-            return i as c_int;
+            return i as i32;
         }
     }
 
@@ -1596,7 +1595,7 @@ fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
             .set_epoch(dcode.databar.epoch().wrapping_add(1));
     }
 
-    let i = ((dcode.idx as c_int + 8 + dir) & 0xf) as usize;
+    let i = ((dcode.idx as i32 + 8 + dir) & 0xf) as usize;
     if dcode.databar.char(i) != -1 {
         return SymbolType::None;
     }

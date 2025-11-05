@@ -1,4 +1,29 @@
 //! Command-line barcode scanner
+//!
+//! This binary provides a command-line interface to the zbar library.
+//! It requires all symbology features to be enabled to provide full CLI control.
+//! 
+//! Build with: `cargo build --bin zbarimg` (uses default features)
+
+// The zbarimg binary provides CLI flags for all symbologies,
+// so it requires all features to be enabled. Users who want a minimal
+// library should build with `--lib` and select specific features.
+#[cfg(not(all(
+    feature = "qrcode",
+    feature = "sqcode",
+    feature = "ean",
+    feature = "code128",
+    feature = "code39",
+    feature = "code93",
+    feature = "codabar",
+    feature = "databar",
+    feature = "i25"
+)))]
+compile_error!(
+    "zbarimg binary requires all symbology features enabled. \
+     Build with default features: `cargo build --bin zbarimg` \
+     For a minimal library, use: `cargo build --lib --no-default-features --features qrcode`"
+);
 
 use clap::Parser;
 use std::io::Write;

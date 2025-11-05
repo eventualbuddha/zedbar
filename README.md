@@ -19,8 +19,63 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zbar = "0.1"
+zbar-rust = "0.1"
 ```
+
+### Cargo Features
+
+By default, all symbologies are enabled. You can selectively enable only the ones you need to reduce compile time and binary size:
+
+```toml
+[dependencies]
+zbar-rust = { version = "0.1", default-features = false, features = ["qrcode", "ean"] }
+```
+
+#### Symbology Features
+
+- `qrcode` - QR Code 2D barcode
+- `sqcode` - SQ Code 2D barcode
+- `ean` - EAN-8, EAN-13, UPC-A, UPC-E, ISBN-10, ISBN-13
+- `code128` - Code 128
+- `code39` - Code 39
+- `code93` - Code 93
+- `codabar` - Codabar
+- `databar` - GS1 DataBar (RSS)
+- `i25` - Interleaved 2 of 5
+
+#### Optional Dependencies
+
+**Heavy dependencies (tied to features):**
+
+- `encoding_rs`, `reed-solomon`, `rand`, `rand_chacha` - Required for QR code decoding (enabled with `qrcode` feature)
+- `image` - Image format loading (PNG, JPEG, etc.) - needed for tests and the `zbarimg` binary
+- `clap` - Command-line parsing (needed for the `zbarimg` binary)
+
+**Note:** 1D barcode decoders (EAN, Code39, Code128, etc.) have **zero external dependencies**!
+
+The `default` feature enables all symbologies plus optional dependencies:
+
+```toml
+default = ["qrcode", "sqcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "image", "clap"]
+```
+
+#### Minimal Library
+
+For the absolute minimal build with zero external dependencies (1D barcodes only):
+
+```toml
+[dependencies]
+zbar-rust = { version = "0.1", default-features = false, features = ["ean"] }
+```
+
+For QR codes only (with necessary dependencies):
+
+```toml
+[dependencies]
+zbar-rust = { version = "0.1", default-features = false, features = ["qrcode"] }
+```
+
+Note: Disabling a feature at compile-time means that symbology will not be compiled into the binary at all, which is different from disabling it via runtime configuration.
 
 ## Usage
 
@@ -84,8 +139,9 @@ cargo test
 ### Original ZBar Library
 
 This project is based on the [ZBar bar code reader](https://github.com/mchehab/zbar) library:
+
 - Original C implementation: Copyright (C) 2007-2010 Jeff Brown <spadix@users.sourceforge.net>
-- QR code decoder components: Copyright (C) 2008-2009 Timothy B. Terriberry (tterribe@xiph.org)
+- QR code decoder components: Copyright (C) 2008-2009 Timothy B. Terriberry (<tterribe@xiph.org>)
 - SQCode decoder: Copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 - Current C library maintenance: Mauro Carvalho Chehab and contributors
 
@@ -123,4 +179,3 @@ If this library doesn't meet your needs, consider these alternatives:
 LGPL 3.0 or later - See [LICENSE](LICENSE) for details.
 
 This library is licensed under the GNU Lesser General Public License v3.0 or later, consistent with the original ZBar library's licensing.
-

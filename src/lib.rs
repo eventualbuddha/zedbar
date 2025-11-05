@@ -72,11 +72,14 @@ pub mod symbol;
 pub(crate) mod color;
 pub(crate) mod decoder;
 pub(crate) mod decoders;
+#[cfg(feature = "qrcode")]
 pub(crate) mod finder;
 pub(crate) mod image_ffi;
 pub(crate) mod img_scanner;
 pub(crate) mod img_scanner_config;
+#[cfg(feature = "qrcode")]
 pub(crate) mod qrcode;
+#[cfg(feature = "sqcode")]
 pub(crate) mod sqcode;
 
 // Re-export main types
@@ -86,7 +89,7 @@ pub use image::Image;
 pub use scanner::Scanner;
 pub use symbol::{Orientation, SymbolType};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "qrcode"))]
 mod proptest_qr;
 
 #[cfg(test)]

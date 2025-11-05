@@ -2,29 +2,7 @@
 //!
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
-use crate::{color::Color, img_scanner::zbar_image_scanner_t, SymbolType};
-
-// ============================================================================
-// Helper functions from decoder.h
-// ============================================================================
-
-/// Fixed character width decode assist
-///
-/// Bar+space width are compared as a fraction of the reference dimension "x"
-/// - +/- 1/2 x tolerance
-/// - measured total character width (s) compared to symbology baseline (n)
-/// - bar+space *pair width* "e" is used to factor out bad "exposures"
-///
-/// Returns encoded number of units - 2 (for use as zero based index)
-/// or -1 if invalid
-pub(crate) fn decode_e(e: u32, s: u32, n: u32) -> i32 {
-    let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    if e_val >= n - 3 {
-        -1
-    } else {
-        e_val as i32
-    }
-}
+use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
 
 // ============================================================================
 // QR Finder functions

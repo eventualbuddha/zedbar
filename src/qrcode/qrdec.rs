@@ -9,7 +9,6 @@
 use std::{collections::VecDeque, mem::swap};
 
 use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
-use libc::{c_int, c_uchar, c_uint};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
@@ -28,13 +27,13 @@ use crate::{
 use super::bch15_5::bch15_5_correct;
 
 /// A line in QR code coordinate space: [A, B, C] for equation Ax + By + C = 0
-pub(crate) type qr_line = [c_int; 3];
+pub(crate) type qr_line = [i32; 3];
 
 /// A point in QR code coordinate space: [x, y]
-pub(crate) type qr_point = [c_int; 2];
+pub(crate) type qr_point = [i32; 2];
 
 /// Number of bits in an int (typically 32)
-const QR_INT_BITS: i32 = c_int::BITS as c_int;
+const QR_INT_BITS: i32 = i32::BITS as i32;
 
 /// Log2 of QR_INT_BITS (typically 5 for 32-bit ints)
 const QR_INT_LOGBITS: i32 = 5; // qr_ilog(32) = 5
@@ -61,7 +60,7 @@ const QR_LARGE_VERSION_SLACK: i32 = 3;
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
 /// For x/y where the fractional part is exactly 0.5, rounds away from zero.
-fn qr_divround(x: i32, y: i32) -> c_int {
+fn qr_divround(x: i32, y: i32) -> i32 {
     x.wrapping_add(x.signum().wrapping_mul(y >> 1)) / y
 }
 
@@ -69,8 +68,8 @@ fn qr_divround(x: i32, y: i32) -> c_int {
 ///
 /// Multiplies 32-bit numbers a and b, adds r, and takes bits [s, s+31] of the result.
 /// This is used for fixed-point arithmetic to avoid overflow.
-fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> c_int {
-    ((a as i64 * b as i64 + r) >> s) as c_int
+fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> i32 {
+    ((a as i64 * b as i64 + r) >> s) as i32
 }
 
 /// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
@@ -95,7 +94,7 @@ fn qr_hom_project_alignment_to_corner(
     p: &[qr_point],
     p3: &qr_point,
     dim: i32,
-) -> Result<(c_int, c_int), c_int> {
+) -> Result<(i32, i32), i32> {
     let p0 = &p[0];
     let p1 = &p[1];
     let p2 = &p[2];
@@ -133,7 +132,7 @@ fn qr_hom_project_alignment_to_corner(
         ),
     ) + mask)
         ^ mask;
-    let brx = ((brx_num + brx_num.signum() * (w >> 1)) / w) as c_int;
+    let brx = ((brx_num + brx_num.signum() * (w >> 1)) / w) as i32;
 
     let bry_num = (qr_extmul(
         (dim - 7) * p0[1],
@@ -145,7 +144,7 @@ fn qr_hom_project_alignment_to_corner(
         ),
     ) + mask)
         ^ mask;
-    let bry = ((bry_num + bry_num.signum() * (w >> 1)) / w) as c_int;
+    let bry = ((bry_num + bry_num.signum() * (w >> 1)) / w) as i32;
 
     Ok((brx, bry))
 }
@@ -177,7 +176,7 @@ fn qr_hom_fit_edge_line(
 
         // Calculate normalization shift (always uses column 1 of affine matrix)
         let shift = 0.max(
-            qr_ilog((aff.fwd[0][1].abs()).max(aff.fwd[1][1].abs()) as c_uint)
+            qr_ilog((aff.fwd[0][1].abs()).max(aff.fwd[1][1].abs()) as u32)
                 - ((aff.res + 1) >> 1),
         );
         let round = (1 << shift) >> 1;
@@ -205,7 +204,7 @@ fn qr_hom_fit_edge_line(
 #[derive(Copy, Clone, Default)]
 struct qr_hom_cell {
     /// Forward transformation matrix [3][3]
-    pub(crate) fwd: [[c_int; 3]; 3],
+    pub(crate) fwd: [[i32; 3]; 3],
     /// X offset in image space
     pub(crate) x0: i32,
     /// Y offset in image space
@@ -222,9 +221,9 @@ struct qr_sampling_grid {
     /// cells[i][j] represents the cell at row i, column j
     pub(crate) cells: Vec<Vec<qr_hom_cell>>,
     /// Mask indicating which modules are part of function patterns
-    pub(crate) fpmask: Vec<c_uint>,
+    pub(crate) fpmask: Vec<u32>,
     /// Limits for each cell region
-    pub(crate) cell_limits: [c_int; 6],
+    pub(crate) cell_limits: [i32; 6],
 }
 
 /// collection of finder lines
@@ -336,10 +335,10 @@ pub(crate) fn qr_point_translate(point: &qr_point, dx: i32, dy: i32) -> qr_point
 ///
 /// Returns the squared Euclidean distance, which avoids the need for
 /// expensive square root calculations when only relative distances matter.
-pub(crate) fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> c_uint {
+pub(crate) fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> u32 {
     let dx = p1[0] - p2[0];
     let dy = p1[1] - p2[1];
-    (dx * dx + dy * dy) as c_uint
+    (dx * dx + dy * dy) as u32
 }
 
 /// Check if three points are in counter-clockwise order
@@ -348,7 +347,7 @@ pub(crate) fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> c_uint {
 /// - Positive: points are in CCW order (in right-handed coordinate system)
 /// - Zero: points are collinear
 /// - Negative: points are in CW order
-pub(crate) fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> c_int {
+pub(crate) fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> i32 {
     let p0x = p0[0];
     let p0y = p0[1];
     let p1x = p1[0];
@@ -363,7 +362,7 @@ pub(crate) fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> c_int
 ///
 /// Given a line defined by the equation A*x + B*y + C = 0,
 /// this returns the value A*x + B*y + C for the given coordinates.
-pub(crate) fn qr_line_eval(line: &qr_line, x: i32, y: i32) -> c_int {
+pub(crate) fn qr_line_eval(line: &qr_line, x: i32, y: i32) -> i32 {
     line[0] * x + line[1] * y + line[2]
 }
 
@@ -415,7 +414,7 @@ pub(crate) fn qr_line_fit(
 ) -> qr_line {
     let u = (_sxx - _syy).abs();
     let v = -_sxy << 1;
-    let w = qr_ihypot(u, v) as c_int;
+    let w = qr_ihypot(u, v) as i32;
 
     // Compute shift factor to scale down into manageable range
     // Ensure product of any two of _l[0] and _l[1] fits within _res bits
@@ -448,10 +447,10 @@ pub(crate) fn qr_line_fit(
 pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usize, _res: i32) {
     let mut sx: i32 = 0;
     let mut sy: i32 = 0;
-    let mut xmin = c_int::MAX;
-    let mut xmax = c_int::MIN;
-    let mut ymin = c_int::MAX;
-    let mut ymax = c_int::MIN;
+    let mut xmin = i32::MAX;
+    let mut xmax = i32::MIN;
+    let mut ymin = i32::MAX;
+    let mut ymax = i32::MIN;
 
     // Compute centroid and bounds
     for point in _p.iter() {
@@ -465,8 +464,8 @@ pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usi
         ymax = ymax.max(py);
     }
 
-    let xbar = (sx + (_np >> 1) as c_int) / _np as c_int;
-    let ybar = (sy + (_np >> 1) as c_int) / _np as c_int;
+    let xbar = (sx + (_np >> 1) as i32) / _np as i32;
+    let ybar = (sy + (_np >> 1) as i32) / _np as i32;
 
     // Compute shift to prevent overflow in covariance calculation
     let sshift = 0.max(
@@ -502,9 +501,9 @@ pub(crate) fn qr_line_fit_points(_l: &mut qr_line, _p: &mut [qr_point], _np: usi
 #[derive(Copy, Clone, Default)]
 pub(crate) struct qr_aff {
     /// Forward transformation matrix [2][2]
-    pub(crate) fwd: [[c_int; 2]; 2],
+    pub(crate) fwd: [[i32; 2]; 2],
     /// Inverse transformation matrix [2][2]
-    pub(crate) inv: [[c_int; 2]; 2],
+    pub(crate) inv: [[i32; 2]; 2],
     /// X offset
     pub(crate) x0: i32,
     /// Y offset
@@ -528,7 +527,7 @@ pub(crate) fn qr_aff_init(
     let dy1 = _p1[1] - _p0[1];
     let dy2 = _p2[1] - _p0[1];
     let det = dx1 * dy2 - dy1 * dx2;
-    let ires = c_int::max(((qr_ilog(det.unsigned_abs()) as u32 >> 1) - 2) as i32, 0);
+    let ires = i32::max(((qr_ilog(det.unsigned_abs()) as u32 >> 1) - 2) as i32, 0);
     _aff.fwd[0][0] = dx1;
     _aff.fwd[0][1] = dx2;
     _aff.fwd[1][0] = dy1;
@@ -580,8 +579,8 @@ pub(crate) fn qr_aff_project(_aff: &qr_aff, _u: i32, _v: i32) -> qr_point {
 /// to a square domain with power-of-two sides (of res bits) and back.
 #[derive(Copy, Clone, Default)]
 pub(crate) struct qr_hom {
-    fwd: [[c_int; 2]; 3],
-    inv: [[c_int; 2]; 3],
+    fwd: [[i32; 2]; 3],
+    inv: [[i32; 2]; 3],
     fwd22: i32,
     inv22: i32,
     x0: i32,
@@ -622,13 +621,13 @@ pub(crate) fn qr_hom_init(
 
     // Figure out if we need to downscale anything
     let b0 =
-        qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
+        qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
     let b1 =
-        qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(c_int::max(c_int::max(a20.abs(), a21.abs()), a22.abs()) as u32);
-    let s1 = c_int::max(
+        qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
+    let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let s1 = i32::max(
         0,
-        _res + c_int::max(c_int::max(b0, b1), b2) - (QR_INT_BITS - 2),
+        _res + i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 2),
     );
     let r1 = (1i64 << s1) >> 1;
 
@@ -640,21 +639,21 @@ pub(crate) fn qr_hom_init(
     _hom.fwd[1][0] = qr_fixmul(dy10, a20 + a22, r1, s1);
     _hom.fwd[1][1] = qr_fixmul(dy20, a21 + a22, r1, s1);
     _hom.y0 = _y0;
-    _hom.fwd[2][0] = (a20 + r1 as c_int) >> s1;
-    _hom.fwd[2][1] = (a21 + r1 as c_int) >> s1;
+    _hom.fwd[2][0] = (a20 + r1 as i32) >> s1;
+    _hom.fwd[2][1] = (a21 + r1 as i32) >> s1;
     _hom.fwd22 = if s1 > _res {
-        (a22 + ((r1 >> _res) as c_int)) >> (s1 - _res)
+        (a22 + ((r1 >> _res) as i32)) >> (s1 - _res)
     } else {
         a22 << (_res - s1)
     };
 
     // Now compute the inverse transform
-    let b0 = qr_ilog(c_int::max(c_int::max(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
-        + qr_ilog(c_int::max(_hom.fwd[0][0].abs(), _hom.fwd[1][0].abs()) as u32);
-    let b1 = qr_ilog(c_int::max(c_int::max(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
-        + qr_ilog(c_int::max(_hom.fwd[0][1].abs(), _hom.fwd[1][1].abs()) as u32);
+    let b0 = qr_ilog(i32::max(i32::max(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
+        + qr_ilog(i32::max(_hom.fwd[0][0].abs(), _hom.fwd[1][0].abs()) as u32);
+    let b1 = qr_ilog(i32::max(i32::max(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
+        + qr_ilog(i32::max(_hom.fwd[0][1].abs(), _hom.fwd[1][1].abs()) as u32);
     let b2 = qr_ilog(a22.unsigned_abs()) - s1;
-    let s2 = c_int::max(0, c_int::max(b0, b1) + b2 - (QR_INT_BITS - 3));
+    let s2 = i32::max(0, i32::max(b0, b1) + b2 - (QR_INT_BITS - 3));
     let r2 = (1i64 << s2) >> 1;
     let s1 = s1 + s2;
     let r1 = r1 << s2;
@@ -701,7 +700,7 @@ fn qr_hom_fit(
     img: &[u8],
     _width: i32,
     _height: i32,
-) -> c_int {
+) -> i32 {
     let mut l: [qr_line; 4] = [[0; 3]; 4];
 
     // We attempt to correct large-scale perspective distortion by fitting lines
@@ -863,7 +862,7 @@ fn qr_hom_fit(
             if rv + drv > rv {
                 rv += drv;
             } else {
-                nrempty = c_int::MAX;
+                nrempty = i32::MAX;
             }
             rx += drxi;
             ry += dryi;
@@ -925,7 +924,7 @@ fn qr_hom_fit(
             if bu + dbu > bu {
                 bu += dbu;
             } else {
-                nbempty = c_int::MAX;
+                nbempty = i32::MAX;
             }
             bv += dbv;
             bx += dbxi;
@@ -1025,8 +1024,8 @@ fn qr_hom_fit(
 pub(crate) fn qr_hom_fproject(_hom: &qr_hom, mut _x: i32, mut _y: i32, mut _w: i32) -> qr_point {
     if _w == 0 {
         [
-            if _x < 0 { c_int::MIN } else { c_int::MAX },
-            if _y < 0 { c_int::MIN } else { c_int::MAX },
+            if _x < 0 { i32::MIN } else { i32::MAX },
+            if _y < 0 { i32::MIN } else { i32::MAX },
         ]
     } else {
         if _w < 0 {
@@ -1043,16 +1042,16 @@ pub(crate) fn qr_hom_fproject(_hom: &qr_hom, mut _x: i32, mut _y: i32, mut _w: i
 #[derive(Default)]
 struct qr_finder {
     /// The module size along each axis (in the square domain).
-    size: [c_int; 2],
+    size: [i32; 2],
 
     /// The version estimated from the module size along each axis.
-    eversion: [c_int; 2],
+    eversion: [i32; 2],
 
     /// The list of classified edge points for each edge.
     edge_pts: [Vec<qr_finder_edge_pt>; 4],
 
     /// The number of inliers found after running RANSAC on each edge.
-    ninliers: [c_int; 4],
+    ninliers: [i32; 4],
 
     /// The center of the finder pattern (in the square domain).
     o: qr_point,
@@ -1095,8 +1094,8 @@ impl qr_finder {
                 Ok(mut q) => {
                     // Successful projection
                     q = qr_point_translate(&q, -self.o[0], -self.o[1]);
-                    let d = c_int::from(q[1].abs() > q[0].abs());
-                    let e = d << 1 | c_int::from(q[d as usize] >= 0);
+                    let d = i32::from(q[1].abs() > q[0].abs());
+                    let e = d << 1 | i32::from(q[d as usize] >= 0);
                     (e, q[d as usize])
                 }
                 Err(q) => {
@@ -1135,8 +1134,8 @@ impl qr_finder {
         for edge_pt in center.edge_pts.iter() {
             let mut q = qr_aff_unproject(_aff, edge_pt.pos[0], edge_pt.pos[1]);
             q = qr_point_translate(&q, -self.o[0], -self.o[1]);
-            let d = c_int::from(q[1].abs() > q[0].abs());
-            let e = d << 1 | c_int::from(q[d as usize] >= 0);
+            let d = i32::from(q[1].abs() > q[0].abs());
+            let e = d << 1 | i32::from(q[d as usize] >= 0);
 
             self.edge_pts[e as usize].push(qr_finder_edge_pt {
                 pos: edge_pt.pos,
@@ -1156,13 +1155,13 @@ impl qr_finder {
     /// _height: The distance between UL and DL in the square domain.
     ///
     /// Returns 0 on success, or -1 if the module size or version could not be estimated.
-    fn estimate_module_size_and_version(&mut self, _width: i32, _height: i32) -> c_int {
+    fn estimate_module_size_and_version(&mut self, _width: i32, _height: i32) -> i32 {
         let mut offs = qr_point::default();
-        let mut sums: [c_int; 4] = [0; 4];
-        let mut nsums: [c_int; 4] = [0; 4];
+        let mut sums: [i32; 4] = [0; 4];
+        let mut nsums: [i32; 4] = [0; 4];
 
         for e in 0..4 {
-            let n = self.edge_pts[e].len() as c_int;
+            let n = self.edge_pts[e].len() as i32;
             if n > 0 {
                 // Average the samples for this edge, dropping the top and bottom 25%
                 let mut sum: i32 = 0;
@@ -1268,7 +1267,7 @@ impl qr_finder {
 /// among the edge points and eliminate outliers.
 fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e: i32) {
     let edge_idx = _e as usize;
-    let n = _f.edge_pts[edge_idx].len() as c_int;
+    let n = _f.edge_pts[edge_idx].len() as i32;
     let mut best_ninliers = 0;
 
     if n > 1 {
@@ -1314,7 +1313,7 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
             let thresh =
-                qr_isqrt(qr_point_distance2(&p0, &p1) << (2 * QR_FINDER_SUBPREC + 1)) as c_int;
+                qr_isqrt(qr_point_distance2(&p0, &p1) << (2 * QR_FINDER_SUBPREC + 1)) as i32;
             let mut ninliers = 0;
 
             for j in 0..n as usize {
@@ -1364,7 +1363,7 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
 }
 
 /// Perform a least-squares line fit to an edge of a finder pattern using the inliers found by RANSAC.
-fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: i32, _res: i32) -> c_int {
+fn qr_line_fit_finder_edge(_l: &mut qr_line, _f: &qr_finder, _e: i32, _res: i32) -> i32 {
     let npts = _f.ninliers[_e as usize] as usize;
     if npts < 2 {
         return -1;
@@ -1454,8 +1453,8 @@ pub(crate) fn qr_hom_unproject(
         >> _hom.res;
     if w == 0 {
         Err([
-            if x < 0 { c_int::MIN } else { c_int::MAX },
-            if y < 0 { c_int::MIN } else { c_int::MAX },
+            if x < 0 { i32::MIN } else { i32::MAX },
+            if y < 0 { i32::MIN } else { i32::MAX },
         ])
     } else {
         if w < 0 {
@@ -1472,7 +1471,7 @@ pub(crate) fn qr_hom_unproject(
 /// Bit reading code adapted from libogg/libtheora.
 /// Original bit reading code copyright (C) Xiph.Org Foundation 1994-2008, BSD-style license.
 pub(crate) struct qr_pack_buf<'a> {
-    buf: &'a [c_uchar],
+    buf: &'a [u8],
     endbyte: i32,
     endbit: i32,
 }
@@ -1481,10 +1480,10 @@ pub(crate) struct qr_pack_buf<'a> {
 ///
 /// Assumes 0 <= _bits <= 16
 /// Returns the read value, or `None` if there aren't enough bits available
-pub(crate) fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: i32) -> Option<c_int> {
+pub(crate) fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: i32) -> Option<i32> {
     let m = 16 - _bits;
     let bits = _bits + _b.endbit;
-    let storage = _b.buf.len() as c_int;
+    let storage = _b.buf.len() as i32;
     let d = storage - _b.endbyte;
 
     if d <= 2 {
@@ -1502,21 +1501,21 @@ pub(crate) fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: i32) -> Option<c_int
     }
 
     let idx = _b.endbyte as usize;
-    let mut ret = (c_uint::from(_b.buf[idx]) << (8 + _b.endbit)) as c_uint;
+    let mut ret = (u32::from(_b.buf[idx]) << (8 + _b.endbit));
     if bits > 8 {
-        ret |= c_uint::from(_b.buf[idx + 1]) << _b.endbit;
+        ret |= u32::from(_b.buf[idx + 1]) << _b.endbit;
         if bits > 16 {
-            ret |= c_uint::from(_b.buf[idx + 2]) >> (8 - _b.endbit);
+            ret |= u32::from(_b.buf[idx + 2]) >> (8 - _b.endbit);
         }
     }
     _b.endbyte += bits >> 3;
     _b.endbit = bits & 7;
-    Some(((ret & 0xFFFF) >> m) as c_int)
+    Some(((ret & 0xFFFF) >> m) as i32)
 }
 
 /// Get the number of bits available to read from the pack buffer
-pub(crate) fn qr_pack_buf_avail(_b: &qr_pack_buf) -> c_int {
-    let storage = _b.buf.len() as c_int;
+pub(crate) fn qr_pack_buf_avail(_b: &qr_pack_buf) -> i32 {
+    let storage = _b.buf.len() as i32;
     ((storage - _b.endbyte) << 3) - _b.endbit
 }
 
@@ -1530,7 +1529,7 @@ pub(crate) fn qr_code_ncodewords(_version: u32) -> usize {
     }
     let nalign = (_version / 7) + 2;
     (((_version << 4) * (_version + 8) - (5 * nalign) * (5 * nalign - 2)
-        + 36 * c_uint::from(_version < 7)
+        + 36 * u32::from(_version < 7)
         + 83)
         >> 3) as usize
 }
@@ -1857,13 +1856,13 @@ fn qr_sampling_grid_is_in_fp(_grid: &qr_sampling_grid, _dim: usize, _u: i32, _v:
 /// The spacing between alignment patterns after the second for versions >= 7
 ///
 /// We could compact this more, but the code to access it would eliminate the gains.
-pub(crate) static QR_ALIGNMENT_SPACING: [c_uchar; 34] = [
+pub(crate) static QR_ALIGNMENT_SPACING: [u8; 34] = [
     16, 18, 20, 22, 24, 26, 28, 20, 22, 24, 24, 26, 28, 28, 22, 24, 24, 26, 26, 28, 28, 24, 24, 26,
     26, 26, 28, 28, 24, 26, 26, 26, 28, 28,
 ];
 
 /// Bulk data for the number of parity bytes per Reed-Solomon block
-pub(crate) static QR_RS_NPAR_VALS: [c_uchar; 71] = [
+pub(crate) static QR_RS_NPAR_VALS: [u8; 71] = [
     // [ 0]
     7, 10, 13, 17, // [ 4]
     10, 16, 22, 28, 26, 26, 26, 22, 24, 22, 22, 26, 24, 18, 22, // [19]
@@ -1876,13 +1875,13 @@ pub(crate) static QR_RS_NPAR_VALS: [c_uchar; 71] = [
 
 /// An offset into QR_RS_NPAR_VALS for each version that gives the number of
 /// parity bytes per Reed-Solomon block for each error correction level
-pub(crate) static QR_RS_NPAR_OFFS: [c_uchar; 40] = [
+pub(crate) static QR_RS_NPAR_OFFS: [u8; 40] = [
     0, 4, 19, 55, 15, 28, 37, 12, 51, 39, 59, 62, 10, 24, 22, 41, 31, 44, 7, 65, 47, 33, 67, 67,
     48, 32, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67, 67,
 ];
 
 /// The number of Reed-Solomon blocks for each version and error correction level
-pub(crate) static QR_RS_NBLOCKS: [[c_uchar; 4]; 40] = [
+pub(crate) static QR_RS_NBLOCKS: [[u8; 4]; 40] = [
     [1, 1, 1, 1],
     [1, 1, 1, 1],
     [1, 1, 2, 2],
@@ -1935,7 +1934,7 @@ pub(crate) fn qr_finder_quick_crossing_check(
     _x1: i32,
     _y1: i32,
     _v: i32,
-) -> c_int {
+) -> i32 {
     // The points must be inside the image, and have a !_v:_v:!_v pattern.
     // We don't scan the whole line initially, but quickly reject if the endpoints
     // aren't !_v, or the midpoint isn't _v.
@@ -1955,12 +1954,12 @@ pub(crate) fn qr_finder_quick_crossing_check(
         return -1;
     }
 
-    if (c_int::from(_img[(_y0 * _width + _x0) as usize] == 0)) != _v
-        || (c_int::from(_img[(_y1 * _width + _x1) as usize] == 0)) != _v
+    if (i32::from(_img[(_y0 * _width + _x0) as usize] == 0)) != _v
+        || (i32::from(_img[(_y1 * _width + _x1) as usize] == 0)) != _v
     {
         return 1;
     }
-    if (c_int::from(_img[(((_y0 + _y1) >> 1) * _width + ((_x0 + _x1) >> 1)) as usize] == 0)) == _v {
+    if (i32::from(_img[(((_y0 + _y1) >> 1) * _width + ((_x0 + _x1) >> 1)) as usize] == 0)) == _v {
         return -1;
     }
     0
@@ -1985,7 +1984,7 @@ pub(crate) fn qr_aff_line_step(
     line: &qr_line,
     v: i32,
     du: i32,
-) -> Result<c_int, c_int> {
+) -> Result<i32, i32> {
     let l0 = line[0];
     let l1 = line[1];
 
@@ -2000,7 +1999,7 @@ pub(crate) fn qr_aff_line_step(
     }
 
     // Calculate shift to prevent overflow
-    let shift = c_int::max(
+    let shift = i32::max(
         0,
         qr_ilog(du as u32) + qr_ilog(n.unsigned_abs()) + 3 - QR_INT_BITS,
     );
@@ -2029,7 +2028,7 @@ pub(crate) fn qr_aff_line_step(
 ///
 /// Counts the number of bit positions where the values differ,
 /// up to a maximum of maxdiff.
-pub(crate) fn qr_hamming_dist(y1: u32, y2: u32, maxdiff: i32) -> c_int {
+pub(crate) fn qr_hamming_dist(y1: u32, y2: u32, maxdiff: i32) -> i32 {
     let mut y = y1 ^ y2;
     let mut ret = 0;
 
@@ -2045,7 +2044,7 @@ pub(crate) fn qr_hamming_dist(y1: u32, y2: u32, maxdiff: i32) -> c_int {
 ///
 /// These codes are used for QR code version information,
 /// which must be between 7 and 40 (inclusive).
-const BCH18_6_CODES: [c_uint; 34] = [
+const BCH18_6_CODES: [u32; 34] = [
     0x07C94, 0x085BC, 0x09A99, 0x0A4D3, 0x0BBF6, 0x0C762, 0x0D847, 0x0E60D, 0x0F928, 0x10B78,
     0x1145D, 0x12A17, 0x13532, 0x149A6, 0x15683, 0x168C9, 0x177EC, 0x18EC4, 0x191E1, 0x1AFAB,
     0x1B08E, 0x1CC1A, 0x1D33F, 0x1ED75, 0x1F250, 0x209D5, 0x216F0, 0x228BA, 0x2379F, 0x24B0B,
@@ -2063,7 +2062,7 @@ fn qr_finder_version_decode(
     _width: i32,
     _height: i32,
     _dir: i32,
-) -> c_int {
+) -> i32 {
     let mut q = qr_point::default();
     let mut v: u32 = 0;
 
@@ -2092,7 +2091,7 @@ fn qr_finder_version_decode(
         let mut w = w0;
         for _j in 0..3 {
             let p = qr_hom_fproject(_hom, x, y, w);
-            v |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+            v |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as u32) << k;
             k += 1;
             x += dxj;
             y += dyj;
@@ -2105,7 +2104,7 @@ fn qr_finder_version_decode(
 
     // Use BCH error correction to decode the version
     match bch18_6_correct(v) {
-        Ok((corrected, _nerrs)) => (corrected >> 12) as c_int,
+        Ok((corrected, _nerrs)) => (corrected >> 12) as i32,
         Err(Bch18_6CorrectError::Unrecoverable) => -1,
     }
 }
@@ -2124,9 +2123,9 @@ fn qr_finder_fmt_info_decode(
     _img: &[u8],
     _width: i32,
     _height: i32,
-) -> c_int {
-    let mut lo: [c_uint; 2] = [0; 2];
-    let mut hi: [c_uint; 2] = [0; 2];
+) -> i32 {
+    let mut lo: [u32; 2] = [0; 2];
+    let mut hi: [u32; 2] = [0; 2];
 
     // Read the bits around the UL corner
     lo[0] = 0;
@@ -2145,7 +2144,7 @@ fn qr_finder_fmt_info_decode(
         // Skip the timing pattern row
         if i != 6 {
             let p = qr_hom_fproject(_hom, x, y, w);
-            lo[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+            lo[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as u32) << k;
             k += 1;
             // Don't advance q in the last iteration... we'll start the next loop from
             // the current position.
@@ -2171,7 +2170,7 @@ fn qr_finder_fmt_info_decode(
         // Skip the timing pattern column
         if i != 6 {
             let p = qr_hom_fproject(_hom, x, y, w);
-            hi[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+            hi[0] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as u32) << k;
             k += 1;
         }
     }
@@ -2188,7 +2187,7 @@ fn qr_finder_fmt_info_decode(
     dw = -_hom.fwd[2][0] * _ur.size[0];
     for k in 0..8 {
         let p = qr_hom_fproject(_hom, x, y, w);
-        lo[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+        lo[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as u32) << k;
         x += dx;
         y += dy;
         w += dw;
@@ -2206,7 +2205,7 @@ fn qr_finder_fmt_info_decode(
     dw = _hom.fwd[2][1] * _dl.size[1];
     for k in 8..15 {
         let p = qr_hom_fproject(_hom, x, y, w);
-        hi[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint) << k;
+        hi[1] |= (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as u32) << k;
         x += dx;
         y += dy;
         w += dw;
@@ -2215,11 +2214,11 @@ fn qr_finder_fmt_info_decode(
     // For each group of bits we have two samples... try them in all combinations
     // and pick the most popular valid code, breaking ties using the number of
     // bit errors.
-    let imax = 2 << (hi[0] != hi[1]) as c_int;
-    let di = 1 + (lo[0] == lo[1]) as c_int;
-    let mut fmt_info: [c_int; 4] = [0; 4];
-    let mut count: [c_int; 4] = [0; 4];
-    let mut nerrs: [c_int; 4] = [0; 4];
+    let imax = 2 << (hi[0] != hi[1]) as i32;
+    let di = 1 + (lo[0] == lo[1]) as i32;
+    let mut fmt_info: [i32; 4] = [0; 4];
+    let mut count: [i32; 4] = [0; 4];
+    let mut nerrs: [i32; 4] = [0; 4];
     let mut nfmt_info = 0;
 
     let mut i = 0;
@@ -2234,13 +2233,13 @@ fn qr_finder_fmt_info_decode(
         let mut j = 0;
         loop {
             if j >= nfmt_info {
-                fmt_info[j] = v as c_int;
+                fmt_info[j] = v as i32;
                 count[j] = 1;
                 nerrs[j] = ret;
                 nfmt_info += 1;
                 break;
             }
-            if fmt_info[j] == v as c_int {
+            if fmt_info[j] == v as i32 {
                 count[j] += 1;
                 if ret < nerrs[j] {
                     nerrs[j] = ret;
@@ -2273,7 +2272,7 @@ fn qr_finder_fmt_info_decode(
 ///
 /// Fills a buffer with the specified data mask pattern. The mask is stored
 /// column-wise since that's how bits are read out of the QR code grid.
-pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
+pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<u32> {
     let data_word_count = _dim * ((_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize);
     let mut _mask = vec![0; data_word_count];
     let stride = (_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize;
@@ -2287,7 +2286,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
         0 => {
             let mut m: u32 = 0x55;
             for j in 0.._dim {
-                // Replicate byte value across all bytes of c_uint (like memset does)
+                // Replicate byte value across all bytes of u32 (like memset does)
                 let replicated = m * 0x01010101;
                 _mask[j * stride..][..stride].fill(replicated);
                 m ^= 0xFF;
@@ -2298,7 +2297,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
         //            11111111
         //            00000000
         1 => {
-            // Replicate byte value across all bytes of c_uint (like memset does)
+            // Replicate byte value across all bytes of u32 (like memset does)
             _mask[.._dim * stride].fill(0x55555555);
         }
         // Pattern 2: 10010010 ((j+1)%3&1)
@@ -2308,7 +2307,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
         2 => {
             let mut m: u32 = 0xFF;
             for j in 0.._dim {
-                // Replicate byte value across all bytes of c_uint (like memset does)
+                // Replicate byte value across all bytes of u32 (like memset does)
                 let replicated = (m & 0xFF) * 0x01010101;
                 _mask[j * stride..][..stride].fill(replicated);
                 m = (m << 8) | (m >> 16);
@@ -2339,7 +2338,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
         4 => {
             let mut m: u32 = 7;
             for j in 0.._dim {
-                // Replicate byte value across all bytes of c_uint (like memset does)
+                // Replicate byte value across all bytes of u32 (like memset does)
                 let replicated = ((0xCC ^ (m & 1).wrapping_neg()) & 0xFF) * 0x01010101;
                 _mask[j * stride..][..stride].fill(replicated);
                 m = (m >> 1) | (m << 5);
@@ -2353,7 +2352,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
             for j in 0.._dim {
                 let mut m: u32 = 0;
                 for i in 0..6 {
-                    m |= ((((i * j) % 6) == 0) as c_uint) << i;
+                    m |= ((((i * j) % 6) == 0) as u32) << i;
                 }
                 let mut i = 6;
                 while i < QR_INT_BITS {
@@ -2374,7 +2373,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
             for j in 0.._dim {
                 let mut m: u32 = 0;
                 for i in 0..6 {
-                    m |= ((((i * j) % 3 + i * j + 1) & 1) as c_uint) << i;
+                    m |= ((((i * j) % 3 + i * j + 1) & 1) as u32) << i;
                 }
                 let mut i = 6;
                 while i < QR_INT_BITS {
@@ -2395,7 +2394,7 @@ pub(crate) fn qr_make_data_mask(_dim: usize, _pattern: i32) -> Vec<c_uint> {
             for j in 0.._dim {
                 let mut m: u32 = 0;
                 for i in 0..6 {
-                    m |= ((((i * j) % 3 + i + j + 1) & 1) as c_uint) << i;
+                    m |= ((((i * j) % 3 + i + j + 1) & 1) as u32) << i;
                 }
                 let mut i = 6;
                 while i < QR_INT_BITS {
@@ -2437,7 +2436,7 @@ fn qr_sampling_grid_init(
         u0: 0,
         v0: 0,
     };
-    let mut align_pos: [c_int; 7] = [0; 7];
+    let mut align_pos: [i32; 7] = [0; 7];
 
     let dim = 17 + (_version << 2);
     let nalign = (_version / 7) + 2;
@@ -2498,7 +2497,7 @@ fn qr_sampling_grid_init(
         align_pos[0] = 6;
         align_pos[(nalign - 1) as usize] = dim - 7;
         if _version > 6 {
-            let d = QR_ALIGNMENT_SPACING[(_version - 7) as usize] as c_int;
+            let d = QR_ALIGNMENT_SPACING[(_version - 7) as usize] as i32;
             for i in (1..(nalign - 1)).rev() {
                 align_pos[i as usize] = align_pos[(i + 1) as usize] - d;
             }
@@ -2520,8 +2519,8 @@ fn qr_sampling_grid_init(
 
         // Scan for alignment patterns using a diagonal sweep
         for k in 1..(2 * nalign - 1) {
-            let jmax = c_int::min(k, nalign - 1) - (if k == nalign - 1 { 1 } else { 0 });
-            let jmin = c_int::max(0, k - (nalign - 1)) + (if k == nalign - 1 { 1 } else { 0 });
+            let jmax = i32::min(k, nalign - 1) - (if k == nalign - 1 { 1 } else { 0 });
+            let jmin = i32::max(0, k - (nalign - 1)) + (if k == nalign - 1 { 1 } else { 0 });
             for j in jmin..=jmax {
                 let i = jmax - (j - jmin);
                 let k_idx = i * nalign + j;
@@ -2661,13 +2660,13 @@ fn qr_sampling_grid_init(
 
     // Clamp the points somewhere near the image
     for point in _p {
-        point[0] = c_int::max(
+        point[0] = i32::max(
             -(_width << QR_FINDER_SUBPREC),
-            c_int::min(point[0], (_width << QR_FINDER_SUBPREC) + 1),
+            i32::min(point[0], (_width << QR_FINDER_SUBPREC) + 1),
         );
-        point[1] = c_int::max(
+        point[1] = i32::max(
             -(_height << QR_FINDER_SUBPREC),
-            c_int::min(point[1], (_height << QR_FINDER_SUBPREC) + 1),
+            i32::min(point[1], (_height << QR_FINDER_SUBPREC) + 1),
         );
     }
 }
@@ -2683,7 +2682,7 @@ fn qr_sampling_grid_sample(
     _img: &[u8],
     _width: i32,
     _height: i32,
-) -> Vec<c_uint> {
+) -> Vec<u32> {
     // We initialize the buffer with the data mask and XOR bits into it as we read
     // them out of the image instead of unmasking in a separate step
     let mut _data_bits = qr_make_data_mask(_dim, _fmt_info & 7);
@@ -2715,7 +2714,7 @@ fn qr_sampling_grid_sample(
                     if !qr_sampling_grid_is_in_fp(_grid, _dim, u, v) {
                         let p = qr_hom_cell_fproject(cell, x, y, w);
                         _data_bits[(u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)] ^=
-                            (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as c_uint)
+                            (qr_img_get_bit(_img, _width, _height, p[0], p[1]) as u32)
                                 << (v & (QR_INT_BITS - 1));
                     }
                     x += cell.fwd[0][1];
@@ -2743,8 +2742,8 @@ pub(crate) fn qr_samples_unpack(
     mut block_positions: Vec<usize>,
     _nshort_data: usize,
     mut _nshort_blocks: usize,
-    _data_bits: &[c_uint],
-    _fp_mask: &[c_uint],
+    _data_bits: &[u32],
+    _fp_mask: &[u32],
     _dim: usize,
 ) {
     let _nblocks = block_positions.len();
@@ -2790,7 +2789,7 @@ pub(crate) fn qr_samples_unpack(
                 if biti >= 8 {
                     biti -= 8;
                     let pos = block_positions[blocki];
-                    block_data[pos] = (bits >> biti) as c_uchar;
+                    block_data[pos] = (bits >> biti) as u8;
                     block_positions[blocki] += 1;
                     blocki += 1;
 
@@ -2847,7 +2846,7 @@ pub(crate) fn qr_samples_unpack(
                 if biti >= 8 {
                     biti -= 8;
                     let pos = block_positions[blocki];
-                    block_data[pos] = (bits >> biti) as c_uchar;
+                    block_data[pos] = (bits >> biti) as u8;
                     block_positions[blocki] += 1;
                     blocki += 1;
 
@@ -2884,7 +2883,7 @@ enum Bch18_6CorrectError {
 /// Returns:
 /// - `Ok((corrected_value, num_errors))` where `num_errors` is 0-3
 /// - `Err(Bch18_6CorrectError::Unrecoverable)` if more than 3 errors were detected
-fn bch18_6_correct(y: u32) -> Result<(c_uint, c_int), Bch18_6CorrectError> {
+fn bch18_6_correct(y: u32) -> Result<(u32, i32), Bch18_6CorrectError> {
     // Check the easy case first: see if the data bits were uncorrupted
     let x = y >> 12;
     if (7..=40).contains(&x) {
@@ -3052,13 +3051,13 @@ fn qr_hom_cell_init(
 
     // Figure out if we need to downscale
     let b0 =
-        qr_ilog(c_int::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
+        qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
     let b1 =
-        qr_ilog(c_int::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(c_int::max(c_int::max(a20.abs(), a21.abs()), a22.abs()) as u32);
-    let shift = c_int::max(
+        qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
+    let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let shift = i32::max(
         0,
-        c_int::max(c_int::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC),
+        i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC),
     );
     let round = (1i64 << shift) >> 1;
 
@@ -3080,14 +3079,14 @@ fn qr_hom_cell_init(
     cell.fwd[2][0] = ((if i00 != 0 { qr_divround(a20, i00) } else { 0 })
         + (if i10 != 0 { qr_divround(a21, i10) } else { 0 })
         + (if i20 != 0 { qr_divround(a22, i20) } else { 0 })
-        + round as c_int) as c_int
+        + round as i32)
         >> shift;
     cell.fwd[2][1] = ((if i01 != 0 { qr_divround(a20, i01) } else { 0 })
         + (if i11 != 0 { qr_divround(a21, i11) } else { 0 })
         + (if i21 != 0 { qr_divround(a22, i21) } else { 0 })
-        + round as c_int) as c_int
+        + round as i32)
         >> shift;
-    cell.fwd[2][2] = ((a22 + round as c_int) >> shift) as c_int;
+    cell.fwd[2][2] = ((a22 + round as i32) >> shift);
 
     // Compute offsets to distribute rounding error over whole range
     // (instead of concentrating it in the (u3,v3) corner)
@@ -3121,7 +3120,7 @@ fn qr_hom_cell_init(
 ///
 /// Samples a pixel from the binarized image, with coordinates in QR_FINDER_SUBPREC
 /// subpixel units. Clamps coordinates to valid image bounds.
-pub(crate) fn qr_img_get_bit(img: &[u8], width: i32, height: i32, mut x: i32, mut y: i32) -> c_int {
+pub(crate) fn qr_img_get_bit(img: &[u8], width: i32, height: i32, mut x: i32, mut y: i32) -> i32 {
     x >>= QR_FINDER_SUBPREC;
     y >>= QR_FINDER_SUBPREC;
     let y_clamped = y.clamp(0, height - 1);
@@ -3141,8 +3140,8 @@ pub(crate) fn qr_img_get_bit(img: &[u8], width: i32, height: i32, mut x: i32, mu
 fn qr_hom_cell_fproject(_cell: &qr_hom_cell, mut _x: i32, mut _y: i32, mut _w: i32) -> qr_point {
     if _w == 0 {
         [
-            if _x < 0 { c_int::MIN } else { c_int::MAX },
-            if _y < 0 { c_int::MIN } else { c_int::MAX },
+            if _x < 0 { i32::MIN } else { i32::MAX },
+            if _y < 0 { i32::MIN } else { i32::MAX },
         ]
     } else {
         if _w < 0 {
@@ -3185,7 +3184,7 @@ pub(crate) fn qr_finder_locate_crossing(
     y1: i32,
     v: i32,
     p: &mut qr_point,
-) -> c_int {
+) -> i32 {
     let mut x0_pos = [x0, y0];
     let mut x1_pos = [x1, y1];
     let dx = [(x1 - x0).abs(), (y1 - y0).abs()];
@@ -3207,7 +3206,7 @@ pub(crate) fn qr_finder_locate_crossing(
             err -= dx[steep];
         }
         let pixel = img[(x0_pos[1] * width + x0_pos[0]) as usize];
-        if ((pixel == 0) as c_int) != v {
+        if ((pixel == 0) as i32) != v {
             break;
         }
     }
@@ -3225,7 +3224,7 @@ pub(crate) fn qr_finder_locate_crossing(
             err -= dx[steep];
         }
         let pixel = img[(x1_pos[1] * width + x1_pos[0]) as usize];
-        if ((pixel == 0) as c_int) != v {
+        if ((pixel == 0) as i32) != v {
             break;
         }
     }
@@ -3247,14 +3246,14 @@ fn qr_alignment_pattern_fetch(
     img: &[u8],
     width: i32,
     height: i32,
-) -> c_uint {
+) -> u32 {
     let dx = x0 - p[2][2][0];
     let dy = y0 - p[2][2][1];
     let mut v = 0u32;
     let mut k = 0;
     for pi in p {
         for pij in pi {
-            v |= (qr_img_get_bit(img, width, height, pij[0] + dx, pij[1] + dy) as c_uint) << k;
+            v |= (qr_img_get_bit(img, width, height, pij[0] + dx, pij[1] + dy) as u32) << k;
             k += 1;
         }
     }
@@ -3275,9 +3274,9 @@ fn qr_alignment_pattern_search(
     img: &[u8],
     width: i32,
     height: i32,
-) -> c_int {
+) -> i32 {
     let mut pattern: [[qr_point; 5]; 5] = [[Default::default(); 5]; 5];
-    let mut nc = [0 as c_int; 4];
+    let mut nc = [0_i32; 4];
     let mut c: [qr_point; 4] = [[0; 2]; 4];
     let mut pc = qr_point::default();
 
@@ -3384,7 +3383,7 @@ fn qr_alignment_pattern_search(
     let dy = besty - pattern[2][2][1];
 
     // We consider 8 lines across the finder pattern in turn
-    const MASK_TESTS: [[c_uint; 2]; 8] = [
+    const MASK_TESTS: [[u32; 2]; 8] = [
         [0x1040041, 0x1000001],
         [0x0041040, 0x0001000],
         [0x0110110, 0x0100010],
@@ -3433,7 +3432,7 @@ fn qr_alignment_pattern_search(
                 y0,
                 x1,
                 y1,
-                (i & 1) as c_int,
+                (i & 1) as i32,
                 &mut pc,
             ) == 0
             {
@@ -3458,7 +3457,7 @@ fn qr_alignment_pattern_search(
         let a = nc[i << 1];
         let b = nc[(i << 1) | 1];
         if a != 0 && b != 0 {
-            let w = c_int::max(a, b);
+            let w = i32::max(a, b);
             c[i << 1][0] = qr_divround(w * (b * c[i << 1][0] + a * c[(i << 1) | 1][0]), a * b);
             c[i << 1][1] = qr_divround(w * (b * c[i << 1][1] + a * c[(i << 1) | 1][1]), a * b);
             nc[i << 1] = w << 1;
@@ -3534,7 +3533,7 @@ impl qr_reader {
         _height: i32,
         centers: &mut [qr_finder_center],
         centers_indexes: [usize; 3],
-    ) -> c_int {
+    ) -> i32 {
         let mut ci: [usize; 7] = [0; 7];
         let mut maxd: u32;
 
@@ -3606,7 +3605,7 @@ impl qr_reader {
             let res: i32 = QR_INT_BITS
                 - 2
                 - QR_FINDER_SUBPREC
-                - qr_ilog((c_int::max(_width, _height) - 1) as c_uint);
+                - qr_ilog((i32::max(_width, _height) - 1) as u32);
             qr_aff_init(
                 &mut aff,
                 &ul.center().pos,
@@ -3813,7 +3812,7 @@ impl qr_reader {
     }
 
     /// Add a found finder line to the reader's line list
-    pub(crate) fn found_line(&mut self, dir: i32, line: &qr_finder_line) -> c_int {
+    pub(crate) fn found_line(&mut self, dir: i32, line: &qr_finder_line) -> i32 {
         self.finder_lines[dir as usize].lines.push(*line);
         0
     }
@@ -3830,7 +3829,7 @@ impl qr_reader {
         // The number of centers should be small, so an O(n^3) exhaustive search of
         // which ones go together should be reasonable.
         let mut mark = vec![0u8; _centers.len()];
-        let nfailures_max = c_int::max(8192, (_width * _height) >> 9);
+        let nfailures_max = i32::max(8192, (_width * _height) >> 9);
         let mut nfailures = 0;
 
         for i in 0.._centers.len() {
@@ -3960,8 +3959,8 @@ impl qr_reader {
                 &mut qrlist,
                 &mut centers,
                 &bin,
-                img.width as c_int,
-                img.height as c_int,
+                img.width as i32,
+                img.height as i32,
             );
 
             let qrdata = if !qrlist.qrdata.is_empty() {
@@ -4033,7 +4032,7 @@ pub(crate) enum qr_mode {
     Fnc1_2nd = 9,
 }
 
-impl TryFrom<c_int> for qr_mode {
+impl TryFrom<i32> for qr_mode {
     type Error = ();
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -4066,19 +4065,19 @@ pub(crate) enum qr_code_data_payload {
     /// FNC1 marker in first position (GS1 formatting)
     Fnc1FirstPositionMarker,
     /// Extended Channel Interpretation code
-    ExtendedChannelInterpretation(c_uint),
+    ExtendedChannelInterpretation(u32),
     /// SJIS kanji characters
     Kanji(Vec<u8>),
     /// FNC1 marker in second position (industry application)
-    ApplicationIndicator(c_int),
+    ApplicationIndicator(i32),
 }
 
 /// Structured-append data
 #[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct qr_code_data_sa {
-    pub(crate) sa_index: c_uchar,
-    pub(crate) sa_size: c_uchar,
-    pub(crate) sa_parity: c_uchar,
+    pub(crate) sa_index: u8,
+    pub(crate) sa_size: u8,
+    pub(crate) sa_parity: u8,
 }
 
 /// A single QR code data entry
@@ -4093,17 +4092,17 @@ pub(crate) struct qr_code_data {
     /// The decoded data entries
     pub(crate) entries: Vec<qr_code_data_entry>,
     /// The code version (1...40)
-    pub(crate) version: c_uchar,
+    pub(crate) version: u8,
     /// The ECC level (0...3, corresponding to 'L', 'M', 'Q', and 'H')
-    pub(crate) ecc_level: c_uchar,
+    pub(crate) ecc_level: u8,
     /// The index of this code in the structured-append group
-    pub(crate) sa_index: c_uchar,
+    pub(crate) sa_index: u8,
     /// The size of the structured-append group, or 0 if there was no S-A header
-    pub(crate) sa_size: c_uchar,
+    pub(crate) sa_size: u8,
     /// The parity of the entire structured-append group
-    pub(crate) sa_parity: c_uchar,
+    pub(crate) sa_parity: u8,
     /// The parity of this code
-    pub(crate) self_parity: c_uchar,
+    pub(crate) self_parity: u8,
     /// An approximate bounding box for the code
     pub(crate) bbox: [qr_point; 4],
 }
@@ -4113,9 +4112,9 @@ impl qr_code_data {
     ///
     /// Decodes the various data modes (numeric, alphanumeric, byte, Kanji, etc.)
     /// and populates the qr_code_data structure.
-    pub(crate) fn parse(&mut self, _version: i32, data: &[u8]) -> c_int {
+    pub(crate) fn parse(&mut self, _version: i32, data: &[u8]) -> i32 {
         // The number of bits used to encode the character count for each version range and data mode
-        const LEN_BITS: [[c_int; 4]; 3] = [
+        const LEN_BITS: [[i32; 4]; 3] = [
             [10, 9, 8, 8],    // Versions 1-9
             [12, 11, 16, 10], // Versions 10-26
             [14, 13, 16, 12], // Versions 27-40
@@ -4172,23 +4171,23 @@ impl qr_code_data {
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 10) else {
                             return -1;
                         };
-                        let bits = bits as c_uint;
+                        let bits = bits as u32;
                         if bits >= 1000 {
                             return -1;
                         }
                         let c = b'0' + (bits / 100) as u8;
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                         buf = &mut buf[1..];
 
                         let bits = bits % 100;
                         let c = b'0' + (bits / 10) as u8;
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                         buf = &mut buf[1..];
 
                         let c = b'0' + (bits % 10) as u8;
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                         buf = &mut buf[1..];
                     }
@@ -4198,17 +4197,17 @@ impl qr_code_data {
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 7) else {
                             return -1;
                         };
-                        let bits = bits as c_uint;
+                        let bits = bits as u32;
                         if bits >= 100 {
                             return -1;
                         }
                         let c = b'0' + (bits / 10) as u8;
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                         buf = &mut buf[1..];
 
                         let c = b'0' + (bits % 10) as u8;
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                     }
                     // Or the last one digit encoded in 4 bits
@@ -4216,12 +4215,12 @@ impl qr_code_data {
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 4) else {
                             return -1;
                         };
-                        let bits = bits as c_uint;
+                        let bits = bits as u32;
                         if bits >= 10 {
                             return -1;
                         }
                         let c = b'0' + bits as u8;
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                     }
 
@@ -4246,17 +4245,17 @@ impl qr_code_data {
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 11) else {
                             return -1;
                         };
-                        let bits = bits as c_uint;
+                        let bits = bits as u32;
                         if bits >= 2025 {
                             return -1;
                         }
                         let c = QR_ALNUM_TABLE[(bits / 45) as usize];
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                         buf = &mut buf[1..];
 
                         let c = QR_ALNUM_TABLE[(bits % 45) as usize];
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                         buf = &mut buf[1..];
                     }
@@ -4266,12 +4265,12 @@ impl qr_code_data {
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 6) else {
                             return -1;
                         };
-                        let bits = bits as c_uint;
+                        let bits = bits as u32;
                         if bits >= 45 {
                             return -1;
                         }
                         let c = QR_ALNUM_TABLE[bits as usize];
-                        self_parity ^= c as c_uint;
+                        self_parity ^= c as u32;
                         buf[0] = c;
                     }
 
@@ -4287,11 +4286,11 @@ impl qr_code_data {
 
                     // If this is the first S-A header, save it
                     if self.sa_size == 0 {
-                        self.sa_index = ((bits >> 12) & 0xF) as c_uchar;
+                        self.sa_index = ((bits >> 12) & 0xF) as u8;
                         sa.sa_index = self.sa_index;
-                        self.sa_size = (((bits >> 8) & 0xF) + 1) as c_uchar;
+                        self.sa_size = (((bits >> 8) & 0xF) + 1) as u8;
                         sa.sa_size = self.sa_size;
-                        self.sa_parity = (bits & 0xFF) as c_uchar;
+                        self.sa_parity = (bits & 0xFF) as u8;
                         sa.sa_parity = self.sa_parity;
                     }
 
@@ -4315,8 +4314,8 @@ impl qr_code_data {
                         let Some(c) = qr_pack_buf_read(&mut qpb, 8) else {
                             return -1;
                         };
-                        let c = c as c_uchar;
-                        self_parity ^= c as c_uint;
+                        let c = c as u8;
+                        self_parity ^= c as u32;
                         *b = c;
                     }
 
@@ -4335,22 +4334,22 @@ impl qr_code_data {
 
                     let val = if (bits & 0x80) == 0 {
                         // One byte
-                        bits as c_uint
+                        bits as u32
                     } else if (bits & 0x40) == 0 {
                         // Two bytes
-                        let mut val = ((bits & 0x3F) as c_uint) << 8;
+                        let mut val = ((bits & 0x3F) as u32) << 8;
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
                             return -1;
                         };
-                        val |= bits as c_uint;
+                        val |= bits as u32;
                         val
                     } else if (bits & 0x20) == 0 {
                         // Three bytes
-                        let mut val = ((bits & 0x1F) as c_uint) << 16;
+                        let mut val = ((bits & 0x1F) as u32) << 16;
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 16) else {
                             return -1;
                         };
-                        val |= bits as c_uint;
+                        val |= bits as u32;
                         if val >= 1000000 {
                             return -1;
                         }
@@ -4381,14 +4380,14 @@ impl qr_code_data {
                         let Some(bits) = qr_pack_buf_read(&mut qpb, 13) else {
                             return -1;
                         };
-                        let mut bits = bits as c_uint;
+                        let mut bits = bits as u32;
                         bits = (((bits / 0xC0) << 8) | (bits % 0xC0)) + 0x8140;
                         if bits >= 0xA000 {
                             bits += 0x4000;
                         }
                         self_parity ^= bits;
-                        data[i * 2] = (bits >> 8) as c_uchar;
-                        data[i * 2 + 1] = (bits & 0xFF) as c_uchar;
+                        data[i * 2] = (bits >> 8) as u8;
+                        data[i * 2 + 1] = (bits & 0xFF) as u8;
                     }
 
                     qr_code_data_payload::Kanji(data)
@@ -4412,7 +4411,7 @@ impl qr_code_data {
         }
 
         // Store the parity of the data from this code
-        self.self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as c_uchar;
+        self.self_parity = (((self_parity >> 8) ^ self_parity) & 0xFF) as u8;
 
         0
     }
@@ -4436,7 +4435,7 @@ impl qr_code_data {
         _img: &[u8],
         _width: i32,
         _height: i32,
-    ) -> c_int {
+    ) -> i32 {
         let mut grid: qr_sampling_grid = qr_sampling_grid {
             cells: Vec::new(),
             fpmask: Vec::new(),
@@ -4465,7 +4464,7 @@ impl qr_code_data {
         let npar = QR_RS_NPAR_VALS
             [(QR_RS_NPAR_OFFS[(version - 1) as usize] as usize) + (ecc_level as usize)]
             as usize;
-        let ncodewords = qr_code_ncodewords(version as c_uint);
+        let ncodewords = qr_code_ncodewords(version as u32);
         let block_sz = ncodewords / nblocks;
         let nshort_blocks = nblocks - (ncodewords % nblocks);
 
@@ -4548,8 +4547,8 @@ impl qr_code_data {
             if ret < 0 {
                 self.clear();
             }
-            self.version = version as c_uchar;
-            self.ecc_level = ecc_level as c_uchar;
+            self.version = version as u8;
+            self.ecc_level = ecc_level as u8;
         }
 
         ret
@@ -4587,7 +4586,7 @@ impl qr_code_data_list {
 
         for i in 0..qrdata.len() {
             if mark[i] == 0 {
-                let mut sa: [c_int; 16] = [-1; 16];
+                let mut sa: [i32; 16] = [-1; 16];
                 let sa_size;
 
                 if qrdata[i].sa_size > 0 {
@@ -4599,12 +4598,12 @@ impl qr_code_data_list {
                             && qrdata[j].sa_parity == sa_parity
                             && sa[qrdata[j].sa_index as usize] < 0
                         {
-                            sa[qrdata[j].sa_index as usize] = j as c_int;
+                            sa[qrdata[j].sa_index as usize] = j as i32;
                             mark[j] = 1;
                         }
                     }
                 } else {
-                    sa[0] = i as c_int;
+                    sa[0] = i as i32;
                     sa_size = 1;
                 }
 
