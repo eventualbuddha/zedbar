@@ -1,4 +1,10 @@
-//! Error types and handling
+//! Error types and result handling
+//!
+//! This module provides error types used throughout the library:
+//! - [`Error`] - The main error type
+//! - [`Result`] - Type alias for `Result<T, Error>`
+//!
+//! Most ZBar operations return [`Result`] to indicate success or failure.
 
 use std::fmt;
 

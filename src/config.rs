@@ -51,7 +51,7 @@
 use crate::SymbolType;
 use std::collections::{HashMap, HashSet};
 
-pub mod internal;
+pub(crate) mod internal;
 pub mod symbologies;
 
 // Re-export symbology types for convenience

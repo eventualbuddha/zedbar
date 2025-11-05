@@ -1,25 +1,83 @@
 //! ZBar Barcode Scanning Library
 //!
-//! This crate provides barcode scanning functionality for various barcode formats including
+//! A pure Rust barcode scanning library supporting multiple barcode formats including
 //! QR codes, EAN, UPC, Code128, Code39, and more.
+//!
+//! # Quick Start
+//!
+//! ```no_run
+//! use zbar::{Image, Scanner};
+//!
+//! // Load and convert image to grayscale
+//! let img = image::open("barcode.png").unwrap();
+//! let gray = img.to_luma8();
+//! let (width, height) = gray.dimensions();
+//!
+//! // Create ZBar image and scanner
+//! let mut zbar_img = Image::from_gray(gray.as_raw(), width, height).unwrap();
+//! let mut scanner = Scanner::new();
+//!
+//! // Scan for barcodes
+//! let symbols = scanner.scan(&mut zbar_img);
+//! for symbol in symbols {
+//!     println!("{:?}: {}", symbol.symbol_type(), symbol.data_string().unwrap_or(""));
+//! }
+//! ```
+//!
+//! # Configuration
+//!
+//! Use the type-safe [`config`] module to customize decoder behavior:
+//!
+//! ```
+//! use zbar::config::*;
+//! use zbar::{DecoderConfig, Scanner};
+//!
+//! let config = DecoderConfig::new()
+//!     .enable(QrCode)
+//!     .enable(Ean13)
+//!     .set_binary(QrCode, true)          // Preserve binary data in QR codes
+//!     .set_length_limits(Code39, 4, 20)  // Code39 must be 4-20 chars
+//!     .test_inverted(true)               // Try inverted image if no symbols found
+//!     .scan_density(2, 2);               // Scan every 2nd line (faster)
+//!
+//! let mut scanner = Scanner::with_config(config);
+//! ```
+//!
+//! # Supported Formats
+//!
+//! - **2D Codes**: QR Code, SQCode
+//! - **Linear Codes**: EAN-13, EAN-8, UPC-A, UPC-E, ISBN-10, ISBN-13
+//! - **Code Family**: Code 128, Code 93, Code 39, Codabar
+//! - **Industrial**: Interleaved 2 of 5, DataBar (RSS)
+//!
+//! # Modules
+//!
+//! - [`scanner`] - Main scanner API
+//! - [`image`] - Image handling
+//! - [`symbol`] - Decoded barcode symbols
+//! - [`config`] - Type-safe decoder configuration
+//! - [`error`] - Error types
 
 #![allow(clippy::missing_safety_doc)]
 #![allow(non_camel_case_types)]
 
-pub mod color;
+// Public modules
 pub mod config;
-pub mod decoder;
-pub mod decoders;
 pub mod error;
-pub mod finder;
 pub mod image;
-pub mod image_ffi;
-pub mod img_scanner;
-pub mod img_scanner_config;
-pub mod qrcode;
 pub mod scanner;
-pub mod sqcode;
 pub mod symbol;
+
+// Internal modules
+pub(crate) mod color;
+pub(crate) mod decoder;
+pub(crate) mod decoders;
+pub(crate) mod finder;
+pub(crate) mod image_ffi;
+pub(crate) mod img_scanner;
+pub(crate) mod img_scanner_config;
+pub(crate) mod qrcode;
+pub(crate) mod sqcode;
 
 // Re-export main types
 pub use config::DecoderConfig;

@@ -1,10 +1,28 @@
-//! Symbol management module
+//! Decoded barcode symbols and types
 //!
-//! Handles symbol lifecycle, reference counting, and data access.
+//! This module provides types for working with decoded barcode data:
+//! - [`Symbol`] - A decoded barcode symbol with its data and metadata
+//! - [`SymbolType`] - The barcode format (QR Code, EAN-13, etc.)
+//! - [`Orientation`] - The orientation of the barcode in the image
 //!
-//! Rust port based on C code from the ZBar library.
-//! Original C code copyright (C) 2007-2010 Jeff Brown <spadix@users.sourceforge.net>
-//! Licensed under LGPL 3.0 or later
+//! # Example
+//!
+//! ```no_run
+//! use zbar::{Image, Scanner};
+//!
+//! # let data = vec![0u8; 640 * 480];
+//! # let mut image = Image::from_gray(&data, 640, 480).unwrap();
+//! let mut scanner = Scanner::new();
+//! let symbols = scanner.scan(&mut image);
+//!
+//! for symbol in symbols {
+//!     println!("Found {:?}", symbol.symbol_type());
+//!     if let Some(text) = symbol.data_string() {
+//!         println!("Data: {}", text);
+//!     }
+//!     println!("Orientation: {:?}", symbol.orientation());
+//! }
+//! ```
 
 use crate::qrcode::qrdec::qr_point;
 use std::{fmt::Display, str::from_utf8};

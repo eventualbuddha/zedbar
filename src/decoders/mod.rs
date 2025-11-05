@@ -2,10 +2,10 @@
 //!
 //! This module contains individual decoder implementations for various barcode formats.
 
-pub mod codabar;
-pub mod code128;
-pub mod code39;
-pub mod code93;
-pub mod databar;
-pub mod ean;
-pub mod i25;
+pub(crate) mod codabar;
+pub(crate) mod code128;
+pub(crate) mod code39;
+pub(crate) mod code93;
+pub(crate) mod databar;
+pub(crate) mod ean;
+pub(crate) mod i25;

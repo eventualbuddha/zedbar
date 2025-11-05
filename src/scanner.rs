@@ -1,4 +1,32 @@
 //! Image scanner for finding barcodes in 2D images
+//!
+//! The [`Scanner`] is the main entry point for barcode scanning operations.
+//! It processes grayscale images to detect and decode barcodes.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use zbar::{Image, Scanner};
+//!
+//! // Create a scanner with default settings
+//! let mut scanner = Scanner::new();
+//!
+//! // Or with custom configuration
+//! use zbar::config::*;
+//! let config = DecoderConfig::new()
+//!     .enable(QrCode)
+//!     .enable(Ean13);
+//! let mut scanner = Scanner::with_config(config);
+//!
+//! // Scan an image
+//! # let data = vec![0u8; 640 * 480];
+//! let mut image = Image::from_gray(&data, 640, 480).unwrap();
+//! let symbols = scanner.scan(&mut image);
+//!
+//! for symbol in symbols {
+//!     println!("{:?}: {:?}", symbol.symbol_type(), symbol.data_string());
+//! }
+//! ```
 
 use crate::config::DecoderConfig;
 use crate::image::Image;

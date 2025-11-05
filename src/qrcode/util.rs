@@ -9,9 +9,9 @@
 
 /// Computes floor(sqrt(val)) exactly using binary search
 ///
-/// Uses the method from http://www.azillionmonkeys.com/qed/sqroot.html
-/// The main idea is to search for the largest binary digit b such that
-/// (g+b)*(g+b) <= val, and add it to the solution g.
+/// Uses the method from <http://www.azillionmonkeys.com/qed/sqroot.html>
+/// The main idea is to search for the largest binary digit `b` such that
+/// `(g+b)*(g+b) <= val`, and add it to the solution `g`.
 pub fn qr_isqrt(mut val: u32) -> u32 {
     let mut g = 0u32;
     let mut b = 0x8000u32;
@@ -28,7 +28,7 @@ pub fn qr_isqrt(mut val: u32) -> u32 {
     g
 }
 
-/// Computes sqrt(x*x + y*y) using CORDIC algorithm
+/// Computes `sqrt(x*x + y*y)` using CORDIC algorithm
 ///
 /// This implementation is valid for all 32-bit inputs and returns a result
 /// accurate to about 27 bits of precision.

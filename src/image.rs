@@ -1,4 +1,23 @@
 //! Image handling and format support
+//!
+//! This module provides the [`Image`] type for holding barcode image data.
+//! Images must be in grayscale format (8-bit luminance).
+//!
+//! # Example
+//!
+//! ```
+//! use zbar::{Image, Scanner};
+//!
+//! // Create image from grayscale data
+//! let width = 640;
+//! let height = 480;
+//! let data = vec![0u8; (width * height) as usize];
+//! let mut image = Image::from_gray(&data, width, height).unwrap();
+//!
+//! // Scan the image
+//! let mut scanner = Scanner::new();
+//! let symbols = scanner.scan(&mut image);
+//! ```
 
 use crate::image_ffi::zbar_image_t;
 use crate::{Error, Result};
