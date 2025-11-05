@@ -10,7 +10,6 @@ use libc::c_int;
 // ============================================================================
 
 /// Decode a single element
-#[inline]
 fn i25_decode1(enc: u8, e: u32, s: u32) -> u8 {
     let e_val = decode_e(e, s, 45);
     if e_val > 7 {
@@ -24,7 +23,6 @@ fn i25_decode1(enc: u8, e: u32, s: u32) -> u8 {
 }
 
 /// Decode 10 elements into a digit (5 bars + 5 spaces)
-#[inline]
 fn i25_decode10(dcode: &zbar_image_scanner_t, offset: u8) -> u8 {
     let dcode25 = &dcode.i25;
 
@@ -76,7 +74,6 @@ fn i25_decode10(dcode: &zbar_image_scanner_t, offset: u8) -> u8 {
 }
 
 /// Decode start pattern
-#[inline]
 fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let s10 = dcode.i25.s10;
 
@@ -120,7 +117,6 @@ fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Acquire lock and copy holding buffer
-#[inline]
 fn i25_acquire_lock(dcode: &mut zbar_image_scanner_t) -> bool {
     // Lock shared resources
     if !dcode.acquire_lock(SymbolType::I25) {
@@ -132,7 +128,6 @@ fn i25_acquire_lock(dcode: &mut zbar_image_scanner_t) -> bool {
 }
 
 /// Decode end pattern and validate
-#[inline]
 fn i25_decode_end(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let width = dcode.i25.width;
     let direction = dcode.i25.direction();

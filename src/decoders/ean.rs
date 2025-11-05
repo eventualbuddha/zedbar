@@ -74,7 +74,6 @@ static PARITY_DECODE: [u8; 64] = [
 // ============================================================================
 
 /// Calculate total character width "s"
-#[inline]
 fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> c_uint {
     let mut s = 0;
     while n > 0 {
@@ -86,7 +85,6 @@ fn calc_s(dcode: &zbar_image_scanner_t, mut offset: u8, mut n: u8) -> c_uint {
 }
 
 /// Check if two widths are within tolerance
-#[inline]
 fn check_width(w0: u32, w1: u32) -> c_uint {
     let dw0 = w0;
     let w0_scaled = w0 * 8;
@@ -165,7 +163,6 @@ fn aux_start(dcode: &zbar_image_scanner_t) -> i8 {
 }
 
 /// Check addon delimiter using current 4 as character
-#[inline]
 fn aux_mid(dcode: &zbar_image_scanner_t) -> i8 {
     let e = dcode.get_width(4) + dcode.get_width(5);
     decode_e(e, dcode.ean.s4, 7) as i8

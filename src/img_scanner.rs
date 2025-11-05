@@ -31,7 +31,6 @@ use crate::{
 const QR_FINDER_SUBPREC: i32 = 2;
 
 // QR_FIXED macro: ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
-#[inline]
 fn qr_fixed(v: i32, rnd: i32) -> c_uint {
     (((v as c_uint) << 1) + (rnd as c_uint)) << (QR_FINDER_SUBPREC - 1)
 }
@@ -258,7 +257,6 @@ impl zbar_image_scanner_t {
     }
 
     /// Flush the scanner state
-    #[inline]
     pub(crate) fn scanner_flush(&mut self) -> SymbolType {
         if self.y1_sign == 0 {
             return SymbolType::None;
@@ -479,18 +477,15 @@ impl zbar_image_scanner_t {
         Ok(())
     }
 
-    #[inline]
     pub(crate) fn buffer_capacity(&self) -> usize {
         self.buffer.capacity()
     }
 
-    #[inline]
     pub(crate) fn set_buffer_len(&mut self, len: usize) {
         debug_assert!(len <= self.buffer_capacity());
         self.buffer.resize(len, 0);
     }
 
-    #[inline]
     pub(crate) fn buffer_mut_slice(&mut self, len: usize) -> Result<&mut [u8], ()> {
         if len > BUFFER_MAX {
             return Err(());
@@ -500,28 +495,23 @@ impl zbar_image_scanner_t {
         Ok(&mut self.buffer[..len])
     }
 
-    #[inline]
     pub(crate) fn buffer_slice(&self) -> &[u8] {
         &self.buffer
     }
 
-    #[inline]
     pub(crate) fn write_buffer_byte(&mut self, pos: usize, value: u8) -> Result<(), ()> {
         self.buffer_mut_slice(pos + 1)?[pos] = value;
         Ok(())
     }
 
-    #[inline]
     pub(crate) fn truncate_buffer(&mut self, len: usize) {
         self.buffer.truncate(len);
     }
 
-    #[inline]
     pub(crate) fn is_enabled(&self, sym: SymbolType) -> bool {
         self.config.is_enabled(sym)
     }
 
-    #[inline]
     pub(crate) fn should_emit_checksum(&self, sym: SymbolType) -> bool {
         self.config
             .get(sym)
@@ -529,7 +519,6 @@ impl zbar_image_scanner_t {
             .unwrap_or(false)
     }
 
-    #[inline]
     pub(crate) fn should_validate_checksum(&self, sym: SymbolType) -> bool {
         self.config
             .get(sym)
@@ -537,7 +526,6 @@ impl zbar_image_scanner_t {
             .unwrap_or(false)
     }
 
-    #[inline]
     pub(crate) fn get_length_limits(&self, sym: SymbolType) -> Option<(u32, u32)> {
         self.config
             .get(sym)
@@ -545,7 +533,6 @@ impl zbar_image_scanner_t {
             .map(|l| (l.min, l.max))
     }
 
-    #[inline]
     pub(crate) fn is_binary_mode(&self, sym: SymbolType) -> bool {
         self.config.get(sym).map(|c| c.binary_mode).unwrap_or(false)
     }
@@ -588,7 +575,6 @@ impl zbar_image_scanner_t {
         self.qrf.reset();
     }
 
-    #[inline]
     pub(crate) fn acquire_lock(&mut self, req: SymbolType) -> bool {
         if self.lock != SymbolType::None {
             return false;
@@ -597,7 +583,6 @@ impl zbar_image_scanner_t {
         true
     }
 
-    #[inline]
     pub(crate) fn release_lock(&mut self, req: SymbolType) -> bool {
         if self.lock != req {
             return false;

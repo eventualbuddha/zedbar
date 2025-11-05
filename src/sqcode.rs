@@ -402,7 +402,6 @@ fn sq_extract_text(buf: &[u8], len: size_t) -> Result<Symbol, ()> {
     Ok(sym)
 }
 
-#[inline]
 fn is_black_color(c: u8) -> bool {
     c <= 0x7f
 }

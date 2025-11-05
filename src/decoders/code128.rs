@@ -102,7 +102,6 @@ static LO_OFFSET: [u8; 0x80] = [
 // ============================================================================
 
 /// Decode low signature
-#[inline]
 fn decode_lo(sig: i32) -> i8 {
     let offset =
         (((sig >> 1) & 0x01) | ((sig >> 3) & 0x06) | ((sig >> 5) & 0x18) | ((sig >> 7) & 0x60))
@@ -143,7 +142,6 @@ fn decode_lo(sig: i32) -> i8 {
 }
 
 /// Decode high signature
-#[inline]
 fn decode_hi(mut sig: i32) -> i8 {
     let mut rev = (sig & 0x4400) != 0;
     if rev {
@@ -180,7 +178,6 @@ fn decode_hi(mut sig: i32) -> i8 {
 }
 
 /// Calculate check value
-#[inline]
 fn calc_check(c: u8) -> u8 {
     if (c & 0x80) == 0 {
         return 0x18;
@@ -200,7 +197,6 @@ fn calc_check(c: u8) -> u8 {
 }
 
 /// Decode 6 elements
-#[inline]
 fn decode6(dcode: &zbar_image_scanner_t) -> i8 {
     let s = dcode.code128.s6;
     if s < 5 {
@@ -252,7 +248,6 @@ fn decode6(dcode: &zbar_image_scanner_t) -> i8 {
 }
 
 /// Validate checksum
-#[inline]
 fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
     if dcode.code128.character() < 3 {
         return true;
@@ -318,7 +313,6 @@ fn validate_checksum(dcode: &zbar_image_scanner_t) -> bool {
 }
 
 /// Expand and decode character set C
-#[inline]
 fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst: usize) -> c_uint {
     // Expand buffer to accommodate 2x set C characters (2 digits per-char)
     let delta = end - start;
@@ -383,7 +377,6 @@ fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst
 }
 
 /// Resolve scan direction and convert to ASCII
-#[inline]
 fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
     dcode.modifiers = 0;
     dcode.direction = 1 - 2 * (dcode.code128.direction() as c_int);

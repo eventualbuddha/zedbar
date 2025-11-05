@@ -178,7 +178,6 @@ impl From<&DecoderConfig> for DecoderState {
 
 impl DecoderState {
     /// Check if a symbology is enabled
-    #[inline]
     pub(crate) fn is_enabled(&self, sym: SymbolType) -> bool {
         self.symbologies
             .get(&sym)
@@ -187,7 +186,6 @@ impl DecoderState {
     }
 
     /// Get configuration for a symbology
-    #[inline]
     pub(crate) fn get(&self, sym: SymbolType) -> Option<&SymbologyConfig> {
         self.symbologies.get(&sym)
     }

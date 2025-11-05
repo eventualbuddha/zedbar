@@ -36,7 +36,6 @@ static CODE93_S2: &[u8; 26] = b"\x1b\x1c\x1d\x1e\x1f;<=>?[\\]^_{|}~\x7f\x00\x40`
 // ============================================================================
 
 /// Check width variance
-#[inline]
 fn check_width(cur: u32, prev: u32) -> bool {
     let dw = prev.abs_diff(cur);
     let dw = dw * 4;
@@ -44,7 +43,6 @@ fn check_width(cur: u32, prev: u32) -> bool {
 }
 
 /// Build edge signature of character
-#[inline]
 fn encode6(dcode: &zbar_image_scanner_t) -> i32 {
     let s = dcode.s6;
     if s < 9 {
@@ -64,7 +62,6 @@ fn encode6(dcode: &zbar_image_scanner_t) -> i32 {
 }
 
 /// Validate signature
-#[inline]
 fn validate_sig(mut sig: i32) -> i32 {
     let mut sum = 0;
     let mut emin = 0;
@@ -98,7 +95,6 @@ fn validate_sig(mut sig: i32) -> i32 {
 }
 
 /// Decode 6 elements
-#[inline]
 fn decode6(dcode: &zbar_image_scanner_t) -> i32 {
     let mut sig = encode6(dcode);
     if sig < 0 {
@@ -134,7 +130,6 @@ fn decode6(dcode: &zbar_image_scanner_t) -> i32 {
 }
 
 /// Decode start pattern
-#[inline]
 fn decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let s = dcode.s6;
     let c = encode6(dcode);
@@ -166,7 +161,6 @@ fn decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Abort decoding
-#[inline]
 fn decode_abort(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     if dcode.code93.character() > 1 {
         dcode.release_lock(SymbolType::Code93);
@@ -176,7 +170,6 @@ fn decode_abort(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Check stop pattern
-#[inline]
 fn check_stop(dcode: &zbar_image_scanner_t) -> bool {
     let n = dcode.code93.character() as i32;
     let s = dcode.s6;
@@ -201,7 +194,6 @@ fn check_stop(dcode: &zbar_image_scanner_t) -> bool {
 }
 
 /// Plus modulo 47
-#[inline]
 fn plusmod47(mut acc: i32, add: i32) -> i32 {
     acc += add;
     if acc >= CHKMOD {
@@ -211,7 +203,6 @@ fn plusmod47(mut acc: i32, add: i32) -> i32 {
 }
 
 /// Validate checksums
-#[inline]
 fn validate_checksums(dcode: &zbar_image_scanner_t) -> bool {
     let n = dcode.code93.character() as usize;
     let buf = dcode.buffer_slice();
@@ -276,7 +267,6 @@ fn validate_checksums(dcode: &zbar_image_scanner_t) -> bool {
 }
 
 /// Resolve scan direction and convert to ASCII
-#[inline]
 fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
     let n = dcode.code93.character() as usize;
     let direction = dcode.code93.direction();

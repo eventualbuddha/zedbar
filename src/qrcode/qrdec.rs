@@ -61,7 +61,6 @@ const QR_LARGE_VERSION_SLACK: i32 = 3;
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
 /// For x/y where the fractional part is exactly 0.5, rounds away from zero.
-#[inline]
 fn qr_divround(x: i32, y: i32) -> c_int {
     x.wrapping_add(x.signum().wrapping_mul(y >> 1)) / y
 }
@@ -70,7 +69,6 @@ fn qr_divround(x: i32, y: i32) -> c_int {
 ///
 /// Multiplies 32-bit numbers a and b, adds r, and takes bits [s, s+31] of the result.
 /// This is used for fixed-point arithmetic to avoid overflow.
-#[inline]
 fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> c_int {
     ((a as i64 * b as i64 + r) >> s) as c_int
 }
@@ -78,7 +76,6 @@ fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> c_int {
 /// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
 ///
 /// This matches C macro QR_EXTMUL.
-#[inline]
 fn qr_extmul(a: i32, b: i32, r: i64) -> i64 {
     a as i64 * b as i64 + r
 }
@@ -86,7 +83,6 @@ fn qr_extmul(a: i32, b: i32, r: i64) -> i64 {
 /// Sign mask: returns -1 if x < 0, else 0
 ///
 /// This matches C macro QR_SIGNMASK.
-#[inline]
 fn qr_signmask(x: i64) -> i64 {
     -((x < 0) as i64)
 }

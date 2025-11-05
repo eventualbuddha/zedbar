@@ -32,7 +32,6 @@ static CODABAR_CHARACTERS: &[u8; 20] = b"0123456789-$:/.+ABCD";
 // ============================================================================
 
 /// Sort 3 like-colored elements and return ordering
-#[inline]
 fn decode_sort3(dcode: &zbar_image_scanner_t, i0: u8) -> c_uint {
     let w0 = dcode.get_width(i0);
     let w2 = dcode.get_width(i0 + 2);
@@ -56,7 +55,6 @@ fn decode_sort3(dcode: &zbar_image_scanner_t, i0: u8) -> c_uint {
 }
 
 /// Sort N like-colored elements and return ordering
-#[inline]
 fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
     let mut mask: u32 = 0;
     let mut sort: u32 = 0;
@@ -88,7 +86,6 @@ fn decode_sortn(dcode: &zbar_image_scanner_t, n: i32, i0: u8) -> c_uint {
 // ============================================================================
 
 /// Check width against reference
-#[inline]
 fn check_width(ref_width: u32, w: u32) -> bool {
     let dref = ref_width;
     let ref_4 = ref_width * 4;
@@ -97,7 +94,6 @@ fn check_width(ref_width: u32, w: u32) -> bool {
 }
 
 /// Decode 7 elements into a character
-#[inline]
 fn codabar_decode7(dcode: &zbar_image_scanner_t) -> i8 {
     let codabar = &dcode.codabar;
     let s = codabar.s7;
@@ -208,7 +204,6 @@ fn codabar_decode7(dcode: &zbar_image_scanner_t) -> i8 {
 }
 
 /// Decode start pattern
-#[inline]
 fn codabar_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let s = dcode.codabar.s7;
     if s < 8 {
@@ -286,7 +281,6 @@ fn codabar_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Post-process decoded buffer
-#[inline]
 fn codabar_postprocess(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     let dir = dcode.codabar.direction();
     dcode.direction = 1 - 2 * (dir as c_int);

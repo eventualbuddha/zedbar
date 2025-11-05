@@ -52,27 +52,22 @@ pub(crate) struct i25_decoder_t {
 }
 
 impl i25_decoder_t {
-    #[inline]
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
-    #[inline]
     pub(crate) fn set_direction(&mut self, val: bool) {
         self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
     }
 
-    #[inline]
     pub(crate) fn element(&self) -> u8 {
         ((self.bitfields >> 1) & 0xF) as u8
     }
 
-    #[inline]
     pub(crate) fn set_element(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
     }
 
-    #[inline]
     pub(crate) fn character(&self) -> i16 {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 5) & 0xFFF) as i16;
@@ -84,7 +79,6 @@ impl i25_decoder_t {
         }
     }
 
-    #[inline]
     pub(crate) fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
     }
@@ -116,27 +110,22 @@ pub(crate) struct code39_decoder_t {
 }
 
 impl code39_decoder_t {
-    #[inline]
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
-    #[inline]
     pub(crate) fn set_direction(&mut self, val: bool) {
         self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
     }
 
-    #[inline]
     pub(crate) fn element(&self) -> u8 {
         ((self.bitfields >> 1) & 0xF) as u8
     }
 
-    #[inline]
     pub(crate) fn set_element(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
     }
 
-    #[inline]
     pub(crate) fn character(&self) -> i16 {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 5) & 0xFFF) as i16;
@@ -148,7 +137,6 @@ impl code39_decoder_t {
         }
     }
 
-    #[inline]
     pub(crate) fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
     }
@@ -179,27 +167,22 @@ pub(crate) struct code93_decoder_t {
 }
 
 impl code93_decoder_t {
-    #[inline]
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
-    #[inline]
     pub(crate) fn set_direction(&mut self, val: bool) {
         self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
     }
 
-    #[inline]
     pub(crate) fn element(&self) -> u8 {
         ((self.bitfields >> 1) & 0x7) as u8
     }
 
-    #[inline]
     pub(crate) fn set_element(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
     }
 
-    #[inline]
     pub(crate) fn character(&self) -> i16 {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 4) & 0xFFF) as i16;
@@ -211,7 +194,6 @@ impl code93_decoder_t {
         }
     }
 
-    #[inline]
     pub(crate) fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
     }
@@ -235,27 +217,22 @@ pub(crate) struct codabar_decoder_t {
 }
 
 impl codabar_decoder_t {
-    #[inline]
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
 
-    #[inline]
     pub(crate) fn set_direction(&mut self, val: bool) {
         self.bitfields = (self.bitfields & !0x1) | (val as c_uint);
     }
 
-    #[inline]
     pub(crate) fn element(&self) -> u8 {
         ((self.bitfields >> 1) & 0xF) as u8
     }
 
-    #[inline]
     pub(crate) fn set_element(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xF << 1)) | ((val as c_uint & 0xF) << 1);
     }
 
-    #[inline]
     pub(crate) fn character(&self) -> i16 {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 5) & 0xFFF) as i16;
@@ -267,7 +244,6 @@ impl codabar_decoder_t {
         }
     }
 
-    #[inline]
     pub(crate) fn set_character(&mut self, val: i16) {
         self.bitfields = (self.bitfields & !(0xFFF << 5)) | (((val as c_uint) & 0xFFF) << 5);
     }
@@ -293,28 +269,23 @@ pub(crate) struct code128_decoder_t {
 }
 
 impl code128_decoder_t {
-    #[inline]
     pub(crate) fn direction(&self) -> u8 {
         (self.bitfields_and_start & 0x1) as u8
     }
 
-    #[inline]
     pub(crate) fn set_direction(&mut self, val: u8) {
         self.bitfields_and_start = (self.bitfields_and_start & !0x1) | (val as c_uint & 0x1);
     }
 
-    #[inline]
     pub(crate) fn element(&self) -> u8 {
         ((self.bitfields_and_start >> 1) & 0x7) as u8
     }
 
-    #[inline]
     pub(crate) fn set_element(&mut self, val: u8) {
         self.bitfields_and_start =
             (self.bitfields_and_start & !(0x7 << 1)) | ((val as c_uint & 0x7) << 1);
     }
 
-    #[inline]
     pub(crate) fn character(&self) -> i16 {
         // Sign extend the 12-bit value
         let val = ((self.bitfields_and_start >> 4) & 0xFFF) as i16;
@@ -326,18 +297,15 @@ impl code128_decoder_t {
         }
     }
 
-    #[inline]
     pub(crate) fn set_character(&mut self, val: i16) {
         self.bitfields_and_start =
             (self.bitfields_and_start & !(0xFFF << 4)) | (((val as c_uint) & 0xFFF) << 4);
     }
 
-    #[inline]
     pub(crate) fn start(&self) -> u8 {
         ((self.bitfields_and_start >> 16) & 0xFF) as u8
     }
 
-    #[inline]
     pub(crate) fn set_start(&mut self, val: u8) {
         self.bitfields_and_start =
             (self.bitfields_and_start & !(0xFF << 16)) | ((val as c_uint) << 16);
@@ -368,7 +336,6 @@ pub(crate) struct databar_segment_t {
 }
 
 impl databar_segment_t {
-    #[inline]
     pub(crate) fn finder(&self) -> i8 {
         // finder is a signed 5-bit field (bits 0-4)
         let val = (self.bitfields & 0x1F) as i8;
@@ -380,18 +347,15 @@ impl databar_segment_t {
         }
     }
 
-    #[inline]
     pub(crate) fn set_finder(&mut self, val: i8) {
         self.bitfields = (self.bitfields & !0x1F) | ((val as c_uint) & 0x1F);
     }
 
-    #[inline]
     pub(crate) fn partial(&self) -> bool {
         // partial is bit 8
         (self.bitfields & (1 << 8)) != 0
     }
 
-    #[inline]
     pub(crate) fn set_partial(&mut self, val: bool) {
         if val {
             self.bitfields |= 1 << 8;
@@ -400,13 +364,11 @@ impl databar_segment_t {
         }
     }
 
-    #[inline]
     pub(crate) fn exp(&self) -> bool {
         // exp is bit 5
         (self.bitfields & (1 << 5)) != 0
     }
 
-    #[inline]
     pub(crate) fn set_exp(&mut self, val: bool) {
         if val {
             self.bitfields |= 1 << 5;
@@ -415,62 +377,51 @@ impl databar_segment_t {
         }
     }
 
-    #[inline]
     pub(crate) fn color(&self) -> Color {
         // color is bit 6
         (((self.bitfields >> 6) & 1) as u8).into()
     }
 
-    #[inline]
     pub(crate) fn set_color(&mut self, val: Color) {
         self.bitfields = (self.bitfields & !(1 << 6)) | ((val as c_uint) << 6);
     }
 
-    #[inline]
     pub(crate) fn side(&self) -> u8 {
         // side is bit 7
         ((self.bitfields >> 7) & 1) as u8
     }
 
-    #[inline]
     pub(crate) fn set_side(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(1 << 7)) | (((val & 1) as c_uint) << 7);
     }
 
-    #[inline]
     pub(crate) fn count(&self) -> u8 {
         // count is bits 9-15 (7 bits)
         ((self.bitfields >> 9) & 0x7F) as u8
     }
 
-    #[inline]
     pub(crate) fn set_count(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0x7F << 9)) | (((val & 0x7F) as c_uint) << 9);
     }
 
-    #[inline]
     pub(crate) fn epoch(&self) -> u8 {
         // epoch is bits 16-23 (8 bits)
         ((self.bitfields >> 16) & 0xFF) as u8
     }
 
-    #[inline]
     pub(crate) fn set_epoch(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xFF << 16)) | ((val as c_uint) << 16);
     }
 
-    #[inline]
     pub(crate) fn check(&self) -> u8 {
         // check is bits 24-31 (8 bits)
         ((self.bitfields >> 24) & 0xFF) as u8
     }
 
-    #[inline]
     pub(crate) fn set_check(&mut self, val: u8) {
         self.bitfields = (self.bitfields & !(0xFF << 24)) | ((val as c_uint) << 24);
     }
 
-    #[inline]
     pub(crate) fn segment_index(&self) -> i32 {
         ((self.finder() as i32) << 2)
             | ((self.color() as i32) << 1)

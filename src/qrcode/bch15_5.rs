@@ -18,7 +18,6 @@ const GF16_EXP: [u8; 31] = [
 const GF16_LOG: [i8; 16] = [-1, 0, 1, 4, 2, 8, 5, 10, 3, 14, 9, 7, 6, 13, 11, 12];
 
 /// Multiplication in GF(2**4) using logarithms
-#[inline]
 fn gf16_mul(a: u32, b: u32) -> u32 {
     if a == 0 || b == 0 {
         0
@@ -29,7 +28,6 @@ fn gf16_mul(a: u32, b: u32) -> u32 {
 
 /// Division in GF(2**4) using logarithms
 /// The result when dividing by zero is undefined
-#[inline]
 fn gf16_div(a: u32, b: u32) -> u32 {
     if a == 0 {
         0
@@ -40,7 +38,6 @@ fn gf16_div(a: u32, b: u32) -> u32 {
 
 /// Multiplication in GF(2**4) when the second argument is known to be non-zero
 /// (proven by representing it by its logarithm)
-#[inline]
 fn gf16_hmul(a: u32, logb: u32) -> u32 {
     if a == 0 {
         0

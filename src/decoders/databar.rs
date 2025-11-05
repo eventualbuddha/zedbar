@@ -13,12 +13,10 @@ const SCH_NUM: i32 = 0;
 const SCH_ALNUM: i32 = 1;
 const SCH_ISO646: i32 = 2;
 
-#[inline]
 fn var_max(len: i32, offset: i32) -> i32 {
     (((len * 12 + offset) * 2) + 6) / 7
 }
 
-#[inline]
 fn feed_bits(
     d: &mut u64,
     bit_count: &mut i32,
