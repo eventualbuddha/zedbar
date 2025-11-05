@@ -4,8 +4,7 @@ use crate::{
     config::{internal::DecoderState, DecoderConfig},
     decoder::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-        databar_decoder_t, databar_segment_t, i25_decoder_t, qr_finder_t, sq_finder_t,
-        DECODE_WINDOW,
+        databar_decoder_t, databar_segment_t, i25_decoder_t, qr_finder_t, DECODE_WINDOW,
     },
     decoders::{
         codabar::_zbar_decode_codabar,
@@ -88,8 +87,6 @@ pub(crate) struct zbar_image_scanner_t {
     pub(crate) code93: code93_decoder_t,
     pub(crate) code128: code128_decoder_t,
     pub(crate) qrf: qr_finder_t,
-    #[allow(dead_code)]
-    pub(crate) sqf: sq_finder_t,
 
     /// QR Code 2D reader
     qr: qr_reader,
@@ -149,7 +146,6 @@ impl Default for zbar_image_scanner_t {
             code93: code93_decoder_t::default(),
             code128: code128_decoder_t::default(),
             qrf: qr_finder_t::default(),
-            sqf: sq_finder_t::default(),
 
             // Scanner-specific fields
             qr: qr_reader::default(),
@@ -232,7 +228,6 @@ impl zbar_image_scanner_t {
             code93: code93_decoder_t::default(),
             code128: code128_decoder_t::default(),
             qrf: qr_finder_t::default(),
-            sqf: sq_finder_t::default(),
 
             // Scanner-specific fields
             qr: qr_reader::default(),

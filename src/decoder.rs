@@ -359,10 +359,6 @@ impl code128_decoder_t {
     }
 }
 
-/// SQ Code finder state (already defined but include here for completeness)
-#[derive(Default)]
-pub(crate) struct sq_finder_t {}
-
 // ============================================================================
 // Complex decoder types
 // ============================================================================
