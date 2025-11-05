@@ -1,5 +1,3 @@
-use std::ffi::c_void;
-
 use libc::{c_int, c_uint};
 
 use crate::{
@@ -77,7 +75,6 @@ pub(crate) struct zbar_image_scanner_t {
 
     // Buffer management
     buffer: Vec<u8>,
-    pub(crate) userdata: *mut c_void,
 
     // Decoder configuration
     pub(crate) config: DecoderState,
@@ -143,7 +140,6 @@ impl Default for zbar_image_scanner_t {
             direction: 0,
             s6: 0,
             buffer: Vec::with_capacity(BUFFER_MIN),
-            userdata: std::ptr::null_mut(),
             config: decoder_config.clone(),
             ean: ean_decoder_t::default(),
             i25: i25_decoder_t::default(),
@@ -227,7 +223,6 @@ impl zbar_image_scanner_t {
             direction: 0,
             s6: 0,
             buffer: Vec::with_capacity(BUFFER_MIN),
-            userdata: std::ptr::null_mut(),
             config: decoder_state.clone(),
             ean: ean_decoder_t::default(),
             i25: i25_decoder_t::default(),
@@ -330,7 +325,7 @@ impl zbar_image_scanner_t {
 
         self.y1_sign = 0;
         self.width = 0;
-        unsafe { self.decode_width(0) }
+        self.decode_width(0)
     }
 
     /// Start a new scan
@@ -480,7 +475,7 @@ impl zbar_image_scanner_t {
 
         // pass to decoder
         let width = self.width;
-        unsafe { self.decode_width(width) }
+        self.decode_width(width)
     }
 
     // ========================================================================
@@ -662,7 +657,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Process next bar/space width from input stream
-    pub(crate) unsafe fn decode_width(&mut self, w: c_uint) -> SymbolType {
+    pub(crate) fn decode_width(&mut self, w: c_uint) -> SymbolType {
         let mut sym = SymbolType::None;
 
         // Store width in circular buffer
@@ -741,15 +736,11 @@ impl zbar_image_scanner_t {
             }
 
             if sym > SymbolType::Partial {
-                symbol_handler(self);
+                self.symbol_handler();
             }
         }
 
         sym
-    }
-
-    pub(crate) fn set_userdata(&mut self, userdata: *mut c_void) {
-        self.userdata = userdata;
     }
 
     pub(crate) fn get_type(&self) -> SymbolType {
@@ -847,10 +838,6 @@ impl zbar_image_scanner_t {
     /// # Returns
     /// Pointer to symbol set on success, null on error
     fn scan_image_internal(&mut self, img: &mut zbar_image_t) -> Option<zbar_symbol_set_t> {
-        // Set up decoder's back-pointer to this scanner for symbol callbacks
-        let scanner_ptr = self as *mut _ as *mut c_void;
-        self.set_userdata(scanner_ptr);
-
         self.qr.reset();
         self.sq.reset();
 
@@ -1085,73 +1072,73 @@ impl zbar_image_scanner_t {
 
         Some(scanner.syms.clone())
     }
-}
 
-/// Symbol handler callback for 1D barcode decoding
-///
-/// This function is called by the decoder when a barcode is successfully decoded.
-/// It manages symbol deduplication, position tracking, and adds symbols to the result set.
-///
-/// # Arguments
-/// * `dcode` - The decoder that found the symbol
-pub(crate) unsafe fn symbol_handler(iscn: &mut zbar_image_scanner_t) {
-    let symbol_type = iscn.get_type();
-    let mut x = 0;
-    let mut y = 0;
+    /// Symbol handler callback for 1D barcode decoding
+    ///
+    /// This function is called by the decoder when a barcode is successfully decoded.
+    /// It manages symbol deduplication, position tracking, and adds symbols to the result set.
+    ///
+    /// # Arguments
+    /// * `dcode` - The decoder that found the symbol
+    pub(crate) fn symbol_handler(&mut self) {
+        let symbol_type = self.get_type();
+        let mut x = 0;
+        let mut y = 0;
 
-    // QR codes are handled separately
-    if symbol_type == SymbolType::QrCode {
-        iscn.qr_handler();
-        return;
-    }
-
-    // Calculate position if position tracking is enabled
-    let position_tracking = iscn.scanner_config.position_tracking;
-    if position_tracking {
-        let w = iscn.width();
-        let u = iscn.umin + iscn.du * iscn.get_edge(w, 0) as c_int;
-        if iscn.dx != 0 {
-            x = u;
-            y = iscn.v;
-        } else {
-            x = iscn.v;
-            y = u;
+        // QR codes are handled separately
+        if symbol_type == SymbolType::QrCode {
+            self.qr_handler();
+            return;
         }
-    }
 
-    // Ignore partial results
-    if symbol_type <= SymbolType::Partial {
-        return;
-    }
+        // Calculate position if position tracking is enabled
+        let position_tracking = self.scanner_config.position_tracking;
+        if position_tracking {
+            let w = self.width();
+            let u = self.umin + self.du * self.get_edge(w, 0) as c_int;
+            if self.dx != 0 {
+                x = u;
+                y = self.v;
+            } else {
+                x = self.v;
+                y = u;
+            }
+        }
 
-    // Check for duplicate - we need to copy the data first to avoid borrowing issues
-    let data_vec = iscn.buffer_slice().to_vec();
+        // Ignore partial results
+        if symbol_type <= SymbolType::Partial {
+            return;
+        }
 
-    if let Some(sym) = iscn.find_duplicate_symbol(symbol_type, &data_vec) {
-        sym.quality += 1;
+        // Check for duplicate - we need to copy the data first to avoid borrowing issues
+        let data_vec = self.buffer_slice().to_vec();
+
+        if let Some(sym) = self.find_duplicate_symbol(symbol_type, &data_vec) {
+            sym.quality += 1;
+            if position_tracking {
+                sym.add_point(x, y);
+            }
+            return;
+        }
+
+        // Allocate new symbol
+        let mut sym = zbar_symbol_t::new(symbol_type);
+        sym.modifiers = self.get_modifiers();
+
+        // Copy data
+        sym.data.extend_from_slice(&data_vec);
+
+        // Initialize position
         if position_tracking {
             sym.add_point(x, y);
         }
-        return;
+
+        // Set orientation
+        let dir = self.direction;
+        if dir != 0 {
+            sym.orient = (if self.dy != 0 { 1 } else { 0 }) + ((self.du ^ dir) & 2);
+        }
+
+        self.add_symbol(sym);
     }
-
-    // Allocate new symbol
-    let mut sym = zbar_symbol_t::new(symbol_type);
-    sym.modifiers = iscn.get_modifiers();
-
-    // Copy data
-    sym.data.extend_from_slice(&data_vec);
-
-    // Initialize position
-    if position_tracking {
-        sym.add_point(x, y);
-    }
-
-    // Set orientation
-    let dir = iscn.direction;
-    if dir != 0 {
-        sym.orient = (if iscn.dy != 0 { 1 } else { 0 }) + ((iscn.du ^ dir) & 2);
-    }
-
-    iscn.add_symbol(sym);
 }
