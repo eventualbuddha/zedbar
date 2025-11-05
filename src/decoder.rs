@@ -3,38 +3,12 @@
 //! This module contains Rust definitions for all the barcode decoder types
 //! that mirror the C struct layouts exactly for FFI compatibility.
 
-use std::{ffi::c_void, ptr::null_mut};
-
 use libc::{c_char, c_int, c_short, c_uint};
 
-use crate::{
-    config::internal::DecoderState,
-    decoders::{
-        codabar::_zbar_decode_codabar,
-        code128::_zbar_decode_code128,
-        code39::_zbar_decode_code39,
-        code93::_zbar_decode_code93,
-        databar::_zbar_decode_databar,
-        ean::{ean_decoder_t, zbar_decode_ean},
-        i25::_zbar_decode_i25,
-    },
-    finder::find_qr,
-    img_scanner::symbol_handler,
-    line_scanner::zbar_color_t,
-    Result, SymbolType,
-};
+use crate::line_scanner::zbar_color_t;
 
 /// Window size for bar width history (must be power of 2)
 pub(crate) const DECODE_WINDOW: usize = 16;
-
-// Assertion macro
-macro_rules! zassert {
-    ($condition:expr, $retval:expr, $($arg:tt)*) => {
-        if !$condition {
-            return $retval;
-        }
-    };
-}
 
 /// Decode element width into a discrete value
 /// Returns -1 if the element width is invalid
@@ -67,9 +41,6 @@ pub(crate) const ZBAR_ORIENT_UNKNOWN: c_int = -1;
 // ============================================================================
 // Buffer size constants
 // ============================================================================
-
-pub(crate) const BUFFER_MIN: c_uint = 0x20;
-pub(crate) const BUFFER_MAX: c_uint = 0x100;
 
 // ============================================================================
 // Simple decoder types

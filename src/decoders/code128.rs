@@ -324,7 +324,7 @@ fn postprocess_c(dcode: &mut zbar_image_scanner_t, start: usize, end: usize, dst
     let delta = end - start;
     let old_len = dcode.code128.character() as usize;
     let newlen = old_len + delta;
-    if dcode.set_buffer_capacity(newlen as c_uint).is_err() {
+    if dcode.set_buffer_capacity(newlen).is_err() {
         return SymbolType::None as c_uint;
     }
 
@@ -567,13 +567,8 @@ fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
         j += (delta * 2) as usize;
     }
 
-    zassert!(
-        (j as c_uint) < dcode.buffer_capacity(),
-        true,
-        "j={:02x}\n",
-        j
-    );
-    dcode.set_buffer_len(j as c_uint);
+    zassert!(j < dcode.buffer_capacity(), true, "j={:02x}\n", j);
+    dcode.set_buffer_len(j);
 
     // Write null terminator
     let buf = match dcode.buffer_mut_slice(j + 1) {
@@ -630,7 +625,7 @@ pub(crate) fn _zbar_decode_code128(dcode: &mut zbar_image_scanner_t) -> SymbolTy
         return SymbolType::None;
     } else if c < 0
         || dcode
-            .set_buffer_capacity((dcode.code128.character() + 1) as c_uint)
+            .set_buffer_capacity(dcode.code128.character() as usize + 1)
             .is_err()
     {
         if dcode.code128.character() > 1 {

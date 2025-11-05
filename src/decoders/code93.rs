@@ -382,10 +382,7 @@ pub(crate) fn _zbar_decode_code93(dcode: &mut zbar_image_scanner_t) -> SymbolTyp
     }
 
     let character = dcode.code93.character();
-    if dcode
-        .set_buffer_capacity((character + 1) as c_uint)
-        .is_err()
-    {
+    if dcode.set_buffer_capacity(character as usize + 1).is_err() {
         return decode_abort(dcode);
     }
 

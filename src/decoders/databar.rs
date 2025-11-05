@@ -4,7 +4,7 @@ use crate::{
     decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, ZBAR_MOD_GS1},
     img_scanner::zbar_image_scanner_t,
     line_scanner::zbar_color_t,
-    SymbolType,
+    Error, Result, SymbolType,
 };
 
 const DATABAR_MAX_SEGMENTS: usize = 32;
@@ -203,7 +203,7 @@ fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     }
 }
 
-fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int {
+fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result<usize> {
     let mut data_ptr = data;
     let first = data_ptr[0] as u64;
     data_ptr = &mut data_ptr[1..];
@@ -240,33 +240,33 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
     }
 
     if buflen <= 2 {
-        return -1;
+        return Err(Error::Invalid);
     }
 
     if enc < 4 {
         i_bits -= 1;
         let parity_bit = ((d >> i_bits) & 1) as i32;
         if ((len ^ parity_bit) & 1) != 0 {
-            return -1;
+            return Err(Error::Invalid);
         }
 
         i_bits -= 1;
         let size_group = ((d >> i_bits) & 1) as i32;
         if size_group != (len > 14) as i32 {
-            return -1;
+            return Err(Error::Invalid);
         }
     }
 
     len -= 2;
 
-    if dcode.set_buffer_capacity(buflen as c_uint).is_err() {
-        return -1;
+    if dcode.set_buffer_capacity(buflen as usize).is_err() {
+        return Err(Error::Invalid);
     }
 
     let buffer_capacity = dcode.buffer_capacity();
     let buf = match dcode.buffer_mut_slice(buflen as usize) {
         Ok(buf) => buf,
-        Err(_) => return -1,
+        Err(_) => return Err(Error::Invalid),
     };
     let mut buf_idx = 0usize;
 
@@ -280,7 +280,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
     if enc == 1 {
         i_bits -= 4;
         if i_bits >= 10 {
-            return -1;
+            return Err(Error::Invalid);
         }
         let digit = ((d >> i_bits) & 0xf) as u8;
         buf[buf_idx] = b'0' + digit;
@@ -295,11 +295,11 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
             feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 10);
             i_bits -= 10;
             if i_bits < 0 {
-                return -1;
+                return Err(Error::Invalid);
             }
             n = ((d >> i_bits) & 0x3ff) as u32;
             if n >= 1000 {
-                return -1;
+                return Err(Error::Invalid);
             }
             decode10(&mut buf[buf_idx..], n as u64, 3);
             buf_idx += 3;
@@ -330,11 +330,11 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
             buf_idx += 4;
             i_bits -= 10;
             if i_bits < 0 {
-                return -1;
+                return Err(Error::Invalid);
             }
             n = ((d >> i_bits) & 0x3ff) as u32;
             if n >= 1000 {
-                return -1;
+                return Err(Error::Invalid);
             }
             decode10(&mut buf[buf_idx..], n as u64, 3);
             buf_idx += 3;
@@ -343,7 +343,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
             feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
             i_bits -= 15;
             if i_bits < 0 {
-                return -1;
+                return Err(Error::Invalid);
             }
             n = ((d >> i_bits) & 0x7fff) as u32;
             buf[buf_idx] = b'3';
@@ -358,7 +358,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
             feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
             i_bits -= 15;
             if i_bits < 0 {
-                return -1;
+                return Err(Error::Invalid);
             }
             n = ((d >> i_bits) & 0x7fff) as u32;
             let mut prefix = b'2';
@@ -390,11 +390,11 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
         feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 20);
         i_bits -= 20;
         if i_bits < 0 {
-            return -1;
+            return Err(Error::Invalid);
         }
         n = ((d >> i_bits) & 0xfffff) as u32;
         if n >= 1_000_000 {
-            return -1;
+            return Err(Error::Invalid);
         }
         decode10(&mut buf[buf_idx..], n as u64, 6);
         buf[buf_idx - 1] = buf[buf_idx];
@@ -404,7 +404,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
         feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 16);
         i_bits -= 16;
         if i_bits < 0 {
-            return -1;
+            return Err(Error::Invalid);
         }
         n = ((d >> i_bits) & 0xffff) as u32;
         if n < 38400 {
@@ -425,7 +425,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
             decode10(&mut buf[buf_idx..], dd as u64, 2);
             buf_idx += 2;
         } else if n > 38400 {
-            return -1;
+            return Err(Error::Invalid);
         }
     }
 
@@ -447,7 +447,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
                 if len == 0 && i_bits < 3 {
                     let digit = ((d >> i_bits) & 0xf) as i32 - 1;
                     if digit > 9 {
-                        return -1;
+                        return Err(Error::Invalid);
                     }
                     buf[buf_idx] = b'0' + digit as u8;
                     buf_idx += 1;
@@ -490,7 +490,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
                 } else if scheme == SCH_ALNUM {
                     i_bits -= 1;
                     if i_bits < 0 {
-                        return -1;
+                        return Err(Error::Invalid);
                     }
                     val = ((d >> i_bits) & 0x1f) as u32;
                     ch = if val < 0x1a {
@@ -500,12 +500,12 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
                     } else if val < 0x1f {
                         b',' + (val as u8) - 0x1b
                     } else {
-                        return -1;
+                        return Err(Error::Invalid);
                     };
                 } else if scheme == SCH_ISO646 && val < 0x1d {
                     i_bits -= 2;
                     if i_bits < 0 {
-                        return -1;
+                        return Err(Error::Invalid);
                     }
                     val = ((d >> i_bits) & 0x3f) as u32;
                     ch = if val < 0x1a {
@@ -513,12 +513,12 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
                     } else if val < 0x34 {
                         b'a' + (val as u8) - 0x1a
                     } else {
-                        return -1;
+                        return Err(Error::Invalid);
                     };
                 } else if scheme == SCH_ISO646 {
                     i_bits -= 3;
                     if i_bits < 0 {
-                        return -1;
+                        return Err(Error::Invalid);
                     }
                     val = ((d >> i_bits) & 0x1f) as u32;
                     ch = match val {
@@ -527,10 +527,10 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
                         0x15..=0x1a => b':' + val as u8 - 0x15,
                         0x1b => b'_',
                         0x1c => b' ',
-                        _ => return -1,
+                        _ => return Err(Error::Invalid),
                     };
                 } else {
-                    return -1;
+                    return Err(Error::Invalid);
                 }
 
                 if ch != 0 {
@@ -541,9 +541,9 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
         }
     }
 
-    let total_len = buf_idx as c_int;
-    if total_len < 0 || (total_len as u32) >= buffer_capacity {
-        return -1;
+    let total_len = buf_idx;
+    if total_len >= buffer_capacity {
+        return Err(Error::Invalid);
     }
 
     buf[buf_idx] = 0;
@@ -556,8 +556,8 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> c_int 
         total_len
     };
 
-    dcode.set_buffer_len(final_len as c_uint);
-    final_len
+    dcode.set_buffer_len(final_len);
+    Ok(final_len)
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
@@ -1116,7 +1116,7 @@ fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: c_in
         return SymbolType::Partial;
     }
 
-    if postprocess_exp(dcode, &mut data_vals) != 0 {
+    if postprocess_exp(dcode, &mut data_vals).is_err() {
         dcode.release_lock(SymbolType::DatabarExp);
         return SymbolType::Partial;
     }

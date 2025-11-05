@@ -6,10 +6,19 @@ use crate::{
     config::{internal::DecoderState, DecoderConfig},
     decoder::{
         codabar_decoder_t, code128_decoder_t, code39_decoder_t, code93_decoder_t,
-        databar_decoder_t, i25_decoder_t, qr_finder_t, sq_finder_t, DECODE_WINDOW,
+        databar_decoder_t, databar_segment_t, i25_decoder_t, qr_finder_t, sq_finder_t,
+        DECODE_WINDOW,
     },
-    decoders::ean::ean_decoder_t,
-    finder::decoder_get_qr_finder_line,
+    decoders::{
+        codabar::_zbar_decode_codabar,
+        code128::_zbar_decode_code128,
+        code39::_zbar_decode_code39,
+        code93::_zbar_decode_code93,
+        databar::_zbar_decode_databar,
+        ean::{ean_decoder_t, zbar_decode_ean},
+        i25::_zbar_decode_i25,
+    },
+    finder::find_qr,
     image_ffi::zbar_image_t,
     img_scanner_config::ImageScannerConfig,
     line_scanner::zbar_color_t,
@@ -37,7 +46,8 @@ const EWMA_WEIGHT: c_uint = 25;
 const THRESH_INIT: c_uint = 14;
 
 // Decoder constants from decoder.rs
-const BUFFER_MIN: c_uint = 0x20;
+const BUFFER_MIN: usize = 0x20;
+const BUFFER_MAX: usize = 0x100;
 
 #[derive(Default, Clone)]
 pub(crate) struct zbar_symbol_set_t {
@@ -132,7 +142,7 @@ impl Default for zbar_image_scanner_t {
             modifiers: 0,
             direction: 0,
             s6: 0,
-            buffer: Vec::with_capacity(BUFFER_MIN as usize),
+            buffer: Vec::with_capacity(BUFFER_MIN),
             userdata: std::ptr::null_mut(),
             config: decoder_config.clone(),
             ean: ean_decoder_t::default(),
@@ -158,7 +168,7 @@ impl Default for zbar_image_scanner_t {
         };
 
         scanner.sync_config_to_decoders();
-        scanner.databar.segs = vec![crate::decoder::databar_segment_t::default(); 4];
+        scanner.databar.segs = vec![databar_segment_t::default(); 4];
         scanner.decoder_reset();
 
         scanner
@@ -216,7 +226,7 @@ impl zbar_image_scanner_t {
             modifiers: 0,
             direction: 0,
             s6: 0,
-            buffer: Vec::with_capacity(BUFFER_MIN as usize),
+            buffer: Vec::with_capacity(BUFFER_MIN),
             userdata: std::ptr::null_mut(),
             config: decoder_state.clone(),
             ean: ean_decoder_t::default(),
@@ -238,11 +248,11 @@ impl zbar_image_scanner_t {
             umin: 0,
             v: 0,
             syms: zbar_symbol_set_t::default(),
-            scanner_config: scanner_config,
+            scanner_config,
         };
 
         scanner.sync_config_to_decoders();
-        scanner.databar.segs = vec![crate::decoder::databar_segment_t::default(); 4];
+        scanner.databar.segs = vec![databar_segment_t::default(); 4];
         scanner.decoder_reset();
 
         scanner
@@ -508,7 +518,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Resize the decoder's data buffer if needed
-    pub(crate) fn set_buffer_capacity(&mut self, len: c_uint) -> Result<(), ()> {
+    pub(crate) fn set_buffer_capacity(&mut self, len: usize) -> Result<(), ()> {
         if len <= BUFFER_MIN {
             return Ok(());
         }
@@ -516,28 +526,28 @@ impl zbar_image_scanner_t {
         if len < current_alloc {
             return Ok(());
         }
-        if len > crate::decoder::BUFFER_MAX {
+        if len > BUFFER_MAX {
             return Err(());
         }
 
-        self.buffer.reserve_exact((len - current_alloc) as usize);
+        self.buffer.reserve_exact(len - current_alloc);
         Ok(())
     }
 
     #[inline]
-    pub(crate) fn buffer_capacity(&self) -> c_uint {
-        self.buffer.capacity() as c_uint
+    pub(crate) fn buffer_capacity(&self) -> usize {
+        self.buffer.capacity()
     }
 
     #[inline]
-    pub(crate) fn set_buffer_len(&mut self, len: c_uint) {
+    pub(crate) fn set_buffer_len(&mut self, len: usize) {
         debug_assert!(len <= self.buffer_capacity());
-        self.buffer.resize(len as usize, 0);
+        self.buffer.resize(len, 0);
     }
 
     #[inline]
     pub(crate) fn buffer_mut_slice(&mut self, len: usize) -> Result<&mut [u8], ()> {
-        if len > crate::decoder::BUFFER_MAX as usize {
+        if len > BUFFER_MAX {
             return Err(());
         }
 
@@ -653,15 +663,6 @@ impl zbar_image_scanner_t {
 
     /// Process next bar/space width from input stream
     pub(crate) unsafe fn decode_width(&mut self, w: c_uint) -> SymbolType {
-        use crate::{
-            decoders::{
-                codabar::_zbar_decode_codabar, code128::_zbar_decode_code128,
-                code39::_zbar_decode_code39, code93::_zbar_decode_code93,
-                databar::_zbar_decode_databar, ean::zbar_decode_ean, i25::_zbar_decode_i25,
-            },
-            finder::find_qr,
-        };
-
         let mut sym = SymbolType::None;
 
         // Store width in circular buffer
@@ -740,15 +741,11 @@ impl zbar_image_scanner_t {
             }
 
             if sym > SymbolType::Partial {
-                crate::img_scanner::symbol_handler(self);
+                symbol_handler(self);
             }
         }
 
         sym
-    }
-
-    pub(crate) fn get_userdata(&self) -> *mut c_void {
-        self.userdata
     }
 
     pub(crate) fn set_userdata(&mut self, userdata: *mut c_void) {
