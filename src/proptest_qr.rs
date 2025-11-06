@@ -173,12 +173,11 @@ proptest! {
     fn prop_qr_empty_or_single_byte(data in prop::collection::vec(0u8..128, 0..2)) {
         if data.is_empty() {
             // Empty QR codes are valid (version 1, minimal)
-            if let Some(img) = generate_qr_image(&data) {
-                if let Ok(decoded) = decode_qr_image(&img) {
+            if let Some(img) = generate_qr_image(&data)
+                && let Ok(decoded) = decode_qr_image(&img) {
                     prop_assert_eq!(decoded.len(), 1);
                     prop_assert_eq!(&decoded[0], &data);
                 }
-            }
         } else {
             let img = generate_qr_image(&data)
                 .ok_or_else(|| TestCaseError::fail("Failed to generate QR code"))?;

@@ -759,11 +759,10 @@ impl zbar_image_scanner_t {
         let symbols = self.scan_image_internal(img);
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
-        if symbols.is_empty() && self.scanner_config.test_inverted {
-            if let Some(mut inv) = img.copy(true) {
+        if symbols.is_empty() && self.scanner_config.test_inverted
+            && let Some(mut inv) = img.copy(true) {
                 return self.scan_image_internal(&mut inv);
             }
-        }
 
         symbols
     }

@@ -8,20 +8,20 @@
 
 use std::{collections::VecDeque, mem::swap};
 
-use encoding_rs::{Encoding, BIG5, SHIFT_JIS, UTF_8, WINDOWS_1252};
+use encoding_rs::{BIG5, Encoding, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
 
 use crate::{
-    decoder::{qr_finder_line, Modifier},
+    SymbolType,
+    decoder::{Modifier, qr_finder_line},
     image_ffi::zbar_image_t,
     qrcode::{
         binarize::binarize,
         util::{qr_ihypot, qr_ilog, qr_isqrt},
     },
     symbol::Symbol,
-    SymbolType,
 };
 
 use super::bch15_5::bch15_5_correct;
@@ -176,8 +176,7 @@ fn qr_hom_fit_edge_line(
 
         // Calculate normalization shift (always uses column 1 of affine matrix)
         let shift = 0.max(
-            qr_ilog((aff.fwd[0][1].abs()).max(aff.fwd[1][1].abs()) as u32)
-                - ((aff.res + 1) >> 1),
+            qr_ilog((aff.fwd[0][1].abs()).max(aff.fwd[1][1].abs()) as u32) - ((aff.res + 1) >> 1),
         );
         let round = (1 << shift) >> 1;
 
@@ -620,15 +619,10 @@ pub(crate) fn qr_hom_init(
     let a22 = dx32 * dy31 - dx31 * dy32;
 
     // Figure out if we need to downscale anything
-    let b0 =
-        qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 =
-        qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
+    let b0 = qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
+    let b1 = qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
     let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
-    let s1 = i32::max(
-        0,
-        _res + i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 2),
-    );
+    let s1 = i32::max(0, _res + i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 2));
     let r1 = (1i64 << s1) >> 1;
 
     // Compute the final coefficients of the forward transform
@@ -1979,12 +1973,7 @@ pub(crate) fn qr_finder_quick_crossing_check(
 /// # Returns
 /// - `Ok(dv)` with the computed step in v direction on success
 /// - `Err(-1)` if the line is too steep (>45 degrees from horizontal/vertical)
-pub(crate) fn qr_aff_line_step(
-    aff: &qr_aff,
-    line: &qr_line,
-    v: i32,
-    du: i32,
-) -> Result<i32, i32> {
+pub(crate) fn qr_aff_line_step(aff: &qr_aff, line: &qr_line, v: i32, du: i32) -> Result<i32, i32> {
     let l0 = line[0];
     let l1 = line[1];
 
@@ -2975,61 +2964,37 @@ fn qr_hom_cell_init(
     // QR_FLIPSIGNI flips sign of result if original value was negative
     let i00 = if i00_full != 0 {
         let result = qr_divround(i22, i00_full.abs());
-        if i00_full < 0 {
-            -result
-        } else {
-            result
-        }
+        if i00_full < 0 { -result } else { result }
     } else {
         0
     };
     let i01 = if i01_full != 0 {
         let result = qr_divround(i22, i01_full.abs());
-        if i01_full < 0 {
-            -result
-        } else {
-            result
-        }
+        if i01_full < 0 { -result } else { result }
     } else {
         0
     };
     let i10 = if i10_full != 0 {
         let result = qr_divround(i22, i10_full.abs());
-        if i10_full < 0 {
-            -result
-        } else {
-            result
-        }
+        if i10_full < 0 { -result } else { result }
     } else {
         0
     };
     let i11 = if i11_full != 0 {
         let result = qr_divround(i22, i11_full.abs());
-        if i11_full < 0 {
-            -result
-        } else {
-            result
-        }
+        if i11_full < 0 { -result } else { result }
     } else {
         0
     };
     let i20 = if i20_full != 0 {
         let result = qr_divround(i22, i20_full.abs());
-        if i20_full < 0 {
-            -result
-        } else {
-            result
-        }
+        if i20_full < 0 { -result } else { result }
     } else {
         0
     };
     let i21 = if i21_full != 0 {
         let result = qr_divround(i22, i21_full.abs());
-        if i21_full < 0 {
-            -result
-        } else {
-            result
-        }
+        if i21_full < 0 { -result } else { result }
     } else {
         0
     };
@@ -3050,10 +3015,8 @@ fn qr_hom_cell_init(
     let a22 = dx32 * dy31 - dx31 * dy32;
 
     // Figure out if we need to downscale
-    let b0 =
-        qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 =
-        qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
+    let b0 = qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
+    let b1 = qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
     let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
     let shift = i32::max(
         0,
@@ -3126,11 +3089,7 @@ pub(crate) fn qr_img_get_bit(img: &[u8], width: i32, height: i32, mut x: i32, mu
     let y_clamped = y.clamp(0, height - 1);
     let x_clamped = x.clamp(0, width - 1);
     let idx = y_clamped * width + x_clamped;
-    if img[idx as usize] != 0 {
-        1
-    } else {
-        0
-    }
+    if img[idx as usize] != 0 { 1 } else { 0 }
 }
 
 /// Finish a partial projection, converting from homogeneous coordinates to the
@@ -3340,11 +3299,7 @@ fn qr_alignment_pattern_search(
                 }
 
                 let dir = if j < 2 * side_len {
-                    if j >= side_len {
-                        1
-                    } else {
-                        0
-                    }
+                    if j >= side_len { 1 } else { 0 }
                 } else if j >= 3 * side_len {
                     1
                 } else {
@@ -4515,11 +4470,7 @@ impl qr_code_data {
                             error_count += 1;
                         }
                     }
-                    if error_count > 0 {
-                        error_count
-                    } else {
-                        0
-                    }
+                    if error_count > 0 { error_count } else { 0 }
                 }
                 Err(_) => -1, // Correction failed
             };
@@ -4757,12 +4708,12 @@ impl qr_code_data_list {
                         }
 
                         match &entry.payload {
-                            qr_code_data_payload::Numeric(ref data)
-                            | qr_code_data_payload::Alphanumeric(ref data) => {
+                            qr_code_data_payload::Numeric(data)
+                            | qr_code_data_payload::Alphanumeric(data) => {
                                 sa_text.extend_from_slice(data);
                             }
-                            qr_code_data_payload::Bytes(ref data)
-                            | qr_code_data_payload::Kanji(ref data) => {
+                            qr_code_data_payload::Bytes(data)
+                            | qr_code_data_payload::Kanji(data) => {
                                 bytebuf.extend_from_slice(data);
                             }
                             qr_code_data_payload::ExtendedChannelInterpretation(val) => {
