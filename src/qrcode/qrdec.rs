@@ -1501,7 +1501,7 @@ pub(crate) fn qr_pack_buf_read(_b: &mut qr_pack_buf, _bits: i32) -> Option<i32> 
     }
 
     let idx = _b.endbyte as usize;
-    let mut ret = (u32::from(_b.buf[idx]) << (8 + _b.endbit));
+    let mut ret = u32::from(_b.buf[idx]) << (8 + _b.endbit);
     if bits > 8 {
         ret |= u32::from(_b.buf[idx + 1]) << _b.endbit;
         if bits > 16 {
@@ -3086,7 +3086,7 @@ fn qr_hom_cell_init(
         + (if i21 != 0 { qr_divround(a22, i21) } else { 0 })
         + round as i32)
         >> shift;
-    cell.fwd[2][2] = ((a22 + round as i32) >> shift);
+    cell.fwd[2][2] = (a22 + round as i32) >> shift;
 
     // Compute offsets to distribute rounding error over whole range
     // (instead of concentrating it in the (u3,v3) corner)

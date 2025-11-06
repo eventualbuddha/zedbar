@@ -396,7 +396,7 @@ impl zbar_image_scanner_t {
                 // adaptive thresholding
                 // start at multiple of new min/max
                 self.y1_thresh =
-                    ((y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED);
+                    (y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED;
                 if self.y1_thresh < self.y1_min_thresh {
                     self.y1_thresh = self.y1_min_thresh;
                 }

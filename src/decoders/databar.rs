@@ -1,4 +1,3 @@
-
 use crate::{
     color::Color,
     decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, ZBAR_MOD_GS1},
@@ -1400,7 +1399,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
         sig1.wrapping_add(0x1111),
         sum1.wrapping_add(4),
         (9 - g.wmax) as u32,
-        ((n & 1)),
+        n & 1,
     );
     if veven < 0 || veven > g.teven as i32 {
         return SymbolType::None;

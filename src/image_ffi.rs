@@ -7,7 +7,6 @@ pub struct zbar_image_t {
     pub width: u32,
     pub height: u32,
     pub data: Vec<u8>,
-    pub seq: u32,
 }
 
 impl zbar_image_t {
@@ -16,7 +15,6 @@ impl zbar_image_t {
             width: self.width,
             height: self.height,
             data: vec![0; self.data.len()],
-            ..Default::default()
         };
 
         if !inverted {

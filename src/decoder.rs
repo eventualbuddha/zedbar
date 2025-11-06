@@ -2,7 +2,6 @@
 //!
 //! This module contains type definitions for all the barcode decoder types.
 
-
 #[cfg(any(
     feature = "i25",
     feature = "code39",
@@ -12,7 +11,6 @@
     feature = "databar",
     feature = "qrcode"
 ))]
-
 #[cfg(feature = "databar")]
 use crate::color::Color;
 
