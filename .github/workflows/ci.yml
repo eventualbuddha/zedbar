@@ -15,7 +15,7 @@ jobs:
       - name: Install C dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libzbar0 zbar-tools
+          sudo apt-get install -y libzbar-dev libzbar0 zbar-tools
 
       - name: Verify zbarimg installation
         run: |
