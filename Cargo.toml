@@ -1,8 +1,8 @@
 [package]
-name = "zbar-rust"
+name = "barq"
 version = "0.1.0"
 edition = "2021"
-description = "ZBar barcode scanning library"
+description = "Barq barcode scanning library"
 license = "LGPL-3.0-or-later"
 repository = "https://github.com/eventualbuddha/zbar"
 
@@ -19,6 +19,10 @@ rand_chacha = { version = "0.9", optional = true }
 image = { version = "0.25", optional = true }
 clap = { version = "4.5", features = ["derive"], optional = true }
 
+# Optional benchmark comparison libraries (can be dependencies since they're feature-gated)
+zbar-rust = { version = "0.0.24", optional = true }
+rxing = { version = "0.8", optional = true }
+
 [[bin]]
 name = "zbarimg"
 path = "src/bin/zbarimg.rs"
@@ -34,8 +38,23 @@ rand = "0.9"
 rand_chacha = "0.9"
 image = "0.25"
 
+# Benchmarking
+criterion = { version = "0.7.0", features = ["html_reports"] }
+
 [features]
-default = ["qrcode", "sqcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "image", "clap"]
+default = [
+  "qrcode",
+  "sqcode",
+  "ean",
+  "code128",
+  "code39",
+  "code93",
+  "codabar",
+  "databar",
+  "i25",
+  "image",
+  "clap",
+]
 qrcode = ["dep:encoding_rs", "dep:reed-solomon", "dep:rand", "dep:rand_chacha"]
 sqcode = []
 ean = []
@@ -47,3 +66,11 @@ databar = []
 i25 = []
 image = ["dep:image"]
 clap = ["dep:clap"]
+
+# Benchmark features - enable to compare with other libraries
+bench_zbar_c = ["dep:zbar-rust"]
+bench_rxing = ["dep:rxing"]
+
+[[bench]]
+name = "comparison"
+harness = false

@@ -134,6 +134,20 @@ cargo run --bin zbarimg examples/test-ean13.png
 cargo test
 ```
 
+## Benchmarks
+
+Comprehensive benchmarks comparing this library with rqrr, rxing, and the original C zbar library are available:
+
+```bash
+# Compare with rqrr (default)
+cargo bench
+
+# Compare with all libraries (requires optional dependencies)
+cargo bench --features bench_zbar_c,bench_rxing
+```
+
+See [benches/README.md](benches/README.md) for detailed benchmark documentation and results.
+
 ## Credits
 
 ### Original ZBar Library
