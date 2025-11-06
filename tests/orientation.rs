@@ -4,7 +4,7 @@
 //! by scanning barcode images rotated to different orientations.
 
 use std::collections::HashSet;
-use zbar::{Image, Orientation, Scanner};
+use zedbar::{Image, Orientation, Scanner};
 
 #[test]
 fn test_orientation_all_variants() {

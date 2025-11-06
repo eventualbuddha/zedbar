@@ -1,17 +1,17 @@
 # Barcode Library Benchmarks
 
-Comprehensive benchmarks comparing `zbar-rust` with other Rust barcode decoding libraries.
+Comprehensive benchmarks comparing `zedbar` with other Rust barcode decoding libraries.
 
 ## Libraries Compared
 
-- **zbar-rust** (this library) - Pure Rust port of ZBar
+- **zedbar** (this library) - Pure Rust port of ZBar
 - **rqrr** - Pure Rust QR code decoder (always included)
 - **zbars** - Rust bindings to the C ZBar library (optional)
 - **rxing** - Rust port of ZXing (optional)
 
 ## Quick Start
 
-### Basic Benchmark (zbar-rust vs rqrr)
+### Basic Benchmark (zedbar vs rqrr)
 
 ```bash
 # Full benchmark run (takes a few minutes)
@@ -21,7 +21,7 @@ cargo bench
 cargo bench -- --quick
 ```
 
-This runs the default benchmark comparing zbar-rust with rqrr on both QR codes and 1D barcodes.
+This runs the default benchmark comparing zedbar with rqrr on both QR codes and 1D barcodes.
 
 **Note:** rqrr only supports QR codes, so only QR tests will run for it.
 
@@ -89,18 +89,18 @@ Based on quick benchmarks, here are some observations:
 
 **QR Codes:**
 
-- **Simple QR**: zbar-rust (~730µs) is significantly faster than rqrr (~5.5ms)
-- **Low Contrast**: rqrr (~520µs) is faster than zbar-rust (~2.6ms)
-- **Capstone Interference**: rqrr (~690µs) is faster than zbar-rust (~2.4ms)
-- **Large QR**: zbar-rust (~25ms) is faster than rqrr (~8.8ms)
+- **Simple QR**: zedbar (~730µs) is significantly faster than rqrr (~5.5ms)
+- **Low Contrast**: rqrr (~520µs) is faster than zedbar (~2.6ms)
+- **Capstone Interference**: rqrr (~690µs) is faster than zedbar (~2.4ms)
+- **Large QR**: zedbar (~25ms) is faster than rqrr (~8.8ms)
 
 **Trade-offs:**
 
-- zbar-rust excels at simple, clean QR codes and large images
+- zedbar excels at simple, clean QR codes and large images
 - rqrr is more robust for difficult/challenging QR codes
-- zbar-rust supports many 1D formats that rqrr doesn't support
+- zedbar supports many 1D formats that rqrr doesn't support
 
-**1D Barcodes (zbar-rust only):**
+**1D Barcodes (zedbar only):**
 
 - EAN-13: ~12.4ms
 - EAN-8: ~12.6ms

@@ -1,13 +1,15 @@
 [package]
-name = "barq"
+name = "zedbar"
 version = "0.1.0"
 edition = "2021"
-description = "Barq barcode scanning library"
+description = "Pure Rust barcode and QR code scanning library supporting multiple formats"
 license = "LGPL-3.0-or-later"
 repository = "https://github.com/eventualbuddha/zbar"
+keywords = ["barcode", "qr-code", "scanner", "image", "computer-vision"]
+categories = ["computer-vision", "multimedia::images"]
 
 [lib]
-name = "zbar"
+name = "zedbar"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
@@ -24,8 +26,8 @@ zbar-rust = { version = "0.0.24", optional = true }
 rxing = { version = "0.8", optional = true }
 
 [[bin]]
-name = "zbarimg"
-path = "src/bin/zbarimg.rs"
+name = "zedbarimg"
+path = "src/bin/zedbarimg.rs"
 required-features = ["image", "clap"]
 
 [dev-dependencies]

@@ -1,4 +1,4 @@
-# zbar-rust
+# zedbar
 
 A pure Rust implementation of barcode scanning, based on the [ZBar bar code reader](https://github.com/mchehab/zbar) C library.
 
@@ -9,7 +9,7 @@ This is a port of the ZBar library to Rust, providing barcode detection and deco
 - **Multiple Barcode Formats**: QR Code, EAN-13, EAN-8, UPC-A, UPC-E, ISBN-10, ISBN-13, Code 128, Code 93, Code 39, Codabar, Interleaved 2 of 5, DataBar (RSS), SQCode
 - **Pure Rust**: No C dependencies, fully memory-safe implementation
 - **Type-Safe Configuration**: Compile-time validated configuration API
-- **Command-line Tool**: `zbarimg` utility for scanning images from the command line
+- **Command-line Tool**: `zedbarimg` utility for scanning images from the command line
 - **Position Tracking**: Optional tracking of barcode positions in images
 - **Inverted Image Support**: Can detect barcodes in inverted images
 
@@ -19,7 +19,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zbar-rust = "0.1"
+zedbar = "0.1"
 ```
 
 ### Cargo Features
@@ -28,7 +28,7 @@ By default, all symbologies are enabled. You can selectively enable only the one
 
 ```toml
 [dependencies]
-zbar-rust = { version = "0.1", default-features = false, features = ["qrcode", "ean"] }
+zedbar = { version = "0.1", default-features = false, features = ["qrcode", "ean"] }
 ```
 
 #### Symbology Features
@@ -48,8 +48,8 @@ zbar-rust = { version = "0.1", default-features = false, features = ["qrcode", "
 **Heavy dependencies (tied to features):**
 
 - `encoding_rs`, `reed-solomon`, `rand`, `rand_chacha` - Required for QR code decoding (enabled with `qrcode` feature)
-- `image` - Image format loading (PNG, JPEG, etc.) - needed for tests and the `zbarimg` binary
-- `clap` - Command-line parsing (needed for the `zbarimg` binary)
+- `image` - Image format loading (PNG, JPEG, etc.) - needed for tests and the `zedbarimg` binary
+- `clap` - Command-line parsing (needed for the `zedbarimg` binary)
 
 **Note:** 1D barcode decoders (EAN, Code39, Code128, etc.) have **zero external dependencies**!
 
@@ -65,14 +65,14 @@ For the absolute minimal build with zero external dependencies (1D barcodes only
 
 ```toml
 [dependencies]
-zbar-rust = { version = "0.1", default-features = false, features = ["ean"] }
+zedbar = { version = "0.1", default-features = false, features = ["ean"] }
 ```
 
 For QR codes only (with necessary dependencies):
 
 ```toml
 [dependencies]
-zbar-rust = { version = "0.1", default-features = false, features = ["qrcode"] }
+zedbar = { version = "0.1", default-features = false, features = ["qrcode"] }
 ```
 
 Note: Disabling a feature at compile-time means that symbology will not be compiled into the binary at all, which is different from disabling it via runtime configuration.
@@ -82,7 +82,7 @@ Note: Disabling a feature at compile-time means that symbology will not be compi
 ### Library
 
 ```rust
-use zbar::{Image, Scanner};
+use zedbar::{Image, Scanner};
 
 // Load and convert image to grayscale
 let img = image::open("barcode.png")?;
@@ -90,9 +90,9 @@ let gray = img.to_luma8();
 let (width, height) = gray.dimensions();
 
 // Create scanner and scan image
-let mut zbar_img = Image::from_gray(gray.as_raw(), width, height)?;
+let mut img = Image::from_gray(gray.as_raw(), width, height)?;
 let mut scanner = Scanner::new();
-let symbols = scanner.scan(&mut zbar_img);
+let symbols = scanner.scan(&mut img);
 
 // Process decoded symbols
 for symbol in symbols {
@@ -103,8 +103,8 @@ for symbol in symbols {
 ### Advanced Configuration
 
 ```rust
-use zbar::config::*;
-use zbar::{DecoderConfig, Scanner};
+use zedbar::config::*;
+use zedbar::{DecoderConfig, Scanner};
 
 let config = DecoderConfig::new()
     .enable(QrCode)
@@ -121,11 +121,11 @@ let mut scanner = Scanner::with_config(config);
 
 ```bash
 # Build the tool
-cargo build --release --bin zbarimg
+cargo build --release --bin zedbarimg
 
 # Scan an image
-cargo run --bin zbarimg examples/test-qr.png
-cargo run --bin zbarimg examples/test-ean13.png
+cargo run --bin zedbarimg examples/test-qr.png
+cargo run --bin zedbarimg examples/test-ean13.png
 ```
 
 ## Testing
@@ -186,7 +186,8 @@ If this library doesn't meet your needs, consider these alternatives:
 
 - **For QR codes only**: Consider `rqrr` - it's fast, pure Rust, and has a simpler API.
 - **For maximum format support**: The original ZBar C library or ZXing are very mature.
-- **For pure Rust with broad format support**: This library (`zbar-rust`) or `rxing`.
+- **For pure Rust with broad format support**: This library (`zedbar`) or `rxing`.
+- **For C bindings to ZBar**: Use `zbar-rust` which provides FFI bindings to the original C library.
 
 ## License
 

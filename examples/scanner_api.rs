@@ -3,11 +3,11 @@
 //! This example shows how to use the Scanner with the type-safe DecoderConfig
 //! builder API to configure barcode scanning.
 
-use zbar::config::*;
-use zbar::{DecoderConfig, Scanner};
+use zedbar::config::*;
+use zedbar::{DecoderConfig, Scanner};
 
 fn main() {
-    println!("=== ZBar Modern Scanner API Examples ===\n");
+    println!("=== Zedbar Modern Scanner API Examples ===\n");
 
     // Example 1: Basic usage with default configuration
     println!("1. Basic scanner with defaults:");

@@ -1,11 +1,11 @@
 //! Command-line barcode scanner
 //!
-//! This binary provides a command-line interface to the zbar library.
+//! This binary provides a command-line interface to the zedbar library.
 //! It requires all symbology features to be enabled to provide full CLI control.
 //! 
-//! Build with: `cargo build --bin zbarimg` (uses default features)
+//! Build with: `cargo build --bin zedbarimg` (uses default features)
 
-// The zbarimg binary provides CLI flags for all symbologies,
+// The zedbarimg binary provides CLI flags for all symbologies,
 // so it requires all features to be enabled. Users who want a minimal
 // library should build with `--lib` and select specific features.
 #[cfg(not(all(
@@ -20,19 +20,19 @@
     feature = "i25"
 )))]
 compile_error!(
-    "zbarimg binary requires all symbology features enabled. \
-     Build with default features: `cargo build --bin zbarimg` \
+    "zedbarimg binary requires all symbology features enabled. \
+     Build with default features: `cargo build --bin zedbarimg` \
      For a minimal library, use: `cargo build --lib --no-default-features --features qrcode`"
 );
 
 use clap::Parser;
 use std::io::Write;
 use std::process;
-use zbar::{config::*, DecoderConfig, Image, Scanner};
+use zedbar::{config::*, DecoderConfig, Image, Scanner};
 
 /// Scan and decode bar codes from one or more image files
 #[derive(Parser)]
-#[command(name = "zbarimg")]
+#[command(name = "zedbarimg")]
 #[command(version)]
 #[command(about = "Scan and decode bar codes from one or more image files", long_about = None)]
 struct Args {

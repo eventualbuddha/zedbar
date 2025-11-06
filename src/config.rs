@@ -1,4 +1,4 @@
-//! Type-safe configuration system for ZBar decoders
+//! Type-safe configuration system for Zedbar decoders
 //!
 //! This module provides a compile-time verified configuration API that prevents
 //! invalid configuration combinations. The type system ensures you can only
@@ -9,8 +9,8 @@
 //! ## Valid Configuration
 //!
 //! ```
-//! use zbar::config::*;
-//! use zbar::DecoderConfig;
+//! use zedbar::config::*;
+//! use zedbar::DecoderConfig;
 //!
 //! let config = DecoderConfig::new()
 //!     .enable(Ean13)
@@ -25,24 +25,24 @@
 //! The following configurations will NOT compile:
 //!
 //! ```compile_fail
-//! # use zbar::config::*;
-//! # use zbar::DecoderConfig;
+//! # use zedbar::config::*;
+//! # use zedbar::DecoderConfig;
 //! # let config = DecoderConfig::new();
 //! // ❌ EAN-13 has fixed length, doesn't support length limits
 //! config.set_length_limits(Ean13, 1, 20);
 //! ```
 //!
 //! ```compile_fail
-//! # use zbar::config::*;
-//! # use zbar::DecoderConfig;
+//! # use zedbar::config::*;
+//! # use zedbar::DecoderConfig;
 //! # let config = DecoderConfig::new();
 //! // ❌ Code39 is not a 2D code, doesn't support binary mode
 //! config.set_binary(Code39, true);
 //! ```
 //!
 //! ```compile_fail
-//! # use zbar::config::*;
-//! # use zbar::DecoderConfig;
+//! # use zedbar::config::*;
+//! # use zedbar::DecoderConfig;
 //! # let config = DecoderConfig::new();
 //! // ❌ QR codes don't use length limits
 //! config.set_length_limits(QrCode, 1, 100);
@@ -144,7 +144,7 @@ pub trait Symbology: Sized {
 ///
 /// # Example
 /// ```no_run
-/// use zbar::config::*;
+/// use zedbar::config::*;
 ///
 /// let config = DecoderConfig::new()
 ///     .enable(Ean13)
@@ -271,8 +271,8 @@ impl DecoderConfig {
     ///
     /// # Example
     /// ```
-    /// use zbar::config::*;
-    /// use zbar::DecoderConfig;
+    /// use zedbar::config::*;
+    /// use zedbar::DecoderConfig;
     ///
     /// let config = DecoderConfig::new()
     ///     .disable_all()

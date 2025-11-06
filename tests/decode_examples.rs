@@ -1,13 +1,13 @@
 //! Integration tests for decoding example barcode images
 //!
 //! These tests compare results from multiple decoders:
-//! - This crate (zbar-rust)
+//! - This crate (zedbar)
 //! - System zbar (via zbarimg command)
 //! - rqrr (for QR codes only)
 
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
-use zbar::{Image, Scanner};
+use zedbar::{Image, Scanner};
 
 /// Downscale an image if it exceeds the maximum dimension
 fn downscale_if_needed(img: DynamicImage, max_dimension: u32) -> DynamicImage {
@@ -117,11 +117,11 @@ fn test_qr_simple() {
     let result_zbars = decode_with_zbars("examples/test-qr.png");
     let result_rqrr = decode_with_rqrr("examples/test-qr.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
 
-    // zbar-rust and zbars must agree
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    // zedbar and zbars must agree
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     // rqrr should match if it succeeds (it may not decode all QR codes)
     if let Some(rqrr_result) = result_rqrr {
@@ -144,9 +144,9 @@ fn test_qr_jpg() {
     let result_zbars = decode_with_zbars("examples/test-qr.jpg");
     let result_rqrr = decode_with_rqrr("examples/test-qr.jpg");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
         assert_eq!(
@@ -168,9 +168,9 @@ fn test_qr_wifi_sharing() {
     let result_zbars = decode_with_zbars("examples/pixel-wifi-sharing-qr-code.png");
     let result_rqrr = decode_with_rqrr("examples/pixel-wifi-sharing-qr-code.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
         assert_eq!(
@@ -192,9 +192,9 @@ fn test_qr_capstone_interference() {
     let result_zbars = decode_with_zbars("examples/qr-code-capstone-interference.png");
     let result_rqrr = decode_with_rqrr("examples/qr-code-capstone-interference.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
         assert_eq!(
@@ -211,18 +211,18 @@ fn test_qr_color_bands() {
     let result_zbars = decode_with_zbars("examples/qr-code-color-bands.png");
     let result_rqrr = decode_with_rqrr("examples/qr-code-color-bands.png");
 
-    // zbar-rust and zbars should succeed
-    assert!(result_this.is_some(), "zbar-rust failed");
+    // zedbar and zbars should succeed
+    assert!(result_this.is_some(), "zedbar failed");
     assert!(result_zbars.is_some(), "zbars failed");
 
-    // Check zbar-rust result
+    // Check zedbar result
     let (symbol_type, data) = result_this.as_ref().unwrap();
     assert_eq!(symbol_type, "QR-Code");
     assert!(data.starts_with("二维码生成器"));
     assert!(data.contains("https://zh.qr-code-generator.com"));
 
-    // zbar-rust and zbars should agree
-    assert_eq!(result_zbars, result_this, "zbars disagrees with zbar-rust");
+    // zedbar and zbars should agree
+    assert_eq!(result_zbars, result_this, "zbars disagrees with zedbar");
 
     // rqrr should match if it succeeds
     if let Some(rqrr_result) = result_rqrr {
@@ -245,9 +245,9 @@ fn test_qr_low_contrast() {
     let result_zbars = decode_with_zbars("examples/qr-code-low-contrast.png");
     let result_rqrr = decode_with_rqrr("examples/qr-code-low-contrast.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
         assert_eq!(
@@ -269,9 +269,9 @@ fn test_qr_pacman() {
     let result_zbars = decode_with_zbars("examples/qr-code-pacman.png");
     let result_rqrr = decode_with_rqrr("examples/qr-code-pacman.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
         assert_eq!(
@@ -289,9 +289,9 @@ fn test_codabar() {
     let result_this = decode_image("examples/test-codabar.png");
     let result_zbars = decode_with_zbars("examples/test-codabar.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -301,9 +301,9 @@ fn test_code128() {
     let result_this = decode_image("examples/test-code128.png");
     let result_zbars = decode_with_zbars("examples/test-code128.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -313,9 +313,9 @@ fn test_code39() {
     let result_this = decode_image("examples/test-code39.png");
     let result_zbars = decode_with_zbars("examples/test-code39.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -325,9 +325,9 @@ fn test_code93() {
     let result_this = decode_image("examples/test-code93.png");
     let result_zbars = decode_with_zbars("examples/test-code93.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -337,9 +337,9 @@ fn test_ean13() {
     let result_this = decode_image("examples/test-ean13.png");
     let result_zbars = decode_with_zbars("examples/test-ean13.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -350,9 +350,9 @@ fn test_ean8_decoded_as_ean13() {
     let result_this = decode_image("examples/test-ean8.png");
     let result_zbars = decode_with_zbars("examples/test-ean8.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -362,9 +362,9 @@ fn test_i25() {
     let result_this = decode_image("examples/test-i25.png");
     let result_zbars = decode_with_zbars("examples/test-i25.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -375,9 +375,9 @@ fn test_upca_decoded_as_ean13() {
     let result_this = decode_image("examples/test-upca.png");
     let result_zbars = decode_with_zbars("examples/test-upca.png");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
 #[test]
@@ -388,16 +388,16 @@ fn test_rqrr_crash_2() {
     let result_zbars = decode_with_zbars("examples/rqrr-crash-2.jpeg");
     let result_rqrr = decode_with_rqrr("examples/rqrr-crash-2.jpeg");
 
-    // zbar-rust and zbars should succeed
-    assert!(result_this.is_some(), "zbar-rust failed");
+    // zedbar and zbars should succeed
+    assert!(result_this.is_some(), "zedbar failed");
     assert!(result_zbars.is_some(), "zbars failed");
 
     let (symbol_type, data) = result_this.as_ref().unwrap();
     assert_eq!(symbol_type, "QR-Code");
     assert!(data.contains("欢迎访问太平洋IT百科栏目"));
 
-    // zbar-rust and zbars should agree
-    assert_eq!(result_zbars, result_this, "zbars disagrees with zbar-rust");
+    // zedbar and zbars should agree
+    assert_eq!(result_zbars, result_this, "zbars disagrees with zedbar");
 
     // rqrr should match if it succeeds
     if let Some(rqrr_result) = result_rqrr {
@@ -418,9 +418,9 @@ fn test_rqrr_crash_3() {
     let result_zbars = decode_with_zbars("examples/rqrr-crash-3.jpeg");
     let result_rqrr = decode_with_rqrr("examples/rqrr-crash-3.jpeg");
 
-    assert_eq!(result_this, expected, "zbar-rust failed");
+    assert_eq!(result_this, expected, "zedbar failed");
     assert_eq!(result_zbars, expected, "zbars failed");
-    assert_eq!(result_this, result_zbars, "zbar-rust and zbars disagree");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 
     if let Some(rqrr_result) = result_rqrr {
         assert_eq!(
@@ -552,8 +552,8 @@ fn test_rqrr_crash_4_binary() {
     let result_zbars = decode_with_zbars_binary("examples/rqrr-crash-4.png");
     let result_rqrr = decode_with_rqrr_binary("examples/rqrr-crash-4.png");
 
-    // zbar-rust should succeed
-    assert!(result_this.is_some(), "zbar-rust should decode the QR code");
+    // zedbar should succeed
+    assert!(result_this.is_some(), "zedbar should decode the QR code");
 
     let (symbol_type, data) = result_this.as_ref().unwrap();
     assert_eq!(symbol_type, "QR-Code");

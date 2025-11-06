@@ -32,7 +32,7 @@ const TEST_IMAGES: &[TestImage] = &[
         path: "examples/pixel-wifi-sharing-qr-code.png",
         expected_type: "QR",
     },
-    // 1D barcodes - only zbar-rust, zbar-c, and rxing support these
+    // 1D barcodes - only zedbar, zbar-c, and rxing support these
     TestImage {
         name: "ean13",
         path: "examples/test-ean13.png",
@@ -59,8 +59,8 @@ fn load_image(path: &str) -> Option<DynamicImage> {
     image::open(path).ok()
 }
 
-fn benchmark_barq(c: &mut Criterion) {
-    let mut group = c.benchmark_group("barq");
+fn benchmark_zedbar(c: &mut Criterion) {
+    let mut group = c.benchmark_group("zedbar");
 
     for test_img in TEST_IMAGES {
         if let Some(img) = load_image(test_img.path) {
@@ -72,13 +72,13 @@ fn benchmark_barq(c: &mut Criterion) {
                 &(gray, width, height),
                 |b, (gray, width, height)| {
                     b.iter(|| {
-                        let mut zbar_img = zbar::Image::from_gray(
+                        let mut zbar_img = zedbar::Image::from_gray(
                             black_box(gray.as_raw()),
                             black_box(*width),
                             black_box(*height),
                         )
                         .unwrap();
-                        let mut scanner = zbar::Scanner::new();
+                        let mut scanner = zedbar::Scanner::new();
                         let symbols = scanner.scan(&mut zbar_img);
                         black_box(symbols.len())
                     });
@@ -179,27 +179,27 @@ fn benchmark_rxing(c: &mut Criterion) {
 
 // Define benchmark groups based on enabled features
 #[cfg(all(not(feature = "bench_zbar_c"), not(feature = "bench_rxing"),))]
-criterion_group!(benches, benchmark_barq, benchmark_rqrr);
+criterion_group!(benches, benchmark_zedbar, benchmark_rqrr);
 
 #[cfg(all(feature = "bench_zbar_c", not(feature = "bench_rxing"),))]
-criterion_group!(benches, benchmark_barq, benchmark_rqrr, benchmark_zbar_c);
+criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_zbar_c);
 
 #[cfg(all(feature = "bench_rxing", not(feature = "bench_zbar_c"),))]
-criterion_group!(benches, benchmark_barq, benchmark_rqrr, benchmark_rxing);
+criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_rxing);
 
 #[cfg(all(feature = "bench_zbar_c", feature = "bench_rxing",))]
 criterion_group!(
     benches,
-    benchmark_barq,
+    benchmark_zedbar,
     benchmark_rqrr,
     benchmark_zbar_c,
     benchmark_rxing
 );
 
 #[cfg(all(feature = "bench_zbar_c", not(feature = "bench_rxing")))]
-criterion_group!(benches, benchmark_barq, benchmark_rqrr, benchmark_zbar_c,);
+criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_zbar_c,);
 
 #[cfg(all(feature = "bench_rxing", not(feature = "bench_zbar_c")))]
-criterion_group!(benches, benchmark_barq, benchmark_rqrr, benchmark_rxing,);
+criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_rxing,);
 
 criterion_main!(benches);
