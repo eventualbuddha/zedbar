@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```
-//! use zbar::{Image, Scanner};
+//! use zedbar::{Image, Scanner};
 //!
 //! // Create image from grayscale data
 //! let width = 640;

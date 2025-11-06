@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use zbar::{Image, Scanner};
+//! use zedbar::{Image, Scanner};
 //!
 //! # let data = vec![0u8; 640 * 480];
 //! # let mut image = Image::from_gray(&data, 640, 480).unwrap();

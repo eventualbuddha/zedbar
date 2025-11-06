@@ -6,13 +6,13 @@
 //! # Example
 //!
 //! ```no_run
-//! use zbar::{Image, Scanner};
+//! use zedbar::{Image, Scanner};
 //!
 //! // Create a scanner with default settings
 //! let mut scanner = Scanner::new();
 //!
 //! // Or with custom configuration
-//! use zbar::config::*;
+//! use zedbar::config::*;
 //! let config = DecoderConfig::new()
 //!     .enable(QrCode)
 //!     .enable(Ean13);
@@ -37,8 +37,8 @@ use crate::symbol::Symbol;
 ///
 /// # Example
 /// ```no_run
-/// use zbar::config::*;
-/// use zbar::{Scanner, DecoderConfig, Image};
+/// use zedbar::config::*;
+/// use zedbar::{Scanner, DecoderConfig, Image};
 ///
 /// // Create scanner with type-safe configuration
 /// let config = DecoderConfig::new()
@@ -75,8 +75,8 @@ impl Scanner {
     ///
     /// # Example
     /// ```no_run
-    /// use zbar::config::*;
-    /// use zbar::{Scanner, DecoderConfig};
+    /// use zedbar::config::*;
+    /// use zedbar::{Scanner, DecoderConfig};
     ///
     /// let config = DecoderConfig::new()
     ///     .enable(Ean13)
