@@ -5,7 +5,7 @@
 use crate::{
     color::Color,
     decoder::decode_e,
-    decoder::{ZBAR_MOD_AIM, ZBAR_MOD_GS1},
+    decoder::Modifier,
     img_scanner::zbar_image_scanner_t,
     SymbolType,
 };
@@ -505,9 +505,9 @@ fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
             } else if code == FNC1 {
                 // FNC1 - Code 128 subsets or ASCII 0x1d
                 if i == 1 {
-                    dcode.modifiers |= 1 << ZBAR_MOD_GS1;
+                    dcode.modifiers |= Modifier::Gs1.bit();
                 } else if i == 2 {
-                    dcode.modifiers |= 1 << ZBAR_MOD_AIM;
+                    dcode.modifiers |= Modifier::Aim.bit();
                 } else if i < (character_count - 3) {
                     let buf = match dcode.buffer_mut_slice(j + 1) {
                         Ok(buf) => buf,

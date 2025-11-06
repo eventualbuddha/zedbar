@@ -51,11 +51,22 @@ pub(crate) fn decode_e(e: u32, s: u32, n: u32) -> i32 {
 // ============================================================================
 
 // ============================================================================
-// Modifier constants
+// Modifier enum
 // ============================================================================
 
-pub(crate) const ZBAR_MOD_GS1: i32 = 0;
-pub(crate) const ZBAR_MOD_AIM: i32 = 1;
+/// Barcode data modifiers (GS1 and AIM identifiers)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Modifier {
+    Gs1 = 0,
+    Aim = 1,
+}
+
+impl Modifier {
+    /// Convert to bit flag for use in bitfield
+    pub(crate) fn bit(self) -> u32 {
+        1 << (self as u32)
+    }
+}
 
 // ============================================================================
 // Buffer size constants

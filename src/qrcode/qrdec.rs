@@ -14,7 +14,7 @@ use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
 
 use crate::{
-    decoder::{qr_finder_line, ZBAR_MOD_AIM, ZBAR_MOD_GS1},
+    decoder::{qr_finder_line, Modifier},
     image_ffi::zbar_image_t,
     qrcode::{
         binarize::binarize,
@@ -4619,12 +4619,12 @@ impl qr_code_data_list {
                             match entry.payload {
                                 qr_code_data_payload::Fnc1FirstPositionMarker => {
                                     if fnc1 == 0 {
-                                        fnc1 = 1 << ZBAR_MOD_GS1;
+                                        fnc1 = Modifier::Gs1.bit();
                                     }
                                 }
                                 qr_code_data_payload::ApplicationIndicator(ai) => {
                                     if fnc1 == 0 {
-                                        fnc1 = 1 << ZBAR_MOD_AIM;
+                                        fnc1 = Modifier::Aim.bit();
                                         fnc1_2ai = ai;
                                         sa_ctext += 2;
                                     }
@@ -4650,7 +4650,7 @@ impl qr_code_data_list {
                 }
 
                 let mut sa_text: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
-                if fnc1 == (1 << ZBAR_MOD_AIM) {
+                if fnc1 == Modifier::Aim.bit() {
                     if fnc1_2ai < 100 {
                         sa_text.push(b'0' + (fnc1_2ai / 10) as u8);
                         sa_text.push(b'0' + (fnc1_2ai % 10) as u8);
@@ -4846,7 +4846,7 @@ impl qr_code_data_list {
                         // Single QR code - add it directly
                         if let Some(mut sym) = component_syms.into_iter().next() {
                             sym.data = sa_text;
-                            sym.modifiers = fnc1 as u32;
+                            sym.modifiers = fnc1;
                             symbols.push(sym);
                         }
                     } else {
@@ -4854,7 +4854,7 @@ impl qr_code_data_list {
                         let mut sa_sym = Symbol::new(SymbolType::QrCode);
                         sa_sym.components = component_syms;
                         sa_sym.data = sa_text;
-                        sa_sym.modifiers = fnc1 as u32;
+                        sa_sym.modifiers = fnc1;
                         symbols.push(sa_sym);
                     }
                 }

@@ -1,15 +1,20 @@
 use crate::{
     color::Color,
-    decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, ZBAR_MOD_GS1},
+    decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, Modifier},
     img_scanner::zbar_image_scanner_t,
     Error, Result, SymbolType,
 };
 
 const DATABAR_MAX_SEGMENTS: usize = 32;
 const GS: u8 = 0x1d;
-const SCH_NUM: i32 = 0;
-const SCH_ALNUM: i32 = 1;
-const SCH_ISO646: i32 = 2;
+
+/// Encoding scheme for DataBar Expanded data
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabarScheme {
+    Numeric = 0,
+    Alphanumeric = 1,
+    Iso646 = 2,
+}
 
 fn var_max(len: i32, offset: i32) -> i32 {
     (((len * 12 + offset) * 2) + 6) / 7
@@ -426,17 +431,17 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
     }
 
     if enc < 4 {
-        let mut scheme = SCH_NUM;
+        let mut scheme = DatabarScheme::Numeric;
         while i_bits > 0 || len > 0 {
             feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 8);
 
-            if scheme == SCH_NUM {
+            if scheme == DatabarScheme::Numeric {
                 i_bits -= 4;
                 if i_bits < 0 {
                     break;
                 }
                 if ((d >> i_bits) & 0xf) == 0 {
-                    scheme = SCH_ALNUM;
+                    scheme = DatabarScheme::Alphanumeric;
                     continue;
                 }
 
@@ -468,7 +473,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
                     break;
                 }
                 if ((d >> i_bits) & 0x7) == 0 {
-                    scheme = SCH_NUM;
+                    scheme = DatabarScheme::Numeric;
                     continue;
                 }
 
@@ -478,12 +483,16 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
                 }
                 let mut val = ((d >> i_bits) & 0x1f) as u32;
                 if val == 0x04 {
-                    scheme ^= 0x3;
+                    scheme = if scheme == DatabarScheme::Alphanumeric {
+                        DatabarScheme::Iso646
+                    } else {
+                        DatabarScheme::Alphanumeric
+                    };
                 } else if val == 0x0f {
                     ch = GS;
                 } else if val < 0x0f {
                     ch = 43 + val as u8;
-                } else if scheme == SCH_ALNUM {
+                } else if scheme == DatabarScheme::Alphanumeric {
                     i_bits -= 1;
                     if i_bits < 0 {
                         return Err(Error::Invalid);
@@ -498,7 +507,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
                     } else {
                         return Err(Error::Invalid);
                     };
-                } else if scheme == SCH_ISO646 && val < 0x1d {
+                } else if scheme == DatabarScheme::Iso646 && val < 0x1d {
                     i_bits -= 2;
                     if i_bits < 0 {
                         return Err(Error::Invalid);
@@ -511,7 +520,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
                     } else {
                         return Err(Error::Invalid);
                     };
-                } else if scheme == SCH_ISO646 {
+                } else if scheme == DatabarScheme::Iso646 {
                     i_bits -= 3;
                     if i_bits < 0 {
                         return Err(Error::Invalid);
@@ -876,7 +885,7 @@ fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType
     }
 
     postprocess(dcode, d);
-    dcode.modifiers = 1 << ZBAR_MOD_GS1;
+    dcode.modifiers = Modifier::Gs1.bit();
     dcode.direction = 1 - 2 * ((seg_side as i32) ^ (seg_color as i32) ^ 1);
     SymbolType::Databar
 }
@@ -1118,7 +1127,7 @@ fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: i32)
     }
 
     dcode.direction = (1 - 2 * ((seg_side ^ seg_color as u8) as i32)) * dir;
-    dcode.modifiers = 1 << ZBAR_MOD_GS1;
+    dcode.modifiers = Modifier::Gs1.bit();
     SymbolType::DatabarExp
 }
 
