@@ -1,0 +1,78 @@
+[package]
+name = "zedbar"
+version = "0.1.0"
+edition = "2024"
+description = "Pure Rust barcode and QR code scanning library supporting multiple formats"
+license = "LGPL-3.0-or-later"
+repository = "https://github.com/eventualbuddha/zbar"
+keywords = ["barcode", "qr-code", "scanner", "image", "computer-vision"]
+categories = ["computer-vision", "multimedia::images"]
+
+[lib]
+name = "zedbar"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+# Optional dependencies
+encoding_rs = { version = "0.8.33", optional = true }
+reed-solomon = { version = "0.2.1", optional = true }
+rand = { version = "0.9", optional = true }
+rand_chacha = { version = "0.9", optional = true }
+image = { version = "0.25", optional = true }
+clap = { version = "4.5", features = ["derive"], optional = true }
+
+# Optional benchmark comparison libraries (can be dependencies since they're feature-gated)
+zbar-rust = { version = "0.0.24", optional = true }
+rxing = { version = "0.8", optional = true }
+
+[[bin]]
+name = "zedbarimg"
+path = "src/bin/zedbarimg.rs"
+required-features = ["image", "clap"]
+
+[dev-dependencies]
+proptest = "1.4"
+qrcode = "0.14"
+rqrr = "0.10"
+reed-solomon = "0.2.1"
+encoding_rs = "0.8.33"
+rand = "0.9"
+rand_chacha = "0.9"
+image = "0.25"
+
+# Benchmarking
+criterion = { version = "0.7.0", features = ["html_reports"] }
+
+[features]
+default = [
+  "qrcode",
+  "sqcode",
+  "ean",
+  "code128",
+  "code39",
+  "code93",
+  "codabar",
+  "databar",
+  "i25",
+  "image",
+  "clap",
+]
+qrcode = ["dep:encoding_rs", "dep:reed-solomon", "dep:rand", "dep:rand_chacha"]
+sqcode = []
+ean = []
+code128 = []
+code39 = []
+code93 = []
+codabar = []
+databar = []
+i25 = []
+image = ["dep:image"]
+clap = ["dep:clap"]
+
+# Benchmark features - enable to compare with other libraries
+bench_zbar_c = ["dep:zbar-rust"]
+bench_rxing = ["dep:rxing"]
+
+[[bench]]
+name = "comparison"
+harness = false

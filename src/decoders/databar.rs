@@ -1,0 +1,1762 @@
+use crate::{
+    color::Color,
+    decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, Modifier},
+    img_scanner::zbar_image_scanner_t,
+    Error, Result, SymbolType,
+};
+
+const DATABAR_MAX_SEGMENTS: usize = 32;
+const GS: u8 = 0x1d;
+
+/// Encoding scheme for DataBar Expanded data
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DatabarScheme {
+    Numeric = 0,
+    Alphanumeric = 1,
+    Iso646 = 2,
+}
+
+fn var_max(len: i32, offset: i32) -> i32 {
+    (((len * 12 + offset) * 2) + 6) / 7
+}
+
+fn feed_bits(
+    d: &mut u64,
+    bit_count: &mut i32,
+    len: &mut i32,
+    mut data_ptr: &mut [i32],
+    required: i32,
+) {
+    while *bit_count < required && *len > 0 {
+        let next = (data_ptr[0] as u32 & 0x0fff) as u64;
+        data_ptr = &mut data_ptr[1..];
+        *d = (*d << 12) | next;
+        *bit_count += 12;
+        *len -= 1;
+    }
+}
+
+/// DataBar finder pattern hash table
+static FINDER_HASH: [i8; 0x20] = [
+    0x16, 0x1f, 0x02, 0x00, 0x03, 0x00, 0x06, 0x0b, 0x1f, 0x0e, 0x17, 0x0c, 0x0b, 0x14, 0x11, 0x0c,
+    0x1f, 0x03, 0x13, 0x08, 0x00, 0x0a, -1, 0x16, 0x0c, 0x09, -1, 0x1a, 0x1f, 0x1c, 0x00, -1,
+];
+
+/// DataBar expanded sequences
+static EXP_SEQUENCES: [u8; 30] = [
+    // sequence Group 1
+    0x01, 0x23, 0x25, 0x07, 0x29, 0x47, 0x29, 0x67, 0x0b, 0x29, 0x87, 0xab,
+    // sequence Group 2
+    0x21, 0x43, 0x65, 0x07, 0x21, 0x43, 0x65, 0x89, 0x21, 0x43, 0x65, 0xa9, 0x0b, 0x21, 0x43, 0x67,
+    0x89, 0xab,
+];
+
+static EXP_CHECKSUMS: [u8; 12] = [1, 189, 62, 113, 46, 43, 109, 134, 6, 79, 161, 45];
+
+struct GroupS {
+    sum: u16,
+    wmax: u8,
+    todd: u8,
+    teven: u8,
+}
+
+static GROUPS: [GroupS; 14] = [
+    // (17,4) DataBar Expanded character groups
+    GroupS {
+        sum: 0,
+        wmax: 7,
+        todd: 87,
+        teven: 4,
+    },
+    GroupS {
+        sum: 348,
+        wmax: 5,
+        todd: 52,
+        teven: 20,
+    },
+    GroupS {
+        sum: 1388,
+        wmax: 4,
+        todd: 30,
+        teven: 52,
+    },
+    GroupS {
+        sum: 2948,
+        wmax: 3,
+        todd: 10,
+        teven: 104,
+    },
+    GroupS {
+        sum: 3988,
+        wmax: 1,
+        todd: 1,
+        teven: 204,
+    },
+    // (16,4) DataBar outer character groups
+    GroupS {
+        sum: 0,
+        wmax: 8,
+        todd: 161,
+        teven: 1,
+    },
+    GroupS {
+        sum: 161,
+        wmax: 6,
+        todd: 80,
+        teven: 10,
+    },
+    GroupS {
+        sum: 961,
+        wmax: 4,
+        todd: 31,
+        teven: 34,
+    },
+    GroupS {
+        sum: 2015,
+        wmax: 3,
+        todd: 10,
+        teven: 70,
+    },
+    GroupS {
+        sum: 2715,
+        wmax: 1,
+        todd: 1,
+        teven: 126,
+    },
+    // (15,4) DataBar inner character groups
+    GroupS {
+        sum: 1516,
+        wmax: 8,
+        todd: 81,
+        teven: 1,
+    },
+    GroupS {
+        sum: 1036,
+        wmax: 6,
+        todd: 48,
+        teven: 10,
+    },
+    GroupS {
+        sum: 336,
+        wmax: 4,
+        todd: 20,
+        teven: 35,
+    },
+    GroupS {
+        sum: 0,
+        wmax: 2,
+        todd: 4,
+        teven: 84,
+    },
+];
+
+/// Append checksum digit to 13-digit buffer
+///
+/// Calculates and appends a check digit to a 13-digit numeric string
+/// using weighted sum modulo 10 algorithm.
+///
+/// # Parameters
+/// - `buf`: Buffer containing 13 ASCII digits, with space for 14th digit
+///
+/// # Safety
+/// Buffer must contain at least 14 bytes, with first 13 being ASCII digits '0'-'9'
+fn append_check14(buf: &mut [u8]) {
+    let mut chk: u8 = 0;
+    let mut ptr = buf;
+
+    for i in (0..13).rev() {
+        let d = ptr[0] - b'0';
+        chk = chk.wrapping_add(d);
+        if (i & 1) == 0 {
+            chk = chk.wrapping_add(d << 1);
+        }
+        ptr = &mut ptr[1..];
+    }
+
+    chk %= 10;
+    if chk != 0 {
+        chk = 10 - chk;
+    }
+    ptr[0] = chk + b'0';
+}
+
+/// Decode a number into decimal digits
+///
+/// Converts an unsigned long value into ASCII decimal digits and stores
+/// them in the provided buffer.
+///
+/// # Parameters
+/// - `buf`: Buffer to write digits to
+/// - `n`: Number to decode
+/// - `i`: Number of digits to write
+///
+/// # Safety
+/// Buffer must have at least `i` bytes available
+fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
+    let mut remaining = i;
+
+    while remaining > 0 {
+        let d = (n % 10) as u8;
+        n /= 10;
+        i -= 1;
+        buf[i] = b'0' + d;
+        remaining -= 1;
+    }
+}
+
+fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result<usize> {
+    let mut data_ptr = data;
+    let first = data_ptr[0] as u64;
+    data_ptr = &mut data_ptr[1..];
+    let mut len = (first / 211 + 4) as i32;
+
+    let mut d = data_ptr[0] as u64;
+    data_ptr = &mut data_ptr[1..];
+
+    let mut i_bits: i32;
+    let enc: i32;
+    let buflen: i32;
+
+    let mut n = ((d >> 4) & 0x7f) as u32;
+    if n >= 0x40 {
+        i_bits = 10;
+        enc = 1;
+        buflen = 2 + 14 + var_max(len, 10 - 2 - 44 + 6) + 2;
+    } else if n >= 0x38 {
+        i_bits = 4;
+        enc = 6 + (n as i32 & 7);
+        buflen = 2 + 14 + 4 + 6 + 2 + 6 + 2;
+    } else if n >= 0x30 {
+        i_bits = 6;
+        enc = 2 + (((n >> 2) & 1) as i32);
+        buflen = 2 + 14 + 4 + 3 + var_max(len, 6 - 2 - 44 - 2 - 10) + 2;
+    } else if n >= 0x20 {
+        i_bits = 7;
+        enc = 4 + (((n >> 3) & 1) as i32);
+        buflen = 2 + 14 + 4 + 6;
+    } else {
+        i_bits = 9;
+        enc = 0;
+        buflen = var_max(len, 9 - 2) + 2;
+    }
+
+    if buflen <= 2 {
+        return Err(Error::Invalid);
+    }
+
+    if enc < 4 {
+        i_bits -= 1;
+        let parity_bit = ((d >> i_bits) & 1) as i32;
+        if ((len ^ parity_bit) & 1) != 0 {
+            return Err(Error::Invalid);
+        }
+
+        i_bits -= 1;
+        let size_group = ((d >> i_bits) & 1) as i32;
+        if size_group != (len > 14) as i32 {
+            return Err(Error::Invalid);
+        }
+    }
+
+    len -= 2;
+
+    if dcode.set_buffer_capacity(buflen as usize).is_err() {
+        return Err(Error::Invalid);
+    }
+
+    let buffer_capacity = dcode.buffer_capacity();
+    let buf = match dcode.buffer_mut_slice(buflen as usize) {
+        Ok(buf) => buf,
+        Err(_) => return Err(Error::Invalid),
+    };
+    let mut buf_idx = 0usize;
+
+    if enc != 0 {
+        buf[buf_idx] = b'0';
+        buf_idx += 1;
+        buf[buf_idx] = b'1';
+        buf_idx += 1;
+    }
+
+    if enc == 1 {
+        i_bits -= 4;
+        if i_bits >= 10 {
+            return Err(Error::Invalid);
+        }
+        let digit = ((d >> i_bits) & 0xf) as u8;
+        buf[buf_idx] = b'0' + digit;
+        buf_idx += 1;
+    } else if enc != 0 {
+        buf[buf_idx] = b'9';
+        buf_idx += 1;
+    }
+
+    if enc != 0 {
+        for _ in 0..4 {
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 10);
+            i_bits -= 10;
+            if i_bits < 0 {
+                return Err(Error::Invalid);
+            }
+            n = ((d >> i_bits) & 0x3ff) as u32;
+            if n >= 1000 {
+                return Err(Error::Invalid);
+            }
+            decode10(&mut buf[buf_idx..], n as u64, 3);
+            buf_idx += 3;
+        }
+        append_check14(&mut buf[..buf_idx - 13]);
+        buf_idx += 1;
+    }
+
+    match enc {
+        2 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 2);
+            i_bits -= 2;
+            let val = ((d >> i_bits) & 0x3) as u8;
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'9';
+            buf[buf_idx + 2] = b'2';
+            buf[buf_idx + 3] = b'0' + val;
+            buf_idx += 4;
+        }
+        3 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 12);
+            i_bits -= 2;
+            let val = ((d >> i_bits) & 0x3) as u8;
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'9';
+            buf[buf_idx + 2] = b'3';
+            buf[buf_idx + 3] = b'0' + val;
+            buf_idx += 4;
+            i_bits -= 10;
+            if i_bits < 0 {
+                return Err(Error::Invalid);
+            }
+            n = ((d >> i_bits) & 0x3ff) as u32;
+            if n >= 1000 {
+                return Err(Error::Invalid);
+            }
+            decode10(&mut buf[buf_idx..], n as u64, 3);
+            buf_idx += 3;
+        }
+        4 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
+            i_bits -= 15;
+            if i_bits < 0 {
+                return Err(Error::Invalid);
+            }
+            n = ((d >> i_bits) & 0x7fff) as u32;
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'1';
+            buf[buf_idx + 2] = b'0';
+            buf[buf_idx + 3] = b'3';
+            buf_idx += 4;
+            decode10(&mut buf[buf_idx..], n as u64, 6);
+            buf_idx += 6;
+        }
+        5 => {
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
+            i_bits -= 15;
+            if i_bits < 0 {
+                return Err(Error::Invalid);
+            }
+            n = ((d >> i_bits) & 0x7fff) as u32;
+            let mut prefix = b'2';
+            if n >= 10000 {
+                prefix = b'3';
+            }
+            buf[buf_idx] = b'3';
+            buf[buf_idx + 1] = b'2';
+            buf[buf_idx + 2] = b'0';
+            buf[buf_idx + 3] = prefix;
+            buf_idx += 4;
+            if n >= 10000 {
+                n -= 10000;
+            }
+            decode10(&mut buf[buf_idx..], n as u64, 6);
+            buf_idx += 6;
+        }
+        _ => {}
+    }
+
+    if enc >= 6 {
+        let mut temp_enc = enc & 1;
+        buf[buf_idx] = b'3';
+        buf[buf_idx + 1] = b'1' + temp_enc as u8;
+        buf[buf_idx + 2] = b'0';
+        buf[buf_idx + 3] = b'x';
+        buf_idx += 4;
+
+        feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 20);
+        i_bits -= 20;
+        if i_bits < 0 {
+            return Err(Error::Invalid);
+        }
+        n = ((d >> i_bits) & 0xfffff) as u32;
+        if n >= 1_000_000 {
+            return Err(Error::Invalid);
+        }
+        decode10(&mut buf[buf_idx..], n as u64, 6);
+        buf[buf_idx - 1] = buf[buf_idx];
+        buf[buf_idx] = b'0';
+        buf_idx += 6;
+
+        feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 16);
+        i_bits -= 16;
+        if i_bits < 0 {
+            return Err(Error::Invalid);
+        }
+        n = ((d >> i_bits) & 0xffff) as u32;
+        if n < 38400 {
+            let dd = n % 32;
+            let rem = n / 32;
+            let mm = rem % 12 + 1;
+            let yy = rem / 12;
+
+            buf[buf_idx] = b'1';
+            buf_idx += 1;
+            temp_enc = enc - 6;
+            buf[buf_idx] = b'0' + ((temp_enc | 1) as u8);
+            buf_idx += 1;
+            decode10(&mut buf[buf_idx..], yy as u64, 2);
+            buf_idx += 2;
+            decode10(&mut buf[buf_idx..], mm as u64, 2);
+            buf_idx += 2;
+            decode10(&mut buf[buf_idx..], dd as u64, 2);
+            buf_idx += 2;
+        } else if n > 38400 {
+            return Err(Error::Invalid);
+        }
+    }
+
+    if enc < 4 {
+        let mut scheme = DatabarScheme::Numeric;
+        while i_bits > 0 || len > 0 {
+            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 8);
+
+            if scheme == DatabarScheme::Numeric {
+                i_bits -= 4;
+                if i_bits < 0 {
+                    break;
+                }
+                if ((d >> i_bits) & 0xf) == 0 {
+                    scheme = DatabarScheme::Alphanumeric;
+                    continue;
+                }
+
+                if len == 0 && i_bits < 3 {
+                    let digit = ((d >> i_bits) & 0xf) as i32 - 1;
+                    if digit > 9 {
+                        return Err(Error::Invalid);
+                    }
+                    buf[buf_idx] = b'0' + digit as u8;
+                    buf_idx += 1;
+                    break;
+                }
+
+                i_bits -= 3;
+                if i_bits < 0 {
+                    break;
+                }
+                let mut val = ((d >> i_bits) & 0x7f) as i32 - 8;
+                let n1 = val % 11;
+                val /= 11;
+                buf[buf_idx] = if val < 10 { b'0' + val as u8 } else { GS };
+                buf_idx += 1;
+                buf[buf_idx] = if n1 < 10 { b'0' + n1 as u8 } else { GS };
+                buf_idx += 1;
+            } else {
+                let mut ch: u8 = 0;
+                i_bits -= 3;
+                if i_bits < 0 {
+                    break;
+                }
+                if ((d >> i_bits) & 0x7) == 0 {
+                    scheme = DatabarScheme::Numeric;
+                    continue;
+                }
+
+                i_bits -= 2;
+                if i_bits < 0 {
+                    break;
+                }
+                let mut val = ((d >> i_bits) & 0x1f) as u32;
+                if val == 0x04 {
+                    scheme = if scheme == DatabarScheme::Alphanumeric {
+                        DatabarScheme::Iso646
+                    } else {
+                        DatabarScheme::Alphanumeric
+                    };
+                } else if val == 0x0f {
+                    ch = GS;
+                } else if val < 0x0f {
+                    ch = 43 + val as u8;
+                } else if scheme == DatabarScheme::Alphanumeric {
+                    i_bits -= 1;
+                    if i_bits < 0 {
+                        return Err(Error::Invalid);
+                    }
+                    val = ((d >> i_bits) & 0x1f) as u32;
+                    ch = if val < 0x1a {
+                        b'A' + val as u8
+                    } else if val == 0x1a {
+                        b'*'
+                    } else if val < 0x1f {
+                        b',' + (val as u8) - 0x1b
+                    } else {
+                        return Err(Error::Invalid);
+                    };
+                } else if scheme == DatabarScheme::Iso646 && val < 0x1d {
+                    i_bits -= 2;
+                    if i_bits < 0 {
+                        return Err(Error::Invalid);
+                    }
+                    val = ((d >> i_bits) & 0x3f) as u32;
+                    ch = if val < 0x1a {
+                        b'A' + val as u8
+                    } else if val < 0x34 {
+                        b'a' + (val as u8) - 0x1a
+                    } else {
+                        return Err(Error::Invalid);
+                    };
+                } else if scheme == DatabarScheme::Iso646 {
+                    i_bits -= 3;
+                    if i_bits < 0 {
+                        return Err(Error::Invalid);
+                    }
+                    val = ((d >> i_bits) & 0x1f) as u32;
+                    ch = match val {
+                        0x00..=0x09 => b'!' + val as u8 - 8,
+                        0x0a..=0x14 => b'%' + val as u8 - 0x0a,
+                        0x15..=0x1a => b':' + val as u8 - 0x15,
+                        0x1b => b'_',
+                        0x1c => b' ',
+                        _ => return Err(Error::Invalid),
+                    };
+                } else {
+                    return Err(Error::Invalid);
+                }
+
+                if ch != 0 {
+                    buf[buf_idx] = ch;
+                    buf_idx += 1;
+                }
+            }
+        }
+    }
+
+    let total_len = buf_idx;
+    if total_len >= buffer_capacity {
+        return Err(Error::Invalid);
+    }
+
+    buf[buf_idx] = 0;
+
+    // Check if last character is GS and remove it
+    let final_len = if total_len > 0 && buf[buf_idx - 1] == GS {
+        buf[buf_idx - 1] = 0;
+        total_len - 1
+    } else {
+        total_len
+    };
+
+    dcode.set_buffer_len(final_len);
+    Ok(final_len)
+}
+
+/// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
+fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [u32; 4]) {
+    // Get config before borrowing buffer
+    let emit_check = dcode.should_emit_checksum(SymbolType::Databar);
+
+    let buf = match dcode.buffer_mut_slice(16) {
+        Ok(buf) => buf,
+        Err(_) => return,
+    };
+    let mut chk = 0u32;
+
+    // Write "01" prefix
+    buf[0] = b'0';
+    buf[1] = b'1';
+
+    // Start at position 15 and work backwards
+    let mut buf_idx = 15;
+
+    // Write two null terminators
+    buf[buf_idx] = 0;
+    buf_idx -= 1;
+    buf[buf_idx] = 0;
+    buf_idx -= 1;
+
+    // First conversion
+    let mut r = (d[0] as u64) * 1597 + (d[1] as u64);
+    d[1] = (r / 10000) as u32;
+    r %= 10000;
+    r = r * 2841 + (d[2] as u64);
+    d[2] = (r / 10000) as u32;
+    r %= 10000;
+    r = r * 1597 + (d[3] as u64);
+    d[3] = (r / 10000) as u32;
+
+    // Extract 4 decimal digits
+    for i in (0..4).rev() {
+        let c = (r % 10) as u32;
+        chk += c;
+        if (i & 1) != 0 {
+            chk += c << 1;
+        }
+        buf[buf_idx] = c as u8 + b'0';
+        buf_idx -= 1;
+        if i != 0 {
+            r /= 10;
+        }
+    }
+
+    // Second conversion
+    r = (d[1] as u64) * 2841 + (d[2] as u64);
+    d[2] = (r / 10000) as u32;
+    r %= 10000;
+    r = r * 1597 + (d[3] as u64);
+    d[3] = (r / 10000) as u32;
+
+    // Extract 4 more decimal digits
+    for i in (0..4).rev() {
+        let c = (r % 10) as u32;
+        chk += c;
+        if (i & 1) != 0 {
+            chk += c << 1;
+        }
+        buf[buf_idx] = c as u8 + b'0';
+        buf_idx -= 1;
+        if i != 0 {
+            r /= 10;
+        }
+    }
+
+    // Third conversion
+    r = (d[2] as u64) * 1597 + (d[3] as u64);
+
+    // Extract 5 decimal digits
+    for i in (0..5).rev() {
+        let c = (r % 10) as u32;
+        chk += c;
+        if (i & 1) == 0 {
+            chk += c << 1;
+        }
+        buf[buf_idx] = c as u8 + b'0';
+        buf_idx -= 1;
+        if i != 0 {
+            r /= 10;
+        }
+    }
+
+    // Add check digit if configured
+    if emit_check {
+        chk %= 10;
+        if chk != 0 {
+            chk = 10 - chk;
+        }
+        buf[13] = chk as u8 + b'0';
+        dcode.set_buffer_len(14);
+    } else {
+        dcode.set_buffer_len(13);
+    }
+}
+
+/// Check if two widths are compatible within tolerance
+///
+/// Validates that two measured widths (wf and wd) are within an acceptable
+/// tolerance range for n modules. Used to match DataBar segments.
+///
+/// # Parameters
+/// - `wf`: First width measurement
+/// - `wd`: Second width measurement
+/// - `n`: Number of modules
+///
+/// # Returns
+/// 1 if widths match within tolerance, 0 otherwise
+fn check_width(wf: u32, wd: u32, n: u32) -> i32 {
+    let dwf = wf.wrapping_mul(3);
+    let wd = wd.wrapping_mul(14);
+    let wf = wf.wrapping_mul(n);
+
+    // Check: wf - dwf <= wd && wd <= wf + dwf
+    // In C, this relies on unsigned wraparound if wf < dwf
+    // For unsigned subtraction: wf - dwf will wrap if wf < dwf,
+    // resulting in a very large number, making the condition false
+    if wf.wrapping_sub(dwf) <= wd && wd <= wf.wrapping_add(dwf) {
+        1
+    } else {
+        0
+    }
+}
+
+/// Merge or update a DataBar segment with existing segments
+fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
+    let csegs = db.csegs();
+    let epoch = db.epoch();
+
+    for i in 0..csegs {
+        // Skip if this is the same segment
+        if i == seg_idx {
+            continue;
+        }
+
+        // Read values we need from the target segment
+        let seg_finder = db.seg(seg_idx).finder();
+        let seg_exp = db.seg(seg_idx).exp();
+        let seg_color = db.seg(seg_idx).color();
+        let seg_side = db.seg(seg_idx).side();
+        let seg_data = db.seg(seg_idx).data;
+        let seg_check = db.seg(seg_idx).check();
+        let seg_width = db.seg(seg_idx).width;
+        let seg_partial = db.seg(seg_idx).partial();
+
+        let s = db.seg_mut(i);
+        // Check if this segment matches and should be merged
+        if s.finder() == seg_finder
+            && s.exp() == seg_exp
+            && s.color() == seg_color
+            && s.side() == seg_side
+            && s.data == seg_data
+            && s.check() == seg_check
+            && check_width(seg_width as u32, s.width as u32, 14) != 0
+        {
+            // Found a matching segment - merge with it
+            let mut cnt = s.count();
+            if cnt < 0x7F {
+                cnt += 1;
+            }
+
+            // Merge partial flags (bitwise AND)
+            let new_partial = seg_partial && s.partial();
+
+            // Average the widths (weighted average favoring new measurement)
+            let new_width = (3 * seg_width + s.width + 2) / 4;
+
+            // Mark old segment as unused
+            s.set_finder(-1);
+
+            // Now update the target segment
+            let seg = &mut db.seg_mut(seg_idx);
+            seg.set_count(cnt);
+            seg.set_partial(new_partial);
+            seg.width = new_width;
+        } else if s.finder() >= 0 {
+            // Not a match, check if we should age it out
+            let age = epoch.wrapping_sub(s.epoch());
+            if age >= 248 || (age >= 128 && s.count() < 2) {
+                s.set_finder(-1);
+            }
+        }
+    }
+}
+
+/// Match DataBar segment to find complete symbol
+fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType {
+    let db = &mut dcode.databar;
+    let csegs = db.csegs();
+    let mut maxage = 0xfff;
+    let mut maxcnt = 0;
+    let mut smax: Option<[usize; 3]> = None;
+    let mut d = [0u32; 4];
+
+    let seg = db.seg(seg_idx);
+    if seg.partial() && seg.count() < 4 {
+        return SymbolType::Partial;
+    }
+
+    // Cache values we need from seg
+    let seg_finder = seg.finder();
+    let seg_color = seg.color();
+    let seg_side = seg.side();
+    let seg_width = seg.width;
+    let seg_check = seg.check();
+
+    for i0 in 0..csegs {
+        if i0 == seg_idx {
+            continue;
+        }
+        let s0 = db.seg(i0);
+        if s0.finder() != seg_finder
+            || s0.exp()
+            || s0.color() != seg_color
+            || s0.side() == seg_side
+            || (s0.partial() && s0.count() < 4)
+            || check_width(seg_width as u32, s0.width as u32, 14) == 0
+        {
+            continue;
+        }
+
+        for i1 in 0..csegs {
+            if i1 == i0 {
+                continue;
+            }
+            let s1 = db.seg(i1);
+            if s1.finder() < 0
+                || s1.exp()
+                || s1.color() == seg_color
+                || (s1.partial() && s1.count() < 4)
+                || check_width(seg_width as u32, s1.width as u32, 14) == 0
+            {
+                continue;
+            }
+
+            let mut chkf = if seg_color != Color::Space {
+                seg_finder as i32 + s1.finder() as i32 * 9
+            } else {
+                s1.finder() as i32 + seg_finder as i32 * 9
+            };
+            if chkf > 72 {
+                chkf -= 1;
+            }
+            if chkf > 8 {
+                chkf -= 1;
+            }
+
+            let chks = ((seg_check as i32) + (s0.check() as i32) + (s1.check() as i32)) % 79;
+
+            let chk = if chkf >= chks {
+                chkf - chks
+            } else {
+                79 + chkf - chks
+            };
+
+            let age1 = ((db.epoch().wrapping_sub(s0.epoch())) as u32)
+                + ((db.epoch().wrapping_sub(s1.epoch())) as u32);
+
+            for i2 in (i1 + 1)..csegs {
+                if i2 == i0 {
+                    continue;
+                }
+                let s2 = db.seg(i2);
+                if s2.finder() != s1.finder()
+                    || s2.exp()
+                    || s2.color() != s1.color()
+                    || s2.side() == s1.side()
+                    || s2.check() as i32 != chk
+                    || (s2.partial() && s2.count() < 4)
+                    || check_width(seg_width as u32, s2.width as u32, 14) == 0
+                {
+                    continue;
+                }
+                let age2 = db.epoch().wrapping_sub(s2.epoch()) as u32;
+                let age = age1 + age2;
+                let cnt = s0.count() as u32 + s1.count() as u32 + s2.count() as u32;
+                if maxcnt < cnt as i32 || (maxcnt == cnt as i32 && (maxage as i32) > (age as i32)) {
+                    maxcnt = cnt as i32;
+                    maxage = age;
+                    smax = Some([i0, i1, i2]);
+                }
+            }
+        }
+    }
+
+    let Some(smax) = smax else {
+        return SymbolType::Partial;
+    };
+
+    let seg = db.seg(seg_idx);
+    d[((seg.color() as usize) << 1) | (seg.side() as usize)] = seg.data as u32;
+
+    for idx in smax {
+        let s = db.seg(idx);
+        d[((s.color() as usize) << 1) | (s.side() as usize)] = s.data as u32;
+        let new_count = s.count().wrapping_sub(1);
+        let s = db.seg_mut(idx);
+        s.set_count(new_count);
+        if new_count == 0 {
+            s.set_finder(-1);
+        }
+    }
+    db.seg_mut(seg_idx).set_finder(-1);
+
+    // Extract values before dropping db borrow
+    let seg_side = db.seg(seg_idx).side();
+    let seg_color = db.seg(seg_idx).color();
+
+    if dcode.set_buffer_capacity(18).is_err() {
+        return SymbolType::Partial;
+    }
+
+    if !dcode.acquire_lock(SymbolType::Databar) {
+        return SymbolType::Partial;
+    }
+
+    postprocess(dcode, d);
+    dcode.modifiers = Modifier::Gs1.bit();
+    dcode.direction = 1 - 2 * ((seg_side as i32) ^ (seg_color as i32) ^ 1);
+    SymbolType::Databar
+}
+
+/// Lookup DataBar expanded sequence
+/// Returns -1 on error, 0 or 1 on success
+fn lookup_sequence(
+    seg: &mut databar_segment_t,
+    fixed: i32,
+    seq: &mut [i32],
+    maxsize: usize,
+) -> i32 {
+    let mut n = (seg.data as u32 / 211) as usize;
+    let mut i = n.div_ceil(2) + 1;
+    n += 4;
+    i = (i * i) / 4;
+    let p = &EXP_SEQUENCES[i..];
+
+    if n >= maxsize - 1 {
+        // The loop below checks i<n and increments i by one within the loop
+        // when accessing seq[22]. For this to be safe, n needs to be < 21.
+        // See CVE-2023-40890.
+        return -1;
+    }
+
+    let mut fixed = fixed >> 1;
+    seq[0] = 0;
+    seq[1] = 1;
+    let mut i = 2;
+    let mut p_idx = 0;
+    while i < n {
+        let mut s = p[p_idx] as i32;
+        if (i & 2) == 0 {
+            p_idx += 1;
+            s >>= 4;
+        } else {
+            s &= 0xf;
+        }
+        if s == fixed {
+            fixed = -1;
+        }
+        s <<= 1;
+        seq[i] = s;
+        i += 1;
+        s += 1;
+        seq[i] = s;
+        i += 1;
+    }
+    seq[n] = -1;
+    if fixed < 1 {
+        1
+    } else {
+        0
+    }
+}
+
+fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: i32) -> SymbolType {
+    let db = &mut dcode.databar;
+    let csegs = db.csegs();
+    if csegs == 0 {
+        return SymbolType::Partial;
+    }
+
+    let ifixed = seg_idx;
+    let fixed = db.seg(seg_idx).segment_index();
+    let mut bestsegs = [-1i32; 22];
+    let mut segs_idx = [-1i32; 22];
+    let mut seq = [-1i32; 22];
+    let mut iseg = [-1i32; DATABAR_MAX_SEGMENTS];
+    let mut width_stack = [0u32; 22];
+
+    seq[0] = 0;
+    seq[1] = -1;
+    segs_idx[0] = -1;
+    bestsegs[0] = -1;
+    width_stack[0] = db.seg(seg_idx).width as u32;
+
+    #[allow(clippy::needless_range_loop)]
+    for j in 0..csegs {
+        let s = db.seg(j);
+        iseg[j] = if s.exp() && s.finder() >= 0 && (!s.partial() || s.count() as i32 >= 4) {
+            s.segment_index()
+        } else {
+            -1
+        };
+    }
+
+    let mut maxcnt = 0i32;
+    let mut maxage = 0x7fff_u32;
+    let mut i: i32 = 0;
+
+    loop {
+        while i >= 0 && seq[i as usize] >= 0 {
+            let idx = i as usize;
+            let target = seq[idx];
+            let mut found: Option<usize> = None;
+            let current_width = width_stack[idx];
+
+            if target == fixed {
+                let candidate = db.seg(ifixed);
+                if segs_idx[idx] < 0 && check_width(current_width, candidate.width as u32, 14) != 0
+                {
+                    found = Some(ifixed);
+                }
+            } else {
+                let mut start = if segs_idx[idx] >= 0 {
+                    (segs_idx[idx] + 1) as usize
+                } else {
+                    0
+                };
+                while start < csegs {
+                    if iseg[start] == target {
+                        let cand = db.seg(start);
+                        if idx == 0 || check_width(current_width, cand.width as u32, 14) != 0 {
+                            found = Some(start);
+                            break;
+                        }
+                    }
+                    start += 1;
+                }
+            }
+
+            if let Some(jidx) = found {
+                if idx == 0 {
+                    let maxsize = seq.len();
+                    let lu = lookup_sequence(db.seg_mut(jidx), fixed, &mut seq, maxsize);
+                    if lu == 0 {
+                        i -= 1;
+                        continue;
+                    }
+                    if lu < 0 {
+                        return SymbolType::None;
+                    }
+                }
+
+                let candidate = db.seg(jidx);
+                let next_width = if idx == 0 {
+                    candidate.width as u32
+                } else {
+                    (current_width + candidate.width as u32) / 2
+                };
+                width_stack[idx + 1] = next_width;
+                segs_idx[idx] = jidx as i32;
+                segs_idx[idx + 1] = -1;
+                i = idx as i32 + 1;
+            } else {
+                i -= 1;
+            }
+        }
+
+        if i < 0 {
+            break;
+        }
+
+        let mut cnt = 0u32;
+        let mut chk = 0u32;
+        let mut age: u32;
+
+        let first_idx = segs_idx[0] as usize;
+        let seg_eval = db.seg(first_idx);
+        age = (db.epoch().wrapping_sub(seg_eval.epoch())) as u32 & 0xff;
+
+        let mut pos = 1usize;
+        while pos < segs_idx.len() && segs_idx[pos] >= 0 {
+            let sidx = segs_idx[pos] as usize;
+            let seg_eval = db.seg(sidx);
+            chk += seg_eval.check() as u32;
+            cnt += seg_eval.count() as u32;
+            age += (db.epoch().wrapping_sub(seg_eval.epoch())) as u32 & 0xff;
+            pos += 1;
+        }
+
+        let mut chk0 = db.seg(first_idx).data as i32 % 211;
+        if chk0 < 0 {
+            chk0 += 211;
+        }
+        chk %= 211;
+        if chk != chk0 as u32 {
+            i -= 1;
+            continue;
+        }
+        if maxcnt > cnt as i32 || (maxcnt == cnt as i32 && maxage <= age) {
+            i -= 1;
+            continue;
+        }
+
+        maxcnt = cnt as i32;
+        maxage = age;
+        bestsegs[..pos].copy_from_slice(&segs_idx[..pos]);
+        bestsegs[pos] = -1;
+        i -= 1;
+    }
+
+    if bestsegs[0] < 0 {
+        return SymbolType::Partial;
+    }
+
+    // Extract data values before dropping db borrow
+    let mut data_vals = [0i32; 22];
+    let mut count = 0usize;
+    while count < bestsegs.len() && bestsegs[count] >= 0 {
+        let sidx = bestsegs[count] as usize;
+        let s = db.seg(sidx);
+        data_vals[count] = s.data as i32;
+        count += 1;
+    }
+
+    // Update segments before dropping db borrow
+    let mut last_idx = ifixed;
+    for sidx in bestsegs {
+        if sidx < 0 {
+            break;
+        }
+        let idx = sidx as usize;
+        last_idx = idx;
+        if idx != ifixed {
+            let s = db.seg_mut(idx);
+            let mut cnt = s.count();
+            if cnt > 0 {
+                cnt -= 1;
+                s.set_count(cnt);
+                if cnt == 0 {
+                    s.set_finder(-1);
+                }
+            }
+        }
+    }
+
+    let seg_side = db.seg(last_idx).side();
+    let seg_color = db.seg(last_idx).color();
+
+    if !dcode.acquire_lock(SymbolType::DatabarExp) {
+        return SymbolType::Partial;
+    }
+
+    if postprocess_exp(dcode, &mut data_vals).is_err() {
+        dcode.release_lock(SymbolType::DatabarExp);
+        return SymbolType::Partial;
+    }
+
+    dcode.direction = (1 - 2 * ((seg_side ^ seg_color as u8) as i32)) * dir;
+    dcode.modifiers = Modifier::Gs1.bit();
+    SymbolType::DatabarExp
+}
+
+/// Calculate DataBar checksum
+///
+/// Computes a checksum value for DataBar symbols based on signature values.
+///
+/// # Parameters
+/// - `sig0`: First signature value (4 nibbles)
+/// - `sig1`: Second signature value (4 nibbles)
+/// - `side`: Side indicator (0 or 1)
+/// - `mod_val`: Modulus value for checksum calculation
+///
+/// # Returns
+/// Calculated checksum value
+fn calc_check(mut sig0: u32, mut sig1: u32, side: u32, mod_val: u32) -> u32 {
+    let mut chk: u32 = 0;
+
+    for i in (0..4).rev() {
+        chk = (chk * 3 + (sig1 & 0xf) + 1) * 3 + (sig0 & 0xf) + 1;
+        sig1 >>= 4;
+        sig0 >>= 4;
+        if (i & 1) == 0 {
+            chk %= mod_val;
+        }
+    }
+
+    if side != 0 {
+        chk = (chk * (6561 % mod_val)) % mod_val;
+    }
+
+    chk
+}
+
+/// Calculate DataBar character value from 4-element signature
+/// Returns -1 on error
+fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> i32 {
+    let mut v = 0u32;
+    n = n.wrapping_sub(1);
+
+    let w0 = (sig >> 12) & 0xF;
+    if w0 > 1 {
+        if w0 > wmax {
+            return -1;
+        }
+        let n0 = n.wrapping_sub(w0);
+        let sk20 = n
+            .wrapping_sub(1)
+            .wrapping_mul(n)
+            .wrapping_mul(n.wrapping_mul(2).wrapping_sub(1));
+        let sk21 = n0
+            .wrapping_mul(n0.wrapping_add(1))
+            .wrapping_mul(n0.wrapping_mul(2).wrapping_add(1));
+        v = sk20.wrapping_sub(sk21).wrapping_sub(
+            w0.wrapping_sub(1)
+                .wrapping_mul(3)
+                .wrapping_mul(n.wrapping_mul(2).wrapping_sub(w0)),
+        );
+
+        if nonarrow == 0 && w0 > 2 && n > 4 {
+            let mut k = n
+                .wrapping_sub(2)
+                .wrapping_mul(n.wrapping_sub(1))
+                .wrapping_mul(n.wrapping_mul(2).wrapping_sub(3))
+                .wrapping_sub(sk21);
+            k = k.wrapping_sub(
+                w0.wrapping_sub(2).wrapping_mul(3).wrapping_mul(
+                    n.wrapping_mul(14)
+                        .wrapping_sub(w0.wrapping_mul(7))
+                        .wrapping_sub(31),
+                ),
+            );
+            v = v.wrapping_sub(k);
+        }
+
+        if n.wrapping_sub(2) > wmax {
+            let wm20 = wmax.wrapping_mul(2).wrapping_mul(wmax.wrapping_add(1));
+            let wm21 = wmax.wrapping_mul(2).wrapping_add(1);
+            let mut k = sk20;
+            if n0 > wmax {
+                k = k.wrapping_sub(sk21);
+                k = k.wrapping_add(w0.wrapping_sub(1).wrapping_mul(3).wrapping_mul(
+                    wm20.wrapping_sub(wm21.wrapping_mul(n.wrapping_mul(2).wrapping_sub(w0))),
+                ));
+            } else {
+                k = k.wrapping_sub(
+                    wmax.wrapping_add(1)
+                        .wrapping_mul(wmax.wrapping_add(2))
+                        .wrapping_mul(wmax.wrapping_mul(2).wrapping_add(3)),
+                );
+                k =
+                    k.wrapping_add(
+                        n.wrapping_sub(wmax)
+                            .wrapping_sub(2)
+                            .wrapping_mul(3)
+                            .wrapping_mul(wm20.wrapping_sub(
+                                wm21.wrapping_mul(n.wrapping_add(wmax).wrapping_add(1)),
+                            )),
+                    );
+            }
+            k = k.wrapping_mul(3);
+            v = v.wrapping_sub(k);
+        }
+        v /= 12;
+    } else {
+        nonarrow = 1;
+    }
+    n = n.wrapping_sub(w0);
+
+    let w1 = (sig >> 8) & 0xF;
+    if w1 > 1 {
+        if w1 > wmax {
+            return -1;
+        }
+        v = v.wrapping_add(
+            n.wrapping_mul(2)
+                .wrapping_sub(w1)
+                .wrapping_mul(w1.wrapping_sub(1))
+                / 2,
+        );
+        if nonarrow == 0 && w1 > 2 && n > 3 {
+            v = v.wrapping_sub(
+                n.wrapping_mul(2)
+                    .wrapping_sub(w1)
+                    .wrapping_sub(5)
+                    .wrapping_mul(w1.wrapping_sub(2))
+                    / 2,
+            );
+        }
+        if n.wrapping_sub(1) > wmax {
+            if n.wrapping_sub(w1) > wmax {
+                v = v.wrapping_sub(
+                    w1.wrapping_sub(1).wrapping_mul(
+                        n.wrapping_mul(2)
+                            .wrapping_sub(w1)
+                            .wrapping_sub(wmax.wrapping_mul(2)),
+                    ),
+                );
+            } else {
+                v = v.wrapping_sub(
+                    n.wrapping_sub(wmax)
+                        .wrapping_mul(n.wrapping_sub(wmax).wrapping_sub(1)),
+                );
+            }
+        }
+    } else {
+        nonarrow = 1;
+    }
+    n = n.wrapping_sub(w1);
+
+    let w2 = (sig >> 4) & 0xF;
+    if w2 > 1 {
+        if w2 > wmax {
+            return -1;
+        }
+        v = v.wrapping_add(w2.wrapping_sub(1));
+        if nonarrow == 0 && w2 > 2 && n > 2 {
+            v = v.wrapping_sub(n.wrapping_sub(2));
+        }
+        if n > wmax {
+            v = v.wrapping_sub(n.wrapping_sub(wmax));
+        }
+    } else {
+        nonarrow = 1;
+    }
+
+    let w3 = sig & 0xF;
+    if w3 == 1 {
+        nonarrow = 1;
+    } else if w3 > wmax {
+        return -1;
+    }
+
+    if nonarrow == 0 {
+        return -1;
+    }
+
+    v as i32
+}
+
+/// Decode a DataBar character from width measurements
+fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: i32) -> SymbolType {
+    // Read segment values we need before taking other borrows
+    let seg_exp = dcode.databar.seg(seg_idx).exp();
+    let seg_side = dcode.databar.seg(seg_idx).side();
+    let seg_width = dcode.databar.seg(seg_idx).width;
+    let seg_finder = dcode.databar.seg(seg_idx).finder();
+    let seg_color = dcode.databar.seg(seg_idx).color();
+
+    let s = dcode.calc_s(if dir > 0 { off } else { off - 6 } as u8, 8);
+    let mut emin = [0i32, 0i32];
+    let mut sum = 0i32;
+    let mut sig0 = 0u32;
+    let mut sig1 = 0u32;
+
+    let n = if seg_exp {
+        17
+    } else if seg_side != 0 {
+        15
+    } else {
+        16
+    };
+    emin[1] = -(n as i32);
+
+    if s < 13 || check_width(seg_width as u32, s, n) == 0 {
+        return SymbolType::None;
+    }
+
+    let mut off = off;
+    for i in (0..4).rev() {
+        let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
+        if e < 0 {
+            return SymbolType::None;
+        }
+        sum = e - sum;
+        off += dir;
+        sig1 <<= 4;
+        if emin[1] < -sum {
+            emin[1] = -sum;
+        }
+        sig1 = sig1.wrapping_add(sum as u32);
+        if i == 0 {
+            break;
+        }
+
+        let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
+        if e < 0 {
+            return SymbolType::None;
+        }
+        sum = e - sum;
+        off += dir;
+        sig0 <<= 4;
+        if emin[0] > sum {
+            emin[0] = sum;
+        }
+        sig0 = sig0.wrapping_add(sum as u32);
+    }
+
+    let mut diff = emin[(!(n as i32) & 1) as usize];
+    diff = diff + (diff << 4);
+    diff = diff + (diff << 8);
+
+    sig0 = sig0.wrapping_sub(diff as u32);
+    sig1 = sig1.wrapping_add(diff as u32);
+
+    let mut sum0 = sig0.wrapping_add(sig0 >> 8);
+    let mut sum1 = sig1.wrapping_add(sig1 >> 8);
+    sum0 = sum0.wrapping_add(sum0 >> 4);
+    sum1 = sum1.wrapping_add(sum1 >> 4);
+    sum0 &= 0xf;
+    sum1 &= 0xf;
+
+    if sum0.wrapping_add(sum1).wrapping_add(8) as i32 != n as i32 {
+        return SymbolType::None;
+    }
+
+    if ((sum0 ^ (n >> 1)) | (sum1 ^ (n >> 1) ^ n)) & 1 != 0 {
+        return SymbolType::None;
+    }
+
+    let i = ((n & 0x3) ^ 1) * 5 + (sum1 >> 1);
+    if i as usize >= GROUPS.len() {
+        return SymbolType::None;
+    }
+    let g = &GROUPS[i as usize];
+
+    let vodd = calc_value4(
+        sig0.wrapping_add(0x1111),
+        sum0.wrapping_add(4),
+        g.wmax as u32,
+        (!(n as i32) & 1) as u32,
+    );
+    if vodd < 0 || vodd > g.todd as i32 {
+        return SymbolType::None;
+    }
+
+    let veven = calc_value4(
+        sig1.wrapping_add(0x1111),
+        sum1.wrapping_add(4),
+        (9 - g.wmax) as u32,
+        n & 1,
+    );
+    if veven < 0 || veven > g.teven as i32 {
+        return SymbolType::None;
+    }
+
+    let mut v = g.sum as i32;
+    if (n & 2) != 0 {
+        v = v
+            .wrapping_add(vodd)
+            .wrapping_add(veven.wrapping_mul(g.todd as i32));
+    } else {
+        v = v
+            .wrapping_add(veven)
+            .wrapping_add(vodd.wrapping_mul(g.teven as i32));
+    }
+
+    let mut chk;
+    if seg_exp {
+        let side = seg_color as u8 ^ seg_side ^ 1;
+        if v >= 4096 {
+            return SymbolType::None;
+        }
+        chk = calc_check(sig0, sig1, side as u32, 211);
+        if seg_finder != 0 || seg_color != Color::Space || seg_side != 0 {
+            let i = (seg_finder as i32) * 2 - (side as i32) + (seg_color as i32);
+            if !(0..12).contains(&i) {
+                return SymbolType::None;
+            }
+            chk = (chk * EXP_CHECKSUMS[i as usize] as u32) % 211;
+        } else if v >= 4009 {
+            return SymbolType::None;
+        } else {
+            chk = 0;
+        }
+    } else {
+        chk = calc_check(sig0, sig1, seg_side as u32, 79);
+        if seg_color != Color::Space {
+            chk = (chk * 16) % 79;
+        }
+    }
+
+    let seg = dcode.databar.seg_mut(seg_idx);
+    seg.set_check(chk as u8);
+    seg.data = v as i16;
+
+    merge_segment(&mut dcode.databar, seg_idx);
+
+    let is_exp = dcode.databar.seg(seg_idx).exp();
+    if is_exp {
+        return match_segment_exp(dcode, seg_idx, dir);
+    } else if dir > 0 {
+        return match_segment(dcode, seg_idx);
+    }
+    SymbolType::Partial
+}
+
+/// Allocate a new DataBar segment (or reuse an old one)
+/// Returns the index of the allocated segment, or -1 on failure
+fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> i32 {
+    let mut maxage = 0u32;
+    let csegs = db.csegs();
+    let epoch = db.epoch();
+    let mut old: i32 = -1;
+
+    // First pass: look for empty slots or very old segments
+    for i in 0..csegs {
+        let seg = db.seg_mut(i);
+
+        if seg.finder() < 0 {
+            return i as i32;
+        }
+
+        let age = epoch.wrapping_sub(seg.epoch());
+        if age >= 128 && seg.count() < 2 {
+            seg.set_finder(-1);
+            return i as i32;
+        }
+
+        // Score based on both age and count
+        let score = if age > seg.count() {
+            age - seg.count() + 1
+        } else {
+            1
+        };
+
+        if maxage < score as u32 {
+            maxage = score as u32;
+            old = i as i32;
+        }
+    }
+
+    // Try to grow the segment array if not at max
+    if csegs < DATABAR_MAX_SEGMENTS {
+        let i = csegs;
+        let mut new_csegs = csegs * 2;
+        if new_csegs > DATABAR_MAX_SEGMENTS {
+            new_csegs = DATABAR_MAX_SEGMENTS;
+        }
+
+        if new_csegs != csegs {
+            // Grow the segment array
+            db.resize_segs(new_csegs);
+            return i as i32;
+        }
+    }
+
+    // Reuse oldest segment
+    if old >= 0 {
+        db.seg_mut(old as usize).set_finder(-1);
+    }
+    old
+}
+
+/// Decode DataBar finder pattern
+fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+    let e0 = dcode.pair_width(1);
+    let e2 = dcode.pair_width(3);
+    let (dir, e2, e3) = if e0 < e2 {
+        let e = e2 * 4;
+        if e < 15 * e0 || e > 34 * e0 {
+            return SymbolType::None;
+        }
+        (0, e2, dcode.pair_width(4))
+    } else {
+        let e = e0 * 4;
+        if e < 15 * e2 || e > 34 * e2 {
+            return SymbolType::None;
+        }
+        (1, e0, dcode.pair_width(0))
+    };
+    let e1 = dcode.pair_width(2);
+
+    let s = e1 + e3;
+    if s < 12 {
+        return SymbolType::None;
+    }
+
+    let sig = (_zbar_decoder_decode_e(e3, s, 14) << 8)
+        | (_zbar_decoder_decode_e(e2, s, 14) << 4)
+        | _zbar_decoder_decode_e(e1, s, 14);
+    if sig < 0
+        || ((sig >> 4) & 0xf) < 8
+        || ((sig >> 4) & 0xf) > 10
+        || (sig & 0xf) >= 10
+        || ((sig >> 8) & 0xf) >= 10
+        || (((sig >> 8) + sig) & 0xf) != 10
+    {
+        return SymbolType::None;
+    }
+
+    let finder = (FINDER_HASH[((sig - (sig >> 5)) & 0x1f) as usize]
+        + FINDER_HASH[((sig >> 1) & 0x1f) as usize])
+        & 0x1f;
+    if finder == 0x1f
+        || !dcode.is_enabled(if finder < 9 {
+            SymbolType::Databar
+        } else {
+            SymbolType::DatabarExp
+        })
+    {
+        return SymbolType::None;
+    }
+
+    if finder < 0 {
+        return SymbolType::None;
+    }
+
+    let iseg = _zbar_databar_alloc_segment(&mut dcode.databar);
+    if iseg < 0 {
+        return SymbolType::None;
+    }
+
+    let color = dcode.color();
+    let epoch = dcode.databar.epoch();
+    let seg = dcode.databar.seg_mut(iseg as usize);
+    seg.set_finder(if finder >= 9 { finder - 9 } else { finder });
+    seg.set_exp(finder >= 9);
+    seg.set_color(((color as u8) ^ dir as u8 ^ 1).into());
+    seg.set_side(dir as u8);
+    seg.set_partial(false);
+    seg.set_count(1);
+    seg.width = s as i16;
+    seg.set_epoch(epoch);
+
+    let rc = decode_char(dcode, iseg as usize, 12 - dir, -1);
+    if rc == SymbolType::None {
+        let seg = dcode.databar.seg_mut(iseg as usize);
+        seg.set_partial(true);
+    } else {
+        dcode
+            .databar
+            .set_epoch(dcode.databar.epoch().wrapping_add(1));
+    }
+
+    let i = ((dcode.idx as i32 + 8 + dir) & 0xf) as usize;
+    if dcode.databar.char(i) != -1 {
+        return SymbolType::None;
+    }
+    dcode.databar.set_char(i, iseg as i8);
+    rc
+}
+
+pub(crate) fn _zbar_decode_databar(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+    let i = dcode.idx & 0xf;
+
+    let mut sym = decode_finder(dcode);
+
+    let iseg = dcode.databar.char(i as usize);
+    if iseg < 0 {
+        return sym;
+    }
+
+    dcode.databar.set_char(i as usize, -1);
+
+    let seg_idx: usize;
+    let pair_idx: Option<usize>;
+
+    if dcode.databar.seg(iseg as usize).partial() {
+        pair_idx = None;
+        seg_idx = iseg as usize;
+        let old_side = dcode.databar.seg(seg_idx).side();
+        dcode.databar.seg_mut(seg_idx).set_side(!old_side);
+    } else {
+        let jseg = _zbar_databar_alloc_segment(&mut dcode.databar);
+        pair_idx = Some(iseg as usize);
+        seg_idx = jseg as usize;
+
+        // Extract values from pair before borrowing seg mutably
+        let pair_finder = dcode.databar.seg(iseg as usize).finder();
+        let pair_exp = dcode.databar.seg(iseg as usize).exp();
+        let pair_color = dcode.databar.seg(iseg as usize).color();
+        let pair_side = dcode.databar.seg(iseg as usize).side();
+        let pair_width = dcode.databar.seg(iseg as usize).width;
+        let epoch = dcode.databar.epoch();
+
+        let seg = dcode.databar.seg_mut(jseg as usize);
+        seg.set_finder(pair_finder);
+        seg.set_exp(pair_exp);
+        seg.set_color(pair_color);
+        seg.set_side(!pair_side);
+        seg.set_partial(false);
+        seg.set_count(1);
+        seg.width = pair_width;
+        seg.set_epoch(epoch);
+    }
+
+    sym = decode_char(dcode, seg_idx, 1, 1);
+    if sym == SymbolType::None {
+        dcode.databar.seg_mut(seg_idx).set_finder(-1);
+        if let Some(pidx) = pair_idx {
+            dcode.databar.seg_mut(pidx).set_partial(true);
+        }
+    } else {
+        dcode
+            .databar
+            .set_epoch(dcode.databar.epoch().wrapping_add(1));
+    }
+
+    sym
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_width() {
+        // Test exact match: wf=100, wd=100, n=14
+        // After scaling: dwf=300, wd=1400, wf=1400
+        // Check: (1400-300 <= 1400) && (1400 <= 1400+300) => (1100<=1400) && (1400<=1700) => true
+        assert_eq!(check_width(100, 100, 14), 1);
+
+        // Test within tolerance: wf=100, wd=105, n=14
+        // After scaling: dwf=300, wd=1470, wf=1400
+        // Check: (1400-300 <= 1470) && (1470 <= 1400+300) => (1100<=1470) && (1470<=1700) => true
+        assert_eq!(check_width(100, 105, 14), 1);
+
+        // Test within tolerance: wf=100, wd=95, n=14
+        // After scaling: dwf=300, wd=1330, wf=1400
+        // Check: (1400-300 <= 1330) && (1330 <= 1400+300) => (1100<=1330) && (1330<=1700) => true
+        assert_eq!(check_width(100, 95, 14), 1);
+
+        // Test outside tolerance: wf=100, wd=130, n=14
+        // After scaling: dwf=300, wd=1820, wf=1400
+        // Check: (1400-300 <= 1820) && (1820 <= 1400+300) => (1100<=1820) && (1820<=1700) => false
+        assert_eq!(check_width(100, 130, 14), 0);
+
+        // Test outside tolerance: wf=100, wd=70, n=14
+        // After scaling: dwf=300, wd=980, wf=1400
+        // Check: (1400-300 <= 980) && (980 <= 1400+300) => (1100<=980) && (980<=1700) => false
+        assert_eq!(check_width(100, 70, 14), 0);
+    }
+
+    #[test]
+    fn test_decode10() {
+        let mut buf = [0u8; 10];
+
+        // Test simple number
+        decode10(&mut buf, 123, 3);
+        assert_eq!(&buf[0..3], b"123");
+
+        // Test with leading zeros
+        decode10(&mut buf, 45, 6);
+        assert_eq!(&buf[0..6], b"000045");
+
+        // Test zero
+        decode10(&mut buf, 0, 3);
+        assert_eq!(&buf[0..3], b"000");
+    }
+
+    #[test]
+    fn test_append_check14() {
+        // Test with 13 ASCII digits
+        let mut buf = [
+            b'9', b'7', b'8', b'0', b'1', b'4', b'3', b'0', b'0', b'7', b'2', b'3', b'0', 0,
+        ];
+        append_check14(&mut buf);
+        // Check digit: (9+7+8+0+1+4+3+0+0+7+2+3) + (9+8+1+3+0+2)*2 = 44 + 46 = 90, 90%10=0, check=0
+        assert_eq!(buf[13], b'0');
+
+        // Test another example: 1234567890120
+        let mut buf2 = [
+            b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'0', b'1', b'2', b'0', 0,
+        ];
+        append_check14(&mut buf2);
+        // Check: (1+2+3+4+5+6+7+8+9+0+1+2) + (1+3+5+7+9+1)*2 = 48 + 52 = 100, 100%10=0, check=0
+        assert_eq!(buf2[13], b'0');
+    }
+
+    #[test]
+    fn test_calc_check() {
+        // Test basic checksum calculation
+        // These values are based on understanding the algorithm
+        let chk1 = calc_check(0x1234, 0x5678, 0, 211);
+        assert!(chk1 < 211);
+
+        let chk2 = calc_check(0x1234, 0x5678, 1, 211);
+        assert!(chk2 < 211);
+
+        // Side should affect the result
+        assert_ne!(chk1, chk2);
+
+        // Test with different modulus
+        let chk3 = calc_check(0x1234, 0x5678, 0, 79);
+        assert!(chk3 < 79);
+
+        // Same inputs should give same output
+        let chk4 = calc_check(0x1234, 0x5678, 0, 211);
+        assert_eq!(chk1, chk4);
+    }
+}
