@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zedbar - QR &amp; Barcode Decoder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Zedbar</h1>
+    <p class="subtitle">QR code &amp; barcode decoder &mdash; runs entirely in your browser via WebAssembly.</p>
+
+    <div id="drop-zone" tabindex="0" role="button" aria-label="Drop an image or click to select">
+      <div class="drop-zone-content">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="m21 15-5-5L5 21"/>
+        </svg>
+        <p>Drop an image here, or <strong>click to select</strong></p>
+        <p class="hint">PNG, JPEG, GIF, WebP, BMP</p>
+      </div>
+      <input type="file" id="file-input" accept="image/*" hidden>
+    </div>
+
+    <div id="preview-section" hidden>
+      <h2>Image</h2>
+      <div id="preview-container">
+        <canvas id="preview-canvas"></canvas>
+      </div>
+    </div>
+
+    <div id="results-section" hidden>
+      <h2>Results</h2>
+      <div id="results"></div>
+    </div>
+
+    <div id="no-results" hidden>
+      <p>No barcodes or QR codes found in this image.</p>
+    </div>
+
+    <div id="error-section" hidden>
+      <p id="error-message"></p>
+    </div>
+  </main>
+
+  <footer>
+    <p>Powered by <a href="https://github.com/eventualbuddha/zbar">zedbar</a> &mdash; a pure-Rust barcode scanner compiled to WebAssembly.</p>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
