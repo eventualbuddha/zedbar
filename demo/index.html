@@ -3,50 +3,175 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zedbar - QR &amp; Barcode Decoder</title>
+  <title>Zedbar - QR & Barcode Scanner for Rust and Node.js</title>
+  <meta name="description" content="Fast, pure-Rust barcode and QR code scanner. Use in Rust projects or Node.js via WebAssembly.">
   <link rel="stylesheet" href="style.css">
+  <style>
+/* Shiki syntax highlighting - dark mode override */
+@media (prefers-color-scheme: dark) {
+  pre code span[style] { color: var(--shiki-dark) !important; }
+}
+  </style>
 </head>
 <body>
+  <header class="hero">
+    <div class="hero-content">
+      <h1>Zedbar</h1>
+      <p class="tagline">Fast QR code and barcode scanner for Rust and Node.js</p>
+      <p class="description">A fork of <a href="http://zbar.sourceforge.net/">ZBar</a> ported from C to Rust. Use it in your Rust projects or in Node.js via WebAssembly.</p>
+      <div class="hero-links">
+        <a href="https://github.com/eventualbuddha/zedbar" class="btn btn-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="https://crates.io/crates/zedbar" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 512 512" fill="currentColor"><path d="M239.1 6.3l-208 78c-18.7 7-31.1 25-31.1 45v225.1c0 18.2 10.3 34.8 26.5 42.9l208 104c13.5 6.8 29.4 6.8 42.9 0l208-104c16.3-8.1 26.5-24.8 26.5-42.9V129.3c0-20-12.4-37.9-31.1-44.9l-208-78C262 2.2 250 2.2 239.1 6.3zM256 68.4l192 72v1.1l-192 78-192-78v-1.1l192-72zm32 356V275.5l160-65v160.4l-160 53.5z"/></svg>
+          Crates.io
+        </a>
+        <a href="https://www.npmjs.com/package/zedbar" class="btn btn-secondary">
+          <svg width="20" height="20" viewBox="0 0 576 512" fill="currentColor"><path d="M288 288h-32v-64h32v64zm288-128v192H288v32H160v-32H0V160h576zm-416 32H32v128h64v-96h32v96h32V192zm160 0H192v160h64v-32h64V192zm224 0H352v128h64v-96h32v96h32v-96h32v96h32V192z"/></svg>
+          npm
+        </a>
+      </div>
+    </div>
+  </header>
+
   <main>
-    <h1>Zedbar</h1>
-    <p class="subtitle">QR code &amp; barcode decoder &mdash; runs entirely in your browser via WebAssembly.</p>
+    <section id="demo" class="section">
+      <h2>Try It</h2>
+      <p class="section-intro">Drop an image to scan barcodes and QR codes directly in your browser using WebAssembly.</p>
 
-    <div id="drop-zone" tabindex="0" role="button" aria-label="Drop an image or click to select">
-      <div class="drop-zone-content">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="m21 15-5-5L5 21"/>
-        </svg>
-        <p>Drop an image here, or <strong>click to select</strong></p>
-        <p class="hint">PNG, JPEG, GIF, WebP, BMP</p>
+      <div id="drop-zone" tabindex="0" role="button" aria-label="Drop an image or click to select">
+        <div class="drop-zone-content">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="m21 15-5-5L5 21"/>
+          </svg>
+          <p>Drop or paste an image here, or <strong>click to select</strong></p>
+          <p class="hint">PNG, JPEG, GIF, WebP, BMP</p>
+        </div>
+        <input type="file" id="file-input" accept="image/*" hidden>
       </div>
-      <input type="file" id="file-input" accept="image/*" hidden>
-    </div>
 
-    <div id="preview-section" hidden>
-      <h2>Image</h2>
-      <div id="preview-container">
-        <canvas id="preview-canvas"></canvas>
+      <div id="preview-section" hidden>
+        <h3>Image</h3>
+        <div id="preview-container">
+          <canvas id="preview-canvas"></canvas>
+        </div>
       </div>
-    </div>
 
-    <div id="results-section" hidden>
-      <h2>Results</h2>
-      <div id="results"></div>
-    </div>
+      <div id="results-section" hidden>
+        <h3>Results</h3>
+        <div id="results"></div>
+      </div>
 
-    <div id="no-results" hidden>
-      <p>No barcodes or QR codes found in this image.</p>
-    </div>
+      <div id="no-results" hidden>
+        <p>No barcodes or QR codes found in this image.</p>
+      </div>
 
-    <div id="error-section" hidden>
-      <p id="error-message"></p>
-    </div>
+      <div id="error-section" hidden>
+        <p id="error-message"></p>
+      </div>
+    </section>
+
+    <section id="formats" class="section">
+      <h2>Supported Formats</h2>
+      <div class="formats-grid">
+        <div class="format-group">
+          <h3>2D Codes</h3>
+          <ul>
+            <li>QR Code</li>
+            <li>SQ Code</li>
+          </ul>
+        </div>
+        <div class="format-group">
+          <h3>EAN/UPC</h3>
+          <ul>
+            <li>EAN-13 / EAN-8</li>
+            <li>UPC-A / UPC-E</li>
+            <li>ISBN-10 / ISBN-13</li>
+          </ul>
+        </div>
+        <div class="format-group">
+          <h3>Code Family</h3>
+          <ul>
+            <li>Code 128</li>
+            <li>Code 93</li>
+            <li>Code 39</li>
+            <li>Codabar</li>
+          </ul>
+        </div>
+        <div class="format-group">
+          <h3>Industrial</h3>
+          <ul>
+            <li>Interleaved 2 of 5</li>
+            <li>GS1 DataBar</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="section">
+      <h2>Installation</h2>
+
+      <div class="install-tabs">
+        <button class="install-tab active" data-lang="rust">Rust</button>
+        <button class="install-tab" data-lang="node">Node.js</button>
+      </div>
+
+      <div class="install-content" data-lang="rust">
+        <p>Add zedbar to your <code>Cargo.toml</code>:</p>
+        <pre><code><span class="line"><span style="color:#24292E;--shiki-dark:#ABB2BF">[</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">dependencies</span><span style="color:#24292E;--shiki-dark:#ABB2BF">]</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E06C75">zedbar</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> = </span><span style="color:#032F62;--shiki-dark:#98C379">"0.1"</span></span></code></pre>
+
+        <h3>Usage</h3>
+        <pre><code><span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">use</span><span style="color:#6F42C1;--shiki-dark:#E5C07B"> zedbar</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">::</span><span style="color:#24292E;--shiki-dark:#ABB2BF">{</span><span style="color:#6F42C1;--shiki-dark:#E5C07B">Scanner</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#6F42C1;--shiki-dark:#E5C07B">Image</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#6F42C1;--shiki-dark:#E5C07B">DecoderConfig</span><span style="color:#24292E;--shiki-dark:#ABB2BF">};</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">use</span><span style="color:#6F42C1;--shiki-dark:#E5C07B"> zedbar</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">::</span><span style="color:#6F42C1;--shiki-dark:#E5C07B">config</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">::</span><span style="color:#24292E;--shiki-dark:#ABB2BF">{</span><span style="color:#6F42C1;--shiki-dark:#E5C07B">QrCode</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#6F42C1;--shiki-dark:#E5C07B">Ean13</span><span style="color:#24292E;--shiki-dark:#ABB2BF">};</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;font-style:inherit;--shiki-dark:#7F848E;--shiki-dark-font-style:italic">// Create a scanner with specific formats</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">let</span><span style="color:#24292E;--shiki-dark:#E06C75"> config</span><span style="color:#D73A49;--shiki-dark:#56B6C2"> =</span><span style="color:#6F42C1;--shiki-dark:#E5C07B"> DecoderConfig</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">::</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">new</span><span style="color:#24292E;--shiki-dark:#ABB2BF">()</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#ABB2BF">    .</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">enable</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#6F42C1;--shiki-dark:#E5C07B">QrCode</span><span style="color:#24292E;--shiki-dark:#ABB2BF">)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#ABB2BF">    .</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">enable</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#6F42C1;--shiki-dark:#E5C07B">Ean13</span><span style="color:#24292E;--shiki-dark:#ABB2BF">);</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">let</span><span style="color:#D73A49;--shiki-dark:#C678DD"> mut</span><span style="color:#24292E;--shiki-dark:#E06C75"> scanner</span><span style="color:#D73A49;--shiki-dark:#56B6C2"> =</span><span style="color:#6F42C1;--shiki-dark:#E5C07B"> Scanner</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">::</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">with_config</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#24292E;--shiki-dark:#E06C75">config</span><span style="color:#24292E;--shiki-dark:#ABB2BF">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;font-style:inherit;--shiki-dark:#7F848E;--shiki-dark-font-style:italic">// Load an image (grayscale, 1 byte per pixel)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">let</span><span style="color:#D73A49;--shiki-dark:#C678DD"> mut</span><span style="color:#24292E;--shiki-dark:#E06C75"> image</span><span style="color:#D73A49;--shiki-dark:#56B6C2"> =</span><span style="color:#6F42C1;--shiki-dark:#E5C07B"> Image</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">::</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">from_gray</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">&#x26;</span><span style="color:#24292E;--shiki-dark:#E06C75">grayscale_data</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#24292E;--shiki-dark:#E06C75">width</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#24292E;--shiki-dark:#E06C75">height</span><span style="color:#24292E;--shiki-dark:#ABB2BF">)</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">?</span><span style="color:#24292E;--shiki-dark:#ABB2BF">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;font-style:inherit;--shiki-dark:#7F848E;--shiki-dark-font-style:italic">// Scan for barcodes</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">for</span><span style="color:#24292E;--shiki-dark:#E06C75"> symbol</span><span style="color:#D73A49;--shiki-dark:#C678DD"> in</span><span style="color:#24292E;--shiki-dark:#E06C75"> scanner</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">.</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">scan</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">&#x26;</span><span style="color:#D73A49;--shiki-dark:#C678DD">mut</span><span style="color:#24292E;--shiki-dark:#E06C75"> image</span><span style="color:#24292E;--shiki-dark:#ABB2BF">) {</span></span>
+<span class="line"><span style="color:#6F42C1;--shiki-dark:#61AFEF">    println!</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#032F62;--shiki-dark:#98C379">"{:?}: {}"</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#24292E;--shiki-dark:#E06C75">symbol</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">.</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">symbol_type</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(), </span><span style="color:#24292E;--shiki-dark:#E06C75">symbol</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">.</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">text</span><span style="color:#24292E;--shiki-dark:#ABB2BF">()</span><span style="color:#D73A49;--shiki-dark:#ABB2BF">.</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">unwrap</span><span style="color:#24292E;--shiki-dark:#ABB2BF">());</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#ABB2BF">}</span></span></code></pre>
+
+        <p>See the <a href="https://docs.rs/zedbar">API documentation</a> for more details.</p>
+      </div>
+
+      <div class="install-content" data-lang="node" hidden>
+        <p>Install from npm:</p>
+        <pre><code><span class="line"><span style="color:#6F42C1;--shiki-dark:#61AFEF">npm</span><span style="color:#032F62;--shiki-dark:#98C379"> install</span><span style="color:#032F62;--shiki-dark:#98C379"> zedbar</span></span></code></pre>
+
+        <h3>Usage</h3>
+        <pre><code><span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">import</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> { </span><span style="color:#24292E;--shiki-dark:#E06C75">scanGrayscale</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> } </span><span style="color:#D73A49;--shiki-dark:#C678DD">from</span><span style="color:#032F62;--shiki-dark:#98C379"> 'zedbar'</span><span style="color:#24292E;--shiki-dark:#ABB2BF">;</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">import</span><span style="color:#24292E;--shiki-dark:#E06C75"> sharp</span><span style="color:#D73A49;--shiki-dark:#C678DD"> from</span><span style="color:#032F62;--shiki-dark:#98C379"> 'sharp'</span><span style="color:#24292E;--shiki-dark:#ABB2BF">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;font-style:inherit;--shiki-dark:#7F848E;--shiki-dark-font-style:italic">// Load image and convert to grayscale</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">const</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> { </span><span style="color:#005CC5;--shiki-dark:#E5C07B">data</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#005CC5;--shiki-dark:#E5C07B">info</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> } </span><span style="color:#D73A49;--shiki-dark:#56B6C2">=</span><span style="color:#D73A49;--shiki-dark:#C678DD"> await</span><span style="color:#6F42C1;--shiki-dark:#61AFEF"> sharp</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#032F62;--shiki-dark:#98C379">'barcode.png'</span><span style="color:#24292E;--shiki-dark:#ABB2BF">)</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#ABB2BF">  .</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">grayscale</span><span style="color:#24292E;--shiki-dark:#ABB2BF">()</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#ABB2BF">  .</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">raw</span><span style="color:#24292E;--shiki-dark:#ABB2BF">()</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#ABB2BF">  .</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">toBuffer</span><span style="color:#24292E;--shiki-dark:#ABB2BF">({ </span><span style="color:#24292E;--shiki-dark:#E06C75">resolveWithObject</span><span style="color:#24292E;--shiki-dark:#ABB2BF">: </span><span style="color:#005CC5;--shiki-dark:#D19A66">true</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> });</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;font-style:inherit;--shiki-dark:#7F848E;--shiki-dark-font-style:italic">// Scan for barcodes</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#C678DD">for</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> (</span><span style="color:#D73A49;--shiki-dark:#C678DD">const</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> { </span><span style="color:#005CC5;--shiki-dark:#E5C07B">symbolType</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#005CC5;--shiki-dark:#E5C07B">text</span><span style="color:#24292E;--shiki-dark:#ABB2BF"> } </span><span style="color:#D73A49;--shiki-dark:#C678DD">of</span><span style="color:#6F42C1;--shiki-dark:#61AFEF"> scanGrayscale</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#24292E;--shiki-dark:#E06C75">data</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#24292E;--shiki-dark:#E5C07B">info</span><span style="color:#24292E;--shiki-dark:#ABB2BF">.</span><span style="color:#24292E;--shiki-dark:#E06C75">width</span><span style="color:#24292E;--shiki-dark:#ABB2BF">, </span><span style="color:#24292E;--shiki-dark:#E5C07B">info</span><span style="color:#24292E;--shiki-dark:#ABB2BF">.</span><span style="color:#24292E;--shiki-dark:#E06C75">height</span><span style="color:#24292E;--shiki-dark:#ABB2BF">)) {</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E5C07B">  console</span><span style="color:#24292E;--shiki-dark:#ABB2BF">.</span><span style="color:#6F42C1;--shiki-dark:#61AFEF">log</span><span style="color:#24292E;--shiki-dark:#ABB2BF">(</span><span style="color:#032F62;--shiki-dark:#98C379">`</span><span style="color:#032F62;--shiki-dark:#C678DD">${</span><span style="color:#24292E;--shiki-dark:#E06C75">symbolType</span><span style="color:#032F62;--shiki-dark:#C678DD">}</span><span style="color:#032F62;--shiki-dark:#98C379">: </span><span style="color:#032F62;--shiki-dark:#C678DD">${</span><span style="color:#24292E;--shiki-dark:#E06C75">text</span><span style="color:#032F62;--shiki-dark:#C678DD">}</span><span style="color:#032F62;--shiki-dark:#98C379">`</span><span style="color:#24292E;--shiki-dark:#ABB2BF">);</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#ABB2BF">}</span></span></code></pre>
+
+        <p>The Node.js package uses WebAssembly under the hood, so it works on any platform without native dependencies.</p>
+      </div>
+    </section>
   </main>
 
   <footer>
-    <p>Powered by <a href="https://github.com/eventualbuddha/zbar">zedbar</a> &mdash; a pure-Rust barcode scanner compiled to WebAssembly.</p>
+    <p><a href="https://github.com/eventualbuddha/zedbar">Zedbar</a> is a Rust port of <a href="http://zbar.sourceforge.net/">ZBar</a>, open source under the LGPL-3.0 license.</p>
   </footer>
 
   <script type="module" src="app.js"></script>

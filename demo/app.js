@@ -1,4 +1,4 @@
-import init, { scan_grayscale } from "./pkg/zedbar.js";
+import init, { scanGrayscale } from "./pkg/zedbar.js";
 
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
@@ -108,7 +108,7 @@ async function handleFile(file) {
       gray[i] = (r * 77 + g * 150 + b * 29) >> 8;
     }
 
-    const results = scan_grayscale(gray, width, height);
+    const results = scanGrayscale(gray, width, height);
     displayResults(results);
   } catch (e) {
     showError(`Scan failed: ${e}`);
@@ -139,7 +139,7 @@ function displayResults(results) {
 
     const typeBadge = document.createElement("span");
     typeBadge.className = "result-type";
-    typeBadge.textContent = result.symbol_type;
+    typeBadge.textContent = result.symbolType;
 
     const sizeInfo = document.createElement("span");
     sizeInfo.className = "result-size";
@@ -347,4 +347,26 @@ function clipboardIcon() {
 
 function checkIcon() {
   return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+}
+
+// -- Install tabs --
+
+const installTabs = document.querySelector(".install-tabs");
+if (installTabs) {
+  installTabs.addEventListener("click", (e) => {
+    const tab = e.target.closest(".install-tab");
+    if (!tab) return;
+
+    const lang = tab.dataset.lang;
+
+    // Update active tab
+    for (const t of installTabs.querySelectorAll(".install-tab")) {
+      t.classList.toggle("active", t.dataset.lang === lang);
+    }
+
+    // Show/hide content
+    for (const content of document.querySelectorAll(".install-content")) {
+      content.hidden = content.dataset.lang !== lang;
+    }
+  });
 }

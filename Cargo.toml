@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Pure Rust barcode and QR code scanning library supporting multiple formats"
 license = "LGPL-3.0-or-later"
-repository = "https://github.com/eventualbuddha/zbar"
+repository = "https://github.com/eventualbuddha/zedbar"
 keywords = ["barcode", "qr-code", "scanner", "image", "computer-vision"]
 categories = ["computer-vision", "multimedia::images"]
 

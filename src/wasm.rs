@@ -15,7 +15,7 @@ pub struct DecodeResult {
 #[wasm_bindgen]
 impl DecodeResult {
     /// The barcode format name (e.g. "QR-Code", "EAN-13").
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, js_name = "symbolType")]
     pub fn symbol_type(&self) -> String {
         self.symbol_type.clone()
     }
@@ -39,7 +39,7 @@ impl DecodeResult {
 /// row-major, with dimensions `width` x `height`.
 ///
 /// Returns an array of `DecodeResult` objects.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "scanGrayscale")]
 pub fn scan_grayscale(data: &[u8], width: u32, height: u32) -> Result<Vec<DecodeResult>, JsValue> {
     let mut image =
         Image::from_gray(data, width, height).map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
