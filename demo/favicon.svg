@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#2563eb"/>
+  <!-- QR-style corner markers -->
+  <rect x="4" y="4" width="8" height="8" rx="1" fill="white"/>
+  <rect x="5.5" y="5.5" width="5" height="5" rx="0.5" fill="#2563eb"/>
+  <rect x="7" y="7" width="2" height="2" fill="white"/>
+
+  <rect x="20" y="4" width="8" height="8" rx="1" fill="white"/>
+  <rect x="21.5" y="5.5" width="5" height="5" rx="0.5" fill="#2563eb"/>
+  <rect x="23" y="7" width="2" height="2" fill="white"/>
+
+  <rect x="4" y="20" width="8" height="8" rx="1" fill="white"/>
+  <rect x="5.5" y="21.5" width="5" height="5" rx="0.5" fill="#2563eb"/>
+  <rect x="7" y="23" width="2" height="2" fill="white"/>
+
+  <!-- Data pattern -->
+  <rect x="14" y="5" width="2" height="2" fill="white"/>
+  <rect x="14" y="9" width="2" height="2" fill="white"/>
+  <rect x="5" y="14" width="2" height="2" fill="white"/>
+  <rect x="9" y="14" width="2" height="2" fill="white"/>
+  <rect x="14" y="14" width="4" height="4" rx="0.5" fill="white"/>
+  <rect x="20" y="14" width="2" height="2" fill="white"/>
+  <rect x="25" y="14" width="2" height="2" fill="white"/>
+  <rect x="14" y="21" width="2" height="2" fill="white"/>
+  <rect x="14" y="25" width="2" height="2" fill="white"/>
+  <rect x="20" y="20" width="3" height="3" fill="white"/>
+  <rect x="25" y="20" width="2" height="2" fill="white"/>
+  <rect x="20" y="25" width="2" height="2" fill="white"/>
+  <rect x="25" y="25" width="2" height="2" fill="white"/>
+</svg>
