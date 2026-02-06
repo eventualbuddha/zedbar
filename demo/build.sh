@@ -2,10 +2,23 @@
 set -euo pipefail
 
 # Build the WASM package and HTML for the demo site.
-# Prerequisites: wasm-pack (cargo install wasm-pack), node
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Install Rust if not available (needed for Cloudflare Pages)
+if ! command -v cargo &>/dev/null; then
+  echo "Installing Rust..."
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+  # shellcheck source=/dev/null
+  source "$HOME/.cargo/env"
+fi
+
+# Install wasm-pack if not available
+if ! command -v wasm-pack &>/dev/null; then
+  echo "Installing wasm-pack..."
+  cargo install wasm-pack
+fi
 
 echo "Installing demo dependencies..."
 npm ci --prefix "$SCRIPT_DIR"
