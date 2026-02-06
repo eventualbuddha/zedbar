@@ -1,0 +1,12 @@
+{
+  "name": "zedbar-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:html": "node build-html.mjs"
+  },
+  "devDependencies": {
+    "shiki": "^1.0.0"
+  }
+}

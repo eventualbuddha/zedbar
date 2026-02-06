@@ -81,6 +81,8 @@ pub(crate) mod img_scanner_config;
 pub(crate) mod qrcode;
 #[cfg(feature = "sqcode")]
 pub(crate) mod sqcode;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 // Re-export main types
 pub use config::DecoderConfig;

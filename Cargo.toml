@@ -4,13 +4,16 @@ version = "0.1.0"
 edition = "2024"
 description = "Pure Rust barcode and QR code scanning library supporting multiple formats"
 license = "LGPL-3.0-or-later"
-repository = "https://github.com/eventualbuddha/zbar"
+repository = "https://github.com/eventualbuddha/zedbar"
 keywords = ["barcode", "qr-code", "scanner", "image", "computer-vision"]
 categories = ["computer-vision", "multimedia::images"]
 
 [lib]
 name = "zedbar"
 crate-type = ["lib", "cdylib", "staticlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
 
 [dependencies]
 # Optional dependencies
@@ -20,6 +23,9 @@ rand = { version = "0.9", optional = true }
 rand_chacha = { version = "0.9", optional = true }
 image = { version = "0.25", optional = true }
 clap = { version = "4.5", features = ["derive"], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+getrandom = { version = "0.3", features = ["wasm_js"], optional = true }
 
 # Optional benchmark comparison libraries (can be dependencies since they're feature-gated)
 zbar-rust = { version = "0.0.24", optional = true }
@@ -68,6 +74,7 @@ databar = []
 i25 = []
 image = ["dep:image"]
 clap = ["dep:clap"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom", "qrcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "sqcode"]
 
 # Benchmark features - enable to compare with other libraries
 bench_zbar_c = ["dep:zbar-rust"]
