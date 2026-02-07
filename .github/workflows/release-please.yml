@@ -19,6 +19,9 @@ jobs:
         id: release
         with:
           release-type: rust
+          # Use PAT to trigger CI on release PRs
+          # See: https://github.com/googleapis/release-please-action#other-actions-on-release-please-prs
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
   publish-crate:
     needs: release-please
