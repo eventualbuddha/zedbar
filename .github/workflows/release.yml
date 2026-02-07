@@ -67,7 +67,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
+          tag_name: ${{ github.ref_name }}
           release_name: Release ${{ steps.version.outputs.VERSION }}
           body: |
             Release version ${{ steps.version.outputs.VERSION }}
@@ -84,6 +84,6 @@ jobs:
             npm install zedbar@${{ steps.version.outputs.VERSION }}
             ```
             
-            See [CHANGELOG](https://github.com/eventualbuddha/zedbar/blob/main/CHANGELOG.md) for details.
+            See the [GitHub Releases page](https://github.com/eventualbuddha/zedbar/releases) for details.
           draft: false
           prerelease: false
