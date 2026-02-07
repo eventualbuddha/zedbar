@@ -116,11 +116,17 @@
       </div>
 
       <div class="install-content" data-lang="rust">
+        <h3>Command-line Tool</h3>
+        <p>Install the <code>zedbarimg</code> CLI tool (similar to <code>zbarimg</code>):</p>
+        <pre><code data-lang="bash">cargo install zedbar</code></pre>
+        <p>Scan images from the command line:</p>
+        <pre><code data-lang="bash">zedbarimg image.png
+zedbarimg --quiet barcode.jpg</code></pre>
+
+        <h3>Library Usage</h3>
         <p>Add zedbar to your <code>Cargo.toml</code>:</p>
         <pre><code data-lang="toml">[dependencies]
 zedbar = "0.1"</code></pre>
-
-        <h3>Usage</h3>
         <pre><code data-lang="rust">use zedbar::{Scanner, Image, DecoderConfig};
 use zedbar::config::{QrCode, Ean13};
 
@@ -142,21 +148,28 @@ for symbol in scanner.scan(&amp;mut image) {
       </div>
 
       <div class="install-content" data-lang="node" hidden>
+        <h3>Command-line Tool</h3>
+        <p>Install the <code>zedbarimg</code> CLI tool globally (similar to <code>zbarimg</code>):</p>
+        <pre><code data-lang="bash">npm install -g zedbar</code></pre>
+        <p>Scan images from the command line:</p>
+        <pre><code data-lang="bash">zedbarimg image.png
+zedbarimg --quiet barcode.jpg</code></pre>
+
+        <h3>Library Usage</h3>
         <p>Install from npm:</p>
         <pre><code data-lang="bash">npm install zedbar</code></pre>
+        <pre><code data-lang="javascript">import { scanImageBytes } from 'zedbar';
+import { readFileSync } from 'fs';
 
-        <h3>Usage</h3>
-        <pre><code data-lang="javascript">import { scanGrayscale } from 'zedbar';
-import sharp from 'sharp';
+// Read and scan an image file directly
+const imageBytes = readFileSync('barcode.png');
+for (const { symbolType, text } of scanImageBytes(imageBytes)) {
+  console.log(`${symbolType}: ${text}`);
+}
 
-// Load image and convert to grayscale
-const { data, info } = await sharp('barcode.png')
-  .grayscale()
-  .raw()
-  .toBuffer({ resolveWithObject: true });
-
-// Scan for barcodes
-for (const { symbolType, text } of scanGrayscale(data, info.width, info.height)) {
+// Or use scanGrayscale if you already have grayscale data
+import { scanGrayscale } from 'zedbar';
+for (const { symbolType, text } of scanGrayscale(grayscaleData, width, height)) {
   console.log(`${symbolType}: ${text}`);
 }</code></pre>
 

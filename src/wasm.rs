@@ -5,6 +5,9 @@ use wasm_bindgen::prelude::*;
 use crate::image::Image;
 use crate::scanner::Scanner;
 
+#[cfg(feature = "image")]
+use image;
+
 /// A decoded barcode/QR code result.
 #[wasm_bindgen]
 pub struct DecodeResult {
@@ -54,4 +57,28 @@ pub fn scan_grayscale(data: &[u8], width: u32, height: u32) -> Result<Vec<Decode
             data: s.data().to_vec(),
         })
         .collect())
+}
+
+/// Scan an encoded image (PNG, JPEG, BMP, WebP) for barcodes and QR codes.
+///
+/// `bytes` should contain the raw bytes of an image file in one of the
+/// supported formats: PNG, JPEG, BMP, or WebP.
+///
+/// The image will be automatically decoded and converted to grayscale
+/// before scanning.
+///
+/// Returns an array of `DecodeResult` objects.
+#[wasm_bindgen(js_name = "scanImageBytes")]
+pub fn scan_image_bytes(bytes: &[u8]) -> Result<Vec<DecodeResult>, JsValue> {
+    // Decode the image using the image crate
+    let img = image::load_from_memory(bytes)
+        .map_err(|e| JsValue::from_str(&format!("Failed to decode image: {}", e)))?;
+
+    // Convert to grayscale
+    let gray = img.to_luma8();
+    let (width, height) = gray.dimensions();
+    let data = gray.as_raw();
+
+    // Use the existing scanGrayscale implementation
+    scan_grayscale(data, width, height)
 }

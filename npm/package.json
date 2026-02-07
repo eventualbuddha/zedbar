@@ -7,8 +7,5 @@
   "scripts": {
     "build": "./build.sh",
     "test": "node test.mjs"
-  },
-  "devDependencies": {
-    "sharp": "^0.33.0"
   }
 }

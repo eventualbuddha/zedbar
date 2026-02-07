@@ -35,8 +35,16 @@ pkg.bugs = { url: 'https://github.com/eventualbuddha/zedbar/issues' };
 // Add engines requirement
 pkg.engines = { node: '>=16.0.0' };
 
+// Add binary
+pkg.bin = { zedbarimg: './bin/zedbarimg.mjs' };
+
 fs.writeFileSync('$SCRIPT_DIR/pkg/package.json', JSON.stringify(pkg, null, 2) + '\n');
 "
+
+# Copy the CLI binary
+mkdir -p "$SCRIPT_DIR/pkg/bin"
+cp "$SCRIPT_DIR/bin/zedbarimg.mjs" "$SCRIPT_DIR/pkg/bin/zedbarimg.mjs"
+chmod +x "$SCRIPT_DIR/pkg/bin/zedbarimg.mjs"
 
 # Replace auto-generated README with npm-specific one
 cp "$SCRIPT_DIR/README.md" "$SCRIPT_DIR/pkg/README.md"
