@@ -24,6 +24,9 @@ jobs:
   publish-npm:
     name: Publish to npm
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,10 +46,8 @@ jobs:
       - name: Build npm package
         run: ./npm/build.sh
 
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish
+      - name: Publish to npm with provenance
+        run: npm publish --provenance --access public
         working-directory: npm/pkg
 
   create-github-release:
