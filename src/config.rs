@@ -175,6 +175,7 @@ pub struct DecoderConfig {
     pub(crate) test_inverted: bool,
     pub(crate) x_density: u32,
     pub(crate) y_density: u32,
+    pub(crate) upscale_small_images: bool,
 }
 
 impl Default for DecoderConfig {
@@ -203,6 +204,7 @@ impl DecoderConfig {
             test_inverted: false,
             x_density: 1,
             y_density: 1,
+            upscale_small_images: true,
         };
 
         // Enable common symbologies by default
@@ -375,6 +377,20 @@ impl DecoderConfig {
         assert!(y > 0, "y density must be > 0");
         self.x_density = x;
         self.y_density = y;
+        self
+    }
+
+    /// Enable or disable automatic upscaling of small images
+    ///
+    /// When enabled (the default), small images (< 200px in either dimension)
+    /// are automatically upscaled before scanning to improve QR code detection.
+    /// Small QR codes often have modules that are only 2-3 pixels wide, which
+    /// is too small for reliable finder pattern detection.
+    ///
+    /// Disable this if you want to minimize processing time and are confident
+    /// your images have sufficient resolution.
+    pub fn upscale_small_images(mut self, enabled: bool) -> Self {
+        self.upscale_small_images = enabled;
         self
     }
 
