@@ -34,8 +34,8 @@ BREAKING CHANGE: scanImage() renamed to scanImageBytes()
 
 ## Release Process
 
-1. Commit with conventional format and push to `main`
-2. release-please automatically opens/updates a release PR
+1. Commit with the conventional format in a feature branch and open a PR targeting `main`
+2. When PRs are merged into `main`, release-please automatically opens/updates a single release PR that includes all unreleased conventional commits since the last release
 3. Merge the release PR → auto-publishes to crates.io and npm
 
-**Note**: Every `feat:` or `fix:` commit that gets merged generates its own release. Keep commits focused and atomic.
+**Note**: `feat:` and `fix:` commits are batched together into the next release based on what has been merged into `main`, rather than creating a separate release for each individual commit. Keep commits focused and atomic so the generated changelog remains clear.
