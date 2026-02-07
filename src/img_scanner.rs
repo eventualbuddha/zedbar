@@ -760,12 +760,13 @@ impl zbar_image_scanner_t {
         let symbols = self.scan_image_internal(img);
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
-        if symbols.is_empty() && self.scanner_config.test_inverted {
-            if let Some(mut inv) = img.copy(true) {
-                let inverted_symbols = self.scan_image_internal(&mut inv);
-                if !inverted_symbols.is_empty() {
-                    return inverted_symbols;
-                }
+        if symbols.is_empty()
+            && self.scanner_config.test_inverted
+            && let Some(mut inv) = img.copy(true)
+        {
+            let inverted_symbols = self.scan_image_internal(&mut inv);
+            if !inverted_symbols.is_empty() {
+                return inverted_symbols;
             }
         }
 
@@ -778,19 +779,18 @@ impl zbar_image_scanner_t {
             && self.scanner_config.upscale_small_images
             && self.is_enabled(SymbolType::QrCode)
             && (img.width < 200 || img.height < 200)
+            && let Some(mut upscaled) = img.upscale(4)
         {
-            if let Some(mut upscaled) = img.upscale(4) {
-                let upscaled_symbols = self.scan_image_internal(&mut upscaled);
-                if !upscaled_symbols.is_empty() {
-                    return upscaled_symbols;
-                }
+            let upscaled_symbols = self.scan_image_internal(&mut upscaled);
+            if !upscaled_symbols.is_empty() {
+                return upscaled_symbols;
+            }
 
-                // Also try inverted + upscaled
-                if self.scanner_config.test_inverted {
-                    if let Some(mut inv_upscaled) = img.copy(true).and_then(|i| i.upscale(4)) {
-                        return self.scan_image_internal(&mut inv_upscaled);
-                    }
-                }
+            // Also try inverted + upscaled
+            if self.scanner_config.test_inverted
+                && let Some(mut inv_upscaled) = img.copy(true).and_then(|i| i.upscale(4))
+            {
+                return self.scan_image_internal(&mut inv_upscaled);
             }
         }
 
