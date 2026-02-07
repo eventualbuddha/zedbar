@@ -59,10 +59,10 @@ pub fn scan_grayscale(data: &[u8], width: u32, height: u32) -> Result<Vec<Decode
         .collect())
 }
 
-/// Scan an encoded image (PNG, JPEG, etc.) for barcodes and QR codes.
+/// Scan an encoded image (PNG, JPEG, BMP, WebP) for barcodes and QR codes.
 ///
-/// `bytes` should contain the raw bytes of an image file in any format
-/// supported by the `image` crate (PNG, JPEG, GIF, BMP, etc.).
+/// `bytes` should contain the raw bytes of an image file in one of the
+/// supported formats: PNG, JPEG, BMP, or WebP.
 ///
 /// The image will be automatically decoded and converted to grayscale
 /// before scanning.
