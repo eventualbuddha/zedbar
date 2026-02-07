@@ -15,10 +15,9 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      - uses: actions/checkout@v4
       - uses: googleapis/release-please-action@v4
         id: release
-        # v4 auto-detects manifest mode from .release-please-config.json
-        # No 'with' params needed - config files in repo root define behavior
 
   publish-crate:
     needs: release-please
