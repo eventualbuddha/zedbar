@@ -5,13 +5,12 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -19,15 +18,15 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          # Rust package (Cargo.toml)
-          release-type: rust
-          # Optional: customize package name if different from repo
-          # package-name: zedbar
+          # Use manifest mode so .release-please-manifest.json is honored
+          command: manifest
 
   publish-crate:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       
