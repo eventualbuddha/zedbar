@@ -5,10 +5,10 @@
  */
 
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test'
 import zedbar from './pkg/zedbar.js';
-import sharp from 'sharp';
 import assert from 'node:assert';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -18,6 +18,7 @@ const examplesDir = join(__dirname, '..', 'examples');
 // Note: EAN-8 and UPC-A are reported as EAN-13 (with leading zeros) since they're subsets
 const testCases = [
   ['test-qr.png', 'QR-Code', 'Hello, simplified zbar!\n'],
+  ['test-qr.webp', 'QR-Code', 'Hello, simplified zbar!\n'],
   ['test-ean13.png', 'EAN-13', '5901234123457'],
   ['test-ean8.png', 'EAN-13', '0000963850742'],  // EAN-8 padded to EAN-13
   ['test-upca.png', 'EAN-13', '0012345678905'],  // UPC-A padded to EAN-13
@@ -32,14 +33,11 @@ for (const [filename, expectedType, expectedData] of testCases) {
   const imagePath = join(examplesDir, filename);
 
   test(filename, async () => {
-    // Load and convert image to grayscale
-    const { data, info } = await sharp(imagePath)
-      .grayscale()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    // Read the image file as raw bytes
+    const imageBytes = await readFile(imagePath);
 
-    // Scan the image
-    const results = zedbar.scanGrayscale(data, info.width, info.height);
+    // Scan the image using the new scanImageBytes function
+    const results = zedbar.scanImageBytes(imageBytes);
     assert(results.length > 0, 'No barcodes found');
 
     const result = results[0];

@@ -158,6 +158,30 @@ fn test_qr_jpg() {
 }
 
 #[test]
+fn test_qr_webp() {
+    let expected = Some((
+        "QR-Code".to_string(),
+        "Hello, simplified zbar!\n".to_string(),
+    ));
+
+    let result_this = decode_image("examples/test-qr.webp");
+    let result_zbars = decode_with_zbars("examples/test-qr.webp");
+    let result_rqrr = decode_with_rqrr("examples/test-qr.webp");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_eq!(result_zbars, expected, "zbars failed");
+    assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
+
+    if let Some(rqrr_result) = result_rqrr {
+        assert_eq!(
+            Some(rqrr_result),
+            expected,
+            "rqrr decoded but gave different result"
+        );
+    }
+}
+
+#[test]
 fn test_qr_wifi_sharing() {
     let expected = Some((
         "QR-Code".to_string(),
@@ -437,6 +461,7 @@ fn test_all_examples_decode() {
     let images = vec![
         "examples/test-qr.png",
         "examples/test-qr.jpg",
+        "examples/test-qr.webp",
         "examples/pixel-wifi-sharing-qr-code.png",
         "examples/qr-code-capstone-interference.png",
         "examples/qr-code-color-bands.png",

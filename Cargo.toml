@@ -21,7 +21,7 @@ encoding_rs = { version = "0.8.33", optional = true }
 reed-solomon = { version = "0.2.1", optional = true }
 rand = { version = "0.9", optional = true }
 rand_chacha = { version = "0.9", optional = true }
-image = { version = "0.25", optional = true }
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
 clap = { version = "4.5", features = ["derive"], optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
@@ -74,7 +74,7 @@ databar = []
 i25 = []
 image = ["dep:image"]
 clap = ["dep:clap"]
-wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom", "qrcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "sqcode"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom", "dep:image", "qrcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "sqcode"]
 
 # Benchmark features - enable to compare with other libraries
 bench_zbar_c = ["dep:zbar-rust"]
