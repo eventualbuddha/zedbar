@@ -675,4 +675,72 @@ https://zh.qr-code-generator.com
 打印出来的二维码至少要2厘米宽，确保用任何设备或应用都可以成功扫描。 ... 通过三个简单步骤，就能使用二维码生成器在几秒钟内创建一个二维码。首先，选择二维码的 ..."
         );
     }
+
+    #[test]
+    fn test_small_qr_code_upscaling() {
+        // Test for small QR code (109x89 pixels) that requires automatic upscaling.
+        // This QR code has ~3 pixels per module which is too small for reliable
+        // detection without upscaling. The scanner should automatically upscale
+        // small images to improve detection.
+        let img = ::image::ImageReader::open("examples/github-issue-qr.png")
+            .expect("Failed to open github-issue-qr.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+
+        // Verify the image is small (< 200px)
+        assert!(
+            width < 200 || height < 200,
+            "Test image should be small to test upscaling"
+        );
+
+        let mut zbar_img =
+            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create ZBar image");
+
+        // Should decode successfully with automatic upscaling
+        let mut scanner = Scanner::new();
+        let symbols = scanner.scan(&mut zbar_img);
+
+        assert!(
+            !symbols.is_empty(),
+            "Expected to decode small QR code with automatic upscaling"
+        );
+
+        let symbol = symbols.into_iter().next().unwrap();
+        assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
+        assert_eq!(
+            symbol.data_string().unwrap_or(""),
+            "S;1;019be05c-54ba-7b32-a6f5-c06b288a46e8;A"
+        );
+    }
+
+    #[test]
+    fn test_small_qr_code_upscaling_disabled() {
+        // Verify that disabling upscaling prevents detection of small QR codes
+        use crate::config::*;
+
+        let img = ::image::ImageReader::open("examples/github-issue-qr.png")
+            .expect("Failed to open github-issue-qr.png")
+            .decode()
+            .expect("Failed to decode image");
+
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+
+        let mut zbar_img =
+            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create ZBar image");
+
+        // Disable upscaling
+        let config = DecoderConfig::new().upscale_small_images(false);
+        let mut scanner = Scanner::with_config(config);
+        let symbols = scanner.scan(&mut zbar_img);
+
+        // Without upscaling, the small QR code should NOT be detected
+        assert!(
+            symbols.is_empty(),
+            "Small QR code should not be detected when upscaling is disabled"
+        );
+    }
 }

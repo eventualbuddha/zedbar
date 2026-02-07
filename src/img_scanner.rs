@@ -221,6 +221,7 @@ impl zbar_image_scanner_t {
             x_density: decoder_state.scanner.x_density,
             y_density: decoder_state.scanner.y_density,
             ean_composite: decoder_state.is_enabled(SymbolType::Composite),
+            upscale_small_images: decoder_state.scanner.upscale_small_images,
             uncertainty: Default::default(),
         };
 
@@ -759,10 +760,39 @@ impl zbar_image_scanner_t {
         let symbols = self.scan_image_internal(img);
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
-        if symbols.is_empty() && self.scanner_config.test_inverted
-            && let Some(mut inv) = img.copy(true) {
-                return self.scan_image_internal(&mut inv);
+        if symbols.is_empty() && self.scanner_config.test_inverted {
+            if let Some(mut inv) = img.copy(true) {
+                let inverted_symbols = self.scan_image_internal(&mut inv);
+                if !inverted_symbols.is_empty() {
+                    return inverted_symbols;
+                }
             }
+        }
+
+        // Try upscaling small images for QR code detection.
+        // Small QR codes (< 200px in either dimension) often have modules that are
+        // only 2-3 pixels wide, which is too small for reliable finder pattern detection.
+        // Upscaling to 4x improves detection by giving modules more pixels.
+        #[cfg(feature = "qrcode")]
+        if symbols.is_empty()
+            && self.scanner_config.upscale_small_images
+            && self.is_enabled(SymbolType::QrCode)
+            && (img.width < 200 || img.height < 200)
+        {
+            if let Some(mut upscaled) = img.upscale(4) {
+                let upscaled_symbols = self.scan_image_internal(&mut upscaled);
+                if !upscaled_symbols.is_empty() {
+                    return upscaled_symbols;
+                }
+
+                // Also try inverted + upscaled
+                if self.scanner_config.test_inverted {
+                    if let Some(mut inv_upscaled) = img.copy(true).and_then(|i| i.upscale(4)) {
+                        return self.scan_image_internal(&mut inv_upscaled);
+                    }
+                }
+            }
+        }
 
         symbols
     }

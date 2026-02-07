@@ -26,4 +26,57 @@ impl zbar_image_t {
         }
         Some(dst)
     }
+
+    /// Upscales the image using bilinear interpolation.
+    ///
+    /// Returns None if the image is empty or scale factor is invalid.
+    pub(crate) fn upscale(&self, scale: u32) -> Option<Self> {
+        if scale < 2 || self.width == 0 || self.height == 0 {
+            return None;
+        }
+
+        let new_width = self.width * scale;
+        let new_height = self.height * scale;
+        let mut data = vec![0u8; (new_width * new_height) as usize];
+
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let nw = new_width as usize;
+
+        for ny in 0..new_height as usize {
+            for nx in 0..nw {
+                // Map back to source coordinates with sub-pixel precision
+                // We use (ny + 0.5) / scale - 0.5 to center the mapping
+                let sy_f = (ny as f32 + 0.5) / scale as f32 - 0.5;
+                let sx_f = (nx as f32 + 0.5) / scale as f32 - 0.5;
+
+                let sy0 = sy_f.floor().max(0.0) as usize;
+                let sx0 = sx_f.floor().max(0.0) as usize;
+                let sy1 = (sy0 + 1).min(h - 1);
+                let sx1 = (sx0 + 1).min(w - 1);
+
+                let fy = sy_f - sy0 as f32;
+                let fx = sx_f - sx0 as f32;
+
+                // Bilinear interpolation
+                let p00 = self.data[sy0 * w + sx0] as f32;
+                let p10 = self.data[sy0 * w + sx1] as f32;
+                let p01 = self.data[sy1 * w + sx0] as f32;
+                let p11 = self.data[sy1 * w + sx1] as f32;
+
+                let value = p00 * (1.0 - fx) * (1.0 - fy)
+                    + p10 * fx * (1.0 - fy)
+                    + p01 * (1.0 - fx) * fy
+                    + p11 * fx * fy;
+
+                data[ny * nw + nx] = value.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+
+        Some(Self {
+            width: new_width,
+            height: new_height,
+            data,
+        })
+    }
 }

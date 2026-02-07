@@ -24,6 +24,9 @@ pub(crate) struct ImageScannerConfig {
     /// EAN composite symbology enabled
     pub(crate) ean_composite: bool,
 
+    /// Automatically upscale small images for better QR code detection
+    pub(crate) upscale_small_images: bool,
+
     /// Per-symbology uncertainty thresholds
     pub(crate) uncertainty: HashMap<SymbolType, u32>,
 }
@@ -36,6 +39,7 @@ impl Default for ImageScannerConfig {
             x_density: 1,
             y_density: 1,
             ean_composite: false,
+            upscale_small_images: true,
             uncertainty: HashMap::new(),
         };
 
