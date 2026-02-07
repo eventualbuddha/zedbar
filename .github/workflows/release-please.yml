@@ -19,10 +19,10 @@ jobs:
         id: release
         with:
           release-type: rust
-          # Use PAT to trigger CI on release PRs
-          # Configure RELEASE_PLEASE_TOKEN secret with a Personal Access Token
+          # REQUIRED: Configure RELEASE_PLEASE_TOKEN secret with a Personal Access Token
+          # to trigger CI workflows on release PRs. Without it, this action will fail.
           # See: https://github.com/googleapis/release-please-action#other-actions-on-release-please-prs
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || 'MISSING_RELEASE_PLEASE_TOKEN_SECRET' }}
 
   publish-crate:
     needs: release-please
