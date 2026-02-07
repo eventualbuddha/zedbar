@@ -26,7 +26,7 @@ The package includes a `zedbarimg` command-line tool:
 zedbarimg barcode.png
 
 # Scan multiple images
-zedbarimg image1.png image2.jpg image3.gif
+zedbarimg image1.png image2.jpg image3.webp
 
 # Quiet mode (only output barcode data)
 zedbarimg --quiet qrcode.png
