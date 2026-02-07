@@ -29,15 +29,18 @@ impl zbar_image_t {
 
     /// Upscales the image using bilinear interpolation.
     ///
-    /// Returns None if the image is empty or scale factor is invalid.
+    /// Returns None if the image is empty, scale factor is invalid, or
+    /// dimensions would overflow.
     pub(crate) fn upscale(&self, scale: u32) -> Option<Self> {
         if scale < 2 || self.width == 0 || self.height == 0 {
             return None;
         }
 
-        let new_width = self.width * scale;
-        let new_height = self.height * scale;
-        let mut data = vec![0u8; (new_width * new_height) as usize];
+        // Use checked arithmetic to prevent overflow
+        let new_width = self.width.checked_mul(scale)?;
+        let new_height = self.height.checked_mul(scale)?;
+        let total_pixels = new_width.checked_mul(new_height)?;
+        let mut data = vec![0u8; total_pixels as usize];
 
         let w = self.width as usize;
         let h = self.height as usize;
@@ -55,8 +58,9 @@ impl zbar_image_t {
                 let sy1 = (sy0 + 1).min(h - 1);
                 let sx1 = (sx0 + 1).min(w - 1);
 
-                let fy = sy_f - sy0 as f32;
-                let fx = sx_f - sx0 as f32;
+                // Clamp interpolation weights to [0, 1] to avoid artifacts at borders
+                let fy = (sy_f - sy0 as f32).clamp(0.0, 1.0);
+                let fx = (sx_f - sx0 as f32).clamp(0.0, 1.0);
 
                 // Bilinear interpolation
                 let p00 = self.data[sy0 * w + sx0] as f32;
