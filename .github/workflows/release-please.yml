@@ -17,9 +17,8 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
-        with:
-          # Use manifest mode so .release-please-manifest.json is honored
-          command: manifest
+        # v4 auto-detects manifest mode from .release-please-config.json
+        # No 'with' params needed - config files in repo root define behavior
 
   publish-crate:
     needs: release-please
