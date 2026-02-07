@@ -15,6 +15,14 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      - name: Validate RELEASE_PLEASE_TOKEN
+        if: ${{ secrets.RELEASE_PLEASE_TOKEN == '' }}
+        run: |
+          echo "::error::RELEASE_PLEASE_TOKEN secret is not configured"
+          echo "Create a Personal Access Token at https://github.com/settings/tokens"
+          echo "Then add it as RELEASE_PLEASE_TOKEN at https://github.com/${{ github.repository }}/settings/secrets/actions"
+          exit 1
+      
       - uses: googleapis/release-please-action@v4
         id: release
         with:
