@@ -7,6 +7,14 @@ license = "LGPL-3.0-or-later"
 repository = "https://github.com/eventualbuddha/zedbar"
 keywords = ["barcode", "qr-code", "scanner", "image", "computer-vision"]
 categories = ["computer-vision", "multimedia::images"]
+exclude = [
+  "demo/",
+  "benches/",
+  "npm/",
+  "proptest-regressions/",
+  "tests/",
+  "examples/",
+]
 
 [lib]
 name = "zedbar"
