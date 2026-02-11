@@ -74,3 +74,5 @@ jobs:
       - name: Publish to npm with provenance
         run: npm publish --provenance --access public
         working-directory: npm/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

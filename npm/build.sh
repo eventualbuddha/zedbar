@@ -24,7 +24,7 @@ pkg.name = 'zedbar';
 pkg.description = 'Fast QR code and barcode scanner for Node.js, powered by WebAssembly';
 pkg.repository = {
   type: 'git',
-  url: 'https://github.com/eventualbuddha/zedbar.git'
+  url: 'git+https://github.com/eventualbuddha/zedbar.git'
 };
 pkg.keywords = ['qrcode', 'qr-code', 'barcode', 'scanner', 'decoder', 'wasm', 'webassembly', 'ean', 'code128', 'code39'];
 pkg.author = 'eventualbuddha';
@@ -36,7 +36,7 @@ pkg.bugs = { url: 'https://github.com/eventualbuddha/zedbar/issues' };
 pkg.engines = { node: '>=16.0.0' };
 
 // Add binary
-pkg.bin = { zedbarimg: './bin/zedbarimg.mjs' };
+pkg.bin = { zedbarimg: 'bin/zedbarimg.mjs' };
 
 fs.writeFileSync('$SCRIPT_DIR/pkg/package.json', JSON.stringify(pkg, null, 2) + '\n');
 "
