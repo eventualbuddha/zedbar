@@ -15,14 +15,19 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ZEDBAR_BOT_APP_ID }}
+          private-key: ${{ secrets.ZEDBAR_BOT_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           release-type: rust
-          # REQUIRED: Configure RELEASE_PLEASE_TOKEN secret with a Personal Access Token
-          # to trigger CI workflows on release PRs. Without it, this action will fail.
-          # See: https://github.com/googleapis/release-please-action#other-actions-on-release-please-prs
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || 'MISSING_RELEASE_PLEASE_TOKEN_SECRET' }}
+          # Use GitHub App token for authenticated, signed commits
+          token: ${{ steps.app-token.outputs.token }}
 
   publish-crate:
     needs: release-please
