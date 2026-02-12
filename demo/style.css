@@ -119,12 +119,27 @@ body {
 }
 
 .btn-primary {
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
 }
 
 .btn-primary:hover {
-  background: var(--muted);
+  background: var(--drop-bg);
+  border-color: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-primary {
+    background: #333;
+    color: #e5e5e5;
+    border-color: #555;
+  }
+
+  .btn-primary:hover {
+    background: #444;
+    border-color: #666;
+  }
 }
 
 .btn-secondary {
