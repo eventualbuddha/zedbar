@@ -15,8 +15,8 @@ use reed_solomon::Decoder as RSDecoder;
 
 use crate::{
     SymbolType,
-    decoder::{Modifier, qr_finder_line},
-    image_ffi::zbar_image_t,
+    decoder::{Modifier, QrFinderLine},
+    image_data::ImageData,
     qrcode::{
         binarize::binarize,
         util::{qr_ihypot, qr_ilog, qr_isqrt},
@@ -227,8 +227,8 @@ struct qr_sampling_grid {
 
 /// collection of finder lines
 #[derive(Default)]
-pub(crate) struct qr_finder_lines {
-    lines: Vec<qr_finder_line>,
+pub(crate) struct QrFinderLines {
+    lines: Vec<QrFinderLine>,
 }
 
 /// A cluster of finder lines that have been grouped together.
@@ -244,13 +244,13 @@ pub(crate) struct Cluster {
 /// referencing lines via indices rather than raw pointers.
 #[derive(Clone, Default)]
 pub(crate) struct ClusteredLines {
-    lines: Vec<qr_finder_line>,
+    lines: Vec<QrFinderLine>,
     clusters: Vec<Cluster>,
 }
 
 impl ClusteredLines {
     /// Create a new ClusteredLines from a vector of lines
-    pub fn new(lines: Vec<qr_finder_line>) -> Self {
+    pub fn new(lines: Vec<QrFinderLine>) -> Self {
         Self {
             lines,
             clusters: Vec::new(),
@@ -258,7 +258,7 @@ impl ClusteredLines {
     }
 
     /// Access a line by index
-    pub fn line(&self, idx: usize) -> &qr_finder_line {
+    pub fn line(&self, idx: usize) -> &QrFinderLine {
         &self.lines[idx]
     }
 
@@ -273,13 +273,13 @@ impl ClusteredLines {
     }
 
     /// Access a specific line within a cluster
-    pub fn cluster_line(&self, cluster_idx: usize, line_idx: usize) -> &qr_finder_line {
+    pub fn cluster_line(&self, cluster_idx: usize, line_idx: usize) -> &QrFinderLine {
         let line_index = self.clusters[cluster_idx].line_indices[line_idx];
         &self.lines[line_index]
     }
 
     /// Iterate over lines in a cluster
-    pub fn cluster_lines(&self, cluster_idx: usize) -> impl Iterator<Item = &qr_finder_line> + '_ {
+    pub fn cluster_lines(&self, cluster_idx: usize) -> impl Iterator<Item = &QrFinderLine> + '_ {
         self.clusters[cluster_idx]
             .line_indices
             .iter()
@@ -316,7 +316,7 @@ pub(crate) struct qr_finder_center {
 ///
 /// # Returns
 /// True if the lines cross, false otherwise.
-pub(crate) fn qr_finder_lines_are_crossing(hline: &qr_finder_line, vline: &qr_finder_line) -> bool {
+pub(crate) fn qr_finder_lines_are_crossing(hline: &QrFinderLine, vline: &QrFinderLine) -> bool {
     hline.pos[0] <= vline.pos[0]
         && vline.pos[0] < hline.pos[0] + hline.len
         && vline.pos[1] <= hline.pos[1]
@@ -1539,7 +1539,7 @@ pub(crate) fn qr_code_ncodewords(_version: u32) -> usize {
 ///
 /// # Returns
 /// A ClusteredLines structure containing the lines and their clusters.
-fn qr_finder_cluster_lines(lines: Vec<qr_finder_line>, _v: i32) -> ClusteredLines {
+fn qr_finder_cluster_lines(lines: Vec<QrFinderLine>, _v: i32) -> ClusteredLines {
     let nlines = lines.len();
     let mut clustered = ClusteredLines::new(lines);
 
@@ -3449,24 +3449,24 @@ fn qr_alignment_pattern_search(
 
 // QR Code data structures and functions
 //
-pub(crate) struct qr_reader {
+pub(crate) struct QrReader {
     /// The random number generator used by RANSAC.
     pub(crate) rng: rand_chacha::ChaCha8Rng,
     ///  current finder state, horizontal and vertical lines
-    pub(crate) finder_lines: [qr_finder_lines; 2],
+    pub(crate) finder_lines: [QrFinderLines; 2],
 }
 
-impl Default for qr_reader {
+impl Default for QrReader {
     /// Allocates a client reader handle.
     fn default() -> Self {
         Self {
             rng: ChaCha8Rng::from_seed([0u8; 32]),
-            finder_lines: [qr_finder_lines::default(), qr_finder_lines::default()],
+            finder_lines: [QrFinderLines::default(), QrFinderLines::default()],
         }
     }
 }
 
-impl qr_reader {
+impl QrReader {
     /// reset finder state between scans
     pub(crate) fn reset(&mut self) {
         self.finder_lines[0].lines.clear();
@@ -3767,7 +3767,7 @@ impl qr_reader {
     }
 
     /// Add a found finder line to the reader's line list
-    pub(crate) fn found_line(&mut self, dir: i32, line: &qr_finder_line) -> i32 {
+    pub(crate) fn found_line(&mut self, dir: i32, line: &QrFinderLine) -> i32 {
         self.finder_lines[dir as usize].lines.push(*line);
         0
     }
@@ -3898,7 +3898,7 @@ impl qr_reader {
     }
 
     /// Decode QR codes from an image
-    pub(crate) fn decode(&mut self, img: &mut zbar_image_t, raw_binary: bool) -> Vec<Symbol> {
+    pub(crate) fn decode(&mut self, img: &mut ImageData, raw_binary: bool) -> Vec<Symbol> {
         if self.finder_lines[0].lines.len() < 9 || self.finder_lines[1].lines.len() < 9 {
             return vec![];
         }

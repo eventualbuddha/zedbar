@@ -1,7 +1,7 @@
 use crate::{
     color::Color,
-    decoder::{_zbar_decoder_decode_e, databar_decoder_t, databar_segment_t, Modifier},
-    img_scanner::zbar_image_scanner_t,
+    decoder::{decoder_decode_e, DatabarDecoder, DatabarSegment, Modifier},
+    img_scanner::ImageScanner,
     Error, Result, SymbolType,
 };
 
@@ -204,7 +204,7 @@ fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     }
 }
 
-fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result<usize> {
+fn postprocess_exp(dcode: &mut ImageScanner, data: &mut [i32]) -> Result<usize> {
     let mut data_ptr = data;
     let first = data_ptr[0] as u64;
     data_ptr = &mut data_ptr[1..];
@@ -566,7 +566,7 @@ fn postprocess_exp(dcode: &mut zbar_image_scanner_t, data: &mut [i32]) -> Result
 }
 
 /// Convert DataBar data from heterogeneous base {1597,2841} to base 10 character representation
-fn postprocess(dcode: &mut zbar_image_scanner_t, mut d: [u32; 4]) {
+fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
     // Get config before borrowing buffer
     let emit_check = dcode.should_emit_checksum(SymbolType::Databar);
 
@@ -693,7 +693,7 @@ fn check_width(wf: u32, wd: u32, n: u32) -> i32 {
 }
 
 /// Merge or update a DataBar segment with existing segments
-fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
+fn merge_segment(db: &mut DatabarDecoder, seg_idx: usize) {
     let csegs = db.csegs();
     let epoch = db.epoch();
 
@@ -754,7 +754,7 @@ fn merge_segment(db: &mut databar_decoder_t, seg_idx: usize) {
 }
 
 /// Match DataBar segment to find complete symbol
-fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType {
+fn match_segment(dcode: &mut ImageScanner, seg_idx: usize) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     let mut maxage = 0xfff;
@@ -893,7 +893,7 @@ fn match_segment(dcode: &mut zbar_image_scanner_t, seg_idx: usize) -> SymbolType
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
 fn lookup_sequence(
-    seg: &mut databar_segment_t,
+    seg: &mut DatabarSegment,
     fixed: i32,
     seq: &mut [i32],
     maxsize: usize,
@@ -942,7 +942,7 @@ fn lookup_sequence(
     }
 }
 
-fn match_segment_exp(dcode: &mut zbar_image_scanner_t, seg_idx: usize, dir: i32) -> SymbolType {
+fn match_segment_exp(dcode: &mut ImageScanner, seg_idx: usize, dir: i32) -> SymbolType {
     let db = &mut dcode.databar;
     let csegs = db.csegs();
     if csegs == 0 {
@@ -1309,7 +1309,7 @@ fn calc_value4(sig: u32, mut n: u32, wmax: u32, mut nonarrow: u32) -> i32 {
 }
 
 /// Decode a DataBar character from width measurements
-fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: i32) -> SymbolType {
+fn decode_char(dcode: &mut ImageScanner, seg_idx: usize, off: i32, dir: i32) -> SymbolType {
     // Read segment values we need before taking other borrows
     let seg_exp = dcode.databar.seg(seg_idx).exp();
     let seg_side = dcode.databar.seg(seg_idx).side();
@@ -1338,7 +1338,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
 
     let mut off = off;
     for i in (0..4).rev() {
-        let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
+        let e = decoder_decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
             return SymbolType::None;
         }
@@ -1353,7 +1353,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
             break;
         }
 
-        let e = _zbar_decoder_decode_e(dcode.pair_width(off as u8), s, n);
+        let e = decoder_decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
             return SymbolType::None;
         }
@@ -1467,7 +1467,7 @@ fn decode_char(dcode: &mut zbar_image_scanner_t, seg_idx: usize, off: i32, dir: 
 
 /// Allocate a new DataBar segment (or reuse an old one)
 /// Returns the index of the allocated segment, or -1 on failure
-fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> i32 {
+fn alloc_segment(db: &mut DatabarDecoder) -> i32 {
     let mut maxage = 0u32;
     let csegs = db.csegs();
     let epoch = db.epoch();
@@ -1523,7 +1523,7 @@ fn _zbar_databar_alloc_segment(db: &mut databar_decoder_t) -> i32 {
 }
 
 /// Decode DataBar finder pattern
-fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+fn decode_finder(dcode: &mut ImageScanner) -> SymbolType {
     let e0 = dcode.pair_width(1);
     let e2 = dcode.pair_width(3);
     let (dir, e2, e3) = if e0 < e2 {
@@ -1546,9 +1546,9 @@ fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
         return SymbolType::None;
     }
 
-    let sig = (_zbar_decoder_decode_e(e3, s, 14) << 8)
-        | (_zbar_decoder_decode_e(e2, s, 14) << 4)
-        | _zbar_decoder_decode_e(e1, s, 14);
+    let sig = (decoder_decode_e(e3, s, 14) << 8)
+        | (decoder_decode_e(e2, s, 14) << 4)
+        | decoder_decode_e(e1, s, 14);
     if sig < 0
         || ((sig >> 4) & 0xf) < 8
         || ((sig >> 4) & 0xf) > 10
@@ -1576,7 +1576,7 @@ fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
         return SymbolType::None;
     }
 
-    let iseg = _zbar_databar_alloc_segment(&mut dcode.databar);
+    let iseg = alloc_segment(&mut dcode.databar);
     if iseg < 0 {
         return SymbolType::None;
     }
@@ -1611,7 +1611,7 @@ fn decode_finder(dcode: &mut zbar_image_scanner_t) -> SymbolType {
     rc
 }
 
-pub(crate) fn _zbar_decode_databar(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+pub(crate) fn decode_databar(dcode: &mut ImageScanner) -> SymbolType {
     let i = dcode.idx & 0xf;
 
     let mut sym = decode_finder(dcode);
@@ -1632,7 +1632,7 @@ pub(crate) fn _zbar_decode_databar(dcode: &mut zbar_image_scanner_t) -> SymbolTy
         let old_side = dcode.databar.seg(seg_idx).side();
         dcode.databar.seg_mut(seg_idx).set_side(!old_side);
     } else {
-        let jseg = _zbar_databar_alloc_segment(&mut dcode.databar);
+        let jseg = alloc_segment(&mut dcode.databar);
         pair_idx = Some(iseg as usize);
         seg_idx = jseg as usize;
 

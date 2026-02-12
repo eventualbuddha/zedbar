@@ -19,7 +19,7 @@ pub(crate) const DECODE_WINDOW: usize = 16;
 
 /// Decode element width into a discrete value
 /// Returns -1 if the element width is invalid
-pub(crate) fn _zbar_decoder_decode_e(e: u32, s: u32, n: u32) -> i32 {
+pub(crate) fn decoder_decode_e(e: u32, s: u32, n: u32) -> i32 {
     let big_e = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if big_e >= n - 3 {
         -1
@@ -79,7 +79,7 @@ impl Modifier {
 /// Interleaved 2 of 5 decoder state
 #[cfg(feature = "i25")]
 #[derive(Default)]
-pub(crate) struct i25_decoder_t {
+pub(crate) struct I25Decoder {
     // Bitfields packed into first 32 bits:
     // direction: 1 bit, element: 4 bits, character: 12 bits = 17 bits used
     // We'll use a u32 and provide accessor methods
@@ -90,7 +90,7 @@ pub(crate) struct i25_decoder_t {
 }
 
 #[cfg(feature = "i25")]
-impl i25_decoder_t {
+impl I25Decoder {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
@@ -141,7 +141,7 @@ impl i25_decoder_t {
 /// Code 39 decoder state
 #[cfg(feature = "code39")]
 #[derive(Default)]
-pub(crate) struct code39_decoder_t {
+pub(crate) struct Code39Decoder {
     // Bitfields: direction: 1, element: 4, character: 12
     bitfields: u32,
     pub s9: u32,
@@ -150,7 +150,7 @@ pub(crate) struct code39_decoder_t {
 }
 
 #[cfg(feature = "code39")]
-impl code39_decoder_t {
+impl Code39Decoder {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
@@ -201,7 +201,7 @@ impl code39_decoder_t {
 /// Code 93 decoder state
 #[cfg(feature = "code93")]
 #[derive(Default)]
-pub(crate) struct code93_decoder_t {
+pub(crate) struct Code93Decoder {
     // Bitfields: direction: 1, element: 3, character: 12
     bitfields: u32,
     pub(crate) width: u32,
@@ -209,7 +209,7 @@ pub(crate) struct code93_decoder_t {
 }
 
 #[cfg(feature = "code93")]
-impl code93_decoder_t {
+impl Code93Decoder {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
@@ -252,7 +252,7 @@ impl code93_decoder_t {
 /// Codabar decoder state
 #[cfg(feature = "codabar")]
 #[derive(Default)]
-pub(crate) struct codabar_decoder_t {
+pub(crate) struct CodabarDecoder {
     // Bitfields: direction: 1, element: 4, character: 12
     bitfields: u32,
     pub(crate) s7: u32,
@@ -261,7 +261,7 @@ pub(crate) struct codabar_decoder_t {
 }
 
 #[cfg(feature = "codabar")]
-impl codabar_decoder_t {
+impl CodabarDecoder {
     pub(crate) fn direction(&self) -> bool {
         (self.bitfields & 0x1) != 0
     }
@@ -305,7 +305,7 @@ impl codabar_decoder_t {
 /// Code 128 decoder state
 #[cfg(feature = "code128")]
 #[derive(Default)]
-pub(crate) struct code128_decoder_t {
+pub(crate) struct Code128Decoder {
     // Bitfields: direction: 1, element: 3, character: 12 (16 bits)
     // start: 8 bits - packed into same u32
     // Total: 24 bits used in first u32
@@ -315,7 +315,7 @@ pub(crate) struct code128_decoder_t {
 }
 
 #[cfg(feature = "code128")]
-impl code128_decoder_t {
+impl Code128Decoder {
     pub(crate) fn direction(&self) -> u8 {
         (self.bitfields_and_start & 0x1) as u8
     }
@@ -374,7 +374,7 @@ impl code128_decoder_t {
 /// DataBar segment (partial)
 #[cfg(feature = "databar")]
 #[derive(Clone)]
-pub(crate) struct databar_segment_t {
+pub(crate) struct DatabarSegment {
     // First 32 bits of bitfields:
     // finder: 5, exp: 1, color: 1, side: 1,
     // partial: 1, count: 7, epoch: 8, check: 8 = 32 bits
@@ -384,7 +384,7 @@ pub(crate) struct databar_segment_t {
 }
 
 #[cfg(feature = "databar")]
-impl databar_segment_t {
+impl DatabarSegment {
     pub(crate) fn finder(&self) -> i8 {
         // finder is a signed 5-bit field (bits 0-4)
         let val = (self.bitfields & 0x1F) as i8;
@@ -479,7 +479,7 @@ impl databar_segment_t {
 }
 
 #[cfg(feature = "databar")]
-impl Default for databar_segment_t {
+impl Default for DatabarSegment {
     fn default() -> Self {
         let mut seg = Self {
             bitfields: 0,
@@ -493,14 +493,14 @@ impl Default for databar_segment_t {
 
 /// DataBar decoder state
 #[cfg(feature = "databar")]
-pub(crate) struct databar_decoder_t {
+pub(crate) struct DatabarDecoder {
     epoch: u8,
-    pub(crate) segs: Vec<databar_segment_t>,
+    pub(crate) segs: Vec<DatabarSegment>,
     chars: [i8; 16],
 }
 
 #[cfg(feature = "databar")]
-impl Default for databar_decoder_t {
+impl Default for DatabarDecoder {
     fn default() -> Self {
         Self {
             epoch: 0,
@@ -511,16 +511,16 @@ impl Default for databar_decoder_t {
 }
 
 #[cfg(feature = "databar")]
-impl databar_decoder_t {
+impl DatabarDecoder {
     pub(crate) fn csegs(&self) -> usize {
         self.segs.len()
     }
 
-    pub(crate) fn seg(&self, index: usize) -> &databar_segment_t {
+    pub(crate) fn seg(&self, index: usize) -> &DatabarSegment {
         &self.segs[index]
     }
 
-    pub(crate) fn seg_mut(&mut self, index: usize) -> &mut databar_segment_t {
+    pub(crate) fn seg_mut(&mut self, index: usize) -> &mut DatabarSegment {
         &mut self.segs[index]
     }
 
@@ -533,7 +533,7 @@ impl databar_decoder_t {
     }
 
     pub(crate) fn resize_segs(&mut self, size: usize) {
-        self.segs.resize_with(size, databar_segment_t::default);
+        self.segs.resize_with(size, DatabarSegment::default);
     }
 
     pub(crate) fn epoch(&self) -> u8 {
@@ -571,7 +571,7 @@ impl databar_decoder_t {
 /// QR finder line (from qrcode.h)
 #[cfg(feature = "qrcode")]
 #[derive(Default, Copy, Clone)]
-pub(crate) struct qr_finder_line {
+pub(crate) struct QrFinderLine {
     pub(crate) pos: [i32; 2], // qr_point
     pub(crate) len: i32,
     pub(crate) boffs: i32,
@@ -581,13 +581,13 @@ pub(crate) struct qr_finder_line {
 /// QR Code finder state
 #[cfg(feature = "qrcode")]
 #[derive(Default)]
-pub(crate) struct qr_finder_t {
+pub(crate) struct QrFinder {
     pub(crate) s5: u32,
-    pub(crate) line: qr_finder_line,
+    pub(crate) line: QrFinderLine,
 }
 
 #[cfg(feature = "qrcode")]
-impl qr_finder_t {
+impl QrFinder {
     /// Reset QR finder state
     pub(crate) fn reset(&mut self) {
         self.s5 = 0;

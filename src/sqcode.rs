@@ -4,7 +4,7 @@
 //! Original C code copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Licensed under LGPL 3.0 or later
 
-use crate::{image_ffi::zbar_image_t, symbol::Symbol, SymbolType};
+use crate::{image_data::ImageData, symbol::Symbol, SymbolType};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Shape {
@@ -51,9 +51,9 @@ impl SqReader {
     ///
     /// All pointers must be valid and properly initialized. The caller must ensure:
     /// - `reader` points to a valid `SqReader` instance
-    /// - `iscn` points to a valid `zbar_image_scanner_t` instance
-    /// - `img` points to a valid `zbar_image_t` with properly initialized image data
-    pub(crate) fn decode(&mut self, img: &mut zbar_image_t) -> Result<Option<Symbol>, ()> {
+    /// - `iscn` points to a valid `ImageScanner` instance
+    /// - `img` points to a valid `ImageData` with properly initialized image data
+    pub(crate) fn decode(&mut self, img: &mut ImageData) -> Result<Option<Symbol>, ()> {
         if !self.enabled {
             return Ok(None);
         }
@@ -405,7 +405,7 @@ fn is_black_color(c: u8) -> bool {
     c <= 0x7f
 }
 
-fn is_black(img: &zbar_image_t, x: i32, y: i32) -> bool {
+fn is_black(img: &ImageData, x: i32, y: i32) -> bool {
     if x < 0 || x >= img.width as i32 || y < 0 || y >= img.height as i32 {
         return false;
     }
@@ -419,7 +419,7 @@ fn set_dot_center(dot: &mut Dot, x: f32, y: f32) {
     dot.center.y = y;
 }
 
-fn sq_scan_shape(img: &zbar_image_t, dot: &mut Dot, start_x: i32, start_y: i32) {
+fn sq_scan_shape(img: &ImageData, dot: &mut Dot, start_x: i32, start_y: i32) {
     if !is_black(img, start_x, start_y) {
         dot.shape_type = Shape::Void;
         dot.x0 = start_x as u32;
@@ -541,7 +541,7 @@ fn sq_scan_shape(img: &zbar_image_t, dot: &mut Dot, start_x: i32, start_y: i32) 
     );
 }
 
-fn find_left_dot(img: &zbar_image_t, dot: &Dot, found_x: &mut u32, found_y: &mut u32) -> bool {
+fn find_left_dot(img: &ImageData, dot: &Dot, found_x: &mut u32, found_y: &mut u32) -> bool {
     let y_end = dot.y0.saturating_add(dot.height);
     for y in dot.y0..y_end {
         for x in ((dot.x0 as i32 - 2 * dot.width as i32)..=(dot.x0 as i32 - 1)).rev() {
@@ -555,7 +555,7 @@ fn find_left_dot(img: &zbar_image_t, dot: &Dot, found_x: &mut u32, found_y: &mut
     false
 }
 
-fn find_right_dot(img: &zbar_image_t, dot: &Dot, found_x: &mut u32, found_y: &mut u32) -> bool {
+fn find_right_dot(img: &ImageData, dot: &Dot, found_x: &mut u32, found_y: &mut u32) -> bool {
     let y_end = dot.y0.saturating_add(dot.height);
     let x_start = dot.x0.saturating_add(dot.width);
     let x_end = dot.x0.saturating_add(3 * dot.width);
@@ -572,7 +572,7 @@ fn find_right_dot(img: &zbar_image_t, dot: &Dot, found_x: &mut u32, found_y: &mu
     false
 }
 
-fn find_bottom_dot(img: &zbar_image_t, dot: &Dot, found_x: &mut u32, found_y: &mut u32) -> bool {
+fn find_bottom_dot(img: &ImageData, dot: &Dot, found_x: &mut u32, found_y: &mut u32) -> bool {
     let x_end = dot
         .x0
         .checked_add(dot.width)

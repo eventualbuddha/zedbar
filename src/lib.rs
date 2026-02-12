@@ -74,7 +74,7 @@ pub(crate) mod decoder;
 pub(crate) mod decoders;
 #[cfg(feature = "qrcode")]
 pub(crate) mod finder;
-pub(crate) mod image_ffi;
+pub(crate) mod image_data;
 pub(crate) mod img_scanner;
 pub(crate) mod img_scanner_config;
 #[cfg(feature = "qrcode")]

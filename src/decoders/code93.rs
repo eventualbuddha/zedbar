@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
+use crate::{color::Color, decoder::decode_e, img_scanner::ImageScanner, SymbolType};
 
 // Checksum constant
 const CHKMOD: i32 = 47;
@@ -42,7 +42,7 @@ fn check_width(cur: u32, prev: u32) -> bool {
 }
 
 /// Build edge signature of character
-fn encode6(dcode: &zbar_image_scanner_t) -> i32 {
+fn encode6(dcode: &ImageScanner) -> i32 {
     let s = dcode.s6;
     if s < 9 {
         return -1;
@@ -94,7 +94,7 @@ fn validate_sig(mut sig: i32) -> i32 {
 }
 
 /// Decode 6 elements
-fn decode6(dcode: &zbar_image_scanner_t) -> i32 {
+fn decode6(dcode: &ImageScanner) -> i32 {
     let mut sig = encode6(dcode);
     if sig < 0 {
         return -1;
@@ -129,7 +129,7 @@ fn decode6(dcode: &zbar_image_scanner_t) -> i32 {
 }
 
 /// Decode start pattern
-fn decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+fn decode_start(dcode: &mut ImageScanner) -> SymbolType {
     let s = dcode.s6;
     let c = encode6(dcode);
     if c < 0 || (c != 0x00f && c != 0x0f0) {
@@ -160,7 +160,7 @@ fn decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Abort decoding
-fn decode_abort(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+fn decode_abort(dcode: &mut ImageScanner) -> SymbolType {
     if dcode.code93.character() > 1 {
         dcode.release_lock(SymbolType::Code93);
     }
@@ -169,7 +169,7 @@ fn decode_abort(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Check stop pattern
-fn check_stop(dcode: &zbar_image_scanner_t) -> bool {
+fn check_stop(dcode: &ImageScanner) -> bool {
     let n = dcode.code93.character() as i32;
     let s = dcode.s6;
     let (min_len, max_len) = dcode
@@ -202,7 +202,7 @@ fn plusmod47(mut acc: i32, add: i32) -> i32 {
 }
 
 /// Validate checksums
-fn validate_checksums(dcode: &zbar_image_scanner_t) -> bool {
+fn validate_checksums(dcode: &ImageScanner) -> bool {
     let n = dcode.code93.character() as usize;
     let buf = dcode.buffer_slice();
 
@@ -266,7 +266,7 @@ fn validate_checksums(dcode: &zbar_image_scanner_t) -> bool {
 }
 
 /// Resolve scan direction and convert to ASCII
-fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
+fn postprocess(dcode: &mut ImageScanner) -> bool {
     let n = dcode.code93.character() as usize;
     let direction = dcode.code93.direction();
 
@@ -326,7 +326,7 @@ fn postprocess(dcode: &mut zbar_image_scanner_t) -> bool {
 }
 
 /// Main Code 93 decode function
-pub(crate) fn _zbar_decode_code93(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+pub(crate) fn decode_code93(dcode: &mut ImageScanner) -> SymbolType {
     if dcode.code93.character() < 0 {
         if dcode.color() != Color::Bar {
             return SymbolType::None;

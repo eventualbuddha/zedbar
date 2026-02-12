@@ -19,17 +19,17 @@
 //! let symbols = scanner.scan(&mut image);
 //! ```
 
-use crate::image_ffi::zbar_image_t;
+use crate::image_data::ImageData;
 use crate::{Error, Result};
 
 /// An image containing barcode data
 #[derive(Default)]
 pub struct Image {
-    image: zbar_image_t,
+    image: ImageData,
 }
 
 impl Image {
-    pub(crate) fn as_mut_image(&mut self) -> &mut zbar_image_t {
+    pub(crate) fn as_mut_image(&mut self) -> &mut ImageData {
         &mut self.image
     }
 

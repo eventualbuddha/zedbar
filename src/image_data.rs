@@ -3,13 +3,13 @@
 //! This module provides image handling and barcode scanning functionality.
 
 #[derive(Default)]
-pub struct zbar_image_t {
+pub struct ImageData {
     pub width: u32,
     pub height: u32,
     pub data: Vec<u8>,
 }
 
-impl zbar_image_t {
+impl ImageData {
     pub(crate) fn copy(&self, inverted: bool) -> Option<Self> {
         let mut dst = Self {
             width: self.width,

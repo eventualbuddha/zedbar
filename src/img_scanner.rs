@@ -5,48 +5,48 @@ use crate::{
     color::Color,
     config::{internal::DecoderState, DecoderConfig},
     decoder::DECODE_WINDOW,
-    image_ffi::zbar_image_t,
+    image_data::ImageData,
     img_scanner_config::ImageScannerConfig,
     symbol::{Orientation, Symbol},
     Result, SymbolType,
 };
 
 #[cfg(feature = "codabar")]
-use crate::decoder::codabar_decoder_t;
+use crate::decoder::CodabarDecoder;
 #[cfg(feature = "code128")]
-use crate::decoder::code128_decoder_t;
+use crate::decoder::Code128Decoder;
 #[cfg(feature = "code39")]
-use crate::decoder::code39_decoder_t;
+use crate::decoder::Code39Decoder;
 #[cfg(feature = "code93")]
-use crate::decoder::code93_decoder_t;
+use crate::decoder::Code93Decoder;
 #[cfg(feature = "databar")]
-use crate::decoder::databar_decoder_t;
+use crate::decoder::DatabarDecoder;
 #[cfg(feature = "i25")]
-use crate::decoder::i25_decoder_t;
+use crate::decoder::I25Decoder;
 #[cfg(feature = "qrcode")]
-use crate::decoder::qr_finder_t;
+use crate::decoder::QrFinder;
 
 #[cfg(feature = "qrcode")]
 use crate::finder::find_qr;
 #[cfg(feature = "qrcode")]
-use crate::qrcode::qrdec::qr_reader;
+use crate::qrcode::qrdec::QrReader;
 #[cfg(feature = "sqcode")]
 use crate::sqcode::SqReader;
 
 #[cfg(feature = "codabar")]
-use crate::decoders::codabar::_zbar_decode_codabar;
+use crate::decoders::codabar::decode_codabar;
 #[cfg(feature = "code128")]
-use crate::decoders::code128::_zbar_decode_code128;
+use crate::decoders::code128::decode_code128;
 #[cfg(feature = "code39")]
-use crate::decoders::code39::_zbar_decode_code39;
+use crate::decoders::code39::decode_code39;
 #[cfg(feature = "code93")]
-use crate::decoders::code93::_zbar_decode_code93;
+use crate::decoders::code93::decode_code93;
 #[cfg(feature = "databar")]
-use crate::decoders::databar::_zbar_decode_databar;
+use crate::decoders::databar::decode_databar;
 #[cfg(feature = "ean")]
-use crate::decoders::ean::{ean_decoder_t, zbar_decode_ean};
+use crate::decoders::ean::{EanDecoder, decode_ean};
 #[cfg(feature = "i25")]
-use crate::decoders::i25::_zbar_decode_i25;
+use crate::decoders::i25::decode_i25;
 
 // QR Code finder precision constant
 const QR_FINDER_SUBPREC: i32 = 2;
@@ -69,7 +69,7 @@ const BUFFER_MIN: usize = 0x20;
 const BUFFER_MAX: usize = 0x100;
 
 /// image scanner state
-pub(crate) struct zbar_image_scanner_t {
+pub(crate) struct ImageScanner {
     /// Scanner state fields (formerly zbar_scanner_t)
     y1_min_thresh: u32,
     x: u32,
@@ -97,25 +97,25 @@ pub(crate) struct zbar_image_scanner_t {
 
     // Symbology-specific decoders
     #[cfg(feature = "ean")]
-    pub(crate) ean: ean_decoder_t,
+    pub(crate) ean: EanDecoder,
     #[cfg(feature = "i25")]
-    pub(crate) i25: i25_decoder_t,
+    pub(crate) i25: I25Decoder,
     #[cfg(feature = "databar")]
-    pub(crate) databar: databar_decoder_t,
+    pub(crate) databar: DatabarDecoder,
     #[cfg(feature = "codabar")]
-    pub(crate) codabar: codabar_decoder_t,
+    pub(crate) codabar: CodabarDecoder,
     #[cfg(feature = "code39")]
-    pub(crate) code39: code39_decoder_t,
+    pub(crate) code39: Code39Decoder,
     #[cfg(feature = "code93")]
-    pub(crate) code93: code93_decoder_t,
+    pub(crate) code93: Code93Decoder,
     #[cfg(feature = "code128")]
-    pub(crate) code128: code128_decoder_t,
+    pub(crate) code128: Code128Decoder,
     #[cfg(feature = "qrcode")]
-    pub(crate) qrf: qr_finder_t,
+    pub(crate) qrf: QrFinder,
 
     /// QR Code 2D reader
     #[cfg(feature = "qrcode")]
-    qr: qr_reader,
+    qr: QrReader,
     /// SQ Code 2D reader
     #[cfg(feature = "sqcode")]
     sq: SqReader,
@@ -134,7 +134,7 @@ pub(crate) struct zbar_image_scanner_t {
     scanner_config: ImageScannerConfig,
 }
 
-impl Default for zbar_image_scanner_t {
+impl Default for ImageScanner {
     /// Create a new image scanner
     ///
     /// Allocates and initializes a new image scanner instance with default configuration.
@@ -164,25 +164,25 @@ impl Default for zbar_image_scanner_t {
             buffer: Vec::with_capacity(BUFFER_MIN),
             config: DecoderState::default(),
             #[cfg(feature = "ean")]
-            ean: ean_decoder_t::default(),
+            ean: EanDecoder::default(),
             #[cfg(feature = "i25")]
-            i25: i25_decoder_t::default(),
+            i25: I25Decoder::default(),
             #[cfg(feature = "databar")]
-            databar: databar_decoder_t::default(),
+            databar: DatabarDecoder::default(),
             #[cfg(feature = "codabar")]
-            codabar: codabar_decoder_t::default(),
+            codabar: CodabarDecoder::default(),
             #[cfg(feature = "code39")]
-            code39: code39_decoder_t::default(),
+            code39: Code39Decoder::default(),
             #[cfg(feature = "code93")]
-            code93: code93_decoder_t::default(),
+            code93: Code93Decoder::default(),
             #[cfg(feature = "code128")]
-            code128: code128_decoder_t::default(),
+            code128: Code128Decoder::default(),
             #[cfg(feature = "qrcode")]
-            qrf: qr_finder_t::default(),
+            qrf: QrFinder::default(),
 
             // Scanner-specific fields
             #[cfg(feature = "qrcode")]
-            qr: qr_reader::default(),
+            qr: QrReader::default(),
             #[cfg(feature = "sqcode")]
             sq: SqReader::default(),
             dx: 0,
@@ -201,7 +201,7 @@ impl Default for zbar_image_scanner_t {
     }
 }
 
-impl zbar_image_scanner_t {
+impl ImageScanner {
     /// Create a new image scanner with custom configuration
     ///
     /// This constructor accepts a type-safe `DecoderConfig` and creates a scanner
@@ -674,7 +674,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "ean")]
         if self.ean.enable {
-            let tmp = zbar_decode_ean(&mut *self);
+            let tmp = decode_ean(&mut *self);
             if tmp != SymbolType::None {
                 sym = tmp;
             }
@@ -682,7 +682,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "code39")]
         if self.is_enabled(SymbolType::Code39) {
-            let tmp = _zbar_decode_code39(&mut *self);
+            let tmp = decode_code39(&mut *self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }
@@ -690,7 +690,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "code93")]
         if self.is_enabled(SymbolType::Code93) {
-            let tmp = _zbar_decode_code93(&mut *self);
+            let tmp = decode_code93(&mut *self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }
@@ -698,7 +698,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "code128")]
         if self.is_enabled(SymbolType::Code128) {
-            let tmp = _zbar_decode_code128(&mut *self);
+            let tmp = decode_code128(&mut *self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }
@@ -706,7 +706,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "databar")]
         if self.is_enabled(SymbolType::Databar) || self.is_enabled(SymbolType::DatabarExp) {
-            let tmp = _zbar_decode_databar(&mut *self);
+            let tmp = decode_databar(&mut *self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }
@@ -714,7 +714,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "codabar")]
         if self.is_enabled(SymbolType::Codabar) {
-            let tmp = _zbar_decode_codabar(&mut *self);
+            let tmp = decode_codabar(&mut *self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }
@@ -722,7 +722,7 @@ impl zbar_image_scanner_t {
 
         #[cfg(feature = "i25")]
         if self.is_enabled(SymbolType::I25) {
-            let tmp = _zbar_decode_i25(self);
+            let tmp = decode_i25(self);
             if tmp > SymbolType::Partial {
                 sym = tmp;
             }
@@ -756,7 +756,7 @@ impl zbar_image_scanner_t {
     }
 
     /// Scans an image for barcodes, with optional inverted image retry.
-    pub(crate) fn scan_image(&mut self, img: &mut zbar_image_t) -> Vec<Symbol> {
+    pub(crate) fn scan_image(&mut self, img: &mut ImageData) -> Vec<Symbol> {
         let symbols = self.scan_image_internal(img);
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
@@ -856,7 +856,7 @@ impl zbar_image_scanner_t {
     ///
     /// # Returns
     /// Pointer to symbol set on success, null on error
-    fn scan_image_internal(&mut self, img: &mut zbar_image_t) -> Vec<Symbol> {
+    fn scan_image_internal(&mut self, img: &mut ImageData) -> Vec<Symbol> {
         #[cfg(feature = "qrcode")]
         self.qr.reset();
         #[cfg(feature = "sqcode")]
