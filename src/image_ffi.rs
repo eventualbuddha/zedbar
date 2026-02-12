@@ -1,4 +1,4 @@
-//! ZBar Image Module
+//! Image Module
 //!
 //! This module provides image handling and barcode scanning functionality.
 

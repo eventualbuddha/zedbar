@@ -4,7 +4,7 @@
 //! - [`Error`] - The main error type
 //! - [`Result`] - Type alias for `Result<T, Error>`
 //!
-//! Most ZBar operations return [`Result`] to indicate success or failure.
+//! Most zedbar operations return [`Result`] to indicate success or failure.
 
 use std::fmt;
 

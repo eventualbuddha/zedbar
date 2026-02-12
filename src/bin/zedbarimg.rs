@@ -312,12 +312,12 @@ fn main() {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        // Create ZBar image from grayscale data
-        let mut zbar_img = match Image::from_gray(data, width, height) {
+        // Create zedbar image from grayscale data
+        let mut zedbar_img = match Image::from_gray(data, width, height) {
             Ok(img) => img,
             Err(e) => {
                 if !args.quiet {
-                    eprintln!("Failed to create ZBar image: {}", e);
+                    eprintln!("Failed to create zedbar image: {}", e);
                 }
                 process::exit(1);
             }
@@ -327,7 +327,7 @@ fn main() {
         let mut scanner = Scanner::with_config(config.clone());
 
         // Scan the image
-        let symbols = scanner.scan(&mut zbar_img);
+        let symbols = scanner.scan(&mut zedbar_img);
 
         total_symbols += symbols.len();
 
