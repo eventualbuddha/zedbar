@@ -1,7 +1,7 @@
 //! Zedbar Barcode Scanning Library
 //!
 //! A pure Rust barcode scanning library supporting multiple barcode formats including
-//! QR codes, EAN, UPC, Code128, Code39, and more. Based on the ZBar C library.
+//! QR codes, EAN, UPC, Code128, Code39, and more. Based on the zbar C library.
 //!
 //! # Quick Start
 //!
@@ -74,7 +74,7 @@ pub(crate) mod decoder;
 pub(crate) mod decoders;
 #[cfg(feature = "qrcode")]
 pub(crate) mod finder;
-pub(crate) mod image_ffi;
+pub(crate) mod image_data;
 pub(crate) mod img_scanner;
 pub(crate) mod img_scanner_config;
 #[cfg(feature = "qrcode")]
@@ -113,7 +113,7 @@ mod tests {
 
         // Create image from grayscale data
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -122,7 +122,7 @@ mod tests {
         let symbols = scanner.scan(&mut img);
         assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
-        let mut zbar_results = Vec::new();
+        let mut zedbar_results = Vec::new();
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data = symbol.data();
@@ -130,7 +130,7 @@ mod tests {
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
-            zbar_results.push(data.to_vec());
+            zedbar_results.push(data.to_vec());
         }
 
         // Also decode with rqrr and verify they match
@@ -154,14 +154,14 @@ mod tests {
         }
 
         // Sort both results for comparison
-        zbar_results.sort();
+        zedbar_results.sort();
         rqrr_results.sort();
 
         assert_eq!(
-            zbar_results, rqrr_results,
-            "zbar and rqrr produced different results"
+            zedbar_results, rqrr_results,
+            "zedbar and rqrr produced different results"
         );
-        println!("✓ zbar and rqrr agree on {} symbols", zbar_results.len());
+        println!("✓ zedbar and rqrr agree on {} symbols", zedbar_results.len());
     }
 
     #[test]
@@ -179,7 +179,7 @@ mod tests {
 
         // Create image from grayscale data
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -188,7 +188,7 @@ mod tests {
         let symbols = scanner.scan(&mut img);
         assert!(!symbols.is_empty(), "Expected to find at least one QR code");
 
-        let mut zbar_results = Vec::new();
+        let mut zedbar_results = Vec::new();
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data = symbol.data();
@@ -196,7 +196,7 @@ mod tests {
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
-            zbar_results.push(data.to_vec());
+            zedbar_results.push(data.to_vec());
         }
 
         // Also decode with rqrr and verify they match
@@ -220,14 +220,14 @@ mod tests {
         }
 
         // Sort both results for comparison
-        zbar_results.sort();
+        zedbar_results.sort();
         rqrr_results.sort();
 
         assert_eq!(
-            zbar_results, rqrr_results,
-            "zbar and rqrr produced different results"
+            zedbar_results, rqrr_results,
+            "zedbar and rqrr produced different results"
         );
-        println!("✓ zbar and rqrr agree on {} symbols", zbar_results.len());
+        println!("✓ zedbar and rqrr agree on {} symbols", zedbar_results.len());
     }
 
     #[test]
@@ -245,9 +245,9 @@ mod tests {
         let mut inverted = Vec::with_capacity(original_raw.len());
         inverted.extend(original_raw.iter().map(|&v| 255u8.saturating_sub(v)));
 
-        // Build a ZBar image from the inverted data
+        // Build a zedbar image from the inverted data
         let mut img =
-            Image::from_gray(&inverted, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(&inverted, width, height).expect("Failed to create zedbar image");
 
         // Configure scanner for QR codes with inverted testing
         use crate::config::*;
@@ -261,7 +261,7 @@ mod tests {
             "Expected to find at least one QR code in inverted image"
         );
 
-        let mut zbar_results = Vec::new();
+        let mut zedbar_results = Vec::new();
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data = symbol.data();
@@ -269,7 +269,7 @@ mod tests {
 
             assert_eq!(symbol_type, SymbolType::QrCode);
             assert!(!data.is_empty(), "QR code data should not be empty");
-            zbar_results.push(data.to_vec());
+            zedbar_results.push(data.to_vec());
         }
 
         // Use rqrr on the original (non-inverted) grayscale image for the ground truth
@@ -292,16 +292,16 @@ mod tests {
         }
 
         // Sort and compare results
-        zbar_results.sort();
+        zedbar_results.sort();
         rqrr_results.sort();
 
         assert_eq!(
-            zbar_results, rqrr_results,
-            "zbar and rqrr produced different results for inverted image"
+            zedbar_results, rqrr_results,
+            "zedbar and rqrr produced different results for inverted image"
         );
         println!(
-            "✓ zbar and rqrr agree on {} symbols for inverted image",
-            zbar_results.len()
+            "✓ zedbar and rqrr agree on {} symbols for inverted image",
+            zedbar_results.len()
         );
     }
 
@@ -318,7 +318,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (EAN-13 enabled by default)
         let mut scanner = Scanner::new();
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn test_ean8_decode() {
         // EAN-8 test (8 digits, compact retail barcode)
-        // Note: ZBar may report EAN-8 as EAN-13 with zero padding
+        // Note: zedbar may report EAN-8 as EAN-13 with zero padding
         let img = ::image::ImageReader::open("examples/test-ean8.png")
             .expect("Failed to open test-ean8.png")
             .decode()
@@ -349,7 +349,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (EAN-8 enabled by default)
         let mut scanner = Scanner::new();
@@ -390,7 +390,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner with UPC-A explicitly enabled
         use crate::config::*;
@@ -422,7 +422,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Code128 enabled by default)
         let mut scanner = Scanner::new();
@@ -452,7 +452,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Code39 enabled by default)
         let mut scanner = Scanner::new();
@@ -482,7 +482,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Code93 enabled by default)
         let mut scanner = Scanner::new();
@@ -512,7 +512,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Codabar enabled by default)
         let mut scanner = Scanner::new();
@@ -542,7 +542,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (I25 enabled by default)
         let mut scanner = Scanner::new();
@@ -573,7 +573,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -602,7 +602,7 @@ mod tests {
         let data = gray.as_raw();
 
         let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -657,7 +657,7 @@ mod tests {
         };
 
         let mut img =
-            Image::from_gray(&normalized, width, height).expect("Failed to create ZBar image");
+            Image::from_gray(&normalized, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -696,12 +696,12 @@ https://zh.qr-code-generator.com
             "Test image should be small to test upscaling"
         );
 
-        let mut zbar_img =
-            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create ZBar image");
+        let mut zedbar_img =
+            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create zedbar image");
 
         // Should decode successfully with automatic upscaling
         let mut scanner = Scanner::new();
-        let symbols = scanner.scan(&mut zbar_img);
+        let symbols = scanner.scan(&mut zedbar_img);
 
         assert!(
             !symbols.is_empty(),
@@ -729,13 +729,13 @@ https://zh.qr-code-generator.com
         let gray = img.to_luma8();
         let (width, height) = gray.dimensions();
 
-        let mut zbar_img =
-            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create ZBar image");
+        let mut zedbar_img =
+            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create zedbar image");
 
         // Disable upscaling
         let config = DecoderConfig::new().upscale_small_images(false);
         let mut scanner = Scanner::with_config(config);
-        let symbols = scanner.scan(&mut zbar_img);
+        let symbols = scanner.scan(&mut zedbar_img);
 
         // Without upscaling, the small QR code should NOT be detected
         assert!(

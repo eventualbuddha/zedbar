@@ -2,7 +2,7 @@
 //!
 //! These tests generate random QR code data, encode it to an image,
 //! and verify that the decoder can correctly decode it back.
-//! Also verifies that zbar matches rqrr's decoding results.
+//! Also verifies that zedbar matches rqrr's decoding results.
 
 use crate::{Image, Scanner};
 use image::{GrayImage, Luma};
@@ -47,20 +47,20 @@ fn decode_qr_image_rqrr(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
 }
 
 /// Helper to decode a QR code image and return the decoded data
-/// Also verifies that zbar and rqrr produce the same results
+/// Also verifies that zedbar and rqrr produce the same results
 fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     let (width, height) = img.dimensions();
     let data = img.as_raw();
 
     // Create ZBar image from grayscale data
-    let mut zbar_img = Image::from_gray(data, width, height)
+    let mut zedbar_img = Image::from_gray(data, width, height)
         .map_err(|e| format!("Failed to create ZBar image: {e:?}"))?;
 
     // Create scanner (QR codes enabled by default)
     let mut scanner = Scanner::new();
 
     // Scan the image
-    let symbols = scanner.scan(&mut zbar_img);
+    let symbols = scanner.scan(&mut zedbar_img);
 
     // Get symbols
     if symbols.is_empty() {
@@ -68,26 +68,26 @@ fn decode_qr_image(img: &GrayImage) -> Result<Vec<Vec<u8>>, String> {
     }
 
     // Collect all decoded data
-    let zbar_results: Vec<Vec<u8>> = symbols.iter().map(|s| s.data().to_vec()).collect();
+    let zedbar_results: Vec<Vec<u8>> = symbols.iter().map(|s| s.data().to_vec()).collect();
 
     // Also decode with rqrr and verify they match
     let rqrr_results = decode_qr_image_rqrr(img)?;
 
     // Sort both results for comparison (order may differ)
-    let mut zbar_sorted = zbar_results.clone();
+    let mut zedbar_sorted = zedbar_results.clone();
     let mut rqrr_sorted = rqrr_results.clone();
-    zbar_sorted.sort();
+    zedbar_sorted.sort();
     rqrr_sorted.sort();
 
-    if zbar_sorted != rqrr_sorted {
+    if zedbar_sorted != rqrr_sorted {
         return Err(format!(
-            "zbar and rqrr produced different results!\nzbar: {} symbols\nrqrr: {} symbols",
-            zbar_sorted.len(),
+            "zedbar and rqrr produced different results!\nzedbar: {} symbols\nrqrr: {} symbols",
+            zedbar_sorted.len(),
             rqrr_sorted.len()
         ));
     }
 
-    Ok(zbar_results)
+    Ok(zedbar_results)
 }
 
 proptest! {

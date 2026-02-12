@@ -137,7 +137,7 @@ pub trait Symbology: Sized {
 // User-Facing Configuration Builder
 // ============================================================================
 
-/// Type-safe configuration builder for ZBar decoders
+/// Type-safe configuration builder for zedbar decoders
 ///
 /// This builder uses the type system to ensure only valid configurations
 /// can be set for each symbology type.

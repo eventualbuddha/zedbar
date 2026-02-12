@@ -2,7 +2,7 @@
 //!
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
-use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
+use crate::{color::Color, decoder::decode_e, img_scanner::ImageScanner, SymbolType};
 
 // ============================================================================
 // QR Finder functions
@@ -11,7 +11,7 @@ use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, 
 /// Find QR code finder pattern
 ///
 /// Searches for the 1:1:3:1:1 ratio pattern characteristic of QR code finders.
-pub(crate) fn find_qr(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+pub(crate) fn find_qr(dcode: &mut ImageScanner) -> SymbolType {
     // Update latest finder pattern width
     dcode.qrf.s5 -= dcode.get_width(6);
     dcode.qrf.s5 += dcode.get_width(1);

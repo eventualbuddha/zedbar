@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Interleaved 2 of 5 (I25) barcodes.
 
-use crate::{color::Color, decoder::decode_e, img_scanner::zbar_image_scanner_t, SymbolType};
+use crate::{color::Color, decoder::decode_e, img_scanner::ImageScanner, SymbolType};
 
 // ============================================================================
 // I25 Decoder functions
@@ -22,7 +22,7 @@ fn i25_decode1(enc: u8, e: u32, s: u32) -> u8 {
 }
 
 /// Decode 10 elements into a digit (5 bars + 5 spaces)
-fn i25_decode10(dcode: &zbar_image_scanner_t, offset: u8) -> u8 {
+fn i25_decode10(dcode: &ImageScanner, offset: u8) -> u8 {
     let dcode25 = &dcode.i25;
 
     if dcode25.s10 < 10 {
@@ -73,7 +73,7 @@ fn i25_decode10(dcode: &zbar_image_scanner_t, offset: u8) -> u8 {
 }
 
 /// Decode start pattern
-fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+fn i25_decode_start(dcode: &mut ImageScanner) -> SymbolType {
     let s10 = dcode.i25.s10;
 
     if s10 < 10 {
@@ -116,7 +116,7 @@ fn i25_decode_start(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Acquire lock and copy holding buffer
-fn i25_acquire_lock(dcode: &mut zbar_image_scanner_t) -> bool {
+fn i25_acquire_lock(dcode: &mut ImageScanner) -> bool {
     // Lock shared resources
     if !dcode.acquire_lock(SymbolType::I25) {
         dcode.i25.set_character(-1);
@@ -127,7 +127,7 @@ fn i25_acquire_lock(dcode: &mut zbar_image_scanner_t) -> bool {
 }
 
 /// Decode end pattern and validate
-fn i25_decode_end(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+fn i25_decode_end(dcode: &mut ImageScanner) -> SymbolType {
     let width = dcode.i25.width;
     let direction = dcode.i25.direction();
     let character = dcode.i25.character();
@@ -190,7 +190,7 @@ fn i25_decode_end(dcode: &mut zbar_image_scanner_t) -> SymbolType {
 }
 
 /// Main I25 decode function
-pub(crate) fn _zbar_decode_i25(dcode: &mut zbar_image_scanner_t) -> SymbolType {
+pub(crate) fn decode_i25(dcode: &mut ImageScanner) -> SymbolType {
     // Update latest character width
     let w10 = dcode.get_width(10);
     let w0 = dcode.get_width(0);

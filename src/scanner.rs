@@ -30,7 +30,7 @@
 
 use crate::config::DecoderConfig;
 use crate::image::Image;
-use crate::img_scanner::zbar_image_scanner_t;
+use crate::img_scanner::ImageScanner;
 use crate::symbol::Symbol;
 
 /// Image scanner that can find barcodes in 2D images
@@ -56,7 +56,7 @@ use crate::symbol::Symbol;
 /// let symbols = scanner.scan(&mut image);
 /// ```
 pub struct Scanner {
-    scanner: zbar_image_scanner_t,
+    scanner: ImageScanner,
 }
 
 impl Scanner {
@@ -65,7 +65,7 @@ impl Scanner {
     /// For more control over the configuration, use [`Scanner::with_config()`].
     pub fn new() -> Self {
         Scanner {
-            scanner: zbar_image_scanner_t::default(),
+            scanner: ImageScanner::default(),
         }
     }
 
@@ -88,7 +88,7 @@ impl Scanner {
     /// ```
     pub fn with_config(config: DecoderConfig) -> Self {
         Scanner {
-            scanner: zbar_image_scanner_t::with_config(config),
+            scanner: ImageScanner::with_config(config),
         }
     }
 

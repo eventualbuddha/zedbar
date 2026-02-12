@@ -4,16 +4,9 @@
 //! - [`Error`] - The main error type
 //! - [`Result`] - Type alias for `Result<T, Error>`
 //!
-//! Most ZBar operations return [`Result`] to indicate success or failure.
+//! Most zedbar operations return [`Result`] to indicate success or failure.
 
 use std::fmt;
-
-pub const ZBAR_VERSION_MAJOR: u32 = 0;
-pub const ZBAR_VERSION_MINOR: u32 = 23;
-pub const ZBAR_VERSION_PATCH: u32 = 93;
-
-/// Global verbosity level
-pub static mut ZBAR_VERBOSITY: i32 = 0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
