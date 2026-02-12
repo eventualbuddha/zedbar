@@ -18,7 +18,7 @@ exclude = [
 
 [lib]
 name = "zedbar"
-crate-type = ["lib", "cdylib", "staticlib"]
+crate-type = ["lib"]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
