@@ -32,9 +32,6 @@
     --drop-border: #3b5998;
     --code-bg: #1e1e1e;
     --success: #4ade80;
-    --btn-primary-bg: #333;
-    --btn-primary-fg: #e5e5e5;
-    --btn-primary-hover: #444;
   }
 }
 
@@ -122,12 +119,23 @@ body {
 }
 
 .btn-primary {
-  background: var(--btn-primary-bg, var(--fg));
-  color: var(--btn-primary-fg, var(--bg));
+  background: var(--fg);
+  color: var(--bg);
 }
 
 .btn-primary:hover {
-  background: var(--btn-primary-hover, var(--muted));
+  background: var(--muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-primary {
+    background: #333;
+    color: #e5e5e5;
+  }
+
+  .btn-primary:hover {
+    background: #444;
+  }
 }
 
 .btn-secondary {
