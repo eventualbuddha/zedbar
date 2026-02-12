@@ -161,7 +161,7 @@ mod tests {
             zedbar_results, rqrr_results,
             "zedbar and rqrr produced different results"
         );
-        println!("✓ zbar and rqrr agree on {} symbols", zedbar_results.len());
+        println!("✓ zedbar and rqrr agree on {} symbols", zedbar_results.len());
     }
 
     #[test]
