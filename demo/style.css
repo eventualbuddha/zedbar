@@ -32,6 +32,9 @@
     --drop-border: #3b5998;
     --code-bg: #1e1e1e;
     --success: #4ade80;
+    --btn-primary-bg: #333;
+    --btn-primary-fg: #e5e5e5;
+    --btn-primary-hover: #444;
   }
 }
 
@@ -119,12 +122,12 @@ body {
 }
 
 .btn-primary {
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--btn-primary-bg, var(--fg));
+  color: var(--btn-primary-fg, var(--bg));
 }
 
 .btn-primary:hover {
-  background: var(--muted);
+  background: var(--btn-primary-hover, var(--muted));
 }
 
 .btn-secondary {

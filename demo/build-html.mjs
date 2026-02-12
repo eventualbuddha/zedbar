@@ -10,14 +10,28 @@ import { dirname, join } from 'node:path';
 import { createHighlighter } from 'shiki';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const projectDir = join(__dirname, '..');
 
 async function main() {
+  // Read version from Cargo.toml
+  const cargoToml = await readFile(join(projectDir, 'Cargo.toml'), 'utf-8');
+  const versionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"/m);
+  if (!versionMatch) {
+    throw new Error('Could not find version in Cargo.toml');
+  }
+  const fullVersion = versionMatch[1];
+  // Use major.minor for the dependency specifier (e.g. "0.2.1" -> "0.2")
+  const depVersion = fullVersion.split('.').slice(0, 2).join('.');
+
   const highlighter = await createHighlighter({
     themes: ['github-light', 'one-dark-pro'],
     langs: ['rust', 'javascript', 'bash', 'toml'],
   });
 
   let html = await readFile(join(__dirname, 'index.src.html'), 'utf-8');
+
+  // Replace version placeholder
+  html = html.replace(/\{\{ZEDBAR_VERSION\}\}/g, depVersion);
 
   // Find all <code data-lang="...">...</code> blocks and highlight them
   const codeBlockRegex = /<code data-lang="(\w+)">([\s\S]*?)<\/code>/g;
