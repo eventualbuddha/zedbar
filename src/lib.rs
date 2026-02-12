@@ -227,7 +227,7 @@ mod tests {
             zedbar_results, rqrr_results,
             "zedbar and rqrr produced different results"
         );
-        println!("✓ zbar and rqrr agree on {} symbols", zedbar_results.len());
+        println!("✓ zedbar and rqrr agree on {} symbols", zedbar_results.len());
     }
 
     #[test]
@@ -300,7 +300,7 @@ mod tests {
             "zedbar and rqrr produced different results for inverted image"
         );
         println!(
-            "✓ zbar and rqrr agree on {} symbols for inverted image",
+            "✓ zedbar and rqrr agree on {} symbols for inverted image",
             zedbar_results.len()
         );
     }
