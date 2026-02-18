@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Codabar barcodes.
 
-use crate::{color::Color, img_scanner::ImageScanner, SymbolType};
+use crate::{SymbolType, color::Color, img_scanner::ImageScanner};
 
 // Buffer constants
 const NIBUF: usize = 6;

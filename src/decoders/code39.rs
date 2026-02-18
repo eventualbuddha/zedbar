@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Code 39 barcodes.
 
-use crate::{color::Color, decoder::decode_e, img_scanner::ImageScanner, SymbolType};
+use crate::{SymbolType, color::Color, decoder::decode_e, img_scanner::ImageScanner};
 
 // Number of characters in Code 39
 const NUM_CHARS: usize = 0x2c;

@@ -2,7 +2,7 @@
 //!
 //! This binary provides a command-line interface to the zedbar library.
 //! It requires all symbology features to be enabled to provide full CLI control.
-//! 
+//!
 //! Build with: `cargo build --bin zedbarimg` (uses default features)
 
 // The zedbarimg binary provides CLI flags for all symbologies,
@@ -28,7 +28,7 @@ compile_error!(
 use clap::Parser;
 use std::io::Write;
 use std::process;
-use zedbar::{config::*, DecoderConfig, Image, Scanner};
+use zedbar::{DecoderConfig, Image, Scanner, config::*};
 
 /// Scan and decode bar codes from one or more image files
 #[derive(Parser)]

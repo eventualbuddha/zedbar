@@ -112,8 +112,7 @@ mod tests {
         let data = gray.as_raw();
 
         // Create image from grayscale data
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -161,7 +160,10 @@ mod tests {
             zedbar_results, rqrr_results,
             "zedbar and rqrr produced different results"
         );
-        println!("✓ zedbar and rqrr agree on {} symbols", zedbar_results.len());
+        println!(
+            "✓ zedbar and rqrr agree on {} symbols",
+            zedbar_results.len()
+        );
     }
 
     #[test]
@@ -178,8 +180,7 @@ mod tests {
         let data = gray.as_raw();
 
         // Create image from grayscale data
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -227,7 +228,10 @@ mod tests {
             zedbar_results, rqrr_results,
             "zedbar and rqrr produced different results"
         );
-        println!("✓ zedbar and rqrr agree on {} symbols", zedbar_results.len());
+        println!(
+            "✓ zedbar and rqrr agree on {} symbols",
+            zedbar_results.len()
+        );
     }
 
     #[test]
@@ -317,8 +321,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (EAN-13 enabled by default)
         let mut scanner = Scanner::new();
@@ -348,8 +351,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (EAN-8 enabled by default)
         let mut scanner = Scanner::new();
@@ -389,8 +391,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner with UPC-A explicitly enabled
         use crate::config::*;
@@ -421,8 +422,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Code128 enabled by default)
         let mut scanner = Scanner::new();
@@ -451,8 +451,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Code39 enabled by default)
         let mut scanner = Scanner::new();
@@ -481,8 +480,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Code93 enabled by default)
         let mut scanner = Scanner::new();
@@ -511,8 +509,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (Codabar enabled by default)
         let mut scanner = Scanner::new();
@@ -541,8 +538,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (I25 enabled by default)
         let mut scanner = Scanner::new();
@@ -572,8 +568,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();
@@ -601,8 +596,7 @@ mod tests {
         let (width, height) = gray.dimensions();
         let data = gray.as_raw();
 
-        let mut img =
-            Image::from_gray(data, width, height).expect("Failed to create zedbar image");
+        let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
         // Create scanner (QR codes enabled by default)
         let mut scanner = Scanner::new();

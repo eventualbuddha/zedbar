@@ -2,7 +2,7 @@
 //!
 //! This module implements decoding for Code 93 barcodes.
 
-use crate::{color::Color, decoder::decode_e, img_scanner::ImageScanner, SymbolType};
+use crate::{SymbolType, color::Color, decoder::decode_e, img_scanner::ImageScanner};
 
 // Checksum constant
 const CHKMOD: i32 = 47;
