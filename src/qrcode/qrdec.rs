@@ -9,7 +9,7 @@
 use std::{collections::VecDeque, mem::swap};
 
 use encoding_rs::{BIG5, Encoding, SHIFT_JIS, UTF_8, WINDOWS_1252};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
 

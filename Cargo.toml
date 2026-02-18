@@ -28,13 +28,13 @@ wasm-opt = false
 # Optional dependencies
 encoding_rs = { version = "0.8.33", optional = true }
 reed-solomon = { version = "0.2.1", optional = true }
-rand = { version = "0.9", optional = true }
-rand_chacha = { version = "0.9", optional = true }
+rand = { version = "0.10", optional = true }
+rand_chacha = { version = "0.10", optional = true }
 image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg", "bmp", "webp"] }
 clap = { version = "4.5", features = ["derive"], optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
-getrandom = { version = "0.3", features = ["wasm_js"], optional = true }
+getrandom = { version = "0.4.1", features = ["wasm_js"], optional = true }
 
 # Optional benchmark comparison libraries (can be dependencies since they're feature-gated)
 zbar-rust = { version = "0.0.24", optional = true }
@@ -51,12 +51,12 @@ qrcode = "0.14"
 rqrr = "0.10"
 reed-solomon = "0.2.1"
 encoding_rs = "0.8.33"
-rand = "0.9"
-rand_chacha = "0.9"
+rand = "0.10"
+rand_chacha = "0.10"
 image = "0.25"
 
 # Benchmarking
-criterion = { version = "0.7.0", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [features]
 default = [
