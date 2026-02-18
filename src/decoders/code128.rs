@@ -3,11 +3,7 @@
 //! This module implements decoding for Code 128 barcodes.
 
 use crate::{
-    color::Color,
-    decoder::decode_e,
-    decoder::Modifier,
-    img_scanner::ImageScanner,
-    SymbolType,
+    SymbolType, color::Color, decoder::Modifier, decoder::decode_e, img_scanner::ImageScanner,
 };
 
 // Character count
@@ -188,11 +184,7 @@ fn calc_check(c: u8) -> u8 {
     if c < 0x50 {
         return if c == 0x4d { 0x20 } else { 0x10 };
     }
-    if c < 0x67 {
-        0x20
-    } else {
-        0x10
-    }
+    if c < 0x67 { 0x20 } else { 0x10 }
 }
 
 /// Decode 6 elements

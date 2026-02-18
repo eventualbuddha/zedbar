@@ -1,24 +1,23 @@
 use std::mem::swap;
 
-
 use crate::{
+    Result, SymbolType,
     color::Color,
-    config::{internal::DecoderState, DecoderConfig},
+    config::{DecoderConfig, internal::DecoderState},
     decoder::DECODE_WINDOW,
     image_data::ImageData,
     img_scanner_config::ImageScannerConfig,
     symbol::{Orientation, Symbol},
-    Result, SymbolType,
 };
 
 #[cfg(feature = "codabar")]
 use crate::decoder::CodabarDecoder;
-#[cfg(feature = "code128")]
-use crate::decoder::Code128Decoder;
 #[cfg(feature = "code39")]
 use crate::decoder::Code39Decoder;
 #[cfg(feature = "code93")]
 use crate::decoder::Code93Decoder;
+#[cfg(feature = "code128")]
+use crate::decoder::Code128Decoder;
 #[cfg(feature = "databar")]
 use crate::decoder::DatabarDecoder;
 #[cfg(feature = "i25")]
@@ -35,12 +34,12 @@ use crate::sqcode::SqReader;
 
 #[cfg(feature = "codabar")]
 use crate::decoders::codabar::decode_codabar;
-#[cfg(feature = "code128")]
-use crate::decoders::code128::decode_code128;
 #[cfg(feature = "code39")]
 use crate::decoders::code39::decode_code39;
 #[cfg(feature = "code93")]
 use crate::decoders::code93::decode_code93;
+#[cfg(feature = "code128")]
+use crate::decoders::code128::decode_code128;
 #[cfg(feature = "databar")]
 use crate::decoders::databar::decode_databar;
 #[cfg(feature = "ean")]
@@ -396,8 +395,7 @@ impl ImageScanner {
 
                 // adaptive thresholding
                 // start at multiple of new min/max
-                self.y1_thresh =
-                    (y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED;
+                self.y1_thresh = (y1_1.unsigned_abs() * THRESH_INIT + ROUND) >> ZBAR_FIXED;
                 if self.y1_thresh < self.y1_min_thresh {
                     self.y1_thresh = self.y1_min_thresh;
                 }

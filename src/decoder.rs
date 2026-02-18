@@ -21,11 +21,7 @@ pub(crate) const DECODE_WINDOW: usize = 16;
 /// Returns -1 if the element width is invalid
 pub(crate) fn decoder_decode_e(e: u32, s: u32, n: u32) -> i32 {
     let big_e = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    if big_e >= n - 3 {
-        -1
-    } else {
-        big_e as i32
-    }
+    if big_e >= n - 3 { -1 } else { big_e as i32 }
 }
 
 /// Fixed character width decode assist
@@ -39,11 +35,7 @@ pub(crate) fn decoder_decode_e(e: u32, s: u32, n: u32) -> i32 {
 /// or -1 if invalid
 pub(crate) fn decode_e(e: u32, s: u32, n: u32) -> i32 {
     let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
-    if e_val >= n - 3 {
-        -1
-    } else {
-        e_val as i32
-    }
+    if e_val >= n - 3 { -1 } else { e_val as i32 }
 }
 
 // ============================================================================
@@ -111,11 +103,7 @@ impl I25Decoder {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 5) & 0xFFF) as i16;
         // If the sign bit (bit 11) is set, extend it
-        if val & 0x800 != 0 {
-            val | !0xFFF
-        } else {
-            val
-        }
+        if val & 0x800 != 0 { val | !0xFFF } else { val }
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
@@ -171,11 +159,7 @@ impl Code39Decoder {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 5) & 0xFFF) as i16;
         // If the sign bit (bit 11) is set, extend it
-        if val & 0x800 != 0 {
-            val | !0xFFF
-        } else {
-            val
-        }
+        if val & 0x800 != 0 { val | !0xFFF } else { val }
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
@@ -230,11 +214,7 @@ impl Code93Decoder {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 4) & 0xFFF) as i16;
         // If the sign bit (bit 11) is set, extend it
-        if val & 0x800 != 0 {
-            val | !0xFFF
-        } else {
-            val
-        }
+        if val & 0x800 != 0 { val | !0xFFF } else { val }
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
@@ -282,11 +262,7 @@ impl CodabarDecoder {
         // Sign extend the 12-bit value
         let val = ((self.bitfields >> 5) & 0xFFF) as i16;
         // If the sign bit (bit 11) is set, extend it
-        if val & 0x800 != 0 {
-            val | !0xFFF
-        } else {
-            val
-        }
+        if val & 0x800 != 0 { val | !0xFFF } else { val }
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {
@@ -337,11 +313,7 @@ impl Code128Decoder {
         // Sign extend the 12-bit value
         let val = ((self.bitfields_and_start >> 4) & 0xFFF) as i16;
         // If the sign bit (bit 11) is set, extend it
-        if val & 0x800 != 0 {
-            val | !0xFFF
-        } else {
-            val
-        }
+        if val & 0x800 != 0 { val | !0xFFF } else { val }
     }
 
     pub(crate) fn set_character(&mut self, val: i16) {

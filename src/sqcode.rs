@@ -4,7 +4,7 @@
 //! Original C code copyright (C) 2018 Javier Serrano Polo <javier@jasp.net>
 //! Licensed under LGPL 3.0 or later
 
-use crate::{image_data::ImageData, symbol::Symbol, SymbolType};
+use crate::{SymbolType, image_data::ImageData, symbol::Symbol};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Shape {

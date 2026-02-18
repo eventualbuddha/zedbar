@@ -4,8 +4,8 @@
 //! ISBN-10, ISBN-13, EAN-2, and EAN-5 barcodes.
 
 use crate::{
-    color::Color, config::internal::DecoderState, decoder::decode_e,
-    img_scanner::ImageScanner, SymbolType,
+    SymbolType, color::Color, config::internal::DecoderState, decoder::decode_e,
+    img_scanner::ImageScanner,
 };
 
 // State constants for EanPass

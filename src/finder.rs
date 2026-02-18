@@ -2,7 +2,7 @@
 //!
 //! This module implements finder pattern detection for QR codes and SQ codes.
 
-use crate::{color::Color, decoder::decode_e, img_scanner::ImageScanner, SymbolType};
+use crate::{SymbolType, color::Color, decoder::decode_e, img_scanner::ImageScanner};
 
 // ============================================================================
 // QR Finder functions

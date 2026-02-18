@@ -1,8 +1,8 @@
 use crate::{
-    color::Color,
-    decoder::{decoder_decode_e, DatabarDecoder, DatabarSegment, Modifier},
-    img_scanner::ImageScanner,
     Error, Result, SymbolType,
+    color::Color,
+    decoder::{DatabarDecoder, DatabarSegment, Modifier, decoder_decode_e},
+    img_scanner::ImageScanner,
 };
 
 const DATABAR_MAX_SEGMENTS: usize = 32;
@@ -892,12 +892,7 @@ fn match_segment(dcode: &mut ImageScanner, seg_idx: usize) -> SymbolType {
 
 /// Lookup DataBar expanded sequence
 /// Returns -1 on error, 0 or 1 on success
-fn lookup_sequence(
-    seg: &mut DatabarSegment,
-    fixed: i32,
-    seq: &mut [i32],
-    maxsize: usize,
-) -> i32 {
+fn lookup_sequence(seg: &mut DatabarSegment, fixed: i32, seq: &mut [i32], maxsize: usize) -> i32 {
     let mut n = (seg.data as u32 / 211) as usize;
     let mut i = n.div_ceil(2) + 1;
     n += 4;
@@ -935,11 +930,7 @@ fn lookup_sequence(
         i += 1;
     }
     seq[n] = -1;
-    if fixed < 1 {
-        1
-    } else {
-        0
-    }
+    if fixed < 1 { 1 } else { 0 }
 }
 
 fn match_segment_exp(dcode: &mut ImageScanner, seg_idx: usize, dir: i32) -> SymbolType {
