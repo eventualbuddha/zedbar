@@ -178,16 +178,16 @@ fn benchmark_rxing(c: &mut Criterion) {
 }
 
 // Define benchmark groups based on enabled features
-#[cfg(all(not(feature = "bench_zbar_c"), not(feature = "bench_rxing"),))]
+#[cfg(all(not(feature = "bench_zbar_c"), not(feature = "bench_rxing")))]
 criterion_group!(benches, benchmark_zedbar, benchmark_rqrr);
 
-#[cfg(all(feature = "bench_zbar_c", not(feature = "bench_rxing"),))]
+#[cfg(all(feature = "bench_zbar_c", not(feature = "bench_rxing")))]
 criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_zbar_c);
 
-#[cfg(all(feature = "bench_rxing", not(feature = "bench_zbar_c"),))]
+#[cfg(all(not(feature = "bench_zbar_c"), feature = "bench_rxing"))]
 criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_rxing);
 
-#[cfg(all(feature = "bench_zbar_c", feature = "bench_rxing",))]
+#[cfg(all(feature = "bench_zbar_c", feature = "bench_rxing"))]
 criterion_group!(
     benches,
     benchmark_zedbar,
@@ -195,11 +195,5 @@ criterion_group!(
     benchmark_zbar_c,
     benchmark_rxing
 );
-
-#[cfg(all(feature = "bench_zbar_c", not(feature = "bench_rxing")))]
-criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_zbar_c,);
-
-#[cfg(all(feature = "bench_rxing", not(feature = "bench_zbar_c")))]
-criterion_group!(benches, benchmark_zedbar, benchmark_rqrr, benchmark_rxing,);
 
 criterion_main!(benches);
