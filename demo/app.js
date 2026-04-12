@@ -6,6 +6,7 @@ const previewSection = document.getElementById("preview-section");
 const previewCanvas = document.getElementById("preview-canvas");
 const resultsSection = document.getElementById("results-section");
 const resultsContainer = document.getElementById("results");
+const resultsSummary = document.getElementById("results-summary");
 const noResults = document.getElementById("no-results");
 const errorSection = document.getElementById("error-section");
 const errorMessage = document.getElementById("error-message");
@@ -117,6 +118,19 @@ async function handleFile(file) {
   }
 }
 
+function formatTypeLabel(symbolType, count) {
+  // Turn "QR-Code" → "QR code(s)", "CODE-128" → "Code 128(s)", etc.
+  const friendly = {
+    "QR-Code": "QR code",
+    "SQ-Code": "SQ code",
+    "CODE-39": "Code 39",
+    "CODE-93": "Code 93",
+    "CODE-128": "Code 128",
+  };
+  const label = friendly[symbolType] || symbolType;
+  return count === 1 ? label : `${label}s`;
+}
+
 function displayResults(results) {
   resultsContainer.innerHTML = "";
 
@@ -127,6 +141,18 @@ function displayResults(results) {
   }
 
   resultsSection.hidden = false;
+
+  // Build summary like "2 QR codes, 1 EAN-13"
+  const counts = new Map();
+  for (const r of results) {
+    counts.set(r.symbolType, (counts.get(r.symbolType) || 0) + 1);
+  }
+  const parts = [];
+  for (const [type, count] of counts) {
+    const label = formatTypeLabel(type, count);
+    parts.push(`${count}\u00a0${label}`);
+  }
+  resultsSummary.textContent = parts.length ? `\u2014 ${parts.join(", ")}` : "";
 
   for (const result of results) {
     const data = result.data;

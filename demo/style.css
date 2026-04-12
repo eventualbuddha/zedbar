@@ -242,6 +242,12 @@ h3 {
 }
 
 /* Results */
+.results-summary {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .result-card {
   background: var(--surface);
   border: 1px solid var(--border);
