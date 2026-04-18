@@ -1808,10 +1808,16 @@ pub(crate) fn qr_finder_find_crossings(
         }
     }
 
+    // Sort by coarsely-bucketed edge_pts count (descending), then spatially.
+    // Using exact edge_pts count can separate the three finder centers of the
+    // same QR code when they have slightly different counts (e.g. 42 vs 44),
+    // pushing them into distant regions of the sorted array and making the
+    // O(n^3) match_centers search much slower. Bucketing by /8 keeps centers
+    // with similar counts together while still prioritizing higher-confidence
+    // centers.
     centers.sort_by(|a, b| {
-        b.edge_pts
-            .len()
-            .cmp(&a.edge_pts.len())
+        (b.edge_pts.len() / 8)
+            .cmp(&(a.edge_pts.len() / 8))
             .then_with(|| a.pos[1].cmp(&b.pos[1]))
             .then_with(|| a.pos[0].cmp(&b.pos[0]))
     });
@@ -3831,7 +3837,18 @@ impl QrReader {
         // The number of centers should be small, so an O(n^3) exhaustive search of
         // which ones go together should be reasonable.
         let mut mark = vec![0u8; _centers.len()];
-        let nfailures_max = i32::max(8192, (_width * _height) >> 9);
+        // Scale the failure limit with the number of centers to handle images
+        // containing many QR codes. When centers are sorted by edge_pts count
+        // (for quality), the three finder centers of a single QR code can end up
+        // far apart in the sorted array if they have different edge_pts counts.
+        // This causes many more failed triplet attempts before finding valid ones.
+        let nfailures_max = i32::max(
+            8192,
+            i32::max(
+                (_width * _height) >> 9,
+                (_centers.len() * _centers.len()) as i32,
+            ),
+        );
         let mut nfailures = 0;
 
         for i in 0.._centers.len() {
@@ -3849,6 +3866,34 @@ impl QrReader {
                     }
 
                     if mark[k] == 0 {
+                        // Quick geometric pre-filter: for a valid QR code, the
+                        // three finder centers form a right isosceles triangle.
+                        // Check two properties:
+                        // 1. Distance ratio: max_dist² < 6 * min_dist²
+                        // 2. Right angle: max_dist² ≈ sum of the other two dist²
+                        //    (Pythagorean theorem, with generous tolerance for
+                        //    perspective distortion)
+                        // These checks are much cheaper than try_configuration and
+                        // don't count as failures.
+                        let d_ij = qr_point_distance2(&_centers[i].pos, &_centers[j].pos);
+                        let d_ik = qr_point_distance2(&_centers[i].pos, &_centers[k].pos);
+                        let d_jk = qr_point_distance2(&_centers[j].pos, &_centers[k].pos);
+                        let max_d = d_ij.max(d_ik).max(d_jk);
+                        let min_d = d_ij.min(d_ik).min(d_jk);
+                        let mid_d = d_ij + d_ik + d_jk - max_d - min_d;
+                        if min_d == 0 || max_d > min_d.saturating_mul(6) {
+                            continue;
+                        }
+                        // For a right triangle, max ≈ min + mid. Allow 50% error
+                        // for perspective distortion.
+                        let sum = min_d as u64 + mid_d as u64;
+                        let max_d64 = max_d as u64;
+                        if max_d64.saturating_mul(2) > sum.saturating_mul(3)
+                            || sum.saturating_mul(2) > max_d64.saturating_mul(3)
+                        {
+                            continue;
+                        }
+
                         let mut qrdata = qr_code_data::default();
                         let version = self.try_configuration(
                             &mut qrdata,
