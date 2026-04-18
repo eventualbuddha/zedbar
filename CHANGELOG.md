@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/eventualbuddha/zedbar/compare/v0.2.2...v0.2.3) (2026-04-18)
+
+
+### Bug Fixes
+
+* allow reading binary QR/SQ code data ([#37](https://github.com/eventualbuddha/zedbar/issues/37)) ([ca5ca98](https://github.com/eventualbuddha/zedbar/commit/ca5ca9840c4a6f722eb7bf39dc6524e6afd2a6bb))
+
 ## [0.2.2](https://github.com/eventualbuddha/zedbar/compare/v0.2.1...v0.2.2) (2026-04-18)
 
 
