@@ -46,6 +46,7 @@ pub struct Symbol {
     symbol_type: SymbolType,
     pub(crate) modifiers: u32,
     pub(crate) data: Vec<u8>,
+    pub(crate) raw_data: Option<Vec<u8>>,
     pub(crate) pts: Vec<qr_point>,
     pub(crate) orientation: Orientation,
     pub(crate) components: Vec<Symbol>,
@@ -86,9 +87,32 @@ impl Symbol {
         self.symbol_type
     }
 
-    /// Get the decoded data as bytes
+    /// Get the decoded data as bytes.
+    ///
+    /// For QR codes, this is the text-decoded output after encoding detection
+    /// (UTF-8, Shift-JIS, Windows-1252, etc.). For SQ codes, this is the
+    /// base64-encoded payload. Use [`raw_data`](Self::raw_data) to get the
+    /// original bytes before conversion.
+    ///
+    /// For linear barcodes, this is the raw data (which is always ASCII text).
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+
+    /// Get the raw bytes before encoding conversion, if available.
+    ///
+    /// For QR codes, this returns the original bytes as encoded in the barcode,
+    /// before any text encoding detection or conversion. In mixed-mode QR codes,
+    /// numeric and alphanumeric segments appear as their ASCII representation
+    /// (since those modes encode text, not arbitrary bytes), while byte-mode
+    /// segments are the original uninterpreted bytes.
+    ///
+    /// For SQ codes, this returns the raw bytes before base64 encoding.
+    ///
+    /// Returns `None` for linear barcodes (use [`data`](Self::data) instead,
+    /// which is already raw ASCII).
+    pub fn raw_data(&self) -> Option<&[u8]> {
+        self.raw_data.as_deref()
     }
 
     /// Get the decoded data as a string, if decodable.

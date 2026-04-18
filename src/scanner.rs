@@ -161,7 +161,6 @@ impl std::ops::Deref for ScanResult {
 /// let config = DecoderConfig::new()
 ///     .enable(Ean13)
 ///     .enable(QrCode)
-///     .set_binary(QrCode, true)
 ///     .position_tracking(true)
 ///     .scan_density(1, 1);
 ///

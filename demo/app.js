@@ -177,9 +177,11 @@ function displayResults(results) {
     const tabs = document.createElement("div");
     tabs.className = "view-tabs";
 
+    const hasText = text !== undefined && text !== null;
+    const isBinary = !hasText || isBinaryData(data);
     const views = [];
 
-    if (text !== undefined && text !== null) {
+    if (hasText) {
       views.push({ label: "Text", id: "text" });
     }
     views.push({ label: "Hex", id: "hex" });
@@ -232,9 +234,28 @@ function displayResults(results) {
       if (btn) showView(btn.dataset.view);
     });
 
-    // Show first tab
-    showView(views[0].id);
+    // Show text tab for text data, hex tab for binary data
+    showView(isBinary ? "hex" : views[0].id);
   }
+}
+
+// -- Binary detection --
+
+/**
+ * Heuristic: data is likely binary if it contains control characters
+ * (other than common whitespace: TAB, LF, CR) or null bytes.
+ *
+ * Intentionally conservative — a QR code containing e.g. a BEL (0x07) in
+ * otherwise-text data will be treated as binary, which is acceptable since
+ * the text view is still available as a tab.
+ */
+function isBinaryData(data) {
+  for (let i = 0; i < data.length; i++) {
+    const b = data[i];
+    if (b === 0) return true;
+    if (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) return true;
+  }
+  return false;
 }
 
 // -- Hex dump --

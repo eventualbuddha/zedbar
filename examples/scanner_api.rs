@@ -38,11 +38,10 @@ fn main() {
     let _scanner = Scanner::with_config(config);
     println!("   Code39: length 4-20, checksum validation, uncertainty=2\n");
 
-    // Example 4: Configure QR code for binary data
-    println!("4. Scanner optimized for QR codes with binary data:");
+    // Example 4: Configure scanner for QR codes only
+    println!("4. Scanner optimized for QR codes:");
     let config = DecoderConfig::new()
         .enable(QrCode)
-        .set_binary(QrCode, true) // Preserve binary data
         .disable(Ean13) // Only scan QR codes
         .disable(Code39);
 
@@ -114,8 +113,7 @@ fn main() {
         .enable(Code39)
         .enable(QrCode)
         .enable(Databar)
-        .set_length_limits(Code128, 1, 256) // Accept any length
-        .set_binary(QrCode, true); // Binary data in QR codes
+        .set_length_limits(Code128, 1, 256); // Accept any length
 
     let _scanner = Scanner::with_config(config);
     println!("    Code128, Code39, QR, DataBar with flexible settings\n");
