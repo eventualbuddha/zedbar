@@ -175,7 +175,7 @@ pub struct DecoderConfig {
     pub(crate) test_inverted: bool,
     pub(crate) x_density: u32,
     pub(crate) y_density: u32,
-    pub(crate) upscale_small_images: bool,
+    pub(crate) retry_undecoded_regions: bool,
 }
 
 impl Default for DecoderConfig {
@@ -204,7 +204,7 @@ impl DecoderConfig {
             test_inverted: false,
             x_density: 1,
             y_density: 1,
-            upscale_small_images: true,
+            retry_undecoded_regions: false,
         };
 
         // Enable common symbologies by default
@@ -380,17 +380,18 @@ impl DecoderConfig {
         self
     }
 
-    /// Enable or disable automatic upscaling of small images
+    /// Automatically retry undecoded QR finder regions by cropping and
+    /// upscaling them.
     ///
-    /// When enabled (the default), small images (< 200px in either dimension)
-    /// are automatically upscaled before scanning to improve QR code detection.
-    /// Small QR codes often have modules that are only 2-3 pixels wide, which
-    /// is too small for reliable finder pattern detection.
+    /// When enabled, if the initial scan detects QR finder patterns but
+    /// fails to decode the QR code (e.g. because it is too small), the
+    /// scanner will crop each undecoded region with padding, upscale it
+    /// at several resolutions, and re-scan. Decoded symbol coordinates
+    /// are mapped back to the original image frame.
     ///
-    /// Disable this if you want to minimize processing time and are confident
-    /// your images have sufficient resolution.
-    pub fn upscale_small_images(mut self, enabled: bool) -> Self {
-        self.upscale_small_images = enabled;
+    /// Default: `false`.
+    pub fn retry_undecoded_regions(mut self, enabled: bool) -> Self {
+        self.retry_undecoded_regions = enabled;
         self
     }
 

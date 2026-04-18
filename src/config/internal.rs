@@ -70,9 +70,6 @@ pub(crate) struct ScannerConfig {
 
     /// Vertical scan density
     pub(crate) y_density: u32,
-
-    /// Automatically upscale small images for better QR code detection
-    pub(crate) upscale_small_images: bool,
 }
 
 impl Default for ScannerConfig {
@@ -82,7 +79,6 @@ impl Default for ScannerConfig {
             test_inverted: false,
             x_density: 1,
             y_density: 1,
-            upscale_small_images: true,
         }
     }
 }
@@ -175,7 +171,6 @@ impl From<&DecoderConfig> for DecoderState {
                 test_inverted: config.test_inverted,
                 x_density: config.x_density,
                 y_density: config.y_density,
-                upscale_small_images: config.upscale_small_images,
             },
         }
     }

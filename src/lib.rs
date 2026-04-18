@@ -38,10 +38,20 @@
 //!     .set_binary(QrCode, true)          // Preserve binary data in QR codes
 //!     .set_length_limits(Code39, 4, 20)  // Code39 must be 4-20 chars
 //!     .test_inverted(true)               // Try inverted image if no symbols found
+//!     .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically
 //!     .scan_density(2, 2);               // Scan every 2nd line (faster)
 //!
 //! let mut scanner = Scanner::with_config(config);
 //! ```
+//!
+//! # Small QR Codes
+//!
+//! When a QR code is too small to decode (e.g. on a scanned page),
+//! [`ScanResult::finder_region()`](scanner::ScanResult::finder_region) reports
+//! where finder patterns were detected. Use [`Image::crop`] and [`Image::upscale`]
+//! to retry those regions, or enable
+//! [`retry_undecoded_regions`](DecoderConfig::retry_undecoded_regions)
+//! to do this automatically.
 //!
 //! # Supported Formats
 //!
@@ -88,7 +98,7 @@ pub mod wasm;
 pub use config::DecoderConfig;
 pub use error::{Error, Result};
 pub use image::Image;
-pub use scanner::Scanner;
+pub use scanner::{FinderRegion, ScanResult, Scanner};
 pub use symbol::{Orientation, SymbolType};
 
 #[cfg(all(test, feature = "qrcode"))]
@@ -671,70 +681,88 @@ https://zh.qr-code-generator.com
     }
 
     #[test]
-    fn test_small_qr_code_upscaling() {
-        // Test for small QR code (109x89 pixels) that requires automatic upscaling.
-        // This QR code has ~3 pixels per module which is too small for reliable
-        // detection without upscaling. The scanner should automatically upscale
-        // small images to improve detection.
-        let img = ::image::ImageReader::open("examples/github-issue-qr.png")
-            .expect("Failed to open github-issue-qr.png")
+    fn test_finder_region_manual_workflow() {
+        // When a QR code is too small to decode, the scanner reports finder
+        // regions. The caller can crop and upscale these to recover the QR.
+        let img = ::image::ImageReader::open("examples/qr-in-large-page.jpg")
+            .expect("Failed to open qr-in-large-page.jpg")
             .decode()
             .expect("Failed to decode image");
 
         let gray = img.to_luma8();
         let (width, height) = gray.dimensions();
 
-        // Verify the image is small (< 200px)
-        assert!(
-            width < 200 || height < 200,
-            "Test image should be small to test upscaling"
-        );
-
         let mut zedbar_img =
             Image::from_gray(gray.as_raw(), width, height).expect("Failed to create zedbar image");
 
-        // Should decode successfully with automatic upscaling
         let mut scanner = Scanner::new();
-        let symbols = scanner.scan(&mut zedbar_img);
+        let result = scanner.scan(&mut zedbar_img);
 
+        assert!(result.symbols().is_empty());
         assert!(
-            !symbols.is_empty(),
-            "Expected to decode small QR code with automatic upscaling"
+            result.finder_region().is_some(),
+            "Expected finder region for the small QR code"
         );
 
-        let symbol = symbols.into_iter().next().unwrap();
-        assert_eq!(symbol.symbol_type(), SymbolType::QrCode);
+        // Crop and upscale finder regions to recover the QR code
+        let mut recovered = Vec::new();
+        if let Some(region) = result.finder_region() {
+            let pad = region.width.max(region.height) / 2;
+            let x = region.x.saturating_sub(pad);
+            let y = region.y.saturating_sub(pad);
+            let w = (region.width + 2 * pad).min(width - x);
+            let h = (region.height + 2 * pad).min(height - y);
+
+            if let Some(mut upscaled) = zedbar_img.crop(x, y, w, h).and_then(|c| c.upscale(4)) {
+                let retry = scanner.scan(&mut upscaled);
+                recovered.extend(retry);
+            }
+        }
+
+        assert!(!recovered.is_empty());
         assert_eq!(
-            symbol.data_string().unwrap_or(""),
+            recovered[0].data_string().unwrap_or(""),
             "S;1;019be05c-54ba-7b32-a6f5-c06b288a46e8;A"
         );
     }
 
     #[test]
-    fn test_small_qr_code_upscaling_disabled() {
-        // Verify that disabling upscaling prevents detection of small QR codes
+    fn test_retry_undecoded_regions() {
         use crate::config::*;
 
-        let img = ::image::ImageReader::open("examples/github-issue-qr.png")
-            .expect("Failed to open github-issue-qr.png")
-            .decode()
-            .expect("Failed to decode image");
+        // Each image exercises a different aspect of the retry logic:
+        // - small standalone: region fills >90% of image (area filter must not reject)
+        // - large page:       small region in big image, needs upscale
+        // - failing-2:        same layout but needs a non-default scale factor
+        let images = [
+            "examples/github-issue-qr.png",
+            "examples/qr-in-large-page.jpg",
+            "examples/qr-failing-2.jpg",
+        ];
+        for path in images {
+            let img = ::image::ImageReader::open(path)
+                .unwrap_or_else(|_| panic!("Failed to open {path}"))
+                .decode()
+                .unwrap_or_else(|_| panic!("Failed to decode {path}"));
 
-        let gray = img.to_luma8();
-        let (width, height) = gray.dimensions();
+            let gray = img.to_luma8();
+            let (width, height) = gray.dimensions();
+            let mut zedbar_img = Image::from_gray(gray.as_raw(), width, height)
+                .expect("Failed to create zedbar image");
 
-        let mut zedbar_img =
-            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create zedbar image");
+            let config = DecoderConfig::new().retry_undecoded_regions(true);
+            let mut scanner = Scanner::with_config(config);
+            let result = scanner.scan(&mut zedbar_img);
 
-        // Disable upscaling
-        let config = DecoderConfig::new().upscale_small_images(false);
-        let mut scanner = Scanner::with_config(config);
-        let symbols = scanner.scan(&mut zedbar_img);
-
-        // Without upscaling, the small QR code should NOT be detected
-        assert!(
-            symbols.is_empty(),
-            "Small QR code should not be detected when upscaling is disabled"
-        );
+            assert!(
+                !result.symbols().is_empty(),
+                "{path}: expected retry to decode the QR code"
+            );
+            assert_eq!(
+                result.symbols()[0].data_string().unwrap_or(""),
+                "S;1;019be05c-54ba-7b32-a6f5-c06b288a46e8;A",
+                "{path}: wrong decoded data"
+            );
+        }
     }
 }

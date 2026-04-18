@@ -2,6 +2,9 @@
 //!
 //! This module contains type definitions for all the barcode decoder types.
 
+/// Bounding box (x, y, width, height) in pixel coordinates.
+pub(crate) type BBox = (u32, u32, u32, u32);
+
 #[cfg(any(
     feature = "i25",
     feature = "code39",

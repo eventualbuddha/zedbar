@@ -27,6 +27,29 @@ impl ImageData {
         Some(dst)
     }
 
+    /// Crops a rectangular region from the image.
+    ///
+    /// Returns None if the crop region is out of bounds or empty.
+    pub(crate) fn crop(&self, x: u32, y: u32, w: u32, h: u32) -> Option<Self> {
+        if w == 0 || h == 0 || x + w > self.width || y + h > self.height {
+            return None;
+        }
+
+        let mut data = vec![0u8; (w * h) as usize];
+        for row in 0..h {
+            let src_start = ((y + row) * self.width + x) as usize;
+            let dst_start = (row * w) as usize;
+            data[dst_start..dst_start + w as usize]
+                .copy_from_slice(&self.data[src_start..src_start + w as usize]);
+        }
+
+        Some(Self {
+            width: w,
+            height: h,
+            data,
+        })
+    }
+
     /// Upscales the image using bilinear interpolation.
     ///
     /// Returns None if the image is empty, scale factor is invalid, or

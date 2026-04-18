@@ -112,9 +112,41 @@ let config = DecoderConfig::new()
     .set_binary(QrCode, true)          // Preserve binary data in QR codes
     .set_length_limits(Code39, 4, 20)  // Code39 must be 4-20 chars
     .test_inverted(true)               // Try inverted image if no symbols found
+    .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically
     .scan_density(2, 2);               // Scan every 2nd line (faster)
 
 let mut scanner = Scanner::with_config(config);
+```
+
+### Small QR Codes in Large Images
+
+When a QR code is too small relative to the image (e.g. a QR code on a scanned page),
+the scanner reports undecoded finder regions. You can handle these manually, or enable
+automatic retry:
+
+```rust
+use zedbar::config::*;
+use zedbar::{DecoderConfig, Scanner, Image};
+
+// Option 1: Automatic retry (crop + 4x upscale)
+let config = DecoderConfig::new().retry_undecoded_regions(true);
+let mut scanner = Scanner::with_config(config);
+let symbols = scanner.scan(&mut img);
+
+// Option 2: Manual control via finder_region()
+let mut scanner = Scanner::new();
+let result = scanner.scan(&mut img);
+if let Some(region) = result.finder_region() {
+    let pad = region.width.max(region.height) / 2;
+    let x = region.x.saturating_sub(pad);
+    let y = region.y.saturating_sub(pad);
+    let w = (region.width + 2 * pad).min(img.width() - x);
+    let h = (region.height + 2 * pad).min(img.height() - y);
+    if let Some(mut upscaled) = img.crop(x, y, w, h).and_then(|c| c.upscale(4)) {
+        let retry = scanner.scan(&mut upscaled);
+        // process retry.symbols()...
+    }
+}
 ```
 
 ### Command-line Tool
