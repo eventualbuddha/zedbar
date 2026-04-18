@@ -7,7 +7,7 @@
 
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
-use zedbar::{Image, Scanner};
+use zedbar::{Image, Scanner, SymbolType};
 
 /// Downscale an image if it exceeds the maximum dimension
 fn downscale_if_needed(img: DynamicImage, max_dimension: u32) -> DynamicImage {
@@ -463,6 +463,10 @@ fn test_all_examples_decode() {
         "examples/test-qr.jpg",
         "examples/test-qr.webp",
         "examples/pixel-wifi-sharing-qr-code.png",
+        // Explicitly DON'T pass these to `decode_image`.
+        // "examples/qr-code-140-grid01.jpg",
+        // "examples/qr-code-140-grid02.jpg",
+        // "examples/qr-code-140-grid03.jpg",
         "examples/qr-code-capstone-interference.png",
         "examples/qr-code-color-bands.png",
         "examples/qr-code-low-contrast.png",
@@ -616,5 +620,30 @@ fn test_rqrr_crash_4_binary() {
             result_this.clone(),
             "rqrr decoded but gave different result"
         );
+    }
+}
+
+#[test]
+fn test_qr_140_grids() {
+    for path in [
+        "examples/qr-code-140-grid01.jpg",
+        "examples/qr-code-140-grid02.jpg",
+        "examples/qr-code-140-grid03.jpg",
+    ] {
+        let img = image::open(path).unwrap();
+        let img = img.to_luma8();
+        let mut scanner = Scanner::new();
+
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+        let result = scanner.scan(&mut image);
+
+        assert_eq!(result.len(), 140);
+        for (i, symbol) in result.iter().enumerate() {
+            assert_eq!(
+                symbol.symbol_type(),
+                SymbolType::QrCode,
+                "symbol {i} is not a QR code"
+            );
+        }
     }
 }
