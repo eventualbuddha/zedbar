@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/eventualbuddha/zedbar/compare/v0.2.1...v0.2.2) (2026-04-18)
+
+
+### Bug Fixes
+
+* detect small QR codes in large images via crop+upscale ([#30](https://github.com/eventualbuddha/zedbar/issues/30)) ([c545cb2](https://github.com/eventualbuddha/zedbar/commit/c545cb264dd19f9521e3fa49cdb1844a0e0ba12c))
+* improve QR detection for images with many QR codes ([#33](https://github.com/eventualbuddha/zedbar/issues/33)) ([b503f35](https://github.com/eventualbuddha/zedbar/commit/b503f3528f42716926b01c0261b4e1983cfadb79))
+
 ## [0.2.1](https://github.com/eventualbuddha/zedbar/compare/v0.2.0...v0.2.1) (2026-02-11)
 
 
