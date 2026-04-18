@@ -8,6 +8,8 @@
 
 use std::{collections::VecDeque, mem::swap};
 
+use crate::decoder::BBox;
+
 use encoding_rs::{BIG5, Encoding, SHIFT_JIS, UTF_8, WINDOWS_1252};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -1108,7 +1110,7 @@ impl qr_finder {
 
         // Sort each edge's points by extent
         for edge_vec in &mut self.edge_pts {
-            edge_vec.sort_by(|a, b| a.extent.cmp(&b.extent));
+            edge_vec.sort_by_key(|e| e.extent);
         }
     }
 
@@ -1139,7 +1141,7 @@ impl qr_finder {
 
         // Sort each edge's points by extent
         for edge_vec in &mut self.edge_pts {
-            edge_vec.sort_by(|a, b| a.extent.cmp(&b.extent));
+            edge_vec.sort_by_key(|e| e.extent);
         }
     }
 
@@ -3473,6 +3475,51 @@ impl QrReader {
         self.finder_lines[1].lines.clear();
     }
 
+    /// Compute a single bounding box over all finder lines in O(n) time.
+    ///
+    /// Returns `Some((x, y, width, height))` in pixel coordinates, or
+    /// `None` if there are no finder lines.
+    fn finder_line_bbox(&self) -> Option<BBox> {
+        let hlines = &self.finder_lines[0].lines;
+        let vlines = &self.finder_lines[1].lines;
+
+        if hlines.is_empty() && vlines.is_empty() {
+            return None;
+        }
+
+        let mut min_x = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut min_y = i32::MAX;
+        let mut max_y = i32::MIN;
+
+        for line in hlines {
+            min_x = min_x.min(line.pos[0]);
+            max_x = max_x.max(line.pos[0] + line.len);
+            min_y = min_y.min(line.pos[1]);
+            max_y = max_y.max(line.pos[1]);
+        }
+
+        for line in vlines {
+            min_x = min_x.min(line.pos[0]);
+            max_x = max_x.max(line.pos[0]);
+            min_y = min_y.min(line.pos[1]);
+            max_y = max_y.max(line.pos[1] + line.len);
+        }
+
+        let x = (min_x >> QR_FINDER_SUBPREC).max(0) as u32;
+        let y = (min_y >> QR_FINDER_SUBPREC).max(0) as u32;
+        let x2 = ((max_x + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
+        let y2 = ((max_y + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
+
+        let w = x2.saturating_sub(x);
+        let h = y2.saturating_sub(y);
+        if w > 0 || h > 0 {
+            Some((x, y, w, h))
+        } else {
+            None
+        }
+    }
+
     /// Try to decode a QR code with the given configuration of three finder patterns.
     ///
     /// This function tries different orderings of the three finder pattern centers
@@ -3897,37 +3944,54 @@ impl QrReader {
         }
     }
 
-    /// Decode QR codes from an image
-    pub(crate) fn decode(&mut self, img: &mut ImageData, raw_binary: bool) -> Vec<Symbol> {
+    /// Decode QR codes from an image.
+    ///
+    /// Returns decoded symbols and a bounding box of the finder line
+    /// region when decoding fails. The bbox is computed in O(n) before
+    /// `finder_centers_locate` consumes the lines.
+    pub(crate) fn decode(
+        &mut self,
+        img: &mut ImageData,
+        raw_binary: bool,
+    ) -> (Vec<Symbol>, Option<BBox>) {
+        // Compute an O(n) bounding box while the lines are still available.
+        // finder_centers_locate will consume them.
+        let fail_bbox = self.finder_line_bbox();
+
         if self.finder_lines[0].lines.len() < 9 || self.finder_lines[1].lines.len() < 9 {
-            return vec![];
+            return (vec![], fail_bbox);
         }
 
         let mut centers = self.finder_centers_locate(0, 0);
 
-        if centers.len() >= 3 {
-            let bin = binarize(&img.data, img.width as usize, img.height as usize);
+        if centers.len() < 3 {
+            return (vec![], fail_bbox);
+        }
 
-            let mut qrlist = qr_code_data_list::default();
+        let bin = binarize(&img.data, img.width as usize, img.height as usize);
 
-            self.match_centers(
-                &mut qrlist,
-                &mut centers,
-                &bin,
-                img.width as i32,
-                img.height as i32,
-            );
+        let mut qrlist = qr_code_data_list::default();
 
-            let qrdata = if !qrlist.qrdata.is_empty() {
-                qrlist.extract_text(raw_binary)
-            } else {
-                vec![]
-            };
+        self.match_centers(
+            &mut qrlist,
+            &mut centers,
+            &bin,
+            img.width as i32,
+            img.height as i32,
+        );
 
-            qrlist.qrdata.clear();
-            qrdata
+        let symbols = if !qrlist.qrdata.is_empty() {
+            qrlist.extract_text(raw_binary)
         } else {
             vec![]
+        };
+
+        qrlist.qrdata.clear();
+
+        if symbols.is_empty() {
+            (vec![], fail_bbox)
+        } else {
+            (symbols, None)
         }
     }
 

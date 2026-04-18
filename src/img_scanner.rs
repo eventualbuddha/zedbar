@@ -50,6 +50,8 @@ use crate::decoders::i25::decode_i25;
 // QR Code finder precision constant
 const QR_FINDER_SUBPREC: i32 = 2;
 
+use crate::decoder::BBox;
+
 // QR_FIXED macro: ((((v) << 1) + (rnd)) << (QR_FINDER_SUBPREC - 1))
 fn qr_fixed(v: i32, rnd: i32) -> u32 {
     (((v as u32) << 1) + (rnd as u32)) << (QR_FINDER_SUBPREC - 1)
@@ -129,6 +131,11 @@ pub(crate) struct ImageScanner {
     /// previous decode results
     syms: Vec<Symbol>,
 
+    /// Bounding box of QR finder lines from the last scan (x, y, w, h) in
+    /// pixel coordinates. Computed before decode consumes the lines.
+    #[cfg(feature = "qrcode")]
+    last_qr_finder_region: Option<BBox>,
+
     /// Type-safe scanner configuration
     scanner_config: ImageScannerConfig,
 }
@@ -190,6 +197,8 @@ impl Default for ImageScanner {
             umin: 0,
             v: 0,
             syms: vec![],
+            #[cfg(feature = "qrcode")]
+            last_qr_finder_region: None,
             scanner_config: ImageScannerConfig::default(),
         };
 
@@ -220,7 +229,6 @@ impl ImageScanner {
             x_density: decoder_state.scanner.x_density,
             y_density: decoder_state.scanner.y_density,
             ean_composite: decoder_state.is_enabled(SymbolType::Composite),
-            upscale_small_images: decoder_state.scanner.upscale_small_images,
             uncertainty: Default::default(),
         };
 
@@ -754,8 +762,17 @@ impl ImageScanner {
     }
 
     /// Scans an image for barcodes, with optional inverted image retry.
-    pub(crate) fn scan_image(&mut self, img: &mut ImageData) -> Vec<Symbol> {
+    ///
+    /// Returns decoded symbols and any QR finder regions that were detected
+    /// but could not be decoded (e.g. because the QR code was too small).
+    ///
+    pub(crate) fn scan_image(&mut self, img: &mut ImageData) -> (Vec<Symbol>, Option<BBox>) {
         let symbols = self.scan_image_internal(img);
+
+        #[cfg(feature = "qrcode")]
+        let finder_region = self.last_qr_finder_region.take();
+        #[cfg(not(feature = "qrcode"))]
+        let finder_region: Option<BBox> = None;
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
         if symbols.is_empty()
@@ -764,35 +781,11 @@ impl ImageScanner {
         {
             let inverted_symbols = self.scan_image_internal(&mut inv);
             if !inverted_symbols.is_empty() {
-                return inverted_symbols;
+                return (inverted_symbols, finder_region);
             }
         }
 
-        // Try upscaling small images for QR code detection.
-        // Small QR codes (< 200px in either dimension) often have modules that are
-        // only 2-3 pixels wide, which is too small for reliable finder pattern detection.
-        // Upscaling to 4x improves detection by giving modules more pixels.
-        #[cfg(feature = "qrcode")]
-        if symbols.is_empty()
-            && self.scanner_config.upscale_small_images
-            && self.is_enabled(SymbolType::QrCode)
-            && (img.width < 200 || img.height < 200)
-            && let Some(mut upscaled) = img.upscale(4)
-        {
-            let upscaled_symbols = self.scan_image_internal(&mut upscaled);
-            if !upscaled_symbols.is_empty() {
-                return upscaled_symbols;
-            }
-
-            // Also try inverted + upscaled
-            if self.scanner_config.test_inverted
-                && let Some(mut inv_upscaled) = img.copy(true).and_then(|i| i.upscale(4))
-            {
-                return self.scan_image_internal(&mut inv_upscaled);
-            }
-        }
-
-        symbols
+        (symbols, finder_region)
     }
 
     /// Handle QR code finder line detection
@@ -993,10 +986,11 @@ impl ImageScanner {
         #[cfg(feature = "qrcode")]
         {
             let raw_binary = self.is_binary_mode(SymbolType::QrCode);
-            let qr_symbols = self.qr.decode(img, raw_binary);
+            let (qr_symbols, region) = self.qr.decode(img, raw_binary);
             for sym in qr_symbols {
                 self.add_symbol(sym);
             }
+            self.last_qr_finder_region = region;
         }
 
         #[cfg(feature = "sqcode")]

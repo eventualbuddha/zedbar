@@ -235,7 +235,7 @@ fn decode6(dcode: &ImageScanner) -> i8 {
         return -1;
     }
 
-    (c & 0x7f) as i8
+    c & 0x7f
 }
 
 /// Validate checksum

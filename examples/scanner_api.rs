@@ -120,6 +120,15 @@ fn main() {
     let _scanner = Scanner::with_config(config);
     println!("    Code128, Code39, QR, DataBar with flexible settings\n");
 
+    // Example 11: Retry undecoded QR regions
+    println!("11. Automatic retry of small QR codes:");
+    let config = DecoderConfig::new()
+        .enable(QrCode)
+        .retry_undecoded_regions(true); // Crop+upscale undecoded finder regions
+
+    let _scanner = Scanner::with_config(config);
+    println!("    QR codes with automatic crop+upscale for small codes\n");
+
     println!("=== Type Safety Demonstrations ===\n");
 
     println!("The following configurations are INVALID and won't compile:\n");

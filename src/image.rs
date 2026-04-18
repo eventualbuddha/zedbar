@@ -60,4 +60,21 @@ impl Image {
     pub fn data(&self) -> &[u8] {
         &self.image.data
     }
+
+    /// Crop a rectangular region from the image.
+    ///
+    /// Returns `None` if the region is out of bounds or empty.
+    pub fn crop(&self, x: u32, y: u32, width: u32, height: u32) -> Option<Self> {
+        self.image
+            .crop(x, y, width, height)
+            .map(|image| Image { image })
+    }
+
+    /// Upscale the image by an integer factor using bilinear interpolation.
+    ///
+    /// Returns `None` if `scale` < 2, the image is empty, or the new
+    /// dimensions would overflow.
+    pub fn upscale(&self, scale: u32) -> Option<Self> {
+        self.image.upscale(scale).map(|image| Image { image })
+    }
 }

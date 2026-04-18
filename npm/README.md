@@ -74,17 +74,18 @@ for (const { symbolType, text } of scanGrayscale(data, width, height)) {
 
 ## API
 
-### `scanImageBytes(bytes)`
+### `scanImageBytes(bytes, options?)`
 
 Scans an encoded image (PNG, JPEG, WebP, BMP) for barcodes and QR codes.
 
 **Parameters:**
 
 - `bytes` (`Uint8Array` or `Buffer`) - Raw bytes of an image file
+- `options` (`ScanOptions`, optional) - Scanning options
 
 **Returns:** `DecodeResult[]` - Array of decoded barcodes
 
-### `scanGrayscale(data, width, height)`
+### `scanGrayscale(data, width, height, options?)`
 
 Scans grayscale image data for barcodes and QR codes.
 
@@ -93,8 +94,13 @@ Scans grayscale image data for barcodes and QR codes.
 - `data` (`Uint8Array`) - Grayscale pixel data, 1 byte per pixel, row-major order
 - `width` (`number`) - Image width in pixels
 - `height` (`number`) - Image height in pixels
+- `options` (`ScanOptions`, optional) - Scanning options
 
 **Returns:** `DecodeResult[]` - Array of decoded barcodes
+
+### `ScanOptions`
+
+- `retryUndecodedRegions` (`boolean`, default: `true`) - Automatically retry undecoded QR finder regions by cropping and upscaling. Disable to skip the retry and reduce processing time for images that are known to have sufficient resolution.
 
 ### `DecodeResult`
 
