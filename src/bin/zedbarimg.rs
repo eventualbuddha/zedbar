@@ -337,8 +337,9 @@ fn main() {
             let data_bytes = symbol.data();
 
             if args.raw {
-                // Raw mode: just output the data bytes with newline
-                std::io::stdout().write_all(data_bytes).ok();
+                // Raw mode: output the raw bytes (before encoding conversion) with newline
+                let raw_bytes = symbol.raw_data().unwrap_or(data_bytes);
+                std::io::stdout().write_all(raw_bytes).ok();
                 println!();
             } else {
                 // Normal mode: include symbol type

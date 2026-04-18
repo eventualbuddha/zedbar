@@ -44,11 +44,21 @@ impl ScanOptions {
     }
 }
 
+// Non-wasm helpers
+impl ScanOptions {
+    const DEFAULT_RETRY: bool = true;
+
+    fn retry(&self) -> bool {
+        self.retry_undecoded_regions.unwrap_or(Self::DEFAULT_RETRY)
+    }
+}
+
 /// A decoded barcode/QR code result.
 #[wasm_bindgen]
 pub struct DecodeResult {
     symbol_type: String,
     data: Vec<u8>,
+    text: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -60,24 +70,28 @@ impl DecodeResult {
     }
 
     /// Raw decoded bytes.
+    ///
+    /// For 2D codes (QR, SQ), these are the original bytes as encoded
+    /// in the barcode, before any text encoding or base64 conversion.
     #[wasm_bindgen(getter)]
     pub fn data(&self) -> Vec<u8> {
         self.data.clone()
     }
 
-    /// Decoded data as UTF-8 text, or null if not valid UTF-8.
+    /// Decoded data as text, or null if not decodable as text.
+    ///
+    /// For 2D codes, the text is produced by detecting the encoding (UTF-8,
+    /// Shift-JIS, Windows-1252, etc.) and converting to a UTF-8 string.
+    /// For linear barcodes, the data is always ASCII text.
     #[wasm_bindgen(getter)]
     pub fn text(&self) -> Option<String> {
-        std::str::from_utf8(&self.data).ok().map(|s| s.to_string())
+        self.text.clone()
     }
 }
 
 fn build_scanner(options: Option<ScanOptions>) -> Scanner {
-    let retry = options
-        .and_then(|o| o.retry_undecoded_regions)
-        .unwrap_or(true);
-
-    let config = DecoderConfig::new().retry_undecoded_regions(retry);
+    let options = options.unwrap_or_default();
+    let config = DecoderConfig::new().retry_undecoded_regions(options.retry());
     Scanner::with_config(config)
 }
 
@@ -104,7 +118,8 @@ pub fn scan_grayscale(
         .into_iter()
         .map(|s| DecodeResult {
             symbol_type: s.symbol_type().to_string(),
-            data: s.data().to_vec(),
+            data: s.raw_data().unwrap_or(s.data()).to_vec(),
+            text: s.data_string().map(|t| t.to_string()),
         })
         .collect())
 }

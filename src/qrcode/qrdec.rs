@@ -3994,11 +3994,7 @@ impl QrReader {
     /// Returns decoded symbols and a bounding box of the finder line
     /// region when decoding fails. The bbox is computed in O(n) before
     /// `finder_centers_locate` consumes the lines.
-    pub(crate) fn decode(
-        &mut self,
-        img: &mut ImageData,
-        raw_binary: bool,
-    ) -> (Vec<Symbol>, Option<BBox>) {
+    pub(crate) fn decode(&mut self, img: &mut ImageData) -> (Vec<Symbol>, Option<BBox>) {
         // Compute an O(n) bounding box while the lines are still available.
         // finder_centers_locate will consume them.
         let fail_bbox = self.finder_line_bbox();
@@ -4026,7 +4022,7 @@ impl QrReader {
         );
 
         let symbols = if !qrlist.qrdata.is_empty() {
-            qrlist.extract_text(raw_binary)
+            qrlist.extract_text()
         } else {
             vec![]
         };
@@ -4638,7 +4634,7 @@ pub(crate) struct qr_code_data_list {
 }
 
 impl qr_code_data_list {
-    pub(crate) fn extract_text(&self, raw_binary: bool) -> Vec<Symbol> {
+    pub(crate) fn extract_text(&self) -> Vec<Symbol> {
         let mut symbols = vec![];
 
         let qrdata = &self.qrdata;
@@ -4710,12 +4706,16 @@ impl qr_code_data_list {
                 }
 
                 let mut sa_text: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
+                let mut sa_raw: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
                 if fnc1 == Modifier::Aim.bit() {
                     if fnc1_2ai < 100 {
                         sa_text.push(b'0' + (fnc1_2ai / 10) as u8);
                         sa_text.push(b'0' + (fnc1_2ai % 10) as u8);
+                        sa_raw.push(b'0' + (fnc1_2ai / 10) as u8);
+                        sa_raw.push(b'0' + (fnc1_2ai % 10) as u8);
                     } else {
                         sa_text.push((fnc1_2ai - 100) as u8);
+                        sa_raw.push((fnc1_2ai - 100) as u8);
                     }
                 }
 
@@ -4764,6 +4764,7 @@ impl qr_code_data_list {
                                 qr_code_data_payload::Bytes(_) | qr_code_data_payload::Kanji(_)
                             )
                         {
+                            sa_raw.extend_from_slice(&bytebuf);
                             // convert bytes to text
                             if let Some(enc) = eci {
                                 let (res, _enc, had_errors) = enc.decode(&bytebuf);
@@ -4772,8 +4773,6 @@ impl qr_code_data_list {
                                     break;
                                 }
                                 sa_text.extend_from_slice(res.as_bytes());
-                            } else if raw_binary {
-                                sa_text.extend_from_slice(&bytebuf);
                             } else {
                                 if has_kanji {
                                     enc_list_mtf(&mut enc_list, SHIFT_JIS);
@@ -4820,6 +4819,7 @@ impl qr_code_data_list {
                             qr_code_data_payload::Numeric(data)
                             | qr_code_data_payload::Alphanumeric(data) => {
                                 sa_text.extend_from_slice(data);
+                                sa_raw.extend_from_slice(data);
                             }
                             qr_code_data_payload::Bytes(data)
                             | qr_code_data_payload::Kanji(data) => {
@@ -4844,6 +4844,7 @@ impl qr_code_data_list {
                 }
 
                 if !err && !bytebuf.is_empty() {
+                    sa_raw.extend_from_slice(&bytebuf);
                     // convert bytes to text
                     if let Some(enc) = eci {
                         let (res, _enc, had_errors) = enc.decode(&bytebuf);
@@ -4852,8 +4853,6 @@ impl qr_code_data_list {
                         } else {
                             sa_text.extend_from_slice(res.as_bytes());
                         }
-                    } else if raw_binary {
-                        sa_text.extend_from_slice(&bytebuf);
                     } else {
                         if has_kanji {
                             enc_list_mtf(&mut enc_list, SHIFT_JIS);
@@ -4901,11 +4900,13 @@ impl qr_code_data_list {
 
                 if !err {
                     sa_text.shrink_to_fit();
+                    sa_raw.shrink_to_fit();
 
                     if sa_size == 1 {
                         // Single QR code - add it directly
                         if let Some(mut sym) = component_syms.into_iter().next() {
                             sym.data = sa_text;
+                            sym.raw_data = Some(sa_raw);
                             sym.modifiers = fnc1;
                             symbols.push(sym);
                         }
@@ -4914,6 +4915,7 @@ impl qr_code_data_list {
                         let mut sa_sym = Symbol::new(SymbolType::QrCode);
                         sa_sym.components = component_syms;
                         sa_sym.data = sa_text;
+                        sa_sym.raw_data = Some(sa_raw);
                         sa_sym.modifiers = fnc1;
                         symbols.push(sa_sym);
                     }

@@ -16,7 +16,6 @@
 //!     .enable(Ean13)
 //!     .enable(Code39)
 //!     .set_length_limits(Code39, 4, 20)   // ✓ Code39 supports variable length
-//!     .set_binary(QrCode, true)           // ✓ QR codes support binary mode
 //!     .position_tracking(true);
 //! ```
 //!
@@ -30,14 +29,6 @@
 //! # let config = DecoderConfig::new();
 //! // ❌ EAN-13 has fixed length, doesn't support length limits
 //! config.set_length_limits(Ean13, 1, 20);
-//! ```
-//!
-//! ```compile_fail
-//! # use zedbar::config::*;
-//! # use zedbar::DecoderConfig;
-//! # let config = DecoderConfig::new();
-//! // ❌ Code39 is not a 2D code, doesn't support binary mode
-//! config.set_binary(Code39, true);
 //! ```
 //!
 //! ```compile_fail
@@ -118,9 +109,6 @@ pub trait SupportsChecksum: Symbology {}
 /// Marker trait for symbologies that support variable length limits
 pub trait SupportsLengthLimits: Symbology {}
 
-/// Marker trait for symbologies that support binary mode
-pub trait SupportsBinary: Symbology {}
-
 /// Marker trait for symbologies that support uncertainty configuration
 pub trait SupportsUncertainty: Symbology {}
 
@@ -164,9 +152,6 @@ pub struct DecoderConfig {
     /// Length limits: (min, max)
     pub(crate) length_limits: HashMap<SymbolType, (u32, u32)>,
 
-    /// Binary mode enabled for 2D codes
-    pub(crate) binary_mode: HashSet<SymbolType>,
-
     /// Uncertainty threshold per symbology
     pub(crate) uncertainty: HashMap<SymbolType, u32>,
 
@@ -198,7 +183,6 @@ impl DecoderConfig {
             enabled: HashSet::new(),
             checksum_flags: HashMap::new(),
             length_limits: HashMap::new(),
-            binary_mode: HashSet::new(),
             uncertainty: HashMap::new(),
             position_tracking: true,
             test_inverted: false,
@@ -318,18 +302,6 @@ impl DecoderConfig {
         assert!(min <= max, "min length must be <= max length");
         assert!(max <= 256, "max length must be <= 256");
         self.length_limits.insert(S::TYPE, (min, max));
-        self
-    }
-
-    /// Enable or disable binary mode for 2D codes
-    ///
-    /// When enabled, binary data is preserved without text conversion.
-    pub fn set_binary<S: Symbology + SupportsBinary>(mut self, _: S, enabled: bool) -> Self {
-        if enabled {
-            self.binary_mode.insert(S::TYPE);
-        } else {
-            self.binary_mode.remove(&S::TYPE);
-        }
         self
     }
 
@@ -458,17 +430,6 @@ mod tests {
             Some(&(1, 50))
         );
         assert_eq!(config.length_limits.get(&SymbolType::I25), Some(&(6, 30)));
-    }
-
-    #[test]
-    fn test_type_safe_binary_mode() {
-        // Only 2D codes support binary mode
-        let config = DecoderConfig::new()
-            .set_binary(QrCode, true)
-            .set_binary(SqCode, false);
-
-        assert!(config.binary_mode.contains(&SymbolType::QrCode));
-        assert!(!config.binary_mode.contains(&SymbolType::SqCode));
     }
 
     #[test]

@@ -35,7 +35,6 @@
 //! let config = DecoderConfig::new()
 //!     .enable(QrCode)
 //!     .enable(Ean13)
-//!     .set_binary(QrCode, true)          // Preserve binary data in QR codes
 //!     .set_length_limits(Code39, 4, 20)  // Code39 must be 4-20 chars
 //!     .test_inverted(true)               // Try inverted image if no symbols found
 //!     .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically

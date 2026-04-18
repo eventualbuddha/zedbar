@@ -397,6 +397,7 @@ fn sq_extract_text(buf: &[u8], len: usize) -> Result<Symbol, ()> {
         None => return Err(()),
     };
 
+    sym.raw_data = Some(buf[..len].to_vec());
     sym.data = encoded;
     Ok(sym)
 }

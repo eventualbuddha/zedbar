@@ -295,12 +295,6 @@ impl SupportsLengthLimits for Code93 {}
 #[cfg(feature = "code128")]
 impl SupportsLengthLimits for Code128 {}
 
-// SupportsBinary - 2D codes only
-#[cfg(feature = "qrcode")]
-impl SupportsBinary for QrCode {}
-#[cfg(feature = "sqcode")]
-impl SupportsBinary for SqCode {}
-
 // SupportsUncertainty - most symbologies
 #[cfg(feature = "i25")]
 impl SupportsUncertainty for I25 {}

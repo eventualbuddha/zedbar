@@ -584,10 +584,6 @@ impl ImageScanner {
             .map(|l| (l.min, l.max))
     }
 
-    pub(crate) fn is_binary_mode(&self, sym: SymbolType) -> bool {
-        self.config.get(sym).map(|c| c.binary_mode).unwrap_or(false)
-    }
-
     /// Reset decoder to initial state
     pub(crate) fn decoder_reset(&mut self) {
         self.idx = 0;
@@ -985,8 +981,7 @@ impl ImageScanner {
         // Decode QR and SQ codes
         #[cfg(feature = "qrcode")]
         {
-            let raw_binary = self.is_binary_mode(SymbolType::QrCode);
-            let (qr_symbols, region) = self.qr.decode(img, raw_binary);
+            let (qr_symbols, region) = self.qr.decode(img);
             for sym in qr_symbols {
                 self.add_symbol(sym);
             }

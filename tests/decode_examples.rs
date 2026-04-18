@@ -587,30 +587,25 @@ fn test_rqrr_crash_4_binary() {
     let (symbol_type, data) = result_this.as_ref().unwrap();
     assert_eq!(symbol_type, "QR-Code");
 
-    // Verify it's binary data (contains bytes that would fail UTF-8 decoding as WINDOWS-1252)
-    assert_eq!(data.len(), 2146, "Binary data should be 2146 bytes");
-
-    // Check first few bytes to ensure we're getting the right data
-    // These bytes are from the actual decoded QR code
+    // data() returns text-decoded output (encoding-detected, converted to UTF-8).
+    // The raw QR bytes go through Windows-1252 → UTF-8 conversion, expanding
+    // the 1376 raw bytes to 2146 UTF-8 bytes.
+    assert_eq!(data.len(), 2146, "Text-decoded data should be 2146 bytes");
     assert_eq!(&data[..4], &[0x07, 0xC3, 0x84, 0x18]);
 
     // Verify it contains binary data (bytes outside printable ASCII)
     let has_binary = data.iter().any(|b| !(0x20..0x80).contains(b));
     assert!(has_binary, "Should contain binary data");
 
-    // zbars should produce similar binary data (first bytes should match)
-    // Note: lengths may differ due to padding/encoding differences between implementations
+    // zbars should produce similar text-decoded data (first bytes should match)
     if let Some((zbars_symbol_type, zbars_data)) = result_zbars {
         assert_eq!(zbars_symbol_type, "QR-Code");
         assert_eq!(
             &zbars_data[..4],
             &[0x07, 0xC3, 0x84, 0x18],
-            "zbars should decode to similar binary data"
+            "zbars should decode to similar data"
         );
-        assert!(
-            zbars_data.len() >= 2000,
-            "zbars binary data should be substantial"
-        );
+        assert!(zbars_data.len() >= 2000, "zbars data should be substantial");
     }
 
     // rqrr must match exactly if it succeeds (strict check)
@@ -619,6 +614,97 @@ fn test_rqrr_crash_4_binary() {
             Some(rqrr_result),
             result_this.clone(),
             "rqrr decoded but gave different result"
+        );
+    }
+}
+
+#[test]
+fn test_raw_data_binary_qr() {
+    // raw_data() should return the original bytes before encoding conversion
+    let path = Path::new("examples/rqrr-crash-4.png");
+    if !path.exists() {
+        return;
+    }
+
+    let img = image::open(path).unwrap();
+    let img = downscale_if_needed(img, 1280).to_luma8();
+    let mut scanner = Scanner::new();
+    let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let symbols = scanner.scan(&mut zbar_image);
+    let symbol = symbols.first().expect("should decode the QR code");
+
+    let raw = symbol.raw_data().expect("QR codes should have raw_data");
+    let text_decoded = symbol.data();
+
+    // Raw bytes are the pre-encoding-conversion data (1376 bytes)
+    assert_eq!(raw.len(), 1376, "Raw data should be 1376 bytes");
+    assert_eq!(raw[0], 0x07);
+    assert_eq!(
+        raw[1], 0xC4,
+        "Second raw byte should be 0xC4, not the UTF-8 lead byte 0xC3"
+    );
+
+    // Text-decoded data is longer due to Windows-1252 → UTF-8 expansion
+    assert_eq!(text_decoded.len(), 2146);
+    assert!(raw.len() < text_decoded.len());
+
+    // This particular file's raw bytes are detected as Windows-1252 by the
+    // encoding heuristic. If the heuristic changes, the exact text output may
+    // differ — but raw bytes should always be shorter than the text-decoded
+    // output for this binary payload.
+    let (decoded, _enc, _had_errors) = encoding_rs::WINDOWS_1252.decode(raw);
+    assert_eq!(
+        text_decoded,
+        decoded.as_bytes(),
+        "Expected text output to match Windows-1252 decode of raw bytes (if this fails, \
+         the encoding heuristic may have changed)"
+    );
+}
+
+#[test]
+fn test_raw_data_text_qr() {
+    // For ASCII/UTF-8 QR codes, raw_data() and data() should contain the same bytes
+    let path = Path::new("examples/test-qr.png");
+    if !path.exists() {
+        return;
+    }
+
+    let img = image::open(path).unwrap();
+    let img = downscale_if_needed(img, 1280).to_luma8();
+    let mut scanner = Scanner::new();
+    let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let symbols = scanner.scan(&mut zbar_image);
+    let symbol = symbols.first().expect("should decode the QR code");
+
+    let raw = symbol.raw_data().expect("QR codes should have raw_data");
+    let text_decoded = symbol.data();
+
+    // For ASCII text, raw bytes and text-decoded bytes are identical
+    assert_eq!(raw, text_decoded);
+    assert_eq!(
+        std::str::from_utf8(raw).unwrap(),
+        "Hello, simplified zbar!\n"
+    );
+}
+
+#[test]
+fn test_raw_data_linear_barcode() {
+    // Linear barcodes don't have raw_data (their data is always ASCII)
+    let path = Path::new("examples/test-ean13.png");
+    if !path.exists() {
+        return;
+    }
+
+    let img = image::open(path).unwrap();
+    let img = downscale_if_needed(img, 1280).to_luma8();
+    let mut scanner = Scanner::new();
+    let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let symbols = scanner.scan(&mut zbar_image);
+
+    if let Some(symbol) = symbols.first() {
+        assert!(
+            symbol.raw_data().is_none(),
+            "Linear barcodes should not have raw_data"
         );
     }
 }

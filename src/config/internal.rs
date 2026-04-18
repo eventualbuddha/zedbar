@@ -32,9 +32,6 @@ pub(crate) struct SymbologyConfig {
     /// Length limits (None if not applicable)
     pub(crate) length_limits: Option<LengthLimits>,
 
-    /// Binary mode (for 2D codes)
-    pub(crate) binary_mode: bool,
-
     /// Uncertainty threshold for edge detection
     pub(crate) uncertainty: u32,
 }
@@ -113,11 +110,6 @@ impl From<&DecoderConfig> for DecoderState {
                 sym_config.length_limits = Some(LengthLimits { min, max });
             }
 
-            // Set binary mode if present
-            if config.binary_mode.contains(&sym) {
-                sym_config.binary_mode = true;
-            }
-
             // Set uncertainty if present
             if let Some(&threshold) = config.uncertainty.get(&sym) {
                 sym_config.uncertainty = threshold;
@@ -136,7 +128,6 @@ impl From<&DecoderConfig> for DecoderState {
 
                 let has_config = config.checksum_flags.contains_key(&sym)
                     || config.length_limits.contains_key(&sym)
-                    || config.binary_mode.contains(&sym)
                     || config.uncertainty.contains_key(&sym);
 
                 if has_config {
@@ -149,10 +140,6 @@ impl From<&DecoderConfig> for DecoderState {
 
                     if let Some(&(min, max)) = config.length_limits.get(&sym) {
                         sym_config.length_limits = Some(LengthLimits { min, max });
-                    }
-
-                    if config.binary_mode.contains(&sym) {
-                        sym_config.binary_mode = true;
                     }
 
                     if let Some(&threshold) = config.uncertainty.get(&sym) {
