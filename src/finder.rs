@@ -68,7 +68,14 @@ pub(crate) fn find_qr(dcode: &mut ImageScanner) -> SymbolType {
     dcode.qrf.line.boffs = boffs;
 
     dcode.direction = 0;
-    dcode.set_buffer_len(0);
+
+    // Only clear the shared buffer when no other decoder holds the lock.
+    // In the original C zbar the buffer was a pre-allocated array so
+    // "setting the length" didn't destroy existing data; in Rust the
+    // Vec is truncated, which corrupts in-progress 1-D decodes.
+    if dcode.lock == SymbolType::None {
+        dcode.set_buffer_len(0);
+    }
 
     SymbolType::QrCode
 }

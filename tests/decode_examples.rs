@@ -7,6 +7,7 @@
 
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
+use zedbar::config::{DecoderConfig, Upca, Upce};
 use zedbar::{Image, Scanner, SymbolType};
 
 /// Downscale an image if it exceeds the maximum dimension
@@ -479,6 +480,7 @@ fn test_all_examples_decode() {
         "examples/test-ean8.png",
         "examples/test-i25.png",
         "examples/test-upca.png",
+        "examples/nine-barcodes.png",
     ];
 
     for image_path in images {
@@ -731,5 +733,60 @@ fn test_qr_140_grids() {
                 "symbol {i} is not a QR code"
             );
         }
+    }
+}
+
+#[test]
+fn test_nine_barcodes() {
+    // Image contains 9 different barcode types. Verify all are decoded correctly.
+    let path = "examples/nine-barcodes.png";
+    let img = image::open(path).expect("failed to open nine-barcodes.png");
+    let img = downscale_if_needed(img, 1280).to_luma8();
+
+    let config = DecoderConfig::new().enable(Upca).enable(Upce);
+    let mut scanner = Scanner::with_config(config);
+    let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let symbols = scanner.scan(&mut zbar_image);
+
+    // Collect decoded symbols as (type, data) pairs
+    let mut results: Vec<(SymbolType, String)> = symbols
+        .iter()
+        .map(|s| {
+            let data = String::from_utf8_lossy(s.data())
+                .trim_end_matches('\0')
+                .to_string();
+            (s.symbol_type(), data)
+        })
+        .collect();
+    results.sort_by_key(|r| r.0.to_string());
+
+    let expected: Vec<(SymbolType, &str)> = {
+        let mut v = vec![
+            (SymbolType::Code39, "CODE39"),
+            (SymbolType::Code93, "CODE93"),
+            (SymbolType::Code128, "CODE128"),
+            (SymbolType::Codabar, "C012345D"),
+            (SymbolType::I25, "00123456"),
+            (SymbolType::Ean8, "01234565"),
+            (SymbolType::Upca, "012345678905"),
+            (SymbolType::Ean13, "1234567890128"),
+            (SymbolType::Upce, "01234565"),
+        ];
+        v.sort_by_key(|r| r.0.to_string());
+        v
+    };
+
+    assert_eq!(
+        results.len(),
+        expected.len(),
+        "expected {} barcodes, found {}.\nDecoded: {:?}",
+        expected.len(),
+        results.len(),
+        results
+    );
+
+    for (actual, expected) in results.iter().zip(expected.iter()) {
+        assert_eq!(actual.0, expected.0, "symbol type mismatch");
+        assert_eq!(actual.1, expected.1, "data mismatch for {:?}", expected.0);
     }
 }

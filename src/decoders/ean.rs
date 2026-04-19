@@ -629,7 +629,7 @@ fn ean_part_end4(pass: &mut EanPass, fwd: u8) -> PartialSymbolType {
         return PartialSymbolType::None;
     }
 
-    if (par == 0) != (fwd != 0) {
+    if (par == 0) == (fwd != 0) {
         // reverse sampled digits
         pass.state |= STATE_REV;
         pass.raw.swap(1, 4);
