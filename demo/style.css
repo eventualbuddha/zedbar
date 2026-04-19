@@ -225,6 +225,16 @@ h3 {
   color: var(--muted);
 }
 
+/* Permalink */
+#permalink-section {
+  margin-top: 0.75rem;
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
 /* Preview */
 #preview-container {
   background: var(--surface);
