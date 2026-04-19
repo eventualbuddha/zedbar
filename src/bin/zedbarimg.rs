@@ -283,7 +283,8 @@ fn main() {
             cfg = cfg.disable(QrCode);
         }
         cfg
-    };
+    }
+    .retry_undecoded_regions(true);
 
     let mut total_symbols = 0;
 
