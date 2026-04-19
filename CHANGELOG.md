@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/eventualbuddha/zedbar/compare/v0.2.3...v0.2.4) (2026-04-19)
+
+
+### Bug Fixes
+
+* correct EAN-8 digit reversal and QR finder buffer corruption ([#40](https://github.com/eventualbuddha/zedbar/issues/40)) ([e34ef7f](https://github.com/eventualbuddha/zedbar/commit/e34ef7fb3868684eafa06e8d6cf1e856314196d6))
+
 ## [0.2.3](https://github.com/eventualbuddha/zedbar/compare/v0.2.2...v0.2.3) (2026-04-18)
 
 
