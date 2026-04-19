@@ -19,7 +19,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zedbar = "0.1"
+zedbar = "0.2"
 ```
 
 ### Cargo Features
@@ -28,7 +28,7 @@ By default, all symbologies are enabled. You can selectively enable only the one
 
 ```toml
 [dependencies]
-zedbar = { version = "0.1", default-features = false, features = ["qrcode", "ean"] }
+zedbar = { version = "0.2", default-features = false, features = ["qrcode", "ean"] }
 ```
 
 #### Symbology Features
@@ -65,14 +65,14 @@ For the absolute minimal build with zero external dependencies (1D barcodes only
 
 ```toml
 [dependencies]
-zedbar = { version = "0.1", default-features = false, features = ["ean"] }
+zedbar = { version = "0.2", default-features = false, features = ["ean"] }
 ```
 
 For QR codes only (with necessary dependencies):
 
 ```toml
 [dependencies]
-zedbar = { version = "0.1", default-features = false, features = ["qrcode"] }
+zedbar = { version = "0.2", default-features = false, features = ["qrcode"] }
 ```
 
 Note: Disabling a feature at compile-time means that symbology will not be compiled into the binary at all, which is different from disabling it via runtime configuration.
