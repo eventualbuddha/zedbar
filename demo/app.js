@@ -8,15 +8,26 @@ const resultsSection = document.getElementById("results-section");
 const resultsContainer = document.getElementById("results");
 const resultsSummary = document.getElementById("results-summary");
 const noResults = document.getElementById("no-results");
+const permalinkSection = document.getElementById("permalink-section");
+const permalinkBtn = document.getElementById("permalink-btn");
 const errorSection = document.getElementById("error-section");
 const errorMessage = document.getElementById("error-message");
 
 let wasmReady = false;
+let currentImageUrl = null;
 
 async function initWasm() {
   try {
     await init();
     wasmReady = true;
+
+    // Auto-load image from #url= hash parameter
+    const hash = location.hash.slice(1); // remove leading '#'
+    const params = new URLSearchParams(hash);
+    const url = params.get("url");
+    if (url) {
+      handleUrl(url);
+    }
   } catch (e) {
     showError(`Failed to load WebAssembly module: ${e.message}`);
   }
@@ -56,19 +67,88 @@ dropZone.addEventListener("drop", (e) => {
   if (file) handleFile(file);
 });
 
-// Allow paste from clipboard
+// Allow paste from clipboard (images or URLs)
 document.addEventListener("paste", (e) => {
   const items = e.clipboardData?.items;
   if (!items) return;
+
+  // Prefer a pasted image
   for (const item of items) {
     if (item.type.startsWith("image/")) {
       handleFile(item.getAsFile());
       return;
     }
   }
+
+  // Fall back to pasted text that looks like an image URL
+  const text = e.clipboardData.getData("text/plain")?.trim();
+  if (text && looksLikeUrl(text)) {
+    handleUrl(text);
+  }
 });
 
+// -- Permalink --
+
+permalinkBtn.addEventListener("click", async () => {
+  const permalink = new URL(location.pathname, location.href);
+  const hashParams = new URLSearchParams();
+  hashParams.set("url", currentImageUrl);
+  permalink.hash = hashParams.toString();
+  try {
+    await navigator.clipboard.writeText(permalink.href);
+    permalinkBtn.innerHTML = checkIcon() + " Copied";
+    setTimeout(() => {
+      permalinkBtn.innerHTML = linkIcon() + " Copy permalink";
+    }, 1500);
+  } catch {
+    // silent fallback — select the URL in the address bar style
+  }
+});
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 // -- Main logic --
+
+function looksLikeUrl(text) {
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+async function handleUrl(url) {
+  if (!wasmReady) {
+    showError("WebAssembly module is still loading. Please try again.");
+    return;
+  }
+
+  hideAll();
+  dropZone.classList.add("loading");
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    if (!blob.type.startsWith("image/") && !url.startsWith("data:image/")) {
+      throw new Error(`Expected an image, got ${blob.type || "unknown type"}`);
+    }
+    const bitmap = await createImageBitmap(blob);
+    currentImageUrl = url;
+    scanBitmap(bitmap);
+  } catch (e) {
+    showError(`Failed to load image from URL: ${e.message}. Try copying the image itself and pasting it here instead.`);
+    dropZone.classList.remove("loading");
+  }
+}
 
 async function handleFile(file) {
   if (!file.type.startsWith("image/")) {
@@ -86,6 +166,16 @@ async function handleFile(file) {
 
   try {
     const bitmap = await createImageBitmap(file);
+    currentImageUrl = await fileToDataUrl(file);
+    scanBitmap(bitmap);
+  } catch (e) {
+    showError(`Scan failed: ${e}`);
+    dropZone.classList.remove("loading");
+  }
+}
+
+function scanBitmap(bitmap) {
+  try {
     const { width, height } = bitmap;
 
     // Draw to canvas for preview and to extract pixel data
@@ -109,8 +199,11 @@ async function handleFile(file) {
       gray[i] = (r * 77 + g * 150 + b * 29) >> 8;
     }
 
+    const t0 = performance.now();
     const results = scanGrayscale(gray, width, height);
-    displayResults(results);
+    const elapsed = performance.now() - t0;
+    displayResults(results, elapsed);
+    showPermalink();
   } catch (e) {
     showError(`Scan failed: ${e}`);
   } finally {
@@ -131,7 +224,13 @@ function formatTypeLabel(symbolType, count) {
   return count === 1 ? label : `${label}s`;
 }
 
-function displayResults(results) {
+function formatElapsed(ms) {
+  if (ms < 1) return `${(ms * 1000).toFixed(0)}\u00a0\u00b5s`;
+  if (ms < 1000) return `${ms.toFixed(1)}\u00a0ms`;
+  return `${(ms / 1000).toFixed(2)}\u00a0s`;
+}
+
+function displayResults(results, elapsed) {
   resultsContainer.innerHTML = "";
 
   if (!results || results.length === 0) {
@@ -152,7 +251,11 @@ function displayResults(results) {
     const label = formatTypeLabel(type, count);
     parts.push(`${count}\u00a0${label}`);
   }
-  resultsSummary.textContent = parts.length ? `\u2014 ${parts.join(", ")}` : "";
+  const timingStr = `in ${formatElapsed(elapsed)}`;
+  const summaryStr = parts.length ? `${parts.join(", ")}` : "";
+  resultsSummary.textContent = summaryStr
+    ? `\u2014 ${summaryStr} ${timingStr}`
+    : `\u2014 ${timingStr}`;
 
   for (const result of results) {
     const data = result.data;
@@ -376,10 +479,18 @@ function uint8ToBase64(data) {
 
 // -- Utility --
 
+function showPermalink() {
+  if (currentImageUrl) {
+    permalinkBtn.innerHTML = linkIcon() + " Copy permalink";
+    permalinkSection.hidden = false;
+  }
+}
+
 function hideAll() {
   resultsSection.hidden = true;
   noResults.hidden = true;
   errorSection.hidden = true;
+  permalinkSection.hidden = true;
 }
 
 function showError(msg) {
@@ -390,6 +501,10 @@ function showError(msg) {
 
 function clipboardIcon() {
   return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+}
+
+function linkIcon() {
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
 }
 
 function checkIcon() {
