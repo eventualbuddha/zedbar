@@ -699,13 +699,13 @@ https://zh.qr-code-generator.com
 
         assert!(result.symbols().is_empty());
         assert!(
-            result.finder_region().is_some(),
+            !result.finder_regions().is_empty(),
             "Expected finder region for the small QR code"
         );
 
         // Crop and upscale finder regions to recover the QR code
         let mut recovered = Vec::new();
-        if let Some(region) = result.finder_region() {
+        for region in result.finder_regions() {
             let pad = region.width.max(region.height) / 2;
             let x = region.x.saturating_sub(pad);
             let y = region.y.saturating_sub(pad);

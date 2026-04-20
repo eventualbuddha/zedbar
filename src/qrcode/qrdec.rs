@@ -1650,9 +1650,111 @@ fn qr_finder_cluster_lines(lines: Vec<QrFinderLine>, _v: i32) -> ClusteredLines 
     clustered
 }
 
+#[derive(Clone, Copy)]
 enum Direction {
     Horizontal,
     Vertical,
+}
+
+/// Bounding box of a single cluster in subpixel coordinates.
+///
+/// For horizontal clusters the lines extend along x; for vertical clusters
+/// the lines extend along y. Returns `[min_x, min_y, max_x, max_y]`.
+fn cluster_subpixel_bbox(
+    clustered: &ClusteredLines,
+    cluster_idx: usize,
+    dir: Direction,
+) -> [i32; 4] {
+    let mut min_x = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut min_y = i32::MAX;
+    let mut max_y = i32::MIN;
+    for line in clustered.cluster_lines(cluster_idx) {
+        match dir {
+            Direction::Horizontal => {
+                min_x = min_x.min(line.pos[0]);
+                max_x = max_x.max(line.pos[0] + line.len);
+                min_y = min_y.min(line.pos[1]);
+                max_y = max_y.max(line.pos[1]);
+            }
+            Direction::Vertical => {
+                min_x = min_x.min(line.pos[0]);
+                max_x = max_x.max(line.pos[0]);
+                min_y = min_y.min(line.pos[1]);
+                max_y = max_y.max(line.pos[1] + line.len);
+            }
+        }
+    }
+    [min_x, min_y, max_x, max_y]
+}
+
+/// Convert a subpixel bbox `[min_x, min_y, max_x, max_y]` to a pixel
+/// `(x, y, w, h)`, rounding outward. Returns `None` for empty boxes.
+fn subpixel_bbox_to_pixel_bbox(b: [i32; 4]) -> Option<BBox> {
+    if b[0] > b[2] || b[1] > b[3] {
+        return None;
+    }
+    let x = (b[0] >> QR_FINDER_SUBPREC).max(0) as u32;
+    let y = (b[1] >> QR_FINDER_SUBPREC).max(0) as u32;
+    let x2 = ((b[2] + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
+    let y2 = ((b[3] + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
+    let w = x2.saturating_sub(x);
+    let h = y2.saturating_sub(y);
+    if w == 0 && h == 0 {
+        None
+    } else {
+        Some((x, y, w, h))
+    }
+}
+
+/// Iteratively merge bboxes that are spatially close. Used to group
+/// finder-line clusters that likely belong to the same QR code.
+///
+/// Two bboxes merge when they are within `PROX_FACTOR * max_dim` of each
+/// other on both axes, where `max_dim` is the largest side among the two
+/// boxes. The factor is tuned so that the three finder-pattern clusters
+/// of a single QR (separated by ~7 module widths) always merge, while
+/// clusters from different QR codes stay apart.
+fn merge_nearby_bboxes(mut boxes: Vec<[i32; 4]>) -> Vec<[i32; 4]> {
+    const PROX_FACTOR: i32 = 16;
+    loop {
+        let mut merged_any = false;
+        'outer: for i in 0..boxes.len() {
+            for j in (i + 1)..boxes.len() {
+                if bboxes_are_close(&boxes[i], &boxes[j], PROX_FACTOR) {
+                    boxes[i] = [
+                        boxes[i][0].min(boxes[j][0]),
+                        boxes[i][1].min(boxes[j][1]),
+                        boxes[i][2].max(boxes[j][2]),
+                        boxes[i][3].max(boxes[j][3]),
+                    ];
+                    boxes.swap_remove(j);
+                    merged_any = true;
+                    break 'outer;
+                }
+            }
+        }
+        if !merged_any {
+            break;
+        }
+    }
+    boxes
+}
+
+fn bboxes_are_close(a: &[i32; 4], b: &[i32; 4], prox_factor: i32) -> bool {
+    let a_w = (a[2] - a[0]).max(0);
+    let a_h = (a[3] - a[1]).max(0);
+    let b_w = (b[2] - b[0]).max(0);
+    let b_h = (b[3] - b[1]).max(0);
+    let max_dim = a_w.max(a_h).max(b_w).max(b_h);
+    // Use a small floor so clusters that happen to be near-zero-dimension
+    // on one axis (all horizontal lines have height=0 in subpixel coords)
+    // still get a sensible proximity window.
+    let floor = 8 << QR_FINDER_SUBPREC;
+    let prox = max_dim.saturating_mul(prox_factor).max(floor);
+    let dx = (a[0] - b[2]).max(b[0] - a[2]);
+    let dy = (a[1] - b[3]).max(b[1] - a[3]);
+    dx <= prox && dy <= prox
 }
 
 /// Gets the coordinates of the edge points based on the lines contained in the
@@ -3481,11 +3583,36 @@ impl QrReader {
         self.finder_lines[1].lines.clear();
     }
 
-    /// Compute a single bounding box over all finder lines in O(n) time.
+    /// Compute one bounding box per spatially-distinct group of finder
+    /// clusters, in subpixel coordinates then converted to pixel bboxes.
     ///
-    /// Returns `Some((x, y, width, height))` in pixel coordinates, or
-    /// `None` if there are no finder lines.
-    fn finder_line_bbox(&self) -> Option<BBox> {
+    /// The clusters that survived `qr_finder_cluster_lines` are already
+    /// filtered to genuine-looking finder patterns. Clusters that are close
+    /// together in the image are merged into a single region since they
+    /// likely belong to the same QR code; clusters from distinct QRs stay
+    /// separate so each can be cropped and retried individually.
+    fn finder_line_regions(hclustered: &ClusteredLines, vclustered: &ClusteredLines) -> Vec<BBox> {
+        let mut boxes: Vec<[i32; 4]> =
+            Vec::with_capacity(hclustered.cluster_count() + vclustered.cluster_count());
+        for i in 0..hclustered.cluster_count() {
+            boxes.push(cluster_subpixel_bbox(hclustered, i, Direction::Horizontal));
+        }
+        for i in 0..vclustered.cluster_count() {
+            boxes.push(cluster_subpixel_bbox(vclustered, i, Direction::Vertical));
+        }
+        let merged = merge_nearby_bboxes(boxes);
+        merged
+            .into_iter()
+            .filter_map(subpixel_bbox_to_pixel_bbox)
+            .collect()
+    }
+
+    /// Fallback bounding box over ALL raw finder lines in O(n) time.
+    ///
+    /// Only used when clustering produces no usable clusters. On noisy
+    /// images (e.g. redacted documents), this is a very loose bbox; the
+    /// cluster-based `finder_line_regions` path gives much tighter boxes.
+    fn raw_finder_line_bbox(&self) -> Option<BBox> {
         let hlines = &self.finder_lines[0].lines;
         let vlines = &self.finder_lines[1].lines;
 
@@ -3512,18 +3639,7 @@ impl QrReader {
             max_y = max_y.max(line.pos[1] + line.len);
         }
 
-        let x = (min_x >> QR_FINDER_SUBPREC).max(0) as u32;
-        let y = (min_y >> QR_FINDER_SUBPREC).max(0) as u32;
-        let x2 = ((max_x + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
-        let y2 = ((max_y + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
-
-        let w = x2.saturating_sub(x);
-        let h = y2.saturating_sub(y);
-        if w > 0 || h > 0 {
-            Some((x, y, w, h))
-        } else {
-            None
-        }
+        subpixel_bbox_to_pixel_bbox([min_x, min_y, max_x, max_y])
     }
 
     /// Try to decode a QR code with the given configuration of three finder patterns.
@@ -3991,22 +4107,48 @@ impl QrReader {
 
     /// Decode QR codes from an image.
     ///
-    /// Returns decoded symbols and a bounding box of the finder line
-    /// region when decoding fails. The bbox is computed in O(n) before
-    /// `finder_centers_locate` consumes the lines.
-    pub(crate) fn decode(&mut self, img: &mut ImageData) -> (Vec<Symbol>, Option<BBox>) {
-        // Compute an O(n) bounding box while the lines are still available.
-        // finder_centers_locate will consume them.
-        let fail_bbox = self.finder_line_bbox();
-
+    /// Returns decoded symbols plus candidate regions where QR finder
+    /// patterns were detected but decoding failed. Each region is a
+    /// bounding box suitable for cropping and upscaling before retry.
+    /// Regions from different QR codes are kept separate.
+    pub(crate) fn decode(&mut self, img: &mut ImageData) -> (Vec<Symbol>, Vec<BBox>) {
         if self.finder_lines[0].lines.len() < 9 || self.finder_lines[1].lines.len() < 9 {
-            return (vec![], fail_bbox);
+            // Not enough lines to cluster meaningfully; fall back to the raw bbox.
+            let fallback = self.raw_finder_line_bbox().into_iter().collect();
+            return (vec![], fallback);
         }
 
-        let mut centers = self.finder_centers_locate(0, 0);
+        // Snapshot the raw bbox before clustering consumes the lines.
+        let raw_bbox = self.raw_finder_line_bbox();
+
+        let (hclustered, vclustered) = self.cluster_finder_lines();
+        let mut fail_regions = Self::finder_line_regions(&hclustered, &vclustered);
+
+        // When too few clusters survive the density filter (e.g. clean images
+        // where only one finder pattern was detected cleanly), add the raw
+        // finder-line bbox as an additional candidate. This preserves the
+        // previous behavior for single-QR images while still keeping the
+        // tight per-cluster regions as the primary candidates.
+        let total_clusters = hclustered.cluster_count() + vclustered.cluster_count();
+        if total_clusters < 3
+            && let Some(bb) = raw_bbox
+            && !fail_regions.contains(&bb)
+        {
+            fail_regions.push(bb);
+        } else if fail_regions.is_empty()
+            && let Some(bb) = raw_bbox
+        {
+            fail_regions.push(bb);
+        }
+
+        let mut centers = if hclustered.cluster_count() >= 3 && vclustered.cluster_count() >= 3 {
+            qr_finder_find_crossings(&hclustered, &vclustered)
+        } else {
+            Vec::new()
+        };
 
         if centers.len() < 3 {
-            return (vec![], fail_bbox);
+            return (vec![], fail_regions);
         }
 
         let bin = binarize(&img.data, img.width as usize, img.height as usize);
@@ -4030,28 +4172,20 @@ impl QrReader {
         qrlist.qrdata.clear();
 
         if symbols.is_empty() {
-            (vec![], fail_bbox)
+            (vec![], fail_regions)
         } else {
-            (symbols, None)
+            (symbols, Vec::new())
         }
     }
 
-    /// Locate QR finder pattern centers from scanned lines
+    /// Cluster the horizontal and vertical finder lines.
     ///
-    /// Clusters horizontal and vertical lines that cross finder patterns,
-    /// then locates the centers where horizontal and vertical clusters intersect.
-    pub(crate) fn finder_centers_locate(
-        &mut self,
-        _width: i32,
-        _height: i32,
-    ) -> Vec<qr_finder_center> {
-        // Take ownership of the horizontal lines and cluster them
+    /// Consumes `self.finder_lines` and returns both clustered sets.
+    fn cluster_finder_lines(&mut self) -> (ClusteredLines, ClusteredLines) {
         let hlines = std::mem::take(&mut self.finder_lines[0].lines);
         let hclustered = qr_finder_cluster_lines(hlines, 0);
 
-        // We need vertical lines to be sorted by X coordinate, with ties broken by Y
-        // coordinate, for clustering purposes.
-        // We scan the image in the opposite order, so sort the lines we found here.
+        // Vertical lines need to be sorted by X (ties broken by Y) before clustering.
         let mut vlines = std::mem::take(&mut self.finder_lines[1].lines);
         if vlines.len() > 1 {
             vlines.sort_by(|a, b| {
@@ -4061,13 +4195,7 @@ impl QrReader {
             });
         }
         let vclustered = qr_finder_cluster_lines(vlines, 1);
-
-        // Find line crossings among the clusters
-        if hclustered.cluster_count() >= 3 && vclustered.cluster_count() >= 3 {
-            qr_finder_find_crossings(&hclustered, &vclustered)
-        } else {
-            Vec::new()
-        }
+        (hclustered, vclustered)
     }
 }
 
