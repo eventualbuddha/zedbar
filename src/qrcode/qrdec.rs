@@ -1656,105 +1656,141 @@ enum Direction {
     Vertical,
 }
 
-/// Bounding box of a single cluster in subpixel coordinates.
-///
-/// For horizontal clusters the lines extend along x; for vertical clusters
-/// the lines extend along y. Returns `[min_x, min_y, max_x, max_y]`.
-fn cluster_subpixel_bbox(
-    clustered: &ClusteredLines,
-    cluster_idx: usize,
-    dir: Direction,
-) -> [i32; 4] {
-    let mut min_x = i32::MAX;
-    let mut max_x = i32::MIN;
-    let mut min_y = i32::MAX;
-    let mut max_y = i32::MIN;
-    for line in clustered.cluster_lines(cluster_idx) {
-        match dir {
-            Direction::Horizontal => {
-                min_x = min_x.min(line.pos[0]);
-                max_x = max_x.max(line.pos[0] + line.len);
-                min_y = min_y.min(line.pos[1]);
-                max_y = max_y.max(line.pos[1]);
-            }
-            Direction::Vertical => {
-                min_x = min_x.min(line.pos[0]);
-                max_x = max_x.max(line.pos[0]);
-                min_y = min_y.min(line.pos[1]);
-                max_y = max_y.max(line.pos[1] + line.len);
-            }
-        }
-    }
-    [min_x, min_y, max_x, max_y]
+/// Bounding box in subpixel coordinates.
+#[derive(Debug, Clone)]
+struct SubpixelBBox {
+    min_x: i32,
+    min_y: i32,
+    max_x: i32,
+    max_y: i32,
 }
 
-/// Convert a subpixel bbox `[min_x, min_y, max_x, max_y]` to a pixel
-/// `(x, y, w, h)`, rounding outward. Returns `None` for empty boxes.
-fn subpixel_bbox_to_pixel_bbox(b: [i32; 4]) -> Option<BBox> {
-    if b[0] > b[2] || b[1] > b[3] {
-        return None;
-    }
-    let x = (b[0] >> QR_FINDER_SUBPREC).max(0) as u32;
-    let y = (b[1] >> QR_FINDER_SUBPREC).max(0) as u32;
-    let x2 = ((b[2] + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
-    let y2 = ((b[3] + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
-    let w = x2.saturating_sub(x);
-    let h = y2.saturating_sub(y);
-    if w == 0 && h == 0 {
-        None
-    } else {
-        Some((x, y, w, h))
-    }
-}
-
-/// Iteratively merge bboxes that are spatially close. Used to group
-/// finder-line clusters that likely belong to the same QR code.
-///
-/// Two bboxes merge when they are within `PROX_FACTOR * max_dim` of each
-/// other on both axes, where `max_dim` is the largest side among the two
-/// boxes. The factor is tuned so that the three finder-pattern clusters
-/// of a single QR (separated by ~7 module widths) always merge, while
-/// clusters from different QR codes stay apart.
-fn merge_nearby_bboxes(mut boxes: Vec<[i32; 4]>) -> Vec<[i32; 4]> {
-    const PROX_FACTOR: i32 = 16;
-    loop {
-        let mut merged_any = false;
-        'outer: for i in 0..boxes.len() {
-            for j in (i + 1)..boxes.len() {
-                if bboxes_are_close(&boxes[i], &boxes[j], PROX_FACTOR) {
-                    boxes[i] = [
-                        boxes[i][0].min(boxes[j][0]),
-                        boxes[i][1].min(boxes[j][1]),
-                        boxes[i][2].max(boxes[j][2]),
-                        boxes[i][3].max(boxes[j][3]),
-                    ];
-                    boxes.swap_remove(j);
-                    merged_any = true;
-                    break 'outer;
+impl SubpixelBBox {
+    /// Bounding box of a single cluster in subpixel coordinates.
+    ///
+    /// For horizontal clusters the lines extend along x; for vertical clusters
+    /// the lines extend along y.
+    fn from_clustered_lines(
+        clustered: &ClusteredLines,
+        cluster_idx: usize,
+        dir: Direction,
+    ) -> Self {
+        let mut min_x = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut min_y = i32::MAX;
+        let mut max_y = i32::MIN;
+        for line in clustered.cluster_lines(cluster_idx) {
+            match dir {
+                Direction::Horizontal => {
+                    min_x = min_x.min(line.pos[0]);
+                    max_x = max_x.max(line.pos[0] + line.len);
+                    min_y = min_y.min(line.pos[1]);
+                    max_y = max_y.max(line.pos[1]);
+                }
+                Direction::Vertical => {
+                    min_x = min_x.min(line.pos[0]);
+                    max_x = max_x.max(line.pos[0]);
+                    min_y = min_y.min(line.pos[1]);
+                    max_y = max_y.max(line.pos[1] + line.len);
                 }
             }
         }
-        if !merged_any {
-            break;
+        Self {
+            min_x,
+            max_x,
+            min_y,
+            max_y,
         }
     }
-    boxes
+
+    /// Returns the smallest `SubpixelBBox` big enough to contain both `self`
+    /// and `other`.
+    fn union(&self, other: &Self) -> Self {
+        Self {
+            min_x: self.min_x.min(other.min_x),
+            min_y: self.min_y.min(other.min_y),
+            max_x: self.max_x.max(other.max_x),
+            max_y: self.max_y.max(other.max_y),
+        }
+    }
+
+    /// Iteratively merge bboxes that are spatially close. Used to group
+    /// finder-line clusters that likely belong to the same QR code.
+    ///
+    /// Two bboxes merge when they are within `PROX_FACTOR * max_dim` of each
+    /// other on both axes, where `max_dim` is the largest side among the two
+    /// boxes. The factor is tuned so that the three finder-pattern clusters
+    /// of a single QR (separated by ~7 module widths) always merge, while
+    /// clusters from different QR codes stay apart.
+    fn merge_nearby_bboxes(mut boxes: Vec<Self>) -> Vec<Self> {
+        const PROX_FACTOR: i32 = 16;
+        loop {
+            let mut merged_any = false;
+            'outer: for i in 0..boxes.len() {
+                for j in (i + 1)..boxes.len() {
+                    if boxes[i].is_close_to(&boxes[j], PROX_FACTOR) {
+                        boxes[i] = boxes[i].union(&boxes[j]);
+                        boxes.swap_remove(j);
+                        merged_any = true;
+                        break 'outer;
+                    }
+                }
+            }
+            if !merged_any {
+                break;
+            }
+        }
+        boxes
+    }
+
+    /// Gets the width of this bbox, or 0 if `min_x` is greater than `max_x`.
+    fn width(&self) -> i32 {
+        (self.max_x - self.min_x).max(0)
+    }
+
+    /// Gets the height of this bbox, or 0 if `min_y` is greater than `max_y`.
+    fn height(&self) -> i32 {
+        (self.max_y - self.min_y).max(0)
+    }
+
+    /// Determines whether `self` and `other` are close together based on
+    /// `prox_factor`.
+    fn is_close_to(&self, other: &Self, prox_factor: i32) -> bool {
+        let a_w = self.width();
+        let a_h = self.height();
+        let b_w = other.width();
+        let b_h = other.height();
+        let max_dim = a_w.max(a_h).max(b_w).max(b_h);
+        // Use self small floor so clusters that happen to be near-zero-dimension
+        // on one axis (all horizontal lines have height=0 in subpixel coords)
+        // still get self sensible proximity window.
+        let floor = 8 << QR_FINDER_SUBPREC;
+        let prox = max_dim.saturating_mul(prox_factor).max(floor);
+        let dx = (self.min_x - other.max_x).max(other.min_x - self.max_x);
+        let dy = (self.min_y - other.max_y).max(other.min_y - self.max_y);
+        dx <= prox && dy <= prox
+    }
 }
 
-fn bboxes_are_close(a: &[i32; 4], b: &[i32; 4], prox_factor: i32) -> bool {
-    let a_w = (a[2] - a[0]).max(0);
-    let a_h = (a[3] - a[1]).max(0);
-    let b_w = (b[2] - b[0]).max(0);
-    let b_h = (b[3] - b[1]).max(0);
-    let max_dim = a_w.max(a_h).max(b_w).max(b_h);
-    // Use a small floor so clusters that happen to be near-zero-dimension
-    // on one axis (all horizontal lines have height=0 in subpixel coords)
-    // still get a sensible proximity window.
-    let floor = 8 << QR_FINDER_SUBPREC;
-    let prox = max_dim.saturating_mul(prox_factor).max(floor);
-    let dx = (a[0] - b[2]).max(b[0] - a[2]);
-    let dy = (a[1] - b[3]).max(b[1] - a[3]);
-    dx <= prox && dy <= prox
+impl From<SubpixelBBox> for Option<BBox> {
+    /// Convert a subpixel bbox to a pixel bbox, rounding outward. Returns
+    /// `None` for empty boxes.
+    fn from(value: SubpixelBBox) -> Self {
+        if value.min_x > value.max_x || value.min_y > value.max_y {
+            return None;
+        }
+        let x = (value.min_x >> QR_FINDER_SUBPREC).max(0) as u32;
+        let y = (value.min_y >> QR_FINDER_SUBPREC).max(0) as u32;
+        let x2 = ((value.max_x + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
+        let y2 = ((value.max_y + (1 << QR_FINDER_SUBPREC) - 1) >> QR_FINDER_SUBPREC).max(0) as u32;
+        let w = x2.saturating_sub(x);
+        let h = y2.saturating_sub(y);
+        if w == 0 && h == 0 {
+            None
+        } else {
+            Some((x, y, w, h))
+        }
+    }
 }
 
 /// Gets the coordinates of the edge points based on the lines contained in the
@@ -3592,19 +3628,23 @@ impl QrReader {
     /// likely belong to the same QR code; clusters from distinct QRs stay
     /// separate so each can be cropped and retried individually.
     fn finder_line_regions(hclustered: &ClusteredLines, vclustered: &ClusteredLines) -> Vec<BBox> {
-        let mut boxes: Vec<[i32; 4]> =
-            Vec::with_capacity(hclustered.cluster_count() + vclustered.cluster_count());
+        let mut boxes = Vec::with_capacity(hclustered.cluster_count() + vclustered.cluster_count());
         for i in 0..hclustered.cluster_count() {
-            boxes.push(cluster_subpixel_bbox(hclustered, i, Direction::Horizontal));
+            boxes.push(SubpixelBBox::from_clustered_lines(
+                hclustered,
+                i,
+                Direction::Horizontal,
+            ));
         }
         for i in 0..vclustered.cluster_count() {
-            boxes.push(cluster_subpixel_bbox(vclustered, i, Direction::Vertical));
+            boxes.push(SubpixelBBox::from_clustered_lines(
+                vclustered,
+                i,
+                Direction::Vertical,
+            ));
         }
-        let merged = merge_nearby_bboxes(boxes);
-        merged
-            .into_iter()
-            .filter_map(subpixel_bbox_to_pixel_bbox)
-            .collect()
+        let merged = SubpixelBBox::merge_nearby_bboxes(boxes);
+        merged.into_iter().filter_map(Into::into).collect()
     }
 
     /// Fallback bounding box over ALL raw finder lines in O(n) time.
@@ -3639,7 +3679,13 @@ impl QrReader {
             max_y = max_y.max(line.pos[1] + line.len);
         }
 
-        subpixel_bbox_to_pixel_bbox([min_x, min_y, max_x, max_y])
+        SubpixelBBox {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        }
+        .into()
     }
 
     /// Try to decode a QR code with the given configuration of three finder patterns.
