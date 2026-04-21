@@ -1722,6 +1722,9 @@ impl SubpixelBBox {
     /// boxes. The factor is tuned so that the three finder-pattern clusters
     /// of a single QR (separated by ~7 module widths) always merge, while
     /// clusters from different QR codes stay apart.
+    ///
+    /// Note that this is O(boxes^3) in the worst case, so a different algorithm
+    /// ought to be considered if the number of boxes becomes non-trivial.
     fn merge_nearby_bboxes(mut boxes: Vec<Self>) -> Vec<Self> {
         const PROX_FACTOR: i32 = 16;
         loop {
@@ -1761,9 +1764,9 @@ impl SubpixelBBox {
         let b_w = other.width();
         let b_h = other.height();
         let max_dim = a_w.max(a_h).max(b_w).max(b_h);
-        // Use self small floor so clusters that happen to be near-zero-dimension
+        // Use a small floor so clusters that happen to be near-zero-dimension
         // on one axis (all horizontal lines have height=0 in subpixel coords)
-        // still get self sensible proximity window.
+        // still get a sensible proximity window.
         let floor = 8 << QR_FINDER_SUBPREC;
         let prox = max_dim.saturating_mul(prox_factor).max(floor);
         let dx = (self.min_x - other.max_x).max(other.min_x - self.max_x);
@@ -1772,12 +1775,18 @@ impl SubpixelBBox {
     }
 }
 
-impl From<SubpixelBBox> for Option<BBox> {
+enum SubpixelBBoxError {
+    InvalidDimensions,
+}
+
+impl TryFrom<SubpixelBBox> for BBox {
+    type Error = SubpixelBBoxError;
+
     /// Convert a subpixel bbox to a pixel bbox, rounding outward. Returns
     /// `None` for empty boxes.
-    fn from(value: SubpixelBBox) -> Self {
+    fn try_from(value: SubpixelBBox) -> Result<Self, Self::Error> {
         if value.min_x > value.max_x || value.min_y > value.max_y {
-            return None;
+            return Err(SubpixelBBoxError::InvalidDimensions);
         }
         let x = (value.min_x >> QR_FINDER_SUBPREC).max(0) as u32;
         let y = (value.min_y >> QR_FINDER_SUBPREC).max(0) as u32;
@@ -1786,9 +1795,9 @@ impl From<SubpixelBBox> for Option<BBox> {
         let w = x2.saturating_sub(x);
         let h = y2.saturating_sub(y);
         if w == 0 && h == 0 {
-            None
+            Err(SubpixelBBoxError::InvalidDimensions)
         } else {
-            Some((x, y, w, h))
+            Ok((x, y, w, h))
         }
     }
 }
@@ -3644,7 +3653,10 @@ impl QrReader {
             ));
         }
         let merged = SubpixelBBox::merge_nearby_bboxes(boxes);
-        merged.into_iter().filter_map(Into::into).collect()
+        merged
+            .into_iter()
+            .filter_map(|bbox| bbox.try_into().ok())
+            .collect()
     }
 
     /// Fallback bounding box over ALL raw finder lines in O(n) time.
@@ -3685,7 +3697,8 @@ impl QrReader {
             max_x,
             max_y,
         }
-        .into()
+        .try_into()
+        .ok()
     }
 
     /// Try to decode a QR code with the given configuration of three finder patterns.

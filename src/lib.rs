@@ -814,7 +814,21 @@ https://zh.qr-code-generator.com
 
         // Rectangle occupied by the real QR code (plus quiet zone). We avoid
         // drawing over it so the QR stays decodable post-crop.
-        let qr_rect = (595i32, 175i32, 760i32, 310i32);
+        let mut qr_min_x = page_w as i32;
+        let mut qr_max_x = -1;
+        let mut qr_min_y = page_h as i32;
+        let mut qr_max_y = -1;
+        for (_, row) in page.enumerate_rows() {
+            for (x, y, luma) in row {
+                if luma.0[0] < 0x7f {
+                    qr_min_x = qr_min_x.min(x as i32);
+                    qr_max_x = qr_max_x.max(x as i32);
+                    qr_min_y = qr_min_y.min(y as i32);
+                    qr_max_y = qr_max_y.max(y as i32);
+                }
+            }
+        }
+        let qr_rect = (qr_min_x - 30, qr_min_y - 30, qr_max_x + 30, qr_max_y + 30);
 
         // Deterministic noise — don't pull in rand as a dev-dep just for this.
         let mut rng = Lcg(0x5A17_E51D_DEAD_BEEF);
