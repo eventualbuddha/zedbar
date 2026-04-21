@@ -134,7 +134,7 @@ pub(crate) struct ImageScanner {
     /// Bounding box of QR finder lines from the last scan (x, y, w, h) in
     /// pixel coordinates. Computed before decode consumes the lines.
     #[cfg(feature = "qrcode")]
-    last_qr_finder_region: Option<BBox>,
+    last_qr_finder_regions: Vec<BBox>,
 
     /// Type-safe scanner configuration
     scanner_config: ImageScannerConfig,
@@ -198,7 +198,7 @@ impl Default for ImageScanner {
             v: 0,
             syms: vec![],
             #[cfg(feature = "qrcode")]
-            last_qr_finder_region: None,
+            last_qr_finder_regions: Vec::new(),
             scanner_config: ImageScannerConfig::default(),
         };
 
@@ -762,13 +762,13 @@ impl ImageScanner {
     /// Returns decoded symbols and any QR finder regions that were detected
     /// but could not be decoded (e.g. because the QR code was too small).
     ///
-    pub(crate) fn scan_image(&mut self, img: &mut ImageData) -> (Vec<Symbol>, Option<BBox>) {
+    pub(crate) fn scan_image(&mut self, img: &mut ImageData) -> (Vec<Symbol>, Vec<BBox>) {
         let symbols = self.scan_image_internal(img);
 
         #[cfg(feature = "qrcode")]
-        let finder_region = self.last_qr_finder_region.take();
+        let finder_regions = std::mem::take(&mut self.last_qr_finder_regions);
         #[cfg(not(feature = "qrcode"))]
-        let finder_region: Option<BBox> = None;
+        let finder_regions: Vec<BBox> = Vec::new();
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
         if symbols.is_empty()
@@ -777,11 +777,11 @@ impl ImageScanner {
         {
             let inverted_symbols = self.scan_image_internal(&mut inv);
             if !inverted_symbols.is_empty() {
-                return (inverted_symbols, finder_region);
+                return (inverted_symbols, finder_regions);
             }
         }
 
-        (symbols, finder_region)
+        (symbols, finder_regions)
     }
 
     /// Handle QR code finder line detection
@@ -981,11 +981,11 @@ impl ImageScanner {
         // Decode QR and SQ codes
         #[cfg(feature = "qrcode")]
         {
-            let (qr_symbols, region) = self.qr.decode(img);
+            let (qr_symbols, regions) = self.qr.decode(img);
             for sym in qr_symbols {
                 self.add_symbol(sym);
             }
-            self.last_qr_finder_region = region;
+            self.last_qr_finder_regions = regions;
         }
 
         #[cfg(feature = "sqcode")]

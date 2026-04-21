@@ -49,7 +49,7 @@ use crate::symbol::Symbol;
 /// # let mut scanner = Scanner::new();
 /// let result = scanner.scan(&mut image);
 ///
-/// if let Some(region) = result.finder_region() {
+/// for region in result.finder_regions() {
 ///     let pad = region.width.max(region.height) / 2;
 ///     let x = region.x.saturating_sub(pad);
 ///     let y = region.y.saturating_sub(pad);
@@ -88,14 +88,14 @@ pub struct FinderRegion {
 /// continues to work unchanged.
 pub struct ScanResult {
     symbols: Vec<Symbol>,
-    finder_region: Option<FinderRegion>,
+    finder_regions: Vec<FinderRegion>,
 }
 
 impl ScanResult {
-    pub(crate) fn new(symbols: Vec<Symbol>, finder_region: Option<FinderRegion>) -> Self {
+    pub(crate) fn new(symbols: Vec<Symbol>, finder_regions: Vec<FinderRegion>) -> Self {
         Self {
             symbols,
-            finder_region,
+            finder_regions,
         }
     }
 
@@ -109,17 +109,17 @@ impl ScanResult {
         self.symbols
     }
 
-    /// Region where QR finder patterns were detected but no QR code
+    /// Regions where QR finder patterns were detected but no QR code
     /// was successfully decoded.
     ///
-    /// This is the bounding area that likely contains QR codes too small or
-    /// distorted to decode at the current resolution. Cropping and upscaling
-    /// this region may yield successful decodes.
+    /// Each entry is a separate cluster of finder patterns — typically
+    /// one per undecoded QR code in the image. Cropping and upscaling
+    /// each region may yield successful decodes.
     ///
-    /// Returns `None` when no undecoded regions were found, or when the
-    /// `qrcode` feature is disabled.
-    pub fn finder_region(&self) -> Option<&FinderRegion> {
-        self.finder_region.as_ref()
+    /// Empty when no undecoded regions were found, or when the `qrcode`
+    /// feature is disabled.
+    pub fn finder_regions(&self) -> &[FinderRegion] {
+        &self.finder_regions
     }
 }
 
@@ -215,7 +215,7 @@ impl Scanner {
     /// Scan an image for barcodes
     ///
     /// Returns a [`ScanResult`] containing decoded symbols and any
-    /// undecoded QR finder regions. Check [`ScanResult::finder_region()`]
+    /// undecoded QR finder regions. Check [`ScanResult::finder_regions()`]
     /// to find areas that may contain QR codes too small to decode at
     /// the current resolution.
     ///
@@ -224,21 +224,20 @@ impl Scanner {
     /// re-scanned. Successfully decoded symbols have their coordinates
     /// mapped back to the original image frame.
     pub fn scan(&mut self, image: &mut Image) -> ScanResult {
-        let (symbols, raw_region) = self.scanner.scan_image(image.as_mut_image());
-        let finder_region = raw_region.map(|(x, y, w, h)| FinderRegion {
-            x,
-            y,
-            width: w,
-            height: h,
-        });
+        let (mut symbols, raw_regions) = self.scanner.scan_image(image.as_mut_image());
+        let finder_regions: Vec<FinderRegion> = raw_regions
+            .into_iter()
+            .map(|(x, y, w, h)| FinderRegion {
+                x,
+                y,
+                width: w,
+                height: h,
+            })
+            .collect();
 
-        if !self.retry_undecoded_regions {
-            return ScanResult::new(symbols, finder_region);
+        if !self.retry_undecoded_regions || finder_regions.is_empty() {
+            return ScanResult::new(symbols, finder_regions);
         }
-
-        let Some(finder_region) = finder_region else {
-            return ScanResult::new(symbols, finder_region);
-        };
 
         // Try multiple scale factors: the adaptive binarization window size
         // is chosen in power-of-2 steps based on image size, and certain
@@ -248,60 +247,69 @@ impl Scanner {
         const SCALES: &[u32] = &[2, 4, 6];
 
         // Skip retry for regions that cover more than 10% of the image
-        // area — but only for sufficiently large images. On small images
-        // (< 200px) the QR code legitimately fills most of the frame.
-        // On larger images, a big region is almost always a false positive
-        // from a 1D barcode.
+        // area — on large images a big region is almost always a false
+        // positive from a 1D barcode. Small images (< 200px on either
+        // side) are exempt because a legitimate single QR often fills
+        // most of the frame.
         let apply_area_filter = image.width() >= 200 && image.height() >= 200;
-        if apply_area_filter {
-            let image_area = image.width() as u64 * image.height() as u64;
-            let region_area = finder_region.width as u64 * finder_region.height as u64;
-            if region_area > image_area / 10 {
-                return ScanResult::new(symbols, Some(finder_region));
-            }
-        }
+        let image_area = image.width() as u64 * image.height() as u64;
+        let area_limit = image_area / 10;
 
-        // Pad by 50% of the region size on each side for quiet zone
-        let pad_x = finder_region.width / 2;
-        let pad_y = finder_region.height / 2;
-        let cx = finder_region.x.saturating_sub(pad_x);
-        let cy = finder_region.y.saturating_sub(pad_y);
-        let cw = (finder_region.width + 2 * pad_x).min(image.width().saturating_sub(cx));
-        let ch = (finder_region.height + 2 * pad_y).min(image.height().saturating_sub(cy));
-
-        let cropped = match image.crop(cx, cy, cw, ch) {
-            Some(c) => c,
-            None => return ScanResult::new(symbols, Some(finder_region)),
-        };
-
-        for &scale in SCALES {
-            if let Some(mut upscaled) = cropped.upscale(scale) {
-                let (mut retry_symbols, _) = self.scanner.scan_image(upscaled.as_mut_image());
-                if !retry_symbols.is_empty() {
-                    // Remap coordinates back to original image frame
-                    let half = scale as i32 / 2;
-                    for sym in &mut retry_symbols {
-                        for pt in &mut sym.pts {
-                            pt[0] = (pt[0] + half) / scale as i32 + cx as i32;
-                            pt[1] = (pt[1] + half) / scale as i32 + cy as i32;
-                        }
-                    }
-                    // Merge with existing symbols, skip duplicates
-                    let mut all = symbols;
-                    for sym in retry_symbols {
-                        if !all
-                            .iter()
-                            .any(|s| s.symbol_type() == sym.symbol_type() && s.data == sym.data)
-                        {
-                            all.push(sym);
-                        }
-                    }
-                    return ScanResult::new(all, None);
+        let mut unresolved: Vec<FinderRegion> = Vec::new();
+        for region in &finder_regions {
+            if apply_area_filter {
+                let region_area = region.width as u64 * region.height as u64;
+                if region_area > area_limit {
+                    unresolved.push(*region);
+                    continue;
                 }
             }
+            // Pad by 50% of the region size on each side for quiet zone
+            let pad_x = region.width / 2;
+            let pad_y = region.height / 2;
+            let cx = region.x.saturating_sub(pad_x);
+            let cy = region.y.saturating_sub(pad_y);
+            let cw = (region.width + 2 * pad_x).min(image.width().saturating_sub(cx));
+            let ch = (region.height + 2 * pad_y).min(image.height().saturating_sub(cy));
+
+            let Some(cropped) = image.crop(cx, cy, cw, ch) else {
+                unresolved.push(*region);
+                continue;
+            };
+
+            let mut decoded = false;
+            for &scale in SCALES {
+                let Some(mut upscaled) = cropped.upscale(scale) else {
+                    continue;
+                };
+                let (mut retry_symbols, _) = self.scanner.scan_image(upscaled.as_mut_image());
+                if retry_symbols.is_empty() {
+                    continue;
+                }
+                let half = scale as i32 / 2;
+                for sym in &mut retry_symbols {
+                    for pt in &mut sym.pts {
+                        pt[0] = (pt[0] + half) / scale as i32 + cx as i32;
+                        pt[1] = (pt[1] + half) / scale as i32 + cy as i32;
+                    }
+                }
+                for sym in retry_symbols {
+                    if !symbols
+                        .iter()
+                        .any(|s| s.symbol_type() == sym.symbol_type() && s.data == sym.data)
+                    {
+                        symbols.push(sym);
+                    }
+                }
+                decoded = true;
+                break;
+            }
+            if !decoded {
+                unresolved.push(*region);
+            }
         }
 
-        ScanResult::new(symbols, Some(finder_region))
+        ScanResult::new(symbols, unresolved)
     }
 }
 
