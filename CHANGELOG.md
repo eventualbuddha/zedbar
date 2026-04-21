@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5](https://github.com/eventualbuddha/zedbar/compare/v0.2.4...v0.2.5) (2026-04-21)
+
+
+### Bug Fixes
+
+* detect small QR codes in heavily noisy images via multi-region retry ([#45](https://github.com/eventualbuddha/zedbar/issues/45)) ([898b671](https://github.com/eventualbuddha/zedbar/commit/898b67124fc9be2871a54ad2c6d18c315664d881))
+* enable `retry_undecoded_regions` in zedbarimg for small QR codes ([#43](https://github.com/eventualbuddha/zedbar/issues/43)) ([0319202](https://github.com/eventualbuddha/zedbar/commit/03192020f146150f508ea6d87f4f2bb0d6c447f0))
+
 ## [0.2.4](https://github.com/eventualbuddha/zedbar/compare/v0.2.3...v0.2.4) (2026-04-19)
 
 
