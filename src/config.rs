@@ -204,6 +204,10 @@ impl DecoderConfig {
     /// let config = DecoderConfig::new()
     ///     .enable(QrCode);
     /// ```
+    #[allow(
+        clippy::new_without_default,
+        reason = "`::new()` intentionally omits all symbologies, but that is unergonomic as a `Default::default` implementation"
+    )]
     pub fn new() -> Self {
         let mut config = Self {
             enabled: HashSet::new(),

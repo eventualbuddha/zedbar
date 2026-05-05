@@ -313,3 +313,9 @@ impl Scanner {
         ScanResult::new(symbols, unresolved)
     }
 }
+
+impl Default for Scanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
