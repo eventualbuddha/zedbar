@@ -101,6 +101,12 @@ Scans grayscale image data for barcodes and QR codes.
 ### `ScanOptions`
 
 - `retryUndecodedRegions` (`boolean`, default: `true`) - Automatically retry undecoded QR finder regions by cropping and upscaling. Disable to skip the retry and reduce processing time for images that are known to have sufficient resolution.
+- `symbologies` (`string[]`, optional) - Restrict scanning to the listed symbologies. When omitted, every supported symbology is enabled. Names match the `symbolType` field on results — see [Supported Formats](#supported-formats).
+
+```javascript
+// Scan QR codes only
+const results = scanImageBytes(imageBytes, { symbologies: ['QR-Code'] });
+```
 
 ### `DecodeResult`
 

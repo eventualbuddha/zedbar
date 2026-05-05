@@ -743,7 +743,8 @@ fn test_nine_barcodes() {
     let img = image::open(path).expect("failed to open nine-barcodes.png");
     let img = downscale_if_needed(img, 1280).to_luma8();
 
-    let config = DecoderConfig::new().enable(Upca).enable(Upce);
+    // Kitchen sink + opt in to UPC-A/UPC-E variant labeling on top of EAN.
+    let config = DecoderConfig::all().enable(Upca).enable(Upce);
     let mut scanner = Scanner::with_config(config);
     let mut zbar_image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
     let symbols = scanner.scan(&mut zbar_image);

@@ -9,23 +9,20 @@ use zedbar::{DecoderConfig, Scanner};
 fn main() {
     println!("=== Zedbar Modern Scanner API Examples ===\n");
 
-    // Example 1: Basic usage with default configuration
-    println!("1. Basic scanner with defaults:");
+    // Example 1: Basic usage — scanner with every supported symbology enabled
+    println!("1. Basic scanner (kitchen sink):");
     let _scanner = Scanner::new();
-    println!("   Created scanner with default configuration\n");
+    println!("   Created scanner with every supported symbology\n");
 
-    // Example 2: Custom configuration with specific symbologies
+    // Example 2: Opt-in to specific symbologies
     println!("2. Scanner with custom symbology selection:");
     let config = DecoderConfig::new()
         .enable(Ean13)
         .enable(Ean8)
-        .enable(QrCode)
-        .disable(Code39)
-        .disable(Code128);
+        .enable(QrCode);
 
     let _scanner = Scanner::with_config(config);
-    println!("   Enabled: EAN-13, EAN-8, QR Code");
-    println!("   Disabled: Code39, Code128\n");
+    println!("   Enabled: EAN-13, EAN-8, QR Code\n");
 
     // Example 3: Configure symbology-specific settings
     println!("3. Scanner with symbology-specific settings:");
@@ -40,17 +37,14 @@ fn main() {
 
     // Example 4: Configure scanner for QR codes only
     println!("4. Scanner optimized for QR codes:");
-    let config = DecoderConfig::new()
-        .enable(QrCode)
-        .disable(Ean13) // Only scan QR codes
-        .disable(Code39);
+    let config = DecoderConfig::new().enable(QrCode);
 
     let _scanner = Scanner::with_config(config);
-    println!("   QR Code only, binary mode enabled\n");
+    println!("   QR Code only\n");
 
-    // Example 5: Scanner-level configuration
+    // Example 5: Scanner-level configuration on top of the kitchen sink
     println!("5. Scanner with global scan settings:");
-    let config = DecoderConfig::new()
+    let config = DecoderConfig::all()
         .position_tracking(true) // Track symbol positions
         .test_inverted(true) // Try inverted image if no symbols found
         .scan_density(2, 2); // Scan every 2nd line (faster, less accurate)
@@ -73,7 +67,7 @@ fn main() {
 
     // Example 7: Maximum quality scanning configuration
     println!("7. Maximum quality scanner (optimized for accuracy):");
-    let config = DecoderConfig::new()
+    let config = DecoderConfig::all()
         .scan_density(1, 1) // Scan every line
         .position_tracking(true)
         .test_inverted(true) // Try both normal and inverted

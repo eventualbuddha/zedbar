@@ -151,7 +151,7 @@ fn main() {
     // Build configuration based on command-line arguments
     let config = if args.disable_all {
         // Start with all symbologies disabled, then enable selected ones
-        let mut cfg = DecoderConfig::new().disable_all();
+        let mut cfg = DecoderConfig::new();
 
         // Apply enable flags
         if args.enable_ean13 {
@@ -207,8 +207,8 @@ fn main() {
         }
         cfg
     } else {
-        // Start with default configuration (all enabled), then apply changes
-        let mut cfg = DecoderConfig::new();
+        // Start with all symbologies enabled, then apply changes
+        let mut cfg = DecoderConfig::all();
 
         // Apply enable flags (redundant but harmless)
         if args.enable_ean13 {

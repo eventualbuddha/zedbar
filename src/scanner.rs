@@ -8,11 +8,11 @@
 //! ```no_run
 //! use zedbar::{Image, Scanner};
 //!
-//! // Create a scanner with default settings
+//! // Create a scanner with every supported symbology enabled.
 //! let mut scanner = Scanner::new();
 //!
-//! // Or with custom configuration
-//! use zedbar::config::*;
+//! // Or build a scanner with only the symbologies you need.
+//! use zedbar::{DecoderConfig, config::*};
 //! let config = DecoderConfig::new()
 //!     .enable(QrCode)
 //!     .enable(Ean13);
@@ -177,14 +177,15 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    /// Create a new image scanner with default configuration
+    /// Create a new image scanner with every supported symbology enabled.
     ///
-    /// For more control over the configuration, use [`Scanner::with_config()`].
+    /// Equivalent to `Scanner::with_config(DecoderConfig::all())`. Convenient
+    /// for exploratory use; for production use, prefer
+    /// [`Scanner::with_config()`] with a
+    /// [`DecoderConfig::new()`](DecoderConfig::new) that opts into only the
+    /// symbologies you actually need.
     pub fn new() -> Self {
-        Self {
-            scanner: ImageScanner::default(),
-            retry_undecoded_regions: false,
-        }
+        Self::with_config(DecoderConfig::all())
     }
 
     /// Create a new image scanner with custom configuration
@@ -310,11 +311,5 @@ impl Scanner {
         }
 
         ScanResult::new(symbols, unresolved)
-    }
-}
-
-impl Default for Scanner {
-    fn default() -> Self {
-        Self::new()
     }
 }

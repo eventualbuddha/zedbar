@@ -402,9 +402,9 @@ mod tests {
 
         let mut img = Image::from_gray(data, width, height).expect("Failed to create zedbar image");
 
-        // Create scanner with UPC-A explicitly enabled
+        // UPC-A surfaces as a label on the EAN-13 decoder; both must be enabled.
         use crate::config::*;
-        let config = DecoderConfig::new().enable(Upca);
+        let config = DecoderConfig::new().enable(Ean13).enable(Upca);
         let mut scanner = Scanner::with_config(config);
 
         let symbols = scanner.scan(&mut img);
@@ -749,7 +749,9 @@ https://zh.qr-code-generator.com
             let mut zedbar_img = Image::from_gray(gray.as_raw(), width, height)
                 .expect("Failed to create zedbar image");
 
-            let config = DecoderConfig::new().retry_undecoded_regions(true);
+            let config = DecoderConfig::new()
+                .enable(QrCode)
+                .retry_undecoded_regions(true);
             let mut scanner = Scanner::with_config(config);
             let result = scanner.scan(&mut zedbar_img);
 
@@ -788,7 +790,9 @@ https://zh.qr-code-generator.com
         let mut zedbar_img =
             Image::from_gray(gray.as_raw(), width, height).expect("Failed to create zedbar image");
 
-        let config = DecoderConfig::new().retry_undecoded_regions(true);
+        let config = DecoderConfig::new()
+            .enable(QrCode)
+            .retry_undecoded_regions(true);
         let mut scanner = Scanner::with_config(config);
         let result = scanner.scan(&mut zedbar_img);
 

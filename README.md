@@ -100,6 +100,24 @@ for symbol in symbols {
 }
 ```
 
+### Choosing Symbologies
+
+`DecoderConfig::new()` starts **empty** — opt in to each symbology you need:
+
+```rust
+use zedbar::config::*;
+use zedbar::{DecoderConfig, Scanner};
+
+let config = DecoderConfig::new()
+    .enable(QrCode)
+    .enable(Ean13);
+
+let mut scanner = Scanner::with_config(config);
+```
+
+For exploratory use ("just scan whatever's there"), `DecoderConfig::all()`
+or `Scanner::new()` enables every supported symbology in one call.
+
 ### Advanced Configuration
 
 ```rust
@@ -109,14 +127,17 @@ use zedbar::{DecoderConfig, Scanner};
 let config = DecoderConfig::new()
     .enable(QrCode)
     .enable(Ean13)
-    .set_binary(QrCode, true)          // Preserve binary data in QR codes
-    .set_length_limits(Code39, 4, 20)  // Code39 must be 4-20 chars
+    .set_length_limits(Code39, 4, 20)  // also enables Code39
     .test_inverted(true)               // Try inverted image if no symbols found
     .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically
     .scan_density(2, 2);               // Scan every 2nd line (faster)
 
 let mut scanner = Scanner::with_config(config);
 ```
+
+The per-symbology setters (`set_length_limits`, `set_checksum`,
+`set_uncertainty`) auto-enable the symbology they target — if you've
+already mentioned a symbology by name, it's on.
 
 ### Small QR Codes in Large Images
 
@@ -129,7 +150,9 @@ use zedbar::config::*;
 use zedbar::{DecoderConfig, Scanner, Image};
 
 // Option 1: Automatic retry (crop + 4x upscale)
-let config = DecoderConfig::new().retry_undecoded_regions(true);
+let config = DecoderConfig::new()
+    .enable(QrCode)
+    .retry_undecoded_regions(true);
 let mut scanner = Scanner::with_config(config);
 let symbols = scanner.scan(&mut img);
 
