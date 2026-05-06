@@ -81,8 +81,11 @@ impl Default for ScannerConfig {
 }
 
 impl Default for DecoderState {
+    /// Internal default: kitchen-sink configuration. Used as the
+    /// `..Default::default()` placeholder in [`ImageScanner::with_config`];
+    /// the `config` field is always overwritten before the scanner is used.
     fn default() -> Self {
-        (&DecoderConfig::new()).into()
+        (&DecoderConfig::all()).into()
     }
 }
 

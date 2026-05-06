@@ -242,3 +242,30 @@ impl From<i32> for SymbolType {
         }
     }
 }
+
+/// Returned when a string does not match any [`SymbolType`] display name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseSymbolTypeError(pub String);
+
+impl Display for ParseSymbolTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown symbology: {:?}", self.0)
+    }
+}
+
+impl std::error::Error for ParseSymbolTypeError {}
+
+impl std::str::FromStr for SymbolType {
+    type Err = ParseSymbolTypeError;
+
+    /// Parse a symbology by its [`Display`] name (e.g. `"QR-Code"`,
+    /// `"EAN-13"`, `"CODE-128"`). Recognises every variant in
+    /// [`SymbolType::ALL`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|sym| sym.to_string() == s)
+            .ok_or_else(|| ParseSymbolTypeError(s.to_string()))
+    }
+}

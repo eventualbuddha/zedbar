@@ -2,6 +2,7 @@
 
 use wasm_bindgen::prelude::*;
 
+use crate::SymbolType;
 use crate::config::DecoderConfig;
 use crate::image::Image;
 use crate::scanner::Scanner;
@@ -14,16 +15,20 @@ use image;
 /// All fields are optional and default to sensible values when omitted.
 ///
 /// ```js
-/// // Use defaults (retry enabled):
+/// // Use defaults (every supported symbology, retry enabled):
 /// const results = scanGrayscale(data, width, height);
 ///
 /// // Disable automatic retry of small QR codes:
 /// const results = scanGrayscale(data, width, height, { retryUndecodedRegions: false });
+///
+/// // Restrict to QR codes only:
+/// const results = scanGrayscale(data, width, height, { symbologies: ["QR-Code"] });
 /// ```
 #[wasm_bindgen]
 #[derive(Default)]
 pub struct ScanOptions {
     retry_undecoded_regions: Option<bool>,
+    symbologies: Option<Vec<String>>,
 }
 
 #[wasm_bindgen]
@@ -31,9 +36,7 @@ impl ScanOptions {
     /// Create a new options object with defaults.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        Self {
-            retry_undecoded_regions: None,
-        }
+        Self::default()
     }
 
     /// Whether to automatically retry undecoded QR finder regions by
@@ -41,6 +44,19 @@ impl ScanOptions {
     #[wasm_bindgen(setter, js_name = "retryUndecodedRegions")]
     pub fn set_retry_undecoded_regions(&mut self, value: bool) {
         self.retry_undecoded_regions = Some(value);
+    }
+
+    /// Restrict scanning to the listed symbologies. When omitted, every
+    /// supported symbology is enabled.
+    ///
+    /// Names match the `symbolType` field on decode results: `"QR-Code"`,
+    /// `"SQ-Code"`, `"EAN-13"`, `"EAN-8"`, `"EAN-2"`, `"EAN-5"`,
+    /// `"UPC-A"`, `"UPC-E"`, `"ISBN-10"`, `"ISBN-13"`, `"I2/5"`,
+    /// `"DataBar"`, `"DataBar-Exp"`, `"Codabar"`, `"CODE-39"`,
+    /// `"CODE-93"`, `"CODE-128"`.
+    #[wasm_bindgen(setter, js_name = "symbologies")]
+    pub fn set_symbologies(&mut self, value: Vec<String>) {
+        self.symbologies = Some(value);
     }
 }
 
@@ -89,10 +105,25 @@ impl DecodeResult {
     }
 }
 
-fn build_scanner(options: Option<ScanOptions>) -> Scanner {
+fn build_scanner(options: Option<ScanOptions>) -> Result<Scanner, JsValue> {
     let options = options.unwrap_or_default();
-    let config = DecoderConfig::new().retry_undecoded_regions(options.retry());
-    Scanner::with_config(config)
+    let mut config = match &options.symbologies {
+        Some(syms) => {
+            let mut cfg = DecoderConfig::new();
+            for name in syms {
+                let sym: SymbolType =
+                    name.parse()
+                        .map_err(|e: crate::symbol::ParseSymbolTypeError| {
+                            JsValue::from_str(&e.to_string())
+                        })?;
+                cfg = cfg.enable_type(sym);
+            }
+            cfg
+        }
+        None => DecoderConfig::all(),
+    };
+    config = config.retry_undecoded_regions(options.retry());
+    Ok(Scanner::with_config(config))
 }
 
 /// Scan grayscale image data for barcodes and QR codes.
@@ -111,7 +142,7 @@ pub fn scan_grayscale(
     let mut image =
         Image::from_gray(data, width, height).map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
 
-    let mut scanner = build_scanner(options);
+    let mut scanner = build_scanner(options)?;
     let symbols = scanner.scan(&mut image);
 
     Ok(symbols

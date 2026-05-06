@@ -4,9 +4,16 @@
 //! invalid configuration combinations. The type system ensures you can only
 //! set configurations that are valid for each symbology.
 //!
+//! # Choosing a starting point
+//!
+//! [`DecoderConfig::new()`] starts empty — you opt in to each symbology you
+//! want. [`DecoderConfig::all()`] starts with every supported symbology
+//! enabled, for callers (CLI tools, exploratory scripts) that want to scan
+//! anything they can find.
+//!
 //! # Examples
 //!
-//! ## Valid Configuration
+//! ## Opt-in (recommended)
 //!
 //! ```
 //! use zedbar::config::*;
@@ -17,6 +24,15 @@
 //!     .enable(Code39)
 //!     .set_length_limits(Code39, 4, 20)   // ✓ Code39 supports variable length
 //!     .position_tracking(true);
+//! ```
+//!
+//! ## Kitchen sink
+//!
+//! ```
+//! use zedbar::config::*;
+//! use zedbar::DecoderConfig;
+//!
+//! let config = DecoderConfig::all();
 //! ```
 //!
 //! ## Type-Safe Compile Errors
@@ -130,9 +146,14 @@ pub trait Symbology: Sized {
 /// This builder uses the type system to ensure only valid configurations
 /// can be set for each symbology type.
 ///
+/// Start from [`DecoderConfig::new()`] (empty — opt in to each symbology
+/// you want) or [`DecoderConfig::all()`] (full kitchen-sink for exploratory
+/// use).
+///
 /// # Example
 /// ```no_run
 /// use zedbar::config::*;
+/// use zedbar::DecoderConfig;
 ///
 /// let config = DecoderConfig::new()
 ///     .enable(Ean13)
@@ -163,21 +184,30 @@ pub struct DecoderConfig {
     pub(crate) retry_undecoded_regions: bool,
 }
 
-impl Default for DecoderConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DecoderConfig {
-    /// Create a new configuration with sensible defaults
+    /// Create an empty configuration with no symbologies enabled.
     ///
-    /// By default:
-    /// - EAN-13, EAN-8, I25, DataBar, Codabar, Code39, Code93, Code128, QR, SQ are enabled
-    /// - UPC-A, UPC-E, ISBN-10, ISBN-13 can be emitted as variants (not separately enabled)
-    /// - Position tracking is enabled
-    /// - Scan density is 1x1
-    /// - Inverted image testing is disabled
+    /// Opt in to each symbology you want via [`enable`](Self::enable); only
+    /// the decoders you ask for will run.
+    ///
+    /// Global scanner settings (position tracking, scan density, etc.) are
+    /// initialized to sensible defaults; per-symbology config (length limits,
+    /// checksum behavior, uncertainty) for variants like UPC-A, UPC-E,
+    /// ISBN-10, and ISBN-13 is preconfigured so that enabling them produces
+    /// reasonable output.
+    ///
+    /// # Example
+    /// ```
+    /// use zedbar::config::*;
+    /// use zedbar::DecoderConfig;
+    ///
+    /// let config = DecoderConfig::new()
+    ///     .enable(QrCode);
+    /// ```
+    #[allow(
+        clippy::new_without_default,
+        reason = "`::new()` intentionally omits all symbologies, but that is unergonomic as a `Default::default` implementation"
+    )]
     pub fn new() -> Self {
         let mut config = Self {
             enabled: HashSet::new(),
@@ -191,11 +221,58 @@ impl DecoderConfig {
             retry_undecoded_regions: false,
         };
 
-        // Enable common symbologies by default
+        // Preconfigure per-symbology defaults so that enabling a symbology
+        // gives reasonable behavior out of the box. These have no effect
+        // until the corresponding symbology is enabled.
+
+        // EAN-13 and EAN-8: emit checksum
+        for sym in [SymbolType::Ean13, SymbolType::Ean8] {
+            config.checksum_flags.insert(sym, (false, true));
+        }
+
+        // UPC-A, UPC-E, ISBN-10, ISBN-13: emit checksum when surfaced as
+        // EAN variants
+        for sym in [
+            SymbolType::Upca,
+            SymbolType::Upce,
+            SymbolType::Isbn10,
+            SymbolType::Isbn13,
+        ] {
+            config.checksum_flags.insert(sym, (false, true));
+        }
+
+        // Default length limits for variable-length symbologies
+        config.length_limits.insert(SymbolType::I25, (6, 256));
+        config.length_limits.insert(SymbolType::Codabar, (4, 256));
+        config.length_limits.insert(SymbolType::Code39, (1, 256));
+
+        // Default uncertainty values
+        config.uncertainty.insert(SymbolType::Codabar, 1);
+
+        config
+    }
+
+    /// Create a configuration with the full set of supported symbologies
+    /// enabled.
+    ///
+    /// Enables EAN-13, EAN-8, I2/5, DataBar, DataBar-Expanded, Codabar,
+    /// Code 39, Code 93, Code 128, QR Code, and SQ Code. UPC-A, UPC-E,
+    /// ISBN-10, and ISBN-13 are *not* enabled — they can be opted in as
+    /// variant labels of EAN-13/EAN-8 via [`enable`](Self::enable).
+    ///
+    /// Prefer [`new()`](Self::new) and explicit [`enable`](Self::enable)
+    /// calls when you know which formats you need.
+    ///
+    /// # Example
+    /// ```
+    /// use zedbar::DecoderConfig;
+    ///
+    /// let config = DecoderConfig::all();
+    /// ```
+    pub fn all() -> Self {
+        let mut config = Self::new();
         config.enabled.insert(SymbolType::Ean13);
         config.enabled.insert(SymbolType::Ean8);
-        // Note: UPC-A, UPC-E, ISBN-10, ISBN-13 are NOT enabled by default
-        // They can be emitted as variants of EAN-13/EAN-8 when detected
         config.enabled.insert(SymbolType::I25);
         config.enabled.insert(SymbolType::Databar);
         config.enabled.insert(SymbolType::DatabarExp);
@@ -205,32 +282,6 @@ impl DecoderConfig {
         config.enabled.insert(SymbolType::Code128);
         config.enabled.insert(SymbolType::QrCode);
         config.enabled.insert(SymbolType::SqCode);
-
-        // Set default checksum behavior for EAN/UPC
-        // EAN-13 and EAN-8 are enabled with emit_check
-        for sym in [SymbolType::Ean13, SymbolType::Ean8] {
-            config.checksum_flags.insert(sym, (false, true)); // don't add, do emit
-        }
-
-        // UPC-A, UPC-E, ISBN variants are not enabled but have emit_check
-        // This allows them to be reported as variants when EAN decoding detects them
-        for sym in [
-            SymbolType::Upca,
-            SymbolType::Upce,
-            SymbolType::Isbn10,
-            SymbolType::Isbn13,
-        ] {
-            config.checksum_flags.insert(sym, (false, true)); // don't add, do emit
-        }
-
-        // Set default length limits for variable-length symbologies
-        config.length_limits.insert(SymbolType::I25, (6, 256));
-        config.length_limits.insert(SymbolType::Codabar, (4, 256));
-        config.length_limits.insert(SymbolType::Code39, (1, 256));
-
-        // Set default uncertainty values
-        config.uncertainty.insert(SymbolType::Codabar, 1);
-
         config
     }
 
@@ -250,23 +301,14 @@ impl DecoderConfig {
         self
     }
 
-    /// Disable all symbologies
+    /// Enable a symbology by its runtime [`SymbolType`].
     ///
-    /// Useful when you want to start with a clean slate and only enable
-    /// specific symbologies.
-    ///
-    /// # Example
-    /// ```
-    /// use zedbar::config::*;
-    /// use zedbar::DecoderConfig;
-    ///
-    /// let config = DecoderConfig::new()
-    ///     .disable_all()
-    ///     .enable(QrCode)
-    ///     .enable(Code39);
-    /// ```
-    pub fn disable_all(mut self) -> Self {
-        self.enabled.clear();
+    /// Prefer [`enable`](Self::enable) when the symbology is known at
+    /// compile time — it carries the [`SupportsEnable`] capability bound.
+    /// This runtime variant is for callers parsing config from strings,
+    /// CLI flags, or other dynamic sources.
+    pub fn enable_type(mut self, sym: SymbolType) -> Self {
+        self.enabled.insert(sym);
         self
     }
 
@@ -275,7 +317,8 @@ impl DecoderConfig {
         self.enabled.contains(&sym)
     }
 
-    /// Configure checksum behavior for a symbology
+    /// Configure checksum behavior for a symbology, enabling it if not
+    /// already enabled.
     ///
     /// # Arguments
     /// * `add_check` - Validate checksum during decoding
@@ -286,11 +329,13 @@ impl DecoderConfig {
         add_check: bool,
         emit_check: bool,
     ) -> Self {
+        self.enabled.insert(S::TYPE);
         self.checksum_flags.insert(S::TYPE, (add_check, emit_check));
         self
     }
 
-    /// Set minimum and maximum length limits
+    /// Set minimum and maximum length limits, enabling the symbology if not
+    /// already enabled.
     ///
     /// Only valid for variable-length symbologies like Code39, Code128, etc.
     pub fn set_length_limits<S: Symbology + SupportsLengthLimits>(
@@ -301,11 +346,13 @@ impl DecoderConfig {
     ) -> Self {
         assert!(min <= max, "min length must be <= max length");
         assert!(max <= 256, "max length must be <= 256");
+        self.enabled.insert(S::TYPE);
         self.length_limits.insert(S::TYPE, (min, max));
         self
     }
 
-    /// Set uncertainty threshold for edge detection
+    /// Set uncertainty threshold for edge detection, enabling the symbology
+    /// if not already enabled.
     ///
     /// Higher values are more tolerant of poor quality images but may
     /// produce more false positives.
@@ -314,6 +361,7 @@ impl DecoderConfig {
         _: S,
         threshold: u32,
     ) -> Self {
+        self.enabled.insert(S::TYPE);
         self.uncertainty.insert(S::TYPE, threshold);
         self
     }
@@ -387,10 +435,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_config() {
+    fn test_new_is_empty() {
         let config = DecoderConfig::new();
-        assert!(config.is_enabled(SymbolType::Ean13));
-        assert!(config.is_enabled(SymbolType::Code39));
+        for sym in SymbolType::ALL.iter() {
+            assert!(
+                !config.is_enabled(*sym),
+                "{sym:?} should be disabled in DecoderConfig::new()",
+            );
+        }
         assert!(config.position_tracking);
         assert!(!config.test_inverted);
         assert_eq!(config.x_density, 1);
@@ -398,11 +450,44 @@ mod tests {
     }
 
     #[test]
+    fn test_all_enables_kitchen_sink() {
+        let config = DecoderConfig::all();
+        for sym in [
+            SymbolType::Ean13,
+            SymbolType::Ean8,
+            SymbolType::I25,
+            SymbolType::Databar,
+            SymbolType::DatabarExp,
+            SymbolType::Codabar,
+            SymbolType::Code39,
+            SymbolType::Code93,
+            SymbolType::Code128,
+            SymbolType::QrCode,
+            SymbolType::SqCode,
+        ] {
+            assert!(
+                config.is_enabled(sym),
+                "{sym:?} should be enabled in ::all()"
+            );
+        }
+        // UPC/ISBN variants stay opt-in.
+        for sym in [
+            SymbolType::Upca,
+            SymbolType::Upce,
+            SymbolType::Isbn10,
+            SymbolType::Isbn13,
+        ] {
+            assert!(!config.is_enabled(sym));
+        }
+    }
+
+    #[test]
     fn test_builder_pattern() {
-        let config = DecoderConfig::new()
+        let config = DecoderConfig::all()
             .enable(Ean13)
             .disable(Code39)
-            .set_checksum(Code39, true, false)
+            .set_checksum(Code39, true, false) // re-enables Code39
+            .disable(Code39)
             .position_tracking(false)
             .scan_density(2, 2);
 
@@ -411,6 +496,17 @@ mod tests {
         assert!(!config.position_tracking);
         assert_eq!(config.x_density, 2);
         assert_eq!(config.y_density, 2);
+    }
+
+    #[test]
+    fn test_setters_auto_enable() {
+        let config = DecoderConfig::new()
+            .set_length_limits(Code39, 4, 20)
+            .set_checksum(Codabar, true, false)
+            .set_uncertainty(QrCode, 2);
+        assert!(config.is_enabled(SymbolType::Code39));
+        assert!(config.is_enabled(SymbolType::Codabar));
+        assert!(config.is_enabled(SymbolType::QrCode));
     }
 
     #[test]
