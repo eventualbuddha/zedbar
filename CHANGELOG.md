@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/eventualbuddha/zedbar/compare/v0.2.5...v0.3.0) (2026-05-06)
+
+
+### Features
+
+* make `DecoderConfig::new()` start empty ([#48](https://github.com/eventualbuddha/zedbar/issues/48)) ([269a961](https://github.com/eventualbuddha/zedbar/commit/269a9614f2e356cb055692296ff9c2ec31edab2c))
+
 ## [0.2.5](https://github.com/eventualbuddha/zedbar/compare/v0.2.4...v0.2.5) (2026-04-21)
 
 
