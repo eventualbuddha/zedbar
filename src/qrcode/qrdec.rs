@@ -1758,17 +1758,23 @@ impl SubpixelBBox {
 
     /// Determines whether `self` and `other` are close together based on
     /// `prox_factor`.
+    ///
+    /// The proximity window is scaled by the smaller of the two boxes'
+    /// max-side. Using `min` rather than `max` bounds runaway cascading on
+    /// noisy images: once a real QR's three finder clusters have merged into
+    /// a single ~7-module-wide region, the window for absorbing further
+    /// boxes is governed by whatever small noise cluster is being
+    /// considered, not by the merged region's growing size.
     fn is_close_to(&self, other: &Self, prox_factor: i32) -> bool {
-        let a_w = self.width();
-        let a_h = self.height();
-        let b_w = other.width();
-        let b_h = other.height();
-        let max_dim = a_w.max(a_h).max(b_w).max(b_h);
-        // Use a small floor so clusters that happen to be near-zero-dimension
-        // on one axis (all horizontal lines have height=0 in subpixel coords)
-        // still get a sensible proximity window.
+        let a_max = self.width().max(self.height());
+        let b_max = other.width().max(other.height());
+        let bound = a_max.min(b_max);
+        // Floor so clusters that happen to be near-zero-dimension on one
+        // axis (all horizontal lines have height=0 in subpixel coords)
+        // still get a sensible proximity window — this is what allows the
+        // legitimate three-finder merge of a clean QR to happen.
         let floor = 8 << QR_FINDER_SUBPREC;
-        let prox = max_dim.saturating_mul(prox_factor).max(floor);
+        let prox = bound.saturating_mul(prox_factor).max(floor);
         let dx = (self.min_x - other.max_x).max(other.min_x - self.max_x);
         let dy = (self.min_y - other.max_y).max(other.min_y - self.max_y);
         dx <= prox && dy <= prox
@@ -5145,5 +5151,103 @@ fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encodi
     if let Some(pos) = enc_list.iter().position(|&e| e == enc) {
         let e = enc_list.remove(pos).unwrap();
         enc_list.push_front(e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pixel coordinates → subpixel SubpixelBBox.
+    fn px_bbox(x: i32, y: i32, w: i32, h: i32) -> SubpixelBBox {
+        let s = QR_FINDER_SUBPREC;
+        SubpixelBBox {
+            min_x: x << s,
+            min_y: y << s,
+            max_x: (x + w) << s,
+            max_y: (y + h) << s,
+        }
+    }
+
+    /// Regression for the failure mode where a real, tight QR finder-cluster
+    /// region absorbs distant unrelated noise clusters during merging, growing
+    /// the candidate region past the retry path's per-image area filter.
+    ///
+    /// The geometry is taken from a real noisy redacted-document scan whose
+    /// pre-merge clusters were: six legitimate ~7×7 finder clusters around a
+    /// small QR in the upper-right of a 793×1121 page, plus two ~3×2 noise
+    /// clusters far below at y≈747 and y≈993.
+    ///
+    /// Once the legitimate clusters merge into one ~78×78 region, the merged
+    /// region's *own* size must NOT feed back into the proximity threshold —
+    /// otherwise distant tiny clusters get pulled in too. `is_close_to` uses
+    /// the smaller of the two boxes' max-side to bound the window, so the
+    /// noise clusters' tiny sizes keep them separate.
+    ///
+    /// Prompted by this comment: https://github.com/eventualbuddha/zedbar/issues/32#issuecomment-4400283578
+    #[test]
+    fn merge_does_not_cascade_into_distant_noise() {
+        // QR's six pre-merge finder clusters (legitimate; should merge together).
+        let mut boxes = vec![
+            px_bbox(721, 232, 7, 7),
+            px_bbox(651, 233, 7, 6),
+            px_bbox(650, 302, 7, 7),
+            px_bbox(651, 233, 6, 7),
+            px_bbox(651, 302, 6, 7),
+            px_bbox(721, 232, 6, 7),
+        ];
+        // Two distant tiny noise clusters in the bottom of the page.
+        boxes.push(px_bbox(194, 747, 3, 2));
+        boxes.push(px_bbox(198, 993, 4, 2));
+
+        let merged = SubpixelBBox::merge_nearby_bboxes(boxes);
+
+        // Expect: 1 box for the QR, 2 separate noise boxes — three total.
+        assert_eq!(
+            merged.len(),
+            3,
+            "expected QR cluster + 2 noise clusters to stay separate, got bboxes: {:?}",
+            merged
+                .iter()
+                .map(|b| (
+                    b.min_x >> QR_FINDER_SUBPREC,
+                    b.min_y >> QR_FINDER_SUBPREC,
+                    b.width() >> QR_FINDER_SUBPREC,
+                    b.height() >> QR_FINDER_SUBPREC,
+                ))
+                .collect::<Vec<_>>()
+        );
+
+        // The QR cluster should be the largest of the three and roughly
+        // 78×78 pixels — i.e. it absorbed its own six finder clusters but
+        // nothing else.
+        let qr_bbox = merged
+            .iter()
+            .max_by_key(|b| (b.width() as i64) * (b.height() as i64))
+            .expect("merged is non-empty");
+        let w_px = qr_bbox.width() >> QR_FINDER_SUBPREC;
+        let h_px = qr_bbox.height() >> QR_FINDER_SUBPREC;
+        assert!(
+            (70..=90).contains(&w_px) && (70..=90).contains(&h_px),
+            "expected QR merged region near 78×78 px, got {w_px}×{h_px}",
+        );
+    }
+
+    /// Sanity: the legitimate three-finder merge of a clean QR still happens.
+    /// Three ~7×7 finder clusters at the corners of a v1-sized QR (21 modules
+    /// × ~3 px per module ≈ 63 px square) must collapse to a single bbox.
+    #[test]
+    fn merge_combines_three_finder_clusters() {
+        let boxes = vec![
+            px_bbox(0, 0, 7, 7),  // upper-left finder
+            px_bbox(56, 0, 7, 7), // upper-right finder
+            px_bbox(0, 56, 7, 7), // lower-left finder
+        ];
+        let merged = SubpixelBBox::merge_nearby_bboxes(boxes);
+        assert_eq!(
+            merged.len(),
+            1,
+            "three-finder merge should produce one bbox"
+        );
     }
 }
