@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/eventualbuddha/zedbar/compare/v0.3.0...v0.3.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* better handle noisy images ([#50](https://github.com/eventualbuddha/zedbar/issues/50)) ([1d5db4a](https://github.com/eventualbuddha/zedbar/commit/1d5db4a3e53515da4633a661785bbe554eabdd8d))
+
 ## [0.3.0](https://github.com/eventualbuddha/zedbar/compare/v0.2.5...v0.3.0) (2026-05-06)
 
 
