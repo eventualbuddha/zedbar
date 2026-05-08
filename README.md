@@ -15,20 +15,16 @@ This is a port of the ZBar library to Rust, providing barcode detection and deco
 
 ## Installation
 
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-zedbar = "0.2"
+```bash
+cargo add zedbar
 ```
 
 ### Cargo Features
 
 By default, all symbologies are enabled. You can selectively enable only the ones you need to reduce compile time and binary size:
 
-```toml
-[dependencies]
-zedbar = { version = "0.2", default-features = false, features = ["qrcode", "ean"] }
+```bash
+cargo add zedbar --no-default-features --features qrcode,ean
 ```
 
 #### Symbology Features
@@ -63,16 +59,14 @@ default = ["qrcode", "sqcode", "ean", "code128", "code39", "code93", "codabar", 
 
 For the absolute minimal build with zero external dependencies (1D barcodes only):
 
-```toml
-[dependencies]
-zedbar = { version = "0.2", default-features = false, features = ["ean"] }
+```bash
+cargo add zedbar --no-default-features --features ean
 ```
 
 For QR codes only (with necessary dependencies):
 
-```toml
-[dependencies]
-zedbar = { version = "0.2", default-features = false, features = ["qrcode"] }
+```bash
+cargo add zedbar --no-default-features --features qrcode
 ```
 
 Note: Disabling a feature at compile-time means that symbology will not be compiled into the binary at all, which is different from disabling it via runtime configuration.
