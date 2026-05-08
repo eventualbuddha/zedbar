@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/eventualbuddha/zedbar/compare/v0.3.1...v0.4.0) (2026-05-08)
+
+
+### Features
+
+* expose symbol position points and bounding rectangle ([#52](https://github.com/eventualbuddha/zedbar/issues/52)) ([4ab6720](https://github.com/eventualbuddha/zedbar/commit/4ab67200aadb5a9ed0e4bc599b975ee814b94367))
+
 ## [0.3.1](https://github.com/eventualbuddha/zedbar/compare/v0.3.0...v0.3.1) (2026-05-07)
 
 
