@@ -100,6 +100,31 @@ for symbol in symbols {
 }
 ```
 
+### Locating a Symbol in the Image
+
+Each [`Symbol`] records the image-coordinate points where it was detected,
+which lets you draw a box around the decode or crop the source image.
+
+```rust
+for symbol in symbols {
+    // QR codes record the four corners of their bounding rectangle;
+    // linear barcodes record per-scan touchpoints.
+    for point in symbol.points() {
+        println!("  point at ({}, {})", point.x, point.y);
+    }
+
+    // Or, the axis-aligned bounding box of all those points:
+    if let Some(b) = symbol.bounds() {
+        println!("  bounds: {}×{} at ({}, {})", b.width, b.height, b.x, b.y);
+    }
+}
+```
+
+`bounds()` returns the AABB of `points()`, with `width` and `height`
+reported as `max - min` of the recorded points (the extent between the
+outermost points), not as a pixel count. Both return empty / `None` for
+symbols that did not record any points.
+
 ### Choosing Symbologies
 
 `DecoderConfig::new()` starts **empty** — opt in to each symbology you need:

@@ -113,6 +113,30 @@ const results = scanImageBytes(imageBytes, { symbologies: ['QR-Code'] });
 - `symbolType` (`string`) - Barcode format (e.g., `"QR-Code"`, `"EAN-13"`)
 - `data` (`Uint8Array`) - Raw decoded bytes
 - `text` (`string | undefined`) - Decoded data as UTF-8 string, or `undefined` if not valid UTF-8
+- `points` (`Point[]`) - Position points in image coordinates. For QR codes, the four corners of the QR's bounding rectangle (in implementation-defined order). For linear barcodes, one or more touchpoints accumulated as the symbol was scanned. Empty if no points were recorded.
+- `bounds` (`Bounds | undefined`) - Axis-aligned bounding rectangle of `points`, or `undefined` if no points were recorded.
+
+### `Point`
+
+- `x` (`number`)
+- `y` (`number`)
+
+### `Bounds`
+
+- `x`, `y` (`number`) - Top-left corner in image coordinates.
+- `width`, `height` (`number`) - Reported as `max - min` of the recorded points (the horizontal and vertical extent between the outermost points), not as a pixel count.
+
+```javascript
+for (const result of scanImageBytes(imageBytes)) {
+  for (const { x, y } of result.points) {
+    console.log(`  point at (${x}, ${y})`);
+  }
+  if (result.bounds) {
+    const { x, y, width, height } = result.bounds;
+    console.log(`  bounds: ${width}×${height} at (${x}, ${y})`);
+  }
+}
+```
 
 ## Supported Formats
 

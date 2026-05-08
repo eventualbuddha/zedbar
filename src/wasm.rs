@@ -69,12 +69,71 @@ impl ScanOptions {
     }
 }
 
+/// A 2D pixel coordinate in image space.
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct Point {
+    x: i32,
+    y: i32,
+}
+
+#[wasm_bindgen]
+impl Point {
+    #[wasm_bindgen(getter)]
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn y(&self) -> i32 {
+        self.y
+    }
+}
+
+/// Axis-aligned bounding rectangle of a decoded symbol in image
+/// coordinates. `width` and `height` are reported as `max - min` of the
+/// recorded points (i.e. the horizontal and vertical extent between the
+/// outermost points), not as a pixel count.
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub struct Bounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+#[wasm_bindgen]
+impl Bounds {
+    #[wasm_bindgen(getter)]
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn y(&self) -> i32 {
+        self.y
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
 /// A decoded barcode/QR code result.
 #[wasm_bindgen]
 pub struct DecodeResult {
     symbol_type: String,
     data: Vec<u8>,
     text: Option<String>,
+    points: Vec<Point>,
+    bounds: Option<Bounds>,
 }
 
 #[wasm_bindgen]
@@ -102,6 +161,24 @@ impl DecodeResult {
     #[wasm_bindgen(getter)]
     pub fn text(&self) -> Option<String> {
         self.text.clone()
+    }
+
+    /// The recorded position points of this symbol in image coordinates.
+    ///
+    /// For QR codes, this is the four corner points of the QR's bounding
+    /// rectangle (in implementation-defined order). For linear barcodes,
+    /// this is one or more touchpoints accumulated as the symbol was
+    /// scanned. Empty if no points were recorded.
+    #[wasm_bindgen(getter)]
+    pub fn points(&self) -> Vec<Point> {
+        self.points.clone()
+    }
+
+    /// The axis-aligned bounding rectangle of this symbol's recorded
+    /// points, or `null` if no points were recorded.
+    #[wasm_bindgen(getter)]
+    pub fn bounds(&self) -> Option<Bounds> {
+        self.bounds
     }
 }
 
@@ -147,10 +224,25 @@ pub fn scan_grayscale(
 
     Ok(symbols
         .into_iter()
-        .map(|s| DecodeResult {
-            symbol_type: s.symbol_type().to_string(),
-            data: s.raw_data().unwrap_or(s.data()).to_vec(),
-            text: s.data_string().map(|t| t.to_string()),
+        .map(|s| {
+            let points = s
+                .points()
+                .iter()
+                .map(|p| Point { x: p.x, y: p.y })
+                .collect();
+            let bounds = s.bounds().map(|b| Bounds {
+                x: b.x,
+                y: b.y,
+                width: b.width,
+                height: b.height,
+            });
+            DecodeResult {
+                symbol_type: s.symbol_type().to_string(),
+                data: s.raw_data().unwrap_or(s.data()).to_vec(),
+                text: s.data_string().map(|t| t.to_string()),
+                points,
+                bounds,
+            }
         })
         .collect())
 }
