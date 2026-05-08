@@ -290,8 +290,8 @@ impl Scanner {
                 let half = scale as i32 / 2;
                 for sym in &mut retry_symbols {
                     for pt in &mut sym.pts {
-                        pt[0] = (pt[0] + half) / scale as i32 + cx as i32;
-                        pt[1] = (pt[1] + half) / scale as i32 + cy as i32;
+                        pt.x = (pt.x + half) / scale as i32 + cx as i32;
+                        pt.y = (pt.y + half) / scale as i32 + cy as i32;
                     }
                 }
                 for sym in retry_symbols {

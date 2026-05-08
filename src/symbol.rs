@@ -24,12 +24,7 @@
 //! }
 //! ```
 
-#[cfg(feature = "qrcode")]
-use crate::qrcode::qrdec::qr_point;
 use std::{fmt::Display, str::from_utf8};
-
-#[cfg(not(feature = "qrcode"))]
-pub(crate) type qr_point = [i32; 2];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Orientation {
@@ -41,13 +36,38 @@ pub enum Orientation {
     Left,
 }
 
+/// A 2D pixel coordinate in image space.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Point {
+    pub const fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+}
+
+impl From<[i32; 2]> for Point {
+    fn from([x, y]: [i32; 2]) -> Self {
+        Self { x, y }
+    }
+}
+
+impl From<Point> for [i32; 2] {
+    fn from(p: Point) -> Self {
+        [p.x, p.y]
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Symbol {
     symbol_type: SymbolType,
     pub(crate) modifiers: u32,
     pub(crate) data: Vec<u8>,
     pub(crate) raw_data: Option<Vec<u8>>,
-    pub(crate) pts: Vec<qr_point>,
+    pub(crate) pts: Vec<Point>,
     pub(crate) orientation: Orientation,
     pub(crate) components: Vec<Symbol>,
     pub(crate) quality: i32,
@@ -76,7 +96,7 @@ impl Symbol {
     }
 
     pub(crate) fn add_point(&mut self, x: i32, y: i32) {
-        self.pts.push([x, y]);
+        self.pts.push(Point::new(x, y));
     }
 }
 
@@ -129,6 +149,68 @@ impl Symbol {
     pub fn components(&self) -> &[Symbol] {
         &self.components
     }
+
+    /// Get the recorded position points of this symbol in image coordinates.
+    ///
+    /// For QR codes, this is the four corner points of the QR's bounding
+    /// rectangle (in an implementation-defined order). For linear barcodes,
+    /// this is one or more touchpoints accumulated as the symbol was
+    /// scanned, suitable for approximating the symbol's extent.
+    ///
+    /// Returns an empty slice when no points were recorded — for example,
+    /// when position tracking is disabled for linear barcodes, or when the
+    /// symbol came from a code path that does not populate points.
+    pub fn points(&self) -> &[Point] {
+        &self.pts
+    }
+
+    /// Get the axis-aligned bounding rectangle of this symbol in image
+    /// coordinates, computed from [`points`](Self::points).
+    ///
+    /// `width` and `height` are reported as `max - min` of the recorded
+    /// points (i.e. the horizontal and vertical extent between the
+    /// outermost points), not as a pixel count.
+    ///
+    /// Returns `None` when no points were recorded.
+    pub fn bounds(&self) -> Option<Bounds> {
+        let mut iter = self.pts.iter().copied();
+        let Point { x: x0, y: y0 } = iter.next()?;
+        let (mut min_x, mut max_x) = (x0, x0);
+        let (mut min_y, mut max_y) = (y0, y0);
+        for Point { x, y } in iter {
+            if x < min_x {
+                min_x = x;
+            } else if x > max_x {
+                max_x = x;
+            }
+            if y < min_y {
+                min_y = y;
+            } else if y > max_y {
+                max_y = y;
+            }
+        }
+        let width = (max_x as i64 - min_x as i64).max(0).min(u32::MAX as i64) as u32;
+        let height = (max_y as i64 - min_y as i64).max(0).min(u32::MAX as i64) as u32;
+        Some(Bounds {
+            x: min_x,
+            y: min_y,
+            width,
+            height,
+        })
+    }
+}
+
+/// Axis-aligned bounding rectangle of a [`Symbol`] in image coordinates.
+///
+/// `x` and `y` are the top-left corner. `width` and `height` are the
+/// horizontal and vertical extent of the symbol's recorded points, computed
+/// as `max - min` (so a single recorded point yields `width == height == 0`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Bounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
@@ -267,5 +349,74 @@ impl std::str::FromStr for SymbolType {
             .copied()
             .find(|sym| sym.to_string() == s)
             .ok_or_else(|| ParseSymbolTypeError(s.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_points_empty_when_no_points_recorded() {
+        let sym = Symbol::new(SymbolType::QrCode);
+        assert!(sym.points().is_empty());
+    }
+
+    #[test]
+    fn test_bounds_returns_none_when_no_points_recorded() {
+        let sym = Symbol::new(SymbolType::QrCode);
+        assert_eq!(sym.bounds(), None);
+    }
+
+    #[test]
+    fn test_bounds_with_single_point_has_zero_extent() {
+        let mut sym = Symbol::new(SymbolType::Code128);
+        sym.add_point(7, 11);
+        assert_eq!(
+            sym.bounds(),
+            Some(Bounds {
+                x: 7,
+                y: 11,
+                width: 0,
+                height: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn test_bounds_aabb_of_qr_corners() {
+        let mut sym = Symbol::new(SymbolType::QrCode);
+        // Corners pushed in qrdec's [0, 2, 3, 1] order; bounds() must be
+        // independent of insertion order.
+        sym.add_point(88, 1996);
+        sym.add_point(211, 2121);
+        sym.add_point(88, 2121);
+        sym.add_point(211, 1996);
+        assert_eq!(sym.points().len(), 4);
+        assert_eq!(
+            sym.bounds(),
+            Some(Bounds {
+                x: 88,
+                y: 1996,
+                width: 123,
+                height: 125,
+            })
+        );
+    }
+
+    #[test]
+    fn test_bounds_with_negative_coordinates() {
+        let mut sym = Symbol::new(SymbolType::Code128);
+        sym.add_point(-3, -7);
+        sym.add_point(2, 4);
+        assert_eq!(
+            sym.bounds(),
+            Some(Bounds {
+                x: -3,
+                y: -7,
+                width: 5,
+                height: 11,
+            })
+        );
     }
 }

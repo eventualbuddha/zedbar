@@ -98,7 +98,7 @@ pub use config::DecoderConfig;
 pub use error::{Error, Result};
 pub use image::Image;
 pub use scanner::{FinderRegion, ScanResult, Scanner};
-pub use symbol::{Orientation, SymbolType};
+pub use symbol::{Bounds, Orientation, Point, SymbolType};
 
 #[cfg(all(test, feature = "qrcode"))]
 mod proptest_qr;
@@ -173,6 +173,50 @@ mod tests {
             "✓ zedbar and rqrr agree on {} symbols",
             zedbar_results.len()
         );
+    }
+
+    #[test]
+    fn test_qr_symbol_bounds_from_real_scan() {
+        let img = ::image::ImageReader::open("examples/test-qr.png")
+            .expect("Failed to open image")
+            .decode()
+            .expect("Failed to decode image");
+        let gray = img.to_luma8();
+        let (width, height) = gray.dimensions();
+        let mut zedbar_img =
+            Image::from_gray(gray.as_raw(), width, height).expect("Failed to create zedbar image");
+        let mut scanner = Scanner::new();
+        let symbols = scanner.scan(&mut zedbar_img);
+        let symbol = symbols
+            .symbols()
+            .iter()
+            .find(|s| s.symbol_type() == SymbolType::QrCode)
+            .expect("Expected at least one QR symbol");
+
+        // QR codes record the 4 corners of their bounding rectangle.
+        assert_eq!(symbol.points().len(), 4);
+
+        let bounds = symbol.bounds().expect("QR symbol should have bounds");
+
+        // Bounds should sit inside the source image and have non-zero extent.
+        assert!(bounds.x >= 0);
+        assert!(bounds.y >= 0);
+        assert!(bounds.width > 0);
+        assert!(bounds.height > 0);
+        assert!(bounds.x as u32 + bounds.width <= width);
+        assert!(bounds.y as u32 + bounds.height <= height);
+
+        // Bounds should be the AABB of the recorded points.
+        let xs = symbol.points().iter().map(|p| p.x);
+        let ys = symbol.points().iter().map(|p| p.y);
+        let min_x = xs.clone().min().expect("at least one point");
+        let max_x = xs.max().expect("at least one point");
+        let min_y = ys.clone().min().expect("at least one point");
+        let max_y = ys.max().expect("at least one point");
+        assert_eq!(bounds.x, min_x);
+        assert_eq!(bounds.y, min_y);
+        assert_eq!(bounds.width, (max_x - min_x) as u32);
+        assert_eq!(bounds.height, (max_y - min_y) as u32);
     }
 
     #[test]

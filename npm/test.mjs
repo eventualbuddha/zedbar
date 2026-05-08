@@ -49,3 +49,33 @@ for (const [filename, expectedType, expectedData] of testCases) {
   });
 
 }
+
+test('QR code exposes points and bounds', async () => {
+  const imageBytes = await readFile(join(examplesDir, 'test-qr.png'));
+  const results = zedbar.scanImageBytes(imageBytes);
+  const qr = results.find((r) => r.symbolType === 'QR-Code');
+  assert(qr, 'expected a QR-Code result');
+
+  // QR codes record their four corner points.
+  assert(Array.isArray(qr.points), 'points should be an array');
+  assert.equal(qr.points.length, 4);
+  for (const p of qr.points) {
+    assert.equal(typeof p.x, 'number');
+    assert.equal(typeof p.y, 'number');
+  }
+
+  const bounds = qr.bounds;
+  assert(bounds, 'QR-Code result should have bounds');
+
+  // Bounds should be the AABB of the points.
+  const xs = qr.points.map((p) => p.x);
+  const ys = qr.points.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  assert.equal(bounds.x, minX);
+  assert.equal(bounds.y, minY);
+  assert.equal(bounds.width, maxX - minX);
+  assert.equal(bounds.height, maxY - minY);
+});

@@ -15,20 +15,16 @@ This is a port of the ZBar library to Rust, providing barcode detection and deco
 
 ## Installation
 
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-zedbar = "0.2"
+```bash
+cargo add zedbar
 ```
 
 ### Cargo Features
 
 By default, all symbologies are enabled. You can selectively enable only the ones you need to reduce compile time and binary size:
 
-```toml
-[dependencies]
-zedbar = { version = "0.2", default-features = false, features = ["qrcode", "ean"] }
+```bash
+cargo add zedbar --no-default-features --features qrcode,ean
 ```
 
 #### Symbology Features
@@ -63,16 +59,14 @@ default = ["qrcode", "sqcode", "ean", "code128", "code39", "code93", "codabar", 
 
 For the absolute minimal build with zero external dependencies (1D barcodes only):
 
-```toml
-[dependencies]
-zedbar = { version = "0.2", default-features = false, features = ["ean"] }
+```bash
+cargo add zedbar --no-default-features --features ean
 ```
 
 For QR codes only (with necessary dependencies):
 
-```toml
-[dependencies]
-zedbar = { version = "0.2", default-features = false, features = ["qrcode"] }
+```bash
+cargo add zedbar --no-default-features --features qrcode
 ```
 
 Note: Disabling a feature at compile-time means that symbology will not be compiled into the binary at all, which is different from disabling it via runtime configuration.
@@ -99,6 +93,31 @@ for symbol in symbols {
     println!("{:?}: {}", symbol.symbol_type(), symbol.data_string().unwrap_or(""));
 }
 ```
+
+### Locating a Symbol in the Image
+
+Each [`Symbol`] records the image-coordinate points where it was detected,
+which lets you draw a box around the decode or crop the source image.
+
+```rust
+for symbol in symbols {
+    // QR codes record the four corners of their bounding rectangle;
+    // linear barcodes record per-scan touchpoints.
+    for point in symbol.points() {
+        println!("  point at ({}, {})", point.x, point.y);
+    }
+
+    // Or, the axis-aligned bounding box of all those points:
+    if let Some(b) = symbol.bounds() {
+        println!("  bounds: {}×{} at ({}, {})", b.width, b.height, b.x, b.y);
+    }
+}
+```
+
+`bounds()` returns the AABB of `points()`, with `width` and `height`
+reported as `max - min` of the recorded points (the extent between the
+outermost points), not as a pixel count. Both return empty / `None` for
+symbols that did not record any points.
 
 ### Choosing Symbologies
 

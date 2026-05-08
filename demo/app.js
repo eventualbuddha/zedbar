@@ -202,6 +202,7 @@ function scanBitmap(bitmap) {
     const t0 = performance.now();
     const results = scanGrayscale(gray, width, height);
     const elapsed = performance.now() - t0;
+    drawSymbolOverlay(ctx, results);
     displayResults(results, elapsed);
     showPermalink();
   } catch (e) {
@@ -209,6 +210,67 @@ function scanBitmap(bitmap) {
   } finally {
     dropZone.classList.remove("loading");
   }
+}
+
+function colorForSymbolType(symbolType) {
+  switch (symbolType) {
+    case "QR-Code":
+      return "#22c55e";
+    case "SQ-Code":
+      return "#3b82f6";
+    default:
+      return "#f59e0b";
+  }
+}
+
+// Sort 2D points clockwise around their centroid so a polygon connecting
+// them in order forms the convex outline of the symbol. Without this the
+// 4 QR corner points (recorded in a non-traversal order) would cross
+// themselves when stroked as a polygon.
+function pointsAroundCentroid(points) {
+  if (points.length <= 2) return points;
+  let cx = 0;
+  let cy = 0;
+  for (const p of points) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= points.length;
+  cy /= points.length;
+  return [...points].sort(
+    (a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx),
+  );
+}
+
+// Draws an outline of each detected symbol on top of the source image:
+// a polygon for symbols that recorded multiple points (QR corners, scan
+// touchpoints) and a bounding rectangle as a fallback. Drawn in image
+// coordinates so it scales with the canvas's CSS sizing.
+function drawSymbolOverlay(ctx, results) {
+  if (!results || results.length === 0) return;
+  const stroke = Math.max(2, Math.min(ctx.canvas.width, ctx.canvas.height) / 300);
+  ctx.save();
+  ctx.lineWidth = stroke;
+  ctx.lineJoin = "round";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+  ctx.shadowBlur = stroke * 1.5;
+  for (const result of results) {
+    ctx.strokeStyle = colorForSymbolType(result.symbolType);
+    const points = pointsAroundCentroid(result.points || []);
+    if (points.length >= 3) {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    } else if (result.bounds) {
+      const { x, y, width, height } = result.bounds;
+      ctx.strokeRect(x, y, width, height);
+    }
+  }
+  ctx.restore();
 }
 
 function formatTypeLabel(symbolType, count) {
