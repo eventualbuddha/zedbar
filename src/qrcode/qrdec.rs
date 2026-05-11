@@ -4009,11 +4009,12 @@ impl QrReader {
     /// Match finder centers and decode QR codes
     fn match_centers(
         &mut self,
-        _qrlist: &mut qr_code_data_list,
+        qrlist: &mut qr_code_data_list,
         _centers: &mut [qr_finder_center],
         img: &[u8],
-        _width: i32,
-        _height: i32,
+        width: i32,
+        height: i32,
+        triplet_fail_regions: &mut Vec<BBox>,
     ) {
         // The number of centers should be small, so an O(n^3) exhaustive search of
         // which ones go together should be reasonable.
@@ -4026,7 +4027,7 @@ impl QrReader {
         let nfailures_max = i32::max(
             8192,
             i32::max(
-                (_width * _height) >> 9,
+                (width * height) >> 9,
                 (_centers.len() * _centers.len()) as i32,
             ),
         );
@@ -4079,8 +4080,8 @@ impl QrReader {
                         let version = self.try_configuration(
                             &mut qrdata,
                             img,
-                            _width,
-                            _height,
+                            width,
+                            height,
                             _centers,
                             [i, j, k],
                         );
@@ -4140,7 +4141,14 @@ impl QrReader {
                                         inside.push(_centers[l].clone());
                                     }
                                 }
-                                self.match_centers(_qrlist, &mut inside, img, _width, _height);
+                                self.match_centers(
+                                    qrlist,
+                                    &mut inside,
+                                    img,
+                                    width,
+                                    height,
+                                    triplet_fail_regions,
+                                );
                             }
 
                             // Mark _all_ such centers used: codes cannot partially overlap
@@ -4153,8 +4161,33 @@ impl QrReader {
                             nfailures = 0;
 
                             // Add the data to the list
-                            _qrlist.qrdata.push(qrdata);
+                            qrlist.qrdata.push(qrdata);
                         } else {
+                            // The triplet passed the right-isosceles geometric
+                            // pre-filter (so it really does look like a QR's
+                            // three finder patterns) but `try_configuration`
+                            // couldn't decode it. Record a tight bbox over just
+                            // these three centers so the retry path can crop
+                            // and upscale this specific candidate, instead of
+                            // falling back to a much looser cluster bbox that
+                            // may sweep in unrelated noise from across the
+                            // image.
+                            let pi = &_centers[i].pos;
+                            let pj = &_centers[j].pos;
+                            let pk = &_centers[k].pos;
+                            let min_x = pi[0].min(pj[0]).min(pk[0]) >> QR_FINDER_SUBPREC;
+                            let max_x = pi[0].max(pj[0]).max(pk[0]) >> QR_FINDER_SUBPREC;
+                            let min_y = pi[1].min(pj[1]).min(pk[1]) >> QR_FINDER_SUBPREC;
+                            let max_y = pi[1].max(pj[1]).max(pk[1]) >> QR_FINDER_SUBPREC;
+                            if min_x >= 0 && min_y >= 0 && max_x > min_x && max_y > min_y {
+                                triplet_fail_regions.push((
+                                    min_x as u32,
+                                    min_y as u32,
+                                    (max_x - min_x) as u32,
+                                    (max_y - min_y) as u32,
+                                ));
+                            }
+
                             nfailures += 1;
                             if nfailures > nfailures_max {
                                 // Give up.
@@ -4219,6 +4252,7 @@ impl QrReader {
         let bin = binarize(&img.data, img.width as usize, img.height as usize);
 
         let mut qrlist = qr_code_data_list::default();
+        let mut triplet_fail_regions: Vec<BBox> = Vec::new();
 
         self.match_centers(
             &mut qrlist,
@@ -4226,6 +4260,7 @@ impl QrReader {
             &bin,
             img.width as i32,
             img.height as i32,
+            &mut triplet_fail_regions,
         );
 
         let symbols = if !qrlist.qrdata.is_empty() {
@@ -4237,7 +4272,17 @@ impl QrReader {
         qrlist.qrdata.clear();
 
         if symbols.is_empty() {
-            (vec![], fail_regions)
+            // Prefer the tight bboxes from triplets that geometrically look
+            // like a QR but couldn't be decoded — those pin the failure to
+            // the actual QR location. Fall back to the looser cluster
+            // regions only when no such triplet survived (e.g. when the
+            // detected centers didn't even pass the right-isosceles filter).
+            let regions = if !triplet_fail_regions.is_empty() {
+                triplet_fail_regions
+            } else {
+                fail_regions
+            };
+            (vec![], regions)
         } else {
             (symbols, Vec::new())
         }
