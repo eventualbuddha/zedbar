@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/eventualbuddha/zedbar/compare/v0.4.0...v0.4.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **qrcode:** report tight per-triplet failure regions for retry ([#55](https://github.com/eventualbuddha/zedbar/issues/55)) ([f80dcb6](https://github.com/eventualbuddha/zedbar/commit/f80dcb685aad8c9972d4515ac0669ec1fba959b1))
+
 ## [0.4.0](https://github.com/eventualbuddha/zedbar/compare/v0.3.1...v0.4.0) (2026-05-08)
 
 
