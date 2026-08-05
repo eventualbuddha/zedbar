@@ -474,6 +474,7 @@ fn test_all_examples_decode() {
         "examples/qr-code-pacman.png",
         "examples/test-codabar.png",
         "examples/test-code128.png",
+        "examples/test-code128-2.png",
         "examples/test-code39.png",
         "examples/test-code93.png",
         "examples/test-ean13.png",
