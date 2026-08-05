@@ -371,32 +371,32 @@ fn postprocess_c(dcode: &mut ImageScanner, start: usize, end: usize, dst: usize)
 fn postprocess(dcode: &mut ImageScanner) -> bool {
     dcode.modifiers = 0;
     dcode.direction = 1 - 2 * (dcode.code128.direction() as i32);
-    let character_count = dcode.code128.character() as usize;
+    let initial_character_count = dcode.code128.character() as usize;
     let direction = dcode.code128.direction();
 
     // First phase: reverse buffer if needed and validate
     {
-        let buf = match dcode.buffer_mut_slice(character_count) {
+        let buf = match dcode.buffer_mut_slice(initial_character_count) {
             Ok(buf) => buf,
             Err(_) => return true,
         };
 
         if direction != 0 {
             // Reverse buffer
-            let half = character_count / 2;
+            let half = initial_character_count / 2;
             for i in 0..half {
-                let j = character_count - 1 - i;
+                let j = initial_character_count - 1 - i;
                 buf.swap(i, j);
             }
             zassert!(
-                buf[character_count - 1] == STOP_REV,
+                buf[initial_character_count - 1] == STOP_REV,
                 true,
                 "dir={:x}\n",
                 direction
             );
         } else {
             zassert!(
-                buf[character_count - 1] == STOP_FWD,
+                buf[initial_character_count - 1] == STOP_FWD,
                 true,
                 "dir={:x}\n",
                 direction
@@ -414,7 +414,7 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
 
     // Second phase: convert characters
     let start_code = {
-        let buf = match dcode.buffer_mut_slice(character_count) {
+        let buf = match dcode.buffer_mut_slice(initial_character_count) {
             Ok(buf) => buf,
             Err(_) => return true,
         };
@@ -426,7 +426,8 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
 
     let mut i = 1usize;
     let mut j = 0usize;
-    while i < (character_count - 2) {
+    while i < (dcode.code128.character() as usize - 2) {
+        let character_count = dcode.code128.character() as usize;
         let code = {
             let buf = match dcode.buffer_mut_slice(character_count.max(j + 1)) {
                 Ok(buf) => buf,
@@ -500,7 +501,7 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
                     dcode.modifiers |= Modifier::Gs1.bit();
                 } else if i == 2 {
                     dcode.modifiers |= Modifier::Aim.bit();
-                } else if i < (character_count - 3) {
+                } else if i < (dcode.code128.character() as usize - 3) {
                     let buf = match dcode.buffer_mut_slice(j + 1) {
                         Ok(buf) => buf,
                         Err(_) => return true,
@@ -553,13 +554,6 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
 
     zassert!(j < dcode.buffer_capacity(), true, "j={:02x}\n", j);
     dcode.set_buffer_len(j);
-
-    // Write null terminator
-    let buf = match dcode.buffer_mut_slice(j + 1) {
-        Ok(buf) => buf,
-        Err(_) => return true,
-    };
-    buf[j] = 0;
 
     dcode.code128.set_character(j as i16);
     false
