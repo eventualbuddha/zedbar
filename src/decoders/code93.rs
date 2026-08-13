@@ -168,7 +168,10 @@ fn decode_abort(dcode: &mut ImageScanner) -> SymbolType {
     SymbolType::None
 }
 
-/// Check stop pattern
+/// Check stop pattern.
+///
+/// A failure here aborts the in-progress symbol (see [`decode_abort`]), so
+/// that the length/quiet-zone rejection also drops the shared lock.
 fn check_stop(dcode: &ImageScanner) -> bool {
     let n = dcode.code93.character() as i32;
     let s = dcode.s6;
@@ -355,7 +358,7 @@ pub(crate) fn decode_code93(dcode: &mut ImageScanner) -> SymbolType {
 
     if c == 0x2f {
         if !check_stop(dcode) {
-            return SymbolType::None;
+            return decode_abort(dcode);
         }
         if !validate_checksums(dcode) {
             return decode_abort(dcode);
@@ -377,7 +380,7 @@ pub(crate) fn decode_code93(dcode: &mut ImageScanner) -> SymbolType {
 
     if character == 1 {
         // Lock shared resources
-        if !dcode.acquire_lock(SymbolType::Code39) {
+        if !dcode.acquire_lock(SymbolType::Code93) {
             return decode_abort(dcode);
         }
         // Copy from holding buffer
