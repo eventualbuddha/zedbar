@@ -3,7 +3,11 @@
 //! This module implements decoding for Code 128 barcodes.
 
 use crate::{
-    SymbolType, color::Color, decoder::Modifier, decoder::decode_e, img_scanner::ImageScanner,
+    SymbolType,
+    color::Color,
+    decoder::Modifier,
+    decoder::decode_e,
+    img_scanner::{BUFFER_MAX, ImageScanner},
 };
 
 // Character count
@@ -303,23 +307,38 @@ fn validate_checksum(dcode: &ImageScanner) -> bool {
     sum != check
 }
 
-/// Expand and decode character set C
-fn postprocess_c(dcode: &mut ImageScanner, start: usize, end: usize, dst: usize) -> u32 {
-    // Expand buffer to accommodate 2x set C characters (2 digits per-char)
+/// Expand and decode character set C in place.
+///
+/// Set C encodes two digits per character, so each expanded character needs
+/// one extra byte. The still-unprocessed tail is relocated to the end of the
+/// buffer to make room, and `character` grows to match — the caller's loop
+/// bound must follow it (see [`postprocess`]).
+///
+/// Returns the number of characters expanded, or `None` if the buffer would
+/// overflow.
+fn postprocess_c(
+    buf: &mut Vec<u8>,
+    character: &mut usize,
+    start: usize,
+    end: usize,
+    dst: usize,
+) -> Option<usize> {
     let delta = end - start;
-    let old_len = dcode.code128.character() as usize;
-    let newlen = old_len + delta;
-    if dcode.set_buffer_capacity(newlen).is_err() {
-        return SymbolType::None as u32;
+    let newlen = *character + delta;
+    if newlen > BUFFER_MAX {
+        return None;
     }
 
-    let buf = match dcode.buffer_mut_slice(newlen) {
-        Ok(buf) => buf,
-        Err(_) => return SymbolType::None as u32,
-    };
+    // Room for the relocated tail and for the two digits each character
+    // expands into.
+    let needed = newlen.max(dst + delta * 2);
+    if buf.len() < needed {
+        buf.resize(needed, 0);
+    }
 
     // Relocate unprocessed data to end of buffer
-    buf.copy_within(start..old_len, start + delta);
+    buf.copy_within(start..*character, start + delta);
+    *character = newlen;
 
     for i in 0..delta {
         let j = dst + i * 2;
@@ -344,7 +363,7 @@ fn postprocess_c(dcode: &mut ImageScanner, start: usize, end: usize, dst: usize)
         }
         zassert!(
             buf[j] <= b'9',
-            delta as u32,
+            Some(delta),
             "start={:x} end={:x} i={:x} j={:x}\n",
             start,
             end,
@@ -353,7 +372,7 @@ fn postprocess_c(dcode: &mut ImageScanner, start: usize, end: usize, dst: usize)
         );
         zassert!(
             code <= 9,
-            delta as u32,
+            Some(delta),
             "start={:x} end={:x} i={:x} j={:x}\n",
             start,
             end,
@@ -363,82 +382,81 @@ fn postprocess_c(dcode: &mut ImageScanner, start: usize, end: usize, dst: usize)
         buf[j + 1] = b'0' + code;
     }
 
-    dcode.code128.set_character(newlen as i16);
-    delta as u32
+    Some(delta)
 }
 
-/// Resolve scan direction and convert to ASCII
+/// Resolve scan direction and convert to ASCII.
+///
+/// Returns `true` on failure, matching the C original's error convention.
 fn postprocess(dcode: &mut ImageScanner) -> bool {
-    dcode.modifiers = 0;
-    dcode.direction = 1 - 2 * (dcode.code128.direction() as i32);
-    let initial_character_count = dcode.code128.character() as usize;
-    let direction = dcode.code128.direction();
-
-    // First phase: reverse buffer if needed and validate
-    {
-        let buf = match dcode.buffer_mut_slice(initial_character_count) {
-            Ok(buf) => buf,
-            Err(_) => return true,
-        };
-
-        if direction != 0 {
-            // Reverse buffer
-            let half = initial_character_count / 2;
-            for i in 0..half {
-                let j = initial_character_count - 1 - i;
-                buf.swap(i, j);
-            }
-            zassert!(
-                buf[initial_character_count - 1] == STOP_REV,
-                true,
-                "dir={:x}\n",
-                direction
-            );
-        } else {
-            zassert!(
-                buf[initial_character_count - 1] == STOP_FWD,
-                true,
-                "dir={:x}\n",
-                direction
-            );
+    // Take ownership of the shared buffer for the duration: set-C expansion
+    // grows it, and going through `buffer_mut_slice` would truncate it back
+    // on the next access.
+    let mut buf = dcode.take_buffer();
+    let outcome = postprocess_buf(dcode, &mut buf);
+    match outcome {
+        Some(len) => {
+            buf.truncate(len);
+            dcode.put_buffer(buf);
+            false
         }
+        None => {
+            dcode.put_buffer(buf);
+            true
+        }
+    }
+}
 
-        let code = buf[0];
+/// Body of [`postprocess`]; returns the decoded length, or `None` on failure.
+fn postprocess_buf(dcode: &mut ImageScanner, buf: &mut Vec<u8>) -> Option<usize> {
+    dcode.modifiers = 0;
+    let direction = dcode.code128.direction();
+    dcode.direction = 1 - 2 * (direction as i32);
+
+    // `character` tracks the live buffer length the way the C original's
+    // `dcode128->character` does: `postprocess_c` grows it as set-C runs
+    // expand, and the loop below must see those updates.
+    let mut character = dcode.code128.character() as usize;
+    if character < 3 || buf.len() < character {
+        return None;
+    }
+
+    if direction != 0 {
+        buf[..character].reverse();
         zassert!(
-            (START_A..=START_C).contains(&code),
-            true,
-            "code={:x}\n",
-            code
+            buf[character - 1] == STOP_REV,
+            None,
+            "dir={:x}\n",
+            direction
         );
-    } // buf borrow ends here
+    } else {
+        zassert!(
+            buf[character - 1] == STOP_FWD,
+            None,
+            "dir={:x}\n",
+            direction
+        );
+    }
 
-    // Second phase: convert characters
-    let start_code = {
-        let buf = match dcode.buffer_mut_slice(initial_character_count) {
-            Ok(buf) => buf,
-            Err(_) => return true,
-        };
-        buf[0]
-    };
+    let start_code = buf[0];
+    zassert!(
+        (START_A..=START_C).contains(&start_code),
+        None,
+        "code={:x}\n",
+        start_code
+    );
 
     let mut charset = start_code - START_A;
     let mut cexp = if start_code == START_C { 1 } else { 0 };
 
     let mut i = 1usize;
     let mut j = 0usize;
-    while i < (dcode.code128.character() as usize - 2) {
-        let character_count = dcode.code128.character() as usize;
-        let code = {
-            let buf = match dcode.buffer_mut_slice(character_count.max(j + 1)) {
-                Ok(buf) => buf,
-                Err(_) => return true,
-            };
-            buf[i]
-        };
+    while i < character - 2 {
+        let code = buf[i];
 
         zassert!(
             (code & 0x80) == 0,
-            true,
+            None,
             "i={:x} j={:x} code={:02x} charset={:x} cexp={:x}\n",
             i,
             j,
@@ -458,11 +476,9 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
                 // Convert character set A to ASCII
                 ascii_code -= 0x60;
             }
-
-            let buf = match dcode.buffer_mut_slice(character_count.max(j + 1)) {
-                Ok(buf) => buf,
-                Err(_) => return true,
-            };
+            if buf.len() <= j {
+                buf.resize(j + 1, 0);
+            }
             buf[j] = ascii_code;
             j += 1;
             if (charset & 0x80) != 0 {
@@ -473,7 +489,7 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
                 // Expand character set C to ASCII
                 zassert!(
                     cexp != 0,
-                    true,
+                    None,
                     "i={:x} j={:x} code={:02x} charset={:x} cexp={:x}\n",
                     i,
                     j,
@@ -481,10 +497,9 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
                     charset,
                     cexp
                 );
-                let delta = postprocess_c(dcode, cexp, i, j);
-                // Buffer was modified by postprocess_c, no need to re-acquire
-                i += delta as usize;
-                j += (delta * 2) as usize;
+                let delta = postprocess_c(buf, &mut character, cexp, i, j)?;
+                i += delta;
+                j += delta * 2;
                 cexp = 0;
             }
             if code < CODE_C {
@@ -501,22 +516,22 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
                     dcode.modifiers |= Modifier::Gs1.bit();
                 } else if i == 2 {
                     dcode.modifiers |= Modifier::Aim.bit();
-                } else if i < (dcode.code128.character() as usize - 3) {
-                    let buf = match dcode.buffer_mut_slice(j + 1) {
-                        Ok(buf) => buf,
-                        Err(_) => return true,
-                    };
+                } else if i < character - 3 {
+                    if buf.len() <= j {
+                        buf.resize(j + 1, 0);
+                    }
                     buf[j] = 0x1d;
                     j += 1;
                 }
                 // else drop trailing FNC1
             } else if code >= START_A {
-                return true;
+                // truncated
+                return None;
             } else {
                 let newset = CODE_A - code;
                 zassert!(
                     (CODE_C..=CODE_A).contains(&code),
-                    true,
+                    None,
                     "i={:x} j={:x} code={:02x} charset={:x} cexp={:x}\n",
                     i,
                     j,
@@ -540,23 +555,19 @@ fn postprocess(dcode: &mut ImageScanner) -> bool {
     if (charset & 0x2) != 0 {
         zassert!(
             cexp != 0,
-            true,
-            "i={:x} j={:x} code={:02x} charset={:x} cexp={:x}\n",
+            None,
+            "i={:x} j={:x} charset={:x} cexp={:x}\n",
             i,
             j,
-            0u8, // code is out of scope here
             charset,
             cexp
         );
-        let delta = postprocess_c(dcode, cexp, i, j);
-        j += (delta * 2) as usize;
+        j += postprocess_c(buf, &mut character, cexp, i, j)? * 2;
     }
 
-    zassert!(j < dcode.buffer_capacity(), true, "j={:02x}\n", j);
-    dcode.set_buffer_len(j);
-
+    zassert!(j <= buf.len(), None, "j={:02x}\n", j);
     dcode.code128.set_character(j as i16);
-    false
+    Some(j)
 }
 
 /// Main Code 128 decode function
@@ -677,4 +688,85 @@ pub(crate) fn decode_code128(dcode: &mut ImageScanner) -> SymbolType {
         return sym;
     }
     SymbolType::None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Switch to character set B. Only the decoder's `CODE_A`/`CODE_C`
+    /// bounds are needed by the decoder itself, so this one is test-local.
+    const CODE_B: u8 = 0x64;
+
+    /// Drive `postprocess` over a synthetic symbol buffer, as `decode_code128`
+    /// would have filled it: start code, data characters, check character,
+    /// stop character. Returns the decoded bytes.
+    fn run_postprocess(codes: &[u8]) -> Option<Vec<u8>> {
+        let mut dcode = ImageScanner::default();
+        dcode
+            .buffer_mut_slice(codes.len())
+            .expect("buffer")
+            .copy_from_slice(codes);
+        dcode.code128.set_character(codes.len() as i16);
+        dcode.code128.set_direction(0);
+        if postprocess(&mut dcode) {
+            return None;
+        }
+        Some(dcode.buffer_slice().to_vec())
+    }
+
+    /// Set C encodes two digits per character; the decoder expands them in
+    /// place, which grows the buffer.
+    #[test]
+    fn postprocess_expands_character_set_c() {
+        // START_C "12" "34" <check> STOP
+        let decoded = run_postprocess(&[START_C, 12, 34, 0, STOP_FWD]).expect("decode");
+        assert_eq!(decoded, b"1234");
+    }
+
+    /// Regression: data following a set-C run used to be dropped, because the
+    /// loop bound was captured before the expansion grew the character count.
+    #[test]
+    fn postprocess_keeps_data_after_character_set_c() {
+        // START_C "12" "34" CODE_B 'A' 'B' <check> STOP
+        let decoded = run_postprocess(&[
+            START_C,
+            12,
+            34,
+            CODE_B,
+            b'A' - 0x20,
+            b'B' - 0x20,
+            0,
+            STOP_FWD,
+        ])
+        .expect("decode");
+        assert_eq!(decoded, b"1234AB");
+    }
+
+    /// Two separate set-C runs: the second expansion must see the buffer the
+    /// first one grew, not a truncated copy of it.
+    #[test]
+    fn postprocess_handles_repeated_character_set_c() {
+        // START_C "12" CODE_B 'A' CODE_C "56" "78" <check> STOP
+        let decoded = run_postprocess(&[
+            START_C,
+            12,
+            CODE_B,
+            b'A' - 0x20,
+            CODE_C,
+            56,
+            78,
+            0,
+            STOP_FWD,
+        ])
+        .expect("decode");
+        assert_eq!(decoded, b"12A5678");
+    }
+
+    /// Decoded data is the payload only — no C-style NUL terminator.
+    #[test]
+    fn postprocess_does_not_emit_a_nul_terminator() {
+        let decoded = run_postprocess(&[START_C, 12, 34, 0, STOP_FWD]).expect("decode");
+        assert!(!decoded.contains(&0), "unexpected NUL in {decoded:?}");
+    }
 }

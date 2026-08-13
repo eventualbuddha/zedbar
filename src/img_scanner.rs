@@ -67,7 +67,7 @@ const THRESH_INIT: u32 = 14;
 
 // Decoder constants from decoder.rs
 const BUFFER_MIN: usize = 0x20;
-const BUFFER_MAX: usize = 0x100;
+pub(crate) const BUFFER_MAX: usize = 0x100;
 
 /// image scanner state
 pub(crate) struct ImageScanner {
@@ -548,6 +548,20 @@ impl ImageScanner {
 
     pub(crate) fn buffer_slice(&self) -> &[u8] {
         &self.buffer
+    }
+
+    /// Take ownership of the decode buffer, leaving an empty one behind.
+    ///
+    /// For decoders that need to grow the buffer while post-processing:
+    /// [`Self::buffer_mut_slice`] resizes on every call, so it would truncate
+    /// away that growth. Pair with [`Self::put_buffer`].
+    pub(crate) fn take_buffer(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.buffer)
+    }
+
+    /// Restore a buffer taken with [`Self::take_buffer`].
+    pub(crate) fn put_buffer(&mut self, buffer: Vec<u8>) {
+        self.buffer = buffer;
     }
 
     pub(crate) fn write_buffer_byte(&mut self, pos: usize, value: u8) -> Result<(), ()> {

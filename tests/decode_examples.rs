@@ -331,6 +331,63 @@ fn test_code128() {
     assert_eq!(result_this, result_zbars, "zedbar and zbars disagree");
 }
 
+/// Code 128 packs two digits per character in character set C, so a payload
+/// that switches between numeric and alphanumeric runs makes the decoder
+/// expand set-C characters mid-buffer. Regression: everything after the
+/// first expansion used to be dropped ("1234AB" decoded as "1234").
+#[test]
+fn test_code128_character_set_switches() {
+    for (path, payload) in [
+        ("examples/test-code128-setc.png", "12345678"),
+        ("examples/test-code128-mixed.png", "1234AB"),
+        ("examples/test-code128-mixed2.png", "1234AB5678"),
+    ] {
+        let expected = Some(("CODE-128".to_string(), payload.to_string()));
+
+        let result_this = decode_image(path);
+        let result_zbars = decode_with_zbars(path);
+
+        assert_eq!(result_this, expected, "zedbar failed for {path}");
+        assert_eq!(result_zbars, expected, "zbars failed for {path}");
+        assert_eq!(
+            result_this, result_zbars,
+            "zedbar and zbars disagree for {path}"
+        );
+    }
+}
+
+/// Decoded data must not carry a trailing NUL. Code 128 used to include the
+/// C-style string terminator in the symbol data.
+#[test]
+fn test_decoded_data_has_no_trailing_nul() {
+    for path in [
+        "examples/test-code128.png",
+        "examples/test-code128-mixed.png",
+        "examples/test-code39.png",
+        "examples/test-code93.png",
+        "examples/test-codabar.png",
+        "examples/test-i25.png",
+        "examples/test-ean13.png",
+    ] {
+        let img = image::open(path)
+            .unwrap_or_else(|e| panic!("open {path}: {e}"))
+            .to_luma8();
+        let mut zbar_image =
+            Image::from_gray(img.as_raw(), img.width(), img.height()).expect("create image");
+        let mut scanner = Scanner::new();
+        let result = scanner.scan(&mut zbar_image);
+        assert!(!result.symbols().is_empty(), "{path}: nothing decoded");
+        for symbol in result.symbols() {
+            assert!(
+                !symbol.data().contains(&0),
+                "{path}: {:?} data contains a NUL byte: {:?}",
+                symbol.symbol_type(),
+                symbol.data()
+            );
+        }
+    }
+}
+
 #[test]
 fn test_code39() {
     let expected = Some(("CODE-39".to_string(), "TEST123".to_string()));
