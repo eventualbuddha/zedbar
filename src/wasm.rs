@@ -265,10 +265,15 @@ pub fn scan_image_bytes(
     let img = image::load_from_memory(bytes)
         .map_err(|e| JsValue::from_str(&format!("Failed to decode image: {}", e)))?;
 
-    // Convert to grayscale
-    let gray = img.to_luma8();
-    let (width, height) = gray.dimensions();
-    let data = gray.as_raw();
+    // Convert to grayscale, compositing transparency over white so that a
+    // barcode drawn on a transparent background is not flattened to black.
+    let zedbar_img = Image::from_dynamic(&img)
+        .map_err(|e| JsValue::from_str(&format!("Failed to convert image: {e}")))?;
 
-    scan_grayscale(data, width, height, options)
+    scan_grayscale(
+        zedbar_img.data(),
+        zedbar_img.width(),
+        zedbar_img.height(),
+        options,
+    )
 }

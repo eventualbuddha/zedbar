@@ -182,6 +182,13 @@ function scanBitmap(bitmap) {
     previewCanvas.width = width;
     previewCanvas.height = height;
     const ctx = previewCanvas.getContext("2d");
+    // Fill white first: a fresh canvas is transparent black, so an image
+    // with an alpha channel — anything rendered from SVG, typically — would
+    // leave those pixels at (0, 0, 0, 0). The luma conversion below ignores
+    // alpha, which would turn the whole image black and hide the barcode.
+    // Compositing over white also makes the preview show what was scanned.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
     ctx.drawImage(bitmap, 0, 0);
     bitmap.close();
 

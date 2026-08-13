@@ -386,29 +386,49 @@ fn code39_decode_start(dcode: &mut ImageScanner) -> SymbolType {
     SymbolType::Partial
 }
 
-/// Post-process decoded buffer
+/// Post-process decoded buffer.
+///
+/// Returns non-zero on failure, matching the C original's convention.
 fn code39_postprocess(dcode: &mut ImageScanner) -> i32 {
     let character = dcode.code39.character() as usize;
     let direction = dcode.code39.direction();
 
     dcode.direction = 1 - 2 * (direction as i32);
 
-    let buffer = &mut dcode.code39.buffer[..character];
-
-    if direction {
-        // Reverse buffer
-        buffer.reverse();
+    if dcode.code39.buffer.len() < character {
+        return -1;
     }
 
-    for c in buffer.iter_mut() {
-        *c = *CODE39_CHARACTERS.get(*c as usize).unwrap_or(&b'?');
+    // Work on the holding buffer, then move the result into the shared
+    // decode buffer.
+    let mut holding = std::mem::take(&mut dcode.code39.buffer);
+    {
+        let buffer = &mut holding[..character];
+
+        if direction {
+            // Reverse buffer
+            buffer.reverse();
+        }
+
+        for c in buffer.iter_mut() {
+            // The last table entry is the start/stop character, which is
+            // trimmed before this point; anything still carrying its value
+            // is a misread, so zbar reports it as '?'.
+            *c = if (*c as usize) < CODE39_CHARACTERS.len() - 1 {
+                CODE39_CHARACTERS[*c as usize]
+            } else {
+                b'?'
+            };
+        }
     }
 
-    let buffer = buffer.to_vec();
-    dcode
+    let copied = dcode
         .buffer_mut_slice(character)
-        .unwrap()
-        .copy_from_slice(&buffer);
+        .map(|buf| buf.copy_from_slice(&holding[..character]));
+    dcode.code39.buffer = holding;
+    if copied.is_err() {
+        return -1;
+    }
 
     dcode.modifiers = 0;
     0
@@ -518,7 +538,9 @@ pub(crate) fn decode_code39(dcode: &mut ImageScanner) -> SymbolType {
         return SymbolType::Partial;
     }
 
-    if c < 0 {
+    // Abandon the symbol if it can no longer fit the decode buffer, so an
+    // unbounded run of characters stops growing the holding buffer here.
+    if c < 0 || dcode.set_buffer_capacity(character as usize + 1).is_err() {
         dcode.release_lock(SymbolType::Code39);
         dcode.code39.set_character(-1);
         return SymbolType::None;

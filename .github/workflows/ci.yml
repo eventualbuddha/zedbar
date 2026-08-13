@@ -45,6 +45,31 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  # The crate advertises building with only the symbologies you need, so every
+  # feature subset has to keep compiling. Scoped to `--lib`, which is what a
+  # dependent consumes: the test targets assume the default features.
+  #
+  # Compile errors only, no `-D warnings`. A subset that leaves a decoder out
+  # legitimately leaves its shared helpers unused, and gating those per
+  # symbology would cost more readability than the warnings are worth.
+  feature-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      # The bench features are excluded: bench_zbar_c needs the system zbar
+      # library and bench_rxing pulls a large dependency, and neither is
+      # something a dependent enables.
+      - name: Check each feature subset
+        run: cargo hack --each-feature --exclude-features bench_zbar_c,bench_rxing check --lib
+
   wasm:
     runs-on: ubuntu-latest
     steps:

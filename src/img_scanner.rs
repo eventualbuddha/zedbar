@@ -67,7 +67,7 @@ const THRESH_INIT: u32 = 14;
 
 // Decoder constants from decoder.rs
 const BUFFER_MIN: usize = 0x20;
-const BUFFER_MAX: usize = 0x100;
+pub(crate) const BUFFER_MAX: usize = 0x100;
 
 /// image scanner state
 pub(crate) struct ImageScanner {
@@ -550,6 +550,20 @@ impl ImageScanner {
         &self.buffer
     }
 
+    /// Take ownership of the decode buffer, leaving an empty one behind.
+    ///
+    /// For decoders that need to grow the buffer while post-processing:
+    /// [`Self::buffer_mut_slice`] resizes on every call, so it would truncate
+    /// away that growth. Pair with [`Self::put_buffer`].
+    pub(crate) fn take_buffer(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.buffer)
+    }
+
+    /// Restore a buffer taken with [`Self::take_buffer`].
+    pub(crate) fn put_buffer(&mut self, buffer: Vec<u8>) {
+        self.buffer = buffer;
+    }
+
     pub(crate) fn write_buffer_byte(&mut self, pos: usize, value: u8) -> Result<(), ()> {
         self.buffer_mut_slice(pos + 1)?[pos] = value;
         Ok(())
@@ -738,7 +752,9 @@ impl ImageScanner {
                 && sym > SymbolType::Partial
                 && sym != SymbolType::QrCode
             {
-                self.lock = SymbolType::None;
+                // Only the holder can drop the lock: a completed symbol from
+                // one symbology must not release a lock another one holds.
+                self.release_lock(sym);
             }
 
             if sym > SymbolType::Partial {
@@ -771,10 +787,8 @@ impl ImageScanner {
         let finder_regions: Vec<BBox> = Vec::new();
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
-        if symbols.is_empty()
-            && self.scanner_config.test_inverted
-            && let Some(mut inv) = img.copy(true)
-        {
+        if symbols.is_empty() && self.scanner_config.test_inverted {
+            let mut inv = img.copy(true);
             let inverted_symbols = self.scan_image_internal(&mut inv);
             if !inverted_symbols.is_empty() {
                 return (inverted_symbols, finder_regions);
@@ -860,9 +874,11 @@ impl ImageScanner {
         let data = img.data.as_slice();
         self.new_scan();
 
-        // Horizontal scanning pass
+        // Horizontal scanning pass. An empty image has no scan lines at all;
+        // the border calculation below subtracts from the dimension, so it
+        // has to be skipped rather than clamped.
         let density = self.scanner_config.y_density;
-        if density > 0 {
+        if density > 0 && w > 0 && h > 0 {
             let mut p = 0;
             let mut x = 0i32;
             let mut y = 0i32;
@@ -922,7 +938,7 @@ impl ImageScanner {
 
         // Vertical scanning pass
         let density = self.scanner_config.x_density;
-        if density > 0 {
+        if density > 0 && w > 0 && h > 0 {
             let mut p = 0;
             let mut x = 0i32;
             let mut y = 0i32;
@@ -1132,10 +1148,12 @@ impl ImageScanner {
         if dir != 0 {
             let base = if self.dy != 0 { 1 } else { 0 };
             let offset = (self.du ^ dir) & 2;
+            // Bit 0 is the scan axis (set for the vertical pass), bit 1 is
+            // the scan sense, which together index UP/RIGHT/DOWN/LEFT.
             sym.orientation = match base + offset {
                 0 => Orientation::Up,
-                1 => Orientation::Down,
-                2 => Orientation::Right,
+                1 => Orientation::Right,
+                2 => Orientation::Down,
                 3 => Orientation::Left,
                 _ => Orientation::Unknown,
             };

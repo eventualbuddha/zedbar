@@ -78,3 +78,56 @@ impl Image {
         self.image.upscale(scale).map(|image| Image { image })
     }
 }
+
+#[cfg(feature = "image")]
+impl Image {
+    /// Create an image from a decoded [`image::DynamicImage`], compositing
+    /// any transparency over a white background.
+    ///
+    /// Prefer this over `img.to_luma8()`: converting an image with an alpha
+    /// channel straight to grayscale discards the alpha, so a barcode drawn
+    /// in black on a transparent background — the usual shape of one
+    /// rendered from SVG — becomes black on black and cannot be found.
+    /// Compositing over white first treats transparent areas as the quiet
+    /// zone they are meant to represent.
+    ///
+    /// Images without an alpha channel take the direct conversion, so this
+    /// is equivalent to `to_luma8()` for them.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use zedbar::{Image, Scanner};
+    ///
+    /// let img = image::open("barcode.png").unwrap();
+    /// let mut img = Image::from_dynamic(&img).unwrap();
+    /// let symbols = Scanner::new().scan(&mut img);
+    /// ```
+    pub fn from_dynamic(img: &::image::DynamicImage) -> Result<Self> {
+        let gray = to_luma_over_white(img);
+        Self::from_gray(gray.as_raw(), gray.width(), gray.height())
+    }
+}
+
+/// Convert to grayscale, compositing any alpha channel over white.
+#[cfg(feature = "image")]
+fn to_luma_over_white(img: &::image::DynamicImage) -> ::image::GrayImage {
+    use ::image::{DynamicImage, Rgb, RgbImage};
+
+    if !img.color().has_alpha() {
+        return img.to_luma8();
+    }
+
+    let rgba = img.to_rgba8();
+    let mut rgb = RgbImage::new(rgba.width(), rgba.height());
+    for (dst, src) in rgb.pixels_mut().zip(rgba.pixels()) {
+        let [r, g, b, a] = src.0;
+        // src-over white: c * a + 255 * (1 - a), in 8-bit fixed point.
+        let over_white =
+            |c: u8| ((c as u32 * a as u32 + 255 * (255 - a as u32) + 127) / 255).min(255) as u8;
+        *dst = Rgb([over_white(r), over_white(g), over_white(b)]);
+    }
+    // Reuse the image crate's own luminance weights so opaque pixels convert
+    // exactly as they would have.
+    DynamicImage::ImageRgb8(rgb).to_luma8()
+}
