@@ -116,15 +116,18 @@ fn codabar_decode7(dcode: &ImageScanner) -> i8 {
 
     let wb1 = dcode.get_width(((ibar >> 8) & 0xf) as u8);
     let wb2 = dcode.get_width(((ibar >> 4) & 0xf) as u8);
-    let b0b3 = wbmin * wbmax;
-    let b1b2 = wb1 * wb2;
+    // Products of two element widths, which the C decoder keeps in an
+    // `unsigned long`. Element widths are fixed-point, so on a large image a
+    // pair of them overflows 32 bits.
+    let b0b3 = wbmin as u64 * wbmax as u64;
+    let b1b2 = wb1 as u64 * wb2 as u64;
 
     let ibar = if b1b2 + b1b2 / 8 < b0b3 {
         // Single wide bar combinations
         if 8 * wbmin < 5 * wb1
             || 8 * wb1 < 5 * wb2
             || 4 * wb2 > 3 * wbmax
-            || wb2 * wb2 >= wb1 * wbmax
+            || wb2 as u64 * wb2 as u64 >= wb1 as u64 * wbmax as u64
         {
             return -1;
         }
@@ -134,7 +137,7 @@ fn codabar_decode7(dcode: &ImageScanner) -> i8 {
         if 4 * wbmin > 3 * wb1
             || 8 * wb1 < 5 * wb2
             || 8 * wb2 < 5 * wbmax
-            || wbmin * wb2 >= wb1 * wb1
+            || wbmin as u64 * wb2 as u64 >= wb1 as u64 * wb1 as u64
         {
             return -1;
         }
@@ -165,8 +168,8 @@ fn codabar_decode7(dcode: &ImageScanner) -> i8 {
         return -1;
     }
 
-    let s0s2 = wsmin * wsmax;
-    let s1s1 = wsmid * wsmid;
+    let s0s2 = wsmin as u64 * wsmax as u64;
+    let s1s1 = wsmid as u64 * wsmid as u64;
 
     if s1s1 + s1s1 / 8 < s0s2 {
         // Single wide space
@@ -229,7 +232,7 @@ fn codabar_decode_start(dcode: &mut ImageScanner) -> SymbolType {
         || 3 * wsmin > 2 * wsmax
         || 4 * wsmin > 3 * wsmid
         || 8 * wsmid < 5 * wsmax
-        || wsmid * wsmid <= wsmax * wsmin
+        || wsmid as u64 * wsmid as u64 <= wsmax as u64 * wsmin as u64
     {
         return SymbolType::None;
     }
@@ -250,8 +253,8 @@ fn codabar_decode_start(dcode: &mut ImageScanner) -> SymbolType {
     if 8 * wbmin < 5 * wb1
         || 8 * wb1 < 5 * wb2
         || 4 * wb2 > 3 * wbmax
-        || wb1 * wb2 >= wbmin * wbmax
-        || wb2 * wb2 >= wb1 * wbmax
+        || wb1 as u64 * wb2 as u64 >= wbmin as u64 * wbmax as u64
+        || wb2 as u64 * wb2 as u64 >= wb1 as u64 * wbmax as u64
     {
         return SymbolType::None;
     }
