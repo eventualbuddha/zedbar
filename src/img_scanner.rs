@@ -787,10 +787,8 @@ impl ImageScanner {
         let finder_regions: Vec<BBox> = Vec::new();
 
         // Try inverted image if no symbols found and TEST_INVERTED is enabled
-        if symbols.is_empty()
-            && self.scanner_config.test_inverted
-            && let Some(mut inv) = img.copy(true)
-        {
+        if symbols.is_empty() && self.scanner_config.test_inverted {
+            let mut inv = img.copy(true);
             let inverted_symbols = self.scan_image_internal(&mut inv);
             if !inverted_symbols.is_empty() {
                 return (inverted_symbols, finder_regions);
@@ -876,9 +874,11 @@ impl ImageScanner {
         let data = img.data.as_slice();
         self.new_scan();
 
-        // Horizontal scanning pass
+        // Horizontal scanning pass. An empty image has no scan lines at all;
+        // the border calculation below subtracts from the dimension, so it
+        // has to be skipped rather than clamped.
         let density = self.scanner_config.y_density;
-        if density > 0 {
+        if density > 0 && w > 0 && h > 0 {
             let mut p = 0;
             let mut x = 0i32;
             let mut y = 0i32;
@@ -938,7 +938,7 @@ impl ImageScanner {
 
         // Vertical scanning pass
         let density = self.scanner_config.x_density;
-        if density > 0 {
+        if density > 0 && w > 0 && h > 0 {
             let mut p = 0;
             let mut x = 0i32;
             let mut y = 0i32;

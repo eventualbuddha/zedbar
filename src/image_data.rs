@@ -10,32 +10,30 @@ pub struct ImageData {
 }
 
 impl ImageData {
-    pub(crate) fn copy(&self, inverted: bool) -> Option<Self> {
-        let mut dst = Self {
-            width: self.width,
-            height: self.height,
-            data: vec![0; self.data.len()],
+    /// Copy the image, optionally inverting every pixel.
+    pub(crate) fn copy(&self, inverted: bool) -> Self {
+        let data = if inverted {
+            self.data.iter().map(|p| !p).collect()
+        } else {
+            self.data.clone()
         };
 
-        if !inverted {
-            dst.data.copy_from_slice(&self.data);
-        } else {
-            for (dp, sp) in dst.data.iter_mut().zip(self.data.iter()) {
-                *dp = !(*sp);
-            }
+        Self {
+            width: self.width,
+            height: self.height,
+            data,
         }
-        Some(dst)
     }
 
     /// Crops a rectangular region from the image.
     ///
     /// Returns None if the crop region is out of bounds or empty.
     pub(crate) fn crop(&self, x: u32, y: u32, w: u32, h: u32) -> Option<Self> {
-        if w == 0 || h == 0 || x + w > self.width || y + h > self.height {
+        if w == 0 || h == 0 || x.checked_add(w)? > self.width || y.checked_add(h)? > self.height {
             return None;
         }
 
-        let mut data = vec![0u8; (w * h) as usize];
+        let mut data = vec![0u8; (w as usize) * (h as usize)];
         for row in 0..h {
             let src_start = ((y + row) * self.width + x) as usize;
             let dst_start = (row * w) as usize;
