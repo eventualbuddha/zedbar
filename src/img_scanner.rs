@@ -1146,10 +1146,12 @@ impl ImageScanner {
         if dir != 0 {
             let base = if self.dy != 0 { 1 } else { 0 };
             let offset = (self.du ^ dir) & 2;
+            // Bit 0 is the scan axis (set for the vertical pass), bit 1 is
+            // the scan sense, which together index UP/RIGHT/DOWN/LEFT.
             sym.orientation = match base + offset {
                 0 => Orientation::Up,
-                1 => Orientation::Down,
-                2 => Orientation::Right,
+                1 => Orientation::Right,
+                2 => Orientation::Down,
                 3 => Orientation::Left,
                 _ => Orientation::Unknown,
             };

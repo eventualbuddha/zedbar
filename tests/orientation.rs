@@ -1,7 +1,10 @@
 //! Integration test for orientation detection
 //!
 //! This test verifies that all four orientation variants can be produced
-//! by scanning barcode images rotated to different orientations.
+//! by scanning barcode images rotated to different orientations, and that
+//! each rotation reports the orientation zbar defines for it: `Up` reads
+//! left to right, `Right` reads top to bottom, `Down` reads right to left,
+//! and `Left` reads bottom to top.
 
 use std::collections::HashSet;
 use zedbar::{Image, Orientation, Scanner};
@@ -25,17 +28,17 @@ fn test_orientation_all_variants() {
             expected: Orientation::Up,
         },
         TestCase {
-            name: "90 degrees counter-clockwise",
+            name: "90 degrees clockwise",
             rotation: "90",
-            expected: Orientation::Down,
+            expected: Orientation::Right,
         },
         TestCase {
             name: "180 degrees",
             rotation: "180",
-            expected: Orientation::Right,
+            expected: Orientation::Down,
         },
         TestCase {
-            name: "270 degrees counter-clockwise (90 degrees clockwise)",
+            name: "270 degrees clockwise (90 degrees counter-clockwise)",
             rotation: "270",
             expected: Orientation::Left,
         },
