@@ -752,7 +752,9 @@ impl ImageScanner {
                 && sym > SymbolType::Partial
                 && sym != SymbolType::QrCode
             {
-                self.lock = SymbolType::None;
+                // Only the holder can drop the lock: a completed symbol from
+                // one symbology must not release a lock another one holds.
+                self.release_lock(sym);
             }
 
             if sym > SymbolType::Partial {
