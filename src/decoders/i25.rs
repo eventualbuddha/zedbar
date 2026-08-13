@@ -8,9 +8,18 @@ use crate::{SymbolType, color::Color, decoder::decode_e, img_scanner::ImageScann
 // I25 Decoder functions
 // ============================================================================
 
+/// Width class of an element, as I25 measures it.
+///
+/// I25 stores `decode_e`'s result in an `unsigned char`, so its -1 error
+/// value reads back as 255 — above every valid class, and so rejected by
+/// the plain upper-bound comparisons below.
+fn width_class(e: u32, s: u32) -> u8 {
+    decode_e(e, s, 45) as u8
+}
+
 /// Decode a single element
 fn i25_decode1(enc: u8, e: u32, s: u32) -> u8 {
-    let e_val = decode_e(e, s, 45);
+    let e_val = width_class(e, s);
     if e_val > 7 {
         return 0xff;
     }
@@ -142,11 +151,11 @@ fn i25_decode_end(dcode: &mut ImageScanner) -> SymbolType {
     }
 
     // Check exit condition
-    let e = decode_e(dcode.get_width(3), width, 45);
+    let e = width_class(dcode.get_width(3), width);
     let valid = if !direction {
-        (e as u32).wrapping_sub(3) <= 4
+        e <= 7
     } else {
-        e <= 2 && decode_e(dcode.get_width(4), width, 45) <= 2
+        e <= 2 && width_class(dcode.get_width(4), width) <= 2
     };
 
     if !valid {
@@ -164,11 +173,13 @@ fn i25_decode_end(dcode: &mut ImageScanner) -> SymbolType {
     // Get length limits from config
     let (min_len, max_len) = dcode.get_length_limits(SymbolType::I25).unwrap_or((6, 0)); // Default: min=6, max=0 (unlimited)
 
-    let buffer = &mut dcode.i25.buffer;
+    if dcode.i25.buffer.len() < char_count {
+        return SymbolType::None;
+    }
 
     if direction {
         // Reverse buffer
-        buffer[..char_count].reverse();
+        dcode.i25.buffer[..char_count].reverse();
     }
 
     if character < min_len as i16 || (max_len > 0 && character > max_len as i16) {
@@ -177,16 +188,31 @@ fn i25_decode_end(dcode: &mut ImageScanner) -> SymbolType {
         return SymbolType::None;
     }
 
-    let buffer = buffer.clone();
-
-    dcode
+    // Copy the holding buffer into the shared decode buffer, borrowing it
+    // out of the decoder rather than cloning it on every symbol.
+    let holding = std::mem::take(&mut dcode.i25.buffer);
+    let copied = dcode
         .buffer_mut_slice(char_count)
-        .unwrap()
-        .copy_from_slice(&buffer[..char_count]);
+        .map(|buf| buf.copy_from_slice(&holding[..char_count]));
+    dcode.i25.buffer = holding;
+    if copied.is_err() {
+        dcode.release_lock(SymbolType::I25);
+        dcode.i25.set_character(-1);
+        return SymbolType::None;
+    }
 
     dcode.modifiers = 0;
     dcode.i25.set_character(-1);
     SymbolType::I25
+}
+
+/// Abandon the in-progress symbol, releasing the shared lock if held.
+fn i25_reset(dcode: &mut ImageScanner) -> SymbolType {
+    if dcode.i25.character() >= 4 {
+        dcode.release_lock(SymbolType::I25);
+    }
+    dcode.i25.set_character(-1);
+    SymbolType::None
 }
 
 /// Main I25 decode function
@@ -213,37 +239,29 @@ pub(crate) fn decode_i25(dcode: &mut ImageScanner) -> SymbolType {
     // FIXME check current character width against previous
     dcode.i25.width = dcode.i25.s10;
 
-    let _direction = dcode.i25.direction();
-    let _character = dcode.i25.character();
-    let _element = dcode.i25.element();
-
     if dcode.i25.character() == 4 && i25_acquire_lock(dcode) {
         return SymbolType::Partial;
     }
 
     let c = i25_decode10(dcode, 1);
     if c > 9 {
-        // goto reset
-        if dcode.i25.character() >= 4 {
-            dcode.release_lock(SymbolType::I25);
-        }
-        dcode.i25.set_character(-1);
-        return SymbolType::None;
+        return i25_reset(dcode);
     }
 
     let character = dcode.i25.character();
+
+    // Stop before the pair being added can outgrow the decode buffer, so an
+    // unbounded run of digits is abandoned here rather than at the end.
+    if dcode.set_buffer_capacity(character as usize + 3).is_err() {
+        return i25_reset(dcode);
+    }
 
     dcode.i25.set_byte(character as usize, c + b'0');
     dcode.i25.set_character(character + 1);
 
     let c = i25_decode10(dcode, 0);
     if c > 9 {
-        // goto reset
-        if dcode.i25.character() >= 4 {
-            dcode.release_lock(SymbolType::I25);
-        }
-        dcode.i25.set_character(-1);
-        return SymbolType::None;
+        return i25_reset(dcode);
     }
 
     let character = dcode.i25.character();
