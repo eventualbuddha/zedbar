@@ -308,13 +308,9 @@ fn main() {
             }
         };
 
-        // Convert to grayscale
-        let gray = img.to_luma8();
-        let (width, height) = gray.dimensions();
-        let data = gray.as_raw();
-
-        // Create zedbar image from grayscale data
-        let mut zedbar_img = match Image::from_gray(data, width, height) {
+        // Convert to grayscale, compositing transparency over white so that a
+        // barcode drawn on a transparent background is not flattened to black.
+        let mut zedbar_img = match Image::from_dynamic(&img) {
             Ok(img) => img,
             Err(e) => {
                 if !args.quiet {

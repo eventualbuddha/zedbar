@@ -226,3 +226,67 @@ fn from_gray_rejects_mismatched_dimensions() {
     // Dimensions whose product overflows u32 must not wrap into a match.
     assert!(Image::from_gray(&[0u8; 4], u32::MAX, u32::MAX).is_err());
 }
+
+/// A barcode rendered from SVG is usually drawn in black on a transparent
+/// background, and the transparent pixels commonly carry RGB (0, 0, 0).
+/// Converting straight to grayscale drops the alpha and turns the whole
+/// image black, so the code becomes invisible. `Image::from_dynamic`
+/// composites over white first.
+#[test]
+#[cfg(feature = "qrcode")]
+fn decodes_a_qr_on_a_transparent_background() {
+    use image::{DynamicImage, Luma, Rgba, RgbaImage};
+
+    const PAYLOAD: &str = "https://zedbar.invalid/transparent";
+
+    let rendered = qrcode::QrCode::new(PAYLOAD.as_bytes())
+        .expect("encode QR")
+        .render::<Luma<u8>>()
+        .module_dimensions(4, 4)
+        .quiet_zone(true)
+        .build();
+
+    // Light modules become fully transparent black, as an SVG rasteriser
+    // would leave them.
+    let mut rgba = RgbaImage::new(rendered.width(), rendered.height());
+    for (dst, src) in rgba.pixels_mut().zip(rendered.pixels()) {
+        *dst = if src.0[0] < 128 {
+            Rgba([0, 0, 0, 255])
+        } else {
+            Rgba([0, 0, 0, 0])
+        };
+    }
+    let img = DynamicImage::ImageRgba8(rgba);
+
+    // The naive conversion loses the code entirely: every pixel is black.
+    let naive = img.to_luma8();
+    assert!(
+        naive.as_raw().iter().all(|&p| p < 128),
+        "expected the alpha-dropping conversion to flatten the image to black"
+    );
+
+    let mut zedbar_img = Image::from_dynamic(&img).expect("convert image");
+    let mut scanner = Scanner::new();
+    let result = scanner.scan(&mut zedbar_img);
+    let symbol = result
+        .symbols()
+        .first()
+        .expect("transparent-background QR should decode");
+    assert_eq!(symbol.data_string(), Some(PAYLOAD));
+}
+
+/// Opaque images must convert exactly as they did before.
+#[test]
+fn from_dynamic_matches_to_luma8_for_opaque_images() {
+    use image::{DynamicImage, Rgb, RgbImage};
+
+    let mut rgb = RgbImage::new(16, 16);
+    for (i, p) in rgb.pixels_mut().enumerate() {
+        *p = Rgb([(i * 7) as u8, (i * 3) as u8, (i * 11) as u8]);
+    }
+    let img = DynamicImage::ImageRgb8(rgb);
+
+    let expected = img.to_luma8();
+    let actual = Image::from_dynamic(&img).expect("convert image");
+    assert_eq!(actual.data(), expected.as_raw());
+}

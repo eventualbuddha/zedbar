@@ -83,7 +83,7 @@ databar = []
 i25 = []
 image = ["dep:image"]
 clap = ["dep:clap"]
-wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom", "dep:image", "qrcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "sqcode"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:getrandom", "image", "qrcode", "ean", "code128", "code39", "code93", "codabar", "databar", "i25", "sqcode"]
 
 # Benchmark features - enable to compare with other libraries
 bench_zbar_c = ["dep:zbar-rust"]
