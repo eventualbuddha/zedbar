@@ -505,9 +505,13 @@ impl EanDecoder {
                 j -= 1;
             }
             self.right = part.into();
+            // C narrows the part to the halves that agree (`part &= ean->left`).
+            // The consistency check above leaves `left` either unset or equal
+            // to this part, so the only outcomes are "no left half yet" and
+            // "same symbology"; anything else is treated as no match.
             part = part
                 .replace_symbol_type(self.left)
-                .expect("left and right should be compatible"); // FIXME!?
+                .unwrap_or(PartialSymbolType::None);
         } else if matches!(
             part,
             PartialSymbolType::Ean13(_) | PartialSymbolType::Ean8(_)
@@ -527,9 +531,10 @@ impl EanDecoder {
                 j -= 1;
             }
             self.left = part.into();
+            // See above: narrows to the symbology both halves agree on.
             part = part
                 .replace_symbol_type(self.right)
-                .expect("left and right should be compatible"); // FIXME!?
+                .unwrap_or(PartialSymbolType::None);
         } else if part != PartialSymbolType::Upce {
             // add-ons
             for i in (1..=(i32::from(part) as usize)).rev() {
