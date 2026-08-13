@@ -22,7 +22,8 @@ const testCases = [
   ['test-ean13.png', 'EAN-13', '5901234123457'],
   ['test-ean8.png', 'EAN-13', '0000963850742'],  // EAN-8 padded to EAN-13
   ['test-upca.png', 'EAN-13', '0012345678905'],  // UPC-A padded to EAN-13
-  ['test-code128.png', 'CODE-128', 'HELLO123\0'],
+  ['test-code128.png', 'CODE-128', 'HELLO123'],
+  ['test-code128-2.png', 'CODE-128', '1234567:C'],
   ['test-code39.png', 'CODE-39', 'TEST123'],
   ['test-code93.png', 'CODE-93', 'CODE93'],
   ['test-codabar.png', 'Codabar', 'A40156B'],

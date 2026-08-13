@@ -49,6 +49,11 @@ const TEST_IMAGES: &[TestImage] = &[
         expected_type: "CODE128",
     },
     TestImage {
+        name: "code128_2",
+        path: "examples/test-code128-2.png",
+        expected_type: "CODE128",
+    },
+    TestImage {
         name: "code39",
         path: "examples/test-code39.png",
         expected_type: "CODE39",
