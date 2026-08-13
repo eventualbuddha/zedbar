@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.2](https://github.com/eventualbuddha/zedbar/compare/v0.4.1...v0.4.2) (2026-08-13)
+
+
+### Bug Fixes
+
+* **codabar:** compute width products in 64 bits like the C decoder ([d58f3e0](https://github.com/eventualbuddha/zedbar/commit/d58f3e039bce5392bb2bfd8de52c31474f60dbf9))
+* **code128:** preserve character count during postprocess ([#61](https://github.com/eventualbuddha/zedbar/issues/61)) ([02f9258](https://github.com/eventualbuddha/zedbar/commit/02f92580942435b8a351f3b8c69985e865a9c919))
+* **code39:** report the stop character as '?' and bound the buffer ([a759d67](https://github.com/eventualbuddha/zedbar/commit/a759d67536c4e52d1f6d5dae71bbc1eb55a5ac09))
+* **code93:** take the Code 93 lock and abort on a rejected stop ([b791107](https://github.com/eventualbuddha/zedbar/commit/b791107ba1ba2c44982b487aa84b61344fcd9a48))
+* **decoder:** only release the shared lock to the symbology holding it ([e035b08](https://github.com/eventualbuddha/zedbar/commit/e035b089b7538a2a7def65208cc77bc70399e8e3))
+* **demo:** fill the canvas white before drawing the image ([7eebd27](https://github.com/eventualbuddha/zedbar/commit/7eebd271dfe41465a6ca2f2188c0b104b590e47c))
+* **ean:** stop panicking when merging incompatible partial halves ([c3a0e73](https://github.com/eventualbuddha/zedbar/commit/c3a0e73704fbb275b9a326a2b1be00eb09eef2ec))
+* **i25:** reject invalid element widths and bound the holding buffer ([b38e9a5](https://github.com/eventualbuddha/zedbar/commit/b38e9a5b26402d0c6f11766a1cf006aa9d9d1a9f))
+* **image:** composite transparency over white before scanning ([6931f43](https://github.com/eventualbuddha/zedbar/commit/6931f43dcb04423bf9d4b44398cf225f1b9e721c))
+* **image:** stop panicking on empty images and out-of-range crops ([3c7bde4](https://github.com/eventualbuddha/zedbar/commit/3c7bde4c6a42b830a24683bfb4b8cf9b3d947459))
+* **symbol:** report Right and Down the way zbar defines them ([199989b](https://github.com/eventualbuddha/zedbar/commit/199989b5b723b0a49b276ed9dc8c2fc5f2013c5e))
+
 ## [0.4.1](https://github.com/eventualbuddha/zedbar/compare/v0.4.0...v0.4.1) (2026-05-11)
 
 
