@@ -1,7 +1,7 @@
 use crate::{
     Error, Result, SymbolType,
     color::Color,
-    decoder::{DatabarDecoder, DatabarSegment, Modifier, decoder_decode_e},
+    decoder::{DatabarDecoder, DatabarSegment, Modifier, decode_e},
     img_scanner::ImageScanner,
 };
 
@@ -1329,7 +1329,7 @@ fn decode_char(dcode: &mut ImageScanner, seg_idx: usize, off: i32, dir: i32) -> 
 
     let mut off = off;
     for i in (0..4).rev() {
-        let e = decoder_decode_e(dcode.pair_width(off as u8), s, n);
+        let e = decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
             return SymbolType::None;
         }
@@ -1344,7 +1344,7 @@ fn decode_char(dcode: &mut ImageScanner, seg_idx: usize, off: i32, dir: i32) -> 
             break;
         }
 
-        let e = decoder_decode_e(dcode.pair_width(off as u8), s, n);
+        let e = decode_e(dcode.pair_width(off as u8), s, n);
         if e < 0 {
             return SymbolType::None;
         }
@@ -1537,9 +1537,7 @@ fn decode_finder(dcode: &mut ImageScanner) -> SymbolType {
         return SymbolType::None;
     }
 
-    let sig = (decoder_decode_e(e3, s, 14) << 8)
-        | (decoder_decode_e(e2, s, 14) << 4)
-        | decoder_decode_e(e1, s, 14);
+    let sig = (decode_e(e3, s, 14) << 8) | (decode_e(e2, s, 14) << 4) | decode_e(e1, s, 14);
     if sig < 0
         || ((sig >> 4) & 0xf) < 8
         || ((sig >> 4) & 0xf) > 10
