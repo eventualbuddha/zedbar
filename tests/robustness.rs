@@ -6,6 +6,13 @@
 //! bounds anywhere — so these tests push shapes and pixel patterns that the
 //! image fixtures never produce through the whole scanner.
 
+#[cfg(all(
+    feature = "code39",
+    feature = "code93",
+    feature = "code128",
+    feature = "i25",
+    feature = "codabar"
+))]
 use zedbar::config::*;
 use zedbar::{DecoderConfig, Image, Scanner};
 
@@ -120,6 +127,13 @@ fn scans_random_noise() {
 /// Length limits of (0, 0) mean "unlimited", which removes the ceiling the
 /// default configuration puts on how many characters a symbol may collect.
 #[test]
+#[cfg(all(
+    feature = "code39",
+    feature = "code93",
+    feature = "code128",
+    feature = "i25",
+    feature = "codabar"
+))]
 fn scans_noise_with_unlimited_length_limits() {
     let mut rng = Lcg(0x0fed_cba9_8765_4321);
     let (w, h) = (600u32, 200u32);
