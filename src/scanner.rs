@@ -116,6 +116,10 @@ impl ScanResult {
     /// one per undecoded QR code in the image. Cropping and upscaling
     /// each region may yield successful decodes.
     ///
+    /// The count is capped: an image dense with finder-like patterns can
+    /// produce candidates faster than any caller could usefully act on them,
+    /// so only the first several dozen are reported.
+    ///
     /// Empty when no undecoded regions were found, or when the `qrcode`
     /// feature is disabled.
     pub fn finder_regions(&self) -> &[FinderRegion] {

@@ -223,23 +223,13 @@ impl ImageScanner {
     pub(crate) fn with_config(config: DecoderConfig) -> Self {
         let decoder_state: DecoderState = (&config).into();
 
-        let mut scanner_config = ImageScannerConfig {
+        let scanner_config = ImageScannerConfig {
             position_tracking: decoder_state.scanner.position_tracking,
             test_inverted: decoder_state.scanner.test_inverted,
             x_density: decoder_state.scanner.x_density,
             y_density: decoder_state.scanner.y_density,
             ean_composite: decoder_state.is_enabled(SymbolType::Composite),
-            uncertainty: Default::default(),
         };
-
-        // Sync uncertainty values from decoder state
-        for sym in SymbolType::ALL.iter() {
-            if let Some(sym_config) = decoder_state.get(*sym) {
-                scanner_config
-                    .uncertainty
-                    .insert(*sym, sym_config.uncertainty);
-            }
-        }
 
         let mut scanner = Self {
             config: decoder_state,

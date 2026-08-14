@@ -31,9 +31,6 @@ pub(crate) struct SymbologyConfig {
 
     /// Length limits (None if not applicable)
     pub(crate) length_limits: Option<LengthLimits>,
-
-    /// Uncertainty threshold for edge detection
-    pub(crate) uncertainty: u32,
 }
 
 /// Checksum configuration options
@@ -113,11 +110,6 @@ impl From<&DecoderConfig> for DecoderState {
                 sym_config.length_limits = Some(LengthLimits { min, max });
             }
 
-            // Set uncertainty if present
-            if let Some(&threshold) = config.uncertainty.get(&sym) {
-                sym_config.uncertainty = threshold;
-            }
-
             symbologies.insert(sym, sym_config);
         }
 
@@ -143,10 +135,6 @@ impl From<&DecoderConfig> for DecoderState {
 
                     if let Some(&(min, max)) = config.length_limits.get(&sym) {
                         sym_config.length_limits = Some(LengthLimits { min, max });
-                    }
-
-                    if let Some(&threshold) = config.uncertainty.get(&sym) {
-                        sym_config.uncertainty = threshold;
                     }
 
                     symbologies.insert(sym, sym_config);
@@ -218,8 +206,7 @@ mod tests {
         let config = DecoderConfig::new()
             .enable(Code39)
             .set_length_limits(Code39, 4, 20)
-            .set_checksum(Code39, true, false)
-            .set_uncertainty(Code39, 2);
+            .set_checksum(Code39, true, false);
 
         let state: DecoderState = (&config).into();
 
@@ -231,7 +218,6 @@ mod tests {
         );
         assert!(code39_config.checksum.add_check);
         assert!(!code39_config.checksum.emit_check);
-        assert_eq!(code39_config.uncertainty, 2);
     }
 
     #[test]
