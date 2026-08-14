@@ -446,6 +446,52 @@ fn test_ean13() {
     assert_matches_zbars("examples/test-ean13.png", &expected);
 }
 
+/// A 978-prefixed EAN-13 is a Bookland ISBN. zbar relabels it ISBN-13 when
+/// that symbology is opted in, and reduces it to the 10-digit form (prefix
+/// dropped, check digit recomputed mod 11) for ISBN-10.
+///
+/// ISBN-13 wins when both are enabled, which is the ordering in
+/// `integrate_partial`. Cross-checked against
+/// `zbarimg -S isbn13.enable=1` / `-S isbn10.enable=1`.
+#[test]
+fn test_isbn13_and_isbn10() {
+    use zedbar::config::{Isbn10, Isbn13};
+
+    let path = "examples/test-isbn13.png";
+    let img = image::open(path).expect("open").to_luma8();
+    let raw = img.as_raw();
+    let (w, h) = (img.width(), img.height());
+
+    let decode = |config: DecoderConfig| {
+        let mut image = Image::from_gray(raw, w, h).expect("image");
+        let result = Scanner::with_config(config).scan(&mut image);
+        let s = result.first().expect("no symbol decoded");
+        (s.symbol_type(), s.data_string().unwrap_or("").to_string())
+    };
+
+    // Neither opted in: it stays an ordinary EAN-13.
+    assert_eq!(
+        decode(DecoderConfig::all()),
+        (SymbolType::Ean13, "9780306406157".into())
+    );
+
+    assert_eq!(
+        decode(DecoderConfig::all().enable(Isbn13)),
+        (SymbolType::Isbn13, "9780306406157".into())
+    );
+
+    assert_eq!(
+        decode(DecoderConfig::all().enable(Isbn10)),
+        (SymbolType::Isbn10, "0306406152".into())
+    );
+
+    // ISBN-13 takes precedence over ISBN-10.
+    assert_eq!(
+        decode(DecoderConfig::all().enable(Isbn10).enable(Isbn13)),
+        (SymbolType::Isbn13, "9780306406157".into())
+    );
+}
+
 /// EAN-13 with a 2- or 5-digit add-on, which zbar reports as a composite of
 /// the main symbol and the add-on concatenated.
 ///
@@ -478,6 +524,40 @@ fn test_ean13_with_addons() {
             .unwrap_or_else(|| panic!("no symbol in {path}"));
         assert_eq!(symbol.symbol_type(), SymbolType::Composite, "{path}");
         assert_eq!(symbol.data_string(), Some(expected), "{path}");
+    }
+}
+
+/// Without `Composite` the add-on is reported as its own EAN-2 / EAN-5
+/// symbol alongside the main EAN-13, which is how zbar behaves with
+/// `-S ean2.enable=1 -S ean5.enable=1` and composite left off.
+#[test]
+fn test_ean2_and_ean5_as_standalone_symbols() {
+    use zedbar::config::{Ean2, Ean5};
+
+    for (path, addon_type, addon_data) in [
+        ("examples/test-ean13-addon2.png", SymbolType::Ean2, "12"),
+        ("examples/test-ean13-addon5.png", SymbolType::Ean5, "12345"),
+    ] {
+        let img = image::open(path).expect("open").to_luma8();
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+        let config = DecoderConfig::all().enable(Ean2).enable(Ean5);
+        let result = Scanner::with_config(config).scan(&mut image);
+
+        let found: Vec<(SymbolType, &str)> = result
+            .symbols()
+            .iter()
+            .map(|s| (s.symbol_type(), s.data_string().unwrap_or("")))
+            .collect();
+
+        assert!(
+            found.contains(&(SymbolType::Ean13, "5901234123457")),
+            "{path}: missing the main symbol, got {found:?}"
+        );
+        assert!(
+            found.contains(&(addon_type, addon_data)),
+            "{path}: missing the add-on, got {found:?}"
+        );
     }
 }
 
@@ -699,6 +779,7 @@ fn test_all_examples_decode() {
         "examples/test-ean8-plain.png",
         "examples/test-ean13-addon2.png",
         "examples/test-ean13-addon5.png",
+        "examples/test-isbn13.png",
         "examples/test-i25.png",
         "examples/test-upca.png",
         "examples/nine-barcodes.png",
