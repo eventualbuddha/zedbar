@@ -110,11 +110,17 @@ impl Symbol {
     /// Get the decoded data as bytes.
     ///
     /// For QR codes, this is the text-decoded output after encoding detection
-    /// (UTF-8, Shift-JIS, Windows-1252, etc.). For SQ codes, this is the
-    /// base64-encoded payload. Use [`raw_data`](Self::raw_data) to get the
-    /// original bytes before conversion.
+    /// (UTF-8, Shift-JIS, Windows-1252, etc.); use
+    /// [`raw_data`](Self::raw_data) for the bytes before that conversion.
     ///
     /// For linear barcodes, this is the raw data (which is always ASCII text).
+    ///
+    /// For SQ codes, this is the sampled bit matrix as bytes, which is all
+    /// that symbology decodes to — it has no data layer, so there is no
+    /// error correction or encoding mode to interpret. zbar reports the same
+    /// bytes base64-encoded, because its C API returns a NUL-terminated
+    /// string and cannot carry binary; that constraint does not apply here,
+    /// so callers who want base64 should encode these bytes themselves.
     pub fn data(&self) -> &[u8] {
         &self.data
     }
@@ -127,10 +133,8 @@ impl Symbol {
     /// (since those modes encode text, not arbitrary bytes), while byte-mode
     /// segments are the original uninterpreted bytes.
     ///
-    /// For SQ codes, this returns the raw bytes before base64 encoding.
-    ///
-    /// Returns `None` for linear barcodes (use [`data`](Self::data) instead,
-    /// which is already raw ASCII).
+    /// Returns `None` for every other symbology, where no such conversion
+    /// happens and [`data`](Self::data) is already the raw payload.
     pub fn raw_data(&self) -> Option<&[u8]> {
         self.raw_data.as_deref()
     }

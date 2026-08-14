@@ -396,7 +396,6 @@ fn test_decoded_data_has_no_trailing_nul() {
         "examples/test-codabar.png",
         "examples/test-i25.png",
         "examples/test-ean13.png",
-        "examples/test-sqcode.png",
     ] {
         let img = image::open(path)
             .unwrap_or_else(|e| panic!("open {path}: {e}"))
@@ -588,33 +587,61 @@ fn test_ean13_addon_ignored_by_default() {
 ///
 /// The two sizes cover an 8x8 and a 12x12 data area, so the border walk runs
 /// over different numbers of alignment dots.
+///
+/// zedbar reports the sampled bits directly where zbar reports them
+/// base64-encoded, so the cross-check encodes before comparing — which also
+/// documents the relationship between the two.
 #[test]
 fn test_sqcode() {
-    for (path, expected) in [
-        ("examples/test-sqcode.png", "emVkYmFyISE="),
-        ("examples/test-sqcode-large.png", "emVkYmFyIFNRIENvZGUgZml4"),
+    for (path, payload) in [
+        ("examples/test-sqcode.png", &b"zedbar!!"[..]),
+        ("examples/test-sqcode-large.png", &b"zedbar SQ Code fix"[..]),
     ] {
-        let expected = Some(("SQ-Code".to_string(), expected.to_string()));
-        assert_eq!(decode_image(path), expected, "zedbar failed for {path}");
-        assert_matches_zbars(path, &expected);
+        let img = image::open(path).expect("open").to_luma8();
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+        let result = Scanner::new().scan(&mut image);
+        let symbol = result
+            .first()
+            .unwrap_or_else(|| panic!("nothing decoded in {path}"));
+
+        assert_eq!(symbol.symbol_type(), SymbolType::SqCode, "{path}");
+        assert_eq!(symbol.data(), payload, "{path}");
+        // No text conversion happens, so there is nothing for `raw_data` to
+        // hand back that `data` does not already carry.
+        assert_eq!(symbol.raw_data(), None, "{path}");
+
+        if zbarimg_available() {
+            assert_eq!(
+                decode_with_zbars(path),
+                Some(("SQ-Code".to_string(), base64(payload))),
+                "zbars disagreed for {path}"
+            );
+        }
     }
 }
 
-/// The payload is the base64 of the raw bits, and [`Symbol::raw_data`] hands
-/// back those bits undecoded.
-#[test]
-fn test_sqcode_raw_data() {
-    let img = image::open("examples/test-sqcode.png")
-        .expect("open")
-        .to_luma8();
-    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
-
-    let result = Scanner::new().scan(&mut image);
-    let symbol = result.first().expect("no symbol decoded");
-
-    assert_eq!(symbol.symbol_type(), SymbolType::SqCode);
-    assert_eq!(symbol.data_string(), Some("emVkYmFyISE="));
-    assert_eq!(symbol.raw_data(), Some(&b"zedbar!!"[..]));
+/// Base64 as zbar emits it, for the SQ cross-check above. Small enough not to
+/// be worth a dev-dependency.
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = u32::from_be_bytes([0, b[0], b[1], b[2]]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[(n >> (18 - 6 * i)) as usize & 0x3f] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 #[test]
