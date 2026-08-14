@@ -25,7 +25,12 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          release-type: rust
+          # NB: no `release-type` here on purpose. Setting it puts the action
+          # in its simple mode, where `release-please-config.json` is ignored
+          # — and that config is the only place `bump-minor-pre-major` can be
+          # set. The release type now lives in the config instead.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
           # Use GitHub App token for authenticated, signed commits
           token: ${{ steps.app-token.outputs.token }}
 
