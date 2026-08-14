@@ -45,6 +45,42 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  # Reports coverage; it does not gate the build. A threshold would mostly
+  # measure how much of the ported C is reachable from the fixtures we happen
+  # to have, which is not a number worth failing a PR over. The summary is
+  # here so a reviewer can see what a change does to it.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # zbarimg cross-checks are skipped when it is missing, which would
+      # quietly shrink the covered paths.
+      - name: Install C dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zbar-tools
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Report coverage
+        run: |
+          cargo llvm-cov --summary-only | tee coverage.txt
+          {
+            echo '## Coverage'
+            echo '```'
+            cat coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # The crate advertises building with only the symbologies you need, so every
   # feature subset has to keep compiling. Scoped to `--lib`, which is what a
   # dependent consumes: the test targets assume the default features.

@@ -1,5 +1,52 @@
 # Contributing to zedbar
 
+## Testing
+
+```sh
+cargo test
+```
+
+Most of the decoders are a close port of the [ZBar][zbar] C library, so the
+tests lean on two external references rather than on this crate's own idea of
+what is correct:
+
+- **`zbarimg`** (Debian `zbar-tools`, `brew install zbar`) is the behavioral
+  oracle. `tests/decode_examples.rs` decodes each fixture with both and
+  asserts they agree. The cross-checks are skipped when `zbarimg` is not
+  installed, so install it to get the full suite.
+- **`rqrr`** gives an independent second opinion on QR codes, and is a normal
+  dev-dependency.
+
+Every symbology has at least one end-to-end fixture in `examples/`. Fixtures
+are generated with [`zint`][zint] where possible; the two that aren't have
+generators alongside them (`cargo run --example generate_...`).
+
+## Coverage
+
+Line and region coverage comes from [`cargo-llvm-cov`][llvm-cov], which drives
+LLVM's source-based instrumentation and so counts the same code the compiler
+sees:
+
+```sh
+cargo install cargo-llvm-cov
+rustup component add llvm-tools-preview
+
+cargo llvm-cov --summary-only          # per-file table
+cargo llvm-cov --open                  # annotated HTML, opens a browser
+cargo llvm-cov --html --output-dir cov # annotated HTML, no browser
+```
+
+`--summary-only` is the quick check; the HTML report is what to use when
+adding tests, since it marks the individual uncovered lines.
+
+Coverage is a guide, not a target — a decoder can sit at 90% while the
+handful of uncovered lines are exactly the interesting ones. It is most
+useful for spotting whole functions or error paths that no test reaches.
+
+[zbar]: https://github.com/mchehab/zbar
+[zint]: https://www.zint.org.uk/
+[llvm-cov]: https://github.com/taiki-e/cargo-llvm-cov
+
 ## Commit Message Format
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated releases via release-please.
