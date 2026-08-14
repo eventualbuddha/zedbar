@@ -387,9 +387,18 @@ impl ImageScanner {
 
         let mut edge = SymbolType::None;
 
-        // 2nd zero-crossing is 1st local min/max - could be edge
-        if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (self.calc_thresh() <= y1_1.unsigned_abs())
-        {
+        // 2nd zero-crossing is 1st local min/max - could be edge.
+        // The sign test is asymmetric: y2_2 must strictly oppose y2_1, so a
+        // flat y2_2 never qualifies. (`(y2_1 > 0) == (y2_2 < 0)` would accept
+        // y2_1 < 0 with y2_2 == 0.)
+        let crossing = if y2_1 == 0 {
+            true
+        } else if y2_1 > 0 {
+            y2_2 < 0
+        } else {
+            y2_2 > 0
+        };
+        if crossing && (self.calc_thresh() <= y1_1.unsigned_abs()) {
             // check for 1st sign change
             let y1_rev = if self.y1_sign > 0 { y1_1 < 0 } else { y1_1 > 0 };
 
