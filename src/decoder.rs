@@ -326,8 +326,10 @@ pub(crate) struct DatabarSegment {
     // finder: 5, exp: 1, color: 1, side: 1,
     // partial: 1, count: 7, epoch: 8, check: 8 = 32 bits
     bitfields: u32,
+    /// Decoded character data (C: `signed short data`).
     pub(crate) data: i16,
-    pub(crate) width: i16,
+    /// Measured width of the finder, 14 modules (C: `unsigned short width`).
+    pub(crate) width: u16,
 }
 
 #[cfg(feature = "databar")]

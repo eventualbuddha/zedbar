@@ -66,7 +66,7 @@ const EWMA_WEIGHT: u32 = 25;
 const THRESH_INIT: u32 = 14;
 
 // Decoder constants from decoder.rs
-const BUFFER_MIN: usize = 0x20;
+pub(crate) const BUFFER_MIN: usize = 0x20;
 pub(crate) const BUFFER_MAX: usize = 0x100;
 
 /// image scanner state
@@ -647,8 +647,11 @@ impl ImageScanner {
         self.ean.new_scan();
         #[cfg(feature = "i25")]
         self.i25.reset();
+        // Only a soft reset: DataBar accumulates complete segments across scan
+        // lines, so a full `reset()` here would throw away the halves already
+        // found and prevent any multi-line symbol from ever pairing up.
         #[cfg(feature = "databar")]
-        self.databar.reset();
+        self.databar.new_scan();
         #[cfg(feature = "codabar")]
         self.codabar.reset();
         #[cfg(feature = "code39")]

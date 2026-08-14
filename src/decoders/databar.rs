@@ -2,7 +2,7 @@ use crate::{
     Error, Result, SymbolType,
     color::Color,
     decoder::{DatabarDecoder, DatabarSegment, Modifier, decode_e},
-    img_scanner::ImageScanner,
+    img_scanner::{BUFFER_MIN, ImageScanner},
 };
 
 const DATABAR_MAX_SEGMENTS: usize = 32;
@@ -20,19 +20,99 @@ fn var_max(len: i32, offset: i32) -> i32 {
     (((len * 12 + offset) * 2) + 6) / 7
 }
 
-fn feed_bits(
-    d: &mut u64,
-    bit_count: &mut i32,
-    len: &mut i32,
-    mut data_ptr: &mut [i32],
-    required: i32,
-) {
-    while *bit_count < required && *len > 0 {
-        let next = (data_ptr[0] as u32 & 0x0fff) as u64;
-        data_ptr = &mut data_ptr[1..];
-        *d = (*d << 12) | next;
-        *bit_count += 12;
-        *len -= 1;
+/// Sliding-window reader over the 12-bit character stream of a DataBar
+/// Expanded symbol.
+///
+/// Mirrors the C decoder's `FEED_BITS` macro: `window` accumulates characters
+/// 12 bits at a time and `bits` counts how many of them are still unconsumed.
+/// [`advance`](Self::advance) plus [`peek`](Self::peek) reproduce the C idiom
+/// `i -= n; (d >> i) & mask` — note that C often peeks a *wider* field than it
+/// just advanced past, deliberately re-reading bits.
+struct BitReader<'a> {
+    data: &'a [i32],
+    pos: usize,
+    window: u64,
+    bits: i32,
+    /// Characters left to feed into the window.
+    remaining: i32,
+}
+
+impl<'a> BitReader<'a> {
+    fn new(data: &'a [i32], window: u64, bits: i32, remaining: i32) -> Self {
+        Self {
+            data,
+            pos: 0,
+            window,
+            bits,
+            remaining,
+        }
+    }
+
+    /// Pull characters in until at least `required` bits are buffered.
+    fn feed(&mut self, required: i32) {
+        while self.bits < required && self.remaining > 0 {
+            let next = self.data.get(self.pos).copied().unwrap_or(0) as u32 & 0x0fff;
+            self.pos += 1;
+            self.window = (self.window << 12) | u64::from(next);
+            self.bits += 12;
+            self.remaining -= 1;
+        }
+    }
+
+    /// Move the read cursor down by `n` bits.
+    ///
+    /// Returns `None` once the window has run dry; that is where the C decoder
+    /// tests `i < 0` (and, at the sites where it forgets to, invokes undefined
+    /// behavior by shifting by a negative amount).
+    fn advance(&mut self, n: i32) -> Option<()> {
+        self.bits -= n;
+        (self.bits >= 0).then_some(())
+    }
+
+    /// Read the `n` bits at the current cursor without moving it.
+    fn peek(&self, n: i32) -> u64 {
+        debug_assert!(self.bits >= 0 && (1..=63).contains(&n));
+        (self.window >> self.bits) & ((1u64 << n) - 1)
+    }
+
+    /// [`feed`](Self::feed) then [`advance`](Self::advance) then
+    /// [`peek`](Self::peek) the same width — the common case.
+    fn read(&mut self, n: i32) -> Option<u64> {
+        self.feed(n);
+        self.advance(n)?;
+        Some(self.peek(n))
+    }
+}
+
+/// Bounds-checked write cursor over the decoder's output buffer.
+struct OutBuf<'a> {
+    buf: &'a mut [u8],
+    len: usize,
+}
+
+impl OutBuf<'_> {
+    /// Reserve `n` bytes at the cursor and advance past them.
+    fn take_mut(&mut self, n: usize) -> Result<&mut [u8]> {
+        let end = self.len.checked_add(n).ok_or(Error::Invalid)?;
+        let slice = self.buf.get_mut(self.len..end).ok_or(Error::Invalid)?;
+        self.len = end;
+        Ok(slice)
+    }
+
+    fn push(&mut self, byte: u8) -> Result<()> {
+        self.take_mut(1)?[0] = byte;
+        Ok(())
+    }
+
+    fn push_all(&mut self, bytes: &[u8]) -> Result<()> {
+        self.take_mut(bytes.len())?.copy_from_slice(bytes);
+        Ok(())
+    }
+
+    /// Append `digits` zero-padded decimal digits of `n`.
+    fn push_decimal(&mut self, n: u64, digits: usize) -> Result<()> {
+        decode10(self.take_mut(digits)?, n, digits);
+        Ok(())
     }
 }
 
@@ -204,358 +284,279 @@ fn decode10(buf: &mut [u8], mut n: u64, mut i: usize) {
     }
 }
 
-fn postprocess_exp(dcode: &mut ImageScanner, data: &mut [i32]) -> Result<usize> {
-    let mut data_ptr = data;
-    let first = data_ptr[0] as u64;
-    data_ptr = &mut data_ptr[1..];
+/// Decode the general-purpose data compaction stream that follows the
+/// compressed AI fields (C: the `enc < 4` tail of `databar_postprocess_exp`).
+fn postprocess_exp_tail(r: &mut BitReader<'_>, out: &mut OutBuf<'_>) -> Result<()> {
+    let mut scheme = DatabarScheme::Numeric;
+
+    while r.bits > 0 || r.remaining > 0 {
+        r.feed(8);
+
+        if scheme == DatabarScheme::Numeric {
+            if r.advance(4).is_none() {
+                break;
+            }
+            if r.peek(4) == 0 {
+                scheme = DatabarScheme::Alphanumeric;
+                continue;
+            }
+
+            if r.remaining == 0 && r.bits < 3 {
+                // special case last digit
+                let digit = r.peek(4) - 1;
+                if digit > 9 {
+                    return Err(Error::Invalid);
+                }
+                out.push(b'0' + digit as u8)?;
+                break;
+            }
+
+            if r.advance(3).is_none() {
+                break;
+            }
+            // Re-reads the 4 bits above plus the 3 just consumed.
+            let val = r.peek(7) as i32 - 8;
+            let low = val % 11;
+            let high = val / 11;
+            out.push(if high < 10 { b'0' + high as u8 } else { GS })?;
+            out.push(if low < 10 { b'0' + low as u8 } else { GS })?;
+            continue;
+        }
+
+        // Alphanumeric / ISO-646
+        if r.advance(3).is_none() {
+            break;
+        }
+        if r.peek(3) == 0 {
+            scheme = DatabarScheme::Numeric;
+            continue;
+        }
+
+        if r.advance(2).is_none() {
+            break;
+        }
+        let val = r.peek(5);
+        let ch: u8 = if val == 0x04 {
+            // C toggles with `scheme ^= 0x3`, swapping ALNUM <-> ISO646.
+            scheme = if scheme == DatabarScheme::Alphanumeric {
+                DatabarScheme::Iso646
+            } else {
+                DatabarScheme::Alphanumeric
+            };
+            0
+        } else if val == 0x0f {
+            GS
+        } else if val < 0x0f {
+            43 + val as u8
+        } else if scheme == DatabarScheme::Alphanumeric {
+            r.advance(1).ok_or(Error::Invalid)?;
+            match r.peek(5) {
+                v if v < 0x1a => b'A' + v as u8,
+                0x1a => b'*',
+                v if v < 0x1f => b',' + v as u8 - 0x1b,
+                _ => return Err(Error::Invalid),
+            }
+        } else if val < 0x1d {
+            r.advance(2).ok_or(Error::Invalid)?;
+            match r.peek(6) {
+                v if v < 0x1a => b'A' + v as u8,
+                v if v < 0x34 => b'a' + v as u8 - 0x1a,
+                _ => return Err(Error::Invalid),
+            }
+        } else {
+            r.advance(3).ok_or(Error::Invalid)?;
+            match r.peek(5) {
+                v @ 0x00..=0x09 => b'!' + v as u8 - 8,
+                v @ 0x0a..=0x14 => b'%' + v as u8 - 0x0a,
+                v @ 0x15..=0x1a => b':' + v as u8 - 0x15,
+                0x1b => b'_',
+                0x1c => b' ',
+                _ => return Err(Error::Invalid),
+            }
+        };
+
+        if ch != 0 {
+            out.push(ch)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn postprocess_exp(dcode: &mut ImageScanner, data: &[i32]) -> Result<usize> {
+    let first = *data.first().ok_or(Error::Invalid)? as u64;
     let mut len = (first / 211 + 4) as i32;
 
-    let mut d = data_ptr[0] as u64;
-    data_ptr = &mut data_ptr[1..];
+    // Encodation method lives in the second character; the rest of the stream
+    // is fed in on demand.
+    let d = *data.get(1).ok_or(Error::Invalid)? as u64;
+    let mut r = BitReader::new(&data[2..], d, 12, len);
 
-    let mut i_bits: i32;
-    let enc: i32;
-    let buflen: i32;
-
-    let mut n = ((d >> 4) & 0x7f) as u32;
-    if n >= 0x40 {
-        i_bits = 10;
-        enc = 1;
-        buflen = 2 + 14 + var_max(len, 10 - 2 - 44 + 6) + 2;
+    let n = (d >> 4) & 0x7f;
+    let (enc, buflen) = if n >= 0x40 {
+        r.bits = 10;
+        (1, 2 + 14 + var_max(len, 10 - 2 - 44 + 6) + 2)
     } else if n >= 0x38 {
-        i_bits = 4;
-        enc = 6 + (n as i32 & 7);
-        buflen = 2 + 14 + 4 + 6 + 2 + 6 + 2;
+        r.bits = 4;
+        (6 + (n as i32 & 7), 2 + 14 + 4 + 6 + 2 + 6 + 2)
     } else if n >= 0x30 {
-        i_bits = 6;
-        enc = 2 + (((n >> 2) & 1) as i32);
-        buflen = 2 + 14 + 4 + 3 + var_max(len, 6 - 2 - 44 - 2 - 10) + 2;
+        r.bits = 6;
+        (2 + ((n >> 2) & 1) as i32, {
+            2 + 14 + 4 + 3 + var_max(len, 6 - 2 - 44 - 2 - 10) + 2
+        })
     } else if n >= 0x20 {
-        i_bits = 7;
-        enc = 4 + (((n >> 3) & 1) as i32);
-        buflen = 2 + 14 + 4 + 6;
+        r.bits = 7;
+        (4 + ((n >> 3) & 1) as i32, 2 + 14 + 4 + 6)
     } else {
-        i_bits = 9;
-        enc = 0;
-        buflen = var_max(len, 9 - 2) + 2;
-    }
+        r.bits = 9;
+        (0, var_max(len, 9 - 2) + 2)
+    };
 
     if buflen <= 2 {
         return Err(Error::Invalid);
     }
 
     if enc < 4 {
-        i_bits -= 1;
-        let parity_bit = ((d >> i_bits) & 1) as i32;
-        if ((len ^ parity_bit) & 1) != 0 {
+        // variable length symbol bit field
+        r.advance(1).ok_or(Error::Invalid)?;
+        if ((len ^ r.peek(1) as i32) & 1) != 0 {
+            // even/odd length mismatch
             return Err(Error::Invalid);
         }
 
-        i_bits -= 1;
-        let size_group = ((d >> i_bits) & 1) as i32;
-        if size_group != (len > 14) as i32 {
+        r.advance(1).ok_or(Error::Invalid)?;
+        if r.peek(1) as i32 != (len > 14) as i32 {
+            // size group mismatch
             return Err(Error::Invalid);
         }
     }
 
     len -= 2;
+    r.remaining = len;
 
-    if dcode.set_buffer_capacity(buflen as usize).is_err() {
+    let buflen = buflen as usize;
+    if dcode.set_buffer_capacity(buflen).is_err() {
         return Err(Error::Invalid);
     }
 
-    let buffer_capacity = dcode.buffer_capacity();
-    let buf = match dcode.buffer_mut_slice(buflen as usize) {
-        Ok(buf) => buf,
-        Err(_) => return Err(Error::Invalid),
-    };
-    let mut buf_idx = 0usize;
+    // C's `size_buf` never shrinks below BUFFER_MIN, so the writable region is
+    // at least that large even when `buflen` is smaller.
+    let alloc = buflen.max(BUFFER_MIN);
+    let buf = dcode.buffer_mut_slice(alloc).map_err(|()| Error::Invalid)?;
+    let mut out = OutBuf { buf, len: 0 };
 
+    // handle compressed fields
     if enc != 0 {
-        buf[buf_idx] = b'0';
-        buf_idx += 1;
-        buf[buf_idx] = b'1';
-        buf_idx += 1;
+        out.push_all(b"01")?;
     }
 
     if enc == 1 {
-        i_bits -= 4;
-        if i_bits >= 10 {
+        r.advance(4).ok_or(Error::Invalid)?;
+        if r.bits >= 10 {
             return Err(Error::Invalid);
         }
-        let digit = ((d >> i_bits) & 0xf) as u8;
-        buf[buf_idx] = b'0' + digit;
-        buf_idx += 1;
+        out.push(b'0' + r.peek(4) as u8)?;
     } else if enc != 0 {
-        buf[buf_idx] = b'9';
-        buf_idx += 1;
+        out.push(b'9')?;
     }
 
     if enc != 0 {
         for _ in 0..4 {
-            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 10);
-            i_bits -= 10;
-            if i_bits < 0 {
-                return Err(Error::Invalid);
-            }
-            n = ((d >> i_bits) & 0x3ff) as u32;
+            let n = r.read(10).ok_or(Error::Invalid)?;
             if n >= 1000 {
                 return Err(Error::Invalid);
             }
-            decode10(&mut buf[buf_idx..], n as u64, 3);
-            buf_idx += 3;
+            out.push_decimal(n, 3)?;
         }
-        append_check14(&mut buf[..buf_idx - 13]);
-        buf_idx += 1;
+        // The 12 digits just written, plus the AI's leading digit, are the
+        // first 13 of the GTIN-14; the check digit lands right after them.
+        let start = out.len.checked_sub(13).ok_or(Error::Invalid)?;
+        let end = out.len + 1;
+        append_check14(out.buf.get_mut(start..end).ok_or(Error::Invalid)?);
+        out.len = end;
     }
 
     match enc {
+        // 01100: AI 392x
         2 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 2);
-            i_bits -= 2;
-            let val = ((d >> i_bits) & 0x3) as u8;
-            buf[buf_idx] = b'3';
-            buf[buf_idx + 1] = b'9';
-            buf[buf_idx + 2] = b'2';
-            buf[buf_idx + 3] = b'0' + val;
-            buf_idx += 4;
+            let val = r.read(2).ok_or(Error::Invalid)?;
+            out.push_all(&[b'3', b'9', b'2', b'0' + val as u8])?;
         }
+        // 01101: AI 393x
         3 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 12);
-            i_bits -= 2;
-            let val = ((d >> i_bits) & 0x3) as u8;
-            buf[buf_idx] = b'3';
-            buf[buf_idx + 1] = b'9';
-            buf[buf_idx + 2] = b'3';
-            buf[buf_idx + 3] = b'0' + val;
-            buf_idx += 4;
-            i_bits -= 10;
-            if i_bits < 0 {
-                return Err(Error::Invalid);
-            }
-            n = ((d >> i_bits) & 0x3ff) as u32;
+            r.feed(12);
+            r.advance(2).ok_or(Error::Invalid)?;
+            let val = r.peek(2);
+            out.push_all(&[b'3', b'9', b'3', b'0' + val as u8])?;
+            r.advance(10).ok_or(Error::Invalid)?;
+            let n = r.peek(10);
             if n >= 1000 {
                 return Err(Error::Invalid);
             }
-            decode10(&mut buf[buf_idx..], n as u64, 3);
-            buf_idx += 3;
+            out.push_decimal(n, 3)?;
         }
+        // 0100: AI 3103
         4 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
-            i_bits -= 15;
-            if i_bits < 0 {
-                return Err(Error::Invalid);
-            }
-            n = ((d >> i_bits) & 0x7fff) as u32;
-            buf[buf_idx] = b'3';
-            buf[buf_idx + 1] = b'1';
-            buf[buf_idx + 2] = b'0';
-            buf[buf_idx + 3] = b'3';
-            buf_idx += 4;
-            decode10(&mut buf[buf_idx..], n as u64, 6);
-            buf_idx += 6;
+            let n = r.read(15).ok_or(Error::Invalid)?;
+            out.push_all(b"3103")?;
+            out.push_decimal(n, 6)?;
         }
+        // 0101: AI 3202/3203
         5 => {
-            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 15);
-            i_bits -= 15;
-            if i_bits < 0 {
-                return Err(Error::Invalid);
-            }
-            n = ((d >> i_bits) & 0x7fff) as u32;
-            let mut prefix = b'2';
-            if n >= 10000 {
-                prefix = b'3';
-            }
-            buf[buf_idx] = b'3';
-            buf[buf_idx + 1] = b'2';
-            buf[buf_idx + 2] = b'0';
-            buf[buf_idx + 3] = prefix;
-            buf_idx += 4;
+            let mut n = r.read(15).ok_or(Error::Invalid)?;
+            out.push_all(&[b'3', b'2', b'0', if n >= 10000 { b'3' } else { b'2' }])?;
             if n >= 10000 {
                 n -= 10000;
             }
-            decode10(&mut buf[buf_idx..], n as u64, 6);
-            buf_idx += 6;
+            out.push_decimal(n, 6)?;
         }
         _ => {}
     }
 
+    // 0111000 - 0111111: AI 310x/320x + AI 11/13/15/17
     if enc >= 6 {
-        let mut temp_enc = enc & 1;
-        buf[buf_idx] = b'3';
-        buf[buf_idx + 1] = b'1' + temp_enc as u8;
-        buf[buf_idx + 2] = b'0';
-        buf[buf_idx + 3] = b'x';
-        buf_idx += 4;
+        out.push_all(&[b'3', b'1' + (enc & 1) as u8, b'0', b'x'])?;
 
-        feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 20);
-        i_bits -= 20;
-        if i_bits < 0 {
-            return Err(Error::Invalid);
-        }
-        n = ((d >> i_bits) & 0xfffff) as u32;
+        let n = r.read(20).ok_or(Error::Invalid)?;
         if n >= 1_000_000 {
             return Err(Error::Invalid);
         }
-        decode10(&mut buf[buf_idx..], n as u64, 6);
-        buf[buf_idx - 1] = buf[buf_idx];
-        buf[buf_idx] = b'0';
-        buf_idx += 6;
+        // The decimal point position replaces the placeholder 'x', shifting
+        // the first digit of the value back one slot.
+        let start = out.len;
+        out.push_decimal(n, 6)?;
+        out.buf[start - 1] = out.buf[start];
+        out.buf[start] = b'0';
 
-        feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 16);
-        i_bits -= 16;
-        if i_bits < 0 {
-            return Err(Error::Invalid);
-        }
-        n = ((d >> i_bits) & 0xffff) as u32;
+        let n = r.read(16).ok_or(Error::Invalid)?;
         if n < 38400 {
             let dd = n % 32;
             let rem = n / 32;
             let mm = rem % 12 + 1;
             let yy = rem / 12;
 
-            buf[buf_idx] = b'1';
-            buf_idx += 1;
-            temp_enc = enc - 6;
-            buf[buf_idx] = b'0' + ((temp_enc | 1) as u8);
-            buf_idx += 1;
-            decode10(&mut buf[buf_idx..], yy as u64, 2);
-            buf_idx += 2;
-            decode10(&mut buf[buf_idx..], mm as u64, 2);
-            buf_idx += 2;
-            decode10(&mut buf[buf_idx..], dd as u64, 2);
-            buf_idx += 2;
+            out.push(b'1')?;
+            out.push(b'0' + ((enc - 6) | 1) as u8)?;
+            out.push_decimal(yy, 2)?;
+            out.push_decimal(mm, 2)?;
+            out.push_decimal(dd, 2)?;
         } else if n > 38400 {
             return Err(Error::Invalid);
         }
     }
 
     if enc < 4 {
-        let mut scheme = DatabarScheme::Numeric;
-        while i_bits > 0 || len > 0 {
-            feed_bits(&mut d, &mut i_bits, &mut len, data_ptr, 8);
-
-            if scheme == DatabarScheme::Numeric {
-                i_bits -= 4;
-                if i_bits < 0 {
-                    break;
-                }
-                if ((d >> i_bits) & 0xf) == 0 {
-                    scheme = DatabarScheme::Alphanumeric;
-                    continue;
-                }
-
-                if len == 0 && i_bits < 3 {
-                    let digit = ((d >> i_bits) & 0xf) as i32 - 1;
-                    if digit > 9 {
-                        return Err(Error::Invalid);
-                    }
-                    buf[buf_idx] = b'0' + digit as u8;
-                    buf_idx += 1;
-                    break;
-                }
-
-                i_bits -= 3;
-                if i_bits < 0 {
-                    break;
-                }
-                let mut val = ((d >> i_bits) & 0x7f) as i32 - 8;
-                let n1 = val % 11;
-                val /= 11;
-                buf[buf_idx] = if val < 10 { b'0' + val as u8 } else { GS };
-                buf_idx += 1;
-                buf[buf_idx] = if n1 < 10 { b'0' + n1 as u8 } else { GS };
-                buf_idx += 1;
-            } else {
-                let mut ch: u8 = 0;
-                i_bits -= 3;
-                if i_bits < 0 {
-                    break;
-                }
-                if ((d >> i_bits) & 0x7) == 0 {
-                    scheme = DatabarScheme::Numeric;
-                    continue;
-                }
-
-                i_bits -= 2;
-                if i_bits < 0 {
-                    break;
-                }
-                let mut val = ((d >> i_bits) & 0x1f) as u32;
-                if val == 0x04 {
-                    scheme = if scheme == DatabarScheme::Alphanumeric {
-                        DatabarScheme::Iso646
-                    } else {
-                        DatabarScheme::Alphanumeric
-                    };
-                } else if val == 0x0f {
-                    ch = GS;
-                } else if val < 0x0f {
-                    ch = 43 + val as u8;
-                } else if scheme == DatabarScheme::Alphanumeric {
-                    i_bits -= 1;
-                    if i_bits < 0 {
-                        return Err(Error::Invalid);
-                    }
-                    val = ((d >> i_bits) & 0x1f) as u32;
-                    ch = if val < 0x1a {
-                        b'A' + val as u8
-                    } else if val == 0x1a {
-                        b'*'
-                    } else if val < 0x1f {
-                        b',' + (val as u8) - 0x1b
-                    } else {
-                        return Err(Error::Invalid);
-                    };
-                } else if scheme == DatabarScheme::Iso646 && val < 0x1d {
-                    i_bits -= 2;
-                    if i_bits < 0 {
-                        return Err(Error::Invalid);
-                    }
-                    val = ((d >> i_bits) & 0x3f) as u32;
-                    ch = if val < 0x1a {
-                        b'A' + val as u8
-                    } else if val < 0x34 {
-                        b'a' + (val as u8) - 0x1a
-                    } else {
-                        return Err(Error::Invalid);
-                    };
-                } else if scheme == DatabarScheme::Iso646 {
-                    i_bits -= 3;
-                    if i_bits < 0 {
-                        return Err(Error::Invalid);
-                    }
-                    val = ((d >> i_bits) & 0x1f) as u32;
-                    ch = match val {
-                        0x00..=0x09 => b'!' + val as u8 - 8,
-                        0x0a..=0x14 => b'%' + val as u8 - 0x0a,
-                        0x15..=0x1a => b':' + val as u8 - 0x15,
-                        0x1b => b'_',
-                        0x1c => b' ',
-                        _ => return Err(Error::Invalid),
-                    };
-                } else {
-                    return Err(Error::Invalid);
-                }
-
-                if ch != 0 {
-                    buf[buf_idx] = ch;
-                    buf_idx += 1;
-                }
-            }
-        }
+        // remainder is general-purpose data compaction
+        postprocess_exp_tail(&mut r, &mut out)?;
     }
 
-    let total_len = buf_idx;
-    if total_len >= buffer_capacity {
-        return Err(Error::Invalid);
-    }
+    // C NUL-terminates and asserts the terminator is still in bounds.
+    let total_len = out.len;
+    out.push(0)?;
 
-    buf[buf_idx] = 0;
-
-    // Check if last character is GS and remove it
-    let final_len = if total_len > 0 && buf[buf_idx - 1] == GS {
-        buf[buf_idx - 1] = 0;
+    // Trailing separators are not part of the data.
+    let final_len = if total_len > 0 && out.buf[total_len - 1] == GS {
+        out.buf[total_len - 1] = 0;
         total_len - 1
     } else {
         total_len
@@ -570,7 +571,9 @@ fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
     // Get config before borrowing buffer
     let emit_check = dcode.should_emit_checksum(SymbolType::Databar);
 
-    let buf = match dcode.buffer_mut_slice(16) {
+    // Layout: "01" at [0..2], 13 digits at [2..15] written back to front,
+    // then the check digit at [15] and a NUL at [16].
+    let buf = match dcode.buffer_mut_slice(17) {
         Ok(buf) => buf,
         Err(_) => return,
     };
@@ -580,14 +583,12 @@ fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
     buf[0] = b'0';
     buf[1] = b'1';
 
-    // Start at position 15 and work backwards
-    let mut buf_idx = 15;
-
-    // Write two null terminators
-    buf[buf_idx] = 0;
+    // Write two null terminators, then work backwards from just below them
+    let mut buf_idx = 17;
     buf_idx -= 1;
     buf[buf_idx] = 0;
     buf_idx -= 1;
+    buf[buf_idx] = 0;
 
     // First conversion
     let mut r = (d[0] as u64) * 1597 + (d[1] as u64);
@@ -606,8 +607,8 @@ fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
         if (i & 1) != 0 {
             chk += c << 1;
         }
-        buf[buf_idx] = c as u8 + b'0';
         buf_idx -= 1;
+        buf[buf_idx] = c as u8 + b'0';
         if i != 0 {
             r /= 10;
         }
@@ -627,8 +628,8 @@ fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
         if (i & 1) != 0 {
             chk += c << 1;
         }
-        buf[buf_idx] = c as u8 + b'0';
         buf_idx -= 1;
+        buf[buf_idx] = c as u8 + b'0';
         if i != 0 {
             r /= 10;
         }
@@ -644,12 +645,14 @@ fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
         if (i & 1) == 0 {
             chk += c << 1;
         }
-        buf[buf_idx] = c as u8 + b'0';
         buf_idx -= 1;
+        buf[buf_idx] = c as u8 + b'0';
         if i != 0 {
             r /= 10;
         }
     }
+
+    debug_assert_eq!(buf_idx, 2, "13 digits should land in buf[2..15]");
 
     // Add check digit if configured
     if emit_check {
@@ -657,10 +660,10 @@ fn postprocess(dcode: &mut ImageScanner, mut d: [u32; 4]) {
         if chk != 0 {
             chk = 10 - chk;
         }
-        buf[13] = chk as u8 + b'0';
-        dcode.set_buffer_len(14);
+        buf[buf_idx + 13] = chk as u8 + b'0';
+        dcode.set_buffer_len(buf_idx + 14);
     } else {
-        dcode.set_buffer_len(13);
+        dcode.set_buffer_len(buf_idx + 13);
     }
 }
 
@@ -732,8 +735,11 @@ fn merge_segment(db: &mut DatabarDecoder, seg_idx: usize) {
             // Merge partial flags (bitwise AND)
             let new_partial = seg_partial && s.partial();
 
-            // Average the widths (weighted average favoring new measurement)
-            let new_width = (3 * seg_width + s.width + 2) / 4;
+            // Average the widths (weighted average favoring new measurement).
+            // C promotes both `unsigned short`s to `int`, so the intermediate
+            // `3 * width` must not be computed in 16 bits.
+            let new_width =
+                ((3 * seg_width as u32 + s.width as u32 + 2) / 4).min(u16::MAX as u32) as u16;
 
             // Mark old segment as unused
             s.set_finder(-1);
@@ -1112,7 +1118,7 @@ fn match_segment_exp(dcode: &mut ImageScanner, seg_idx: usize, dir: i32) -> Symb
         return SymbolType::Partial;
     }
 
-    if postprocess_exp(dcode, &mut data_vals).is_err() {
+    if postprocess_exp(dcode, &data_vals).is_err() {
         dcode.release_lock(SymbolType::DatabarExp);
         return SymbolType::Partial;
     }
@@ -1579,7 +1585,7 @@ fn decode_finder(dcode: &mut ImageScanner) -> SymbolType {
     seg.set_side(dir as u8);
     seg.set_partial(false);
     seg.set_count(1);
-    seg.width = s as i16;
+    seg.width = s as u16;
     seg.set_epoch(epoch);
 
     let rc = decode_char(dcode, iseg as usize, 12 - dir, -1);

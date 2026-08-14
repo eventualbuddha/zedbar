@@ -241,6 +241,11 @@ impl DecoderConfig {
             config.checksum_flags.insert(sym, (false, true));
         }
 
+        // DataBar: emit the GTIN-14 check digit, matching zbar's default
+        for sym in [SymbolType::Databar, SymbolType::DatabarExp] {
+            config.checksum_flags.insert(sym, (false, true));
+        }
+
         // Default length limits for variable-length symbologies
         config.length_limits.insert(SymbolType::I25, (6, 256));
         config.length_limits.insert(SymbolType::Codabar, (4, 256));

@@ -448,6 +448,43 @@ fn test_i25() {
 }
 
 #[test]
+fn test_databar() {
+    // GTIN-13 2001234567890 plus the emitted check digit, prefixed with AI 01.
+    let expected = Some(("DataBar".to_string(), "0120012345678909".to_string()));
+
+    let result_this = decode_image("examples/test-databar.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-databar.png", &expected);
+}
+
+#[test]
+fn test_databar_expanded() {
+    // AI 01 (GTIN-14) + AI 3202 (net weight) + AI 15 (best before date).
+    let expected = Some((
+        "DataBar-Exp".to_string(),
+        "0198898765432106320201234515991231".to_string(),
+    ));
+
+    let result_this = decode_image("examples/test-databar-exp.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-databar-exp.png", &expected);
+}
+
+#[test]
+fn test_databar_expanded_alphanumeric() {
+    // Exercises the general-purpose data compaction tail, which needs the bit
+    // feeder to actually advance through the character stream.
+    let expected = Some(("DataBar-Exp".to_string(), "10ABC123".to_string()));
+
+    let result_this = decode_image("examples/test-databar-exp-alnum.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-databar-exp-alnum.png", &expected);
+}
+
+#[test]
 fn test_upca_decoded_as_ean13() {
     // Note: This image is decoded as EAN13, not UPCA
     let expected = Some(("EAN-13".to_string(), "0012345678905".to_string()));
@@ -521,6 +558,9 @@ fn test_all_examples_decode() {
         "examples/qr-code-low-contrast.png",
         "examples/qr-code-pacman.png",
         "examples/test-codabar.png",
+        "examples/test-databar.png",
+        "examples/test-databar-exp.png",
+        "examples/test-databar-exp-alnum.png",
         "examples/test-code128.png",
         "examples/test-code128-2.png",
         "examples/test-code39.png",
