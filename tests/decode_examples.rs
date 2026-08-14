@@ -210,6 +210,26 @@ fn test_qr_webp() {
     }
 }
 
+/// A version-40 (177x177 module) code, the largest QR defines.
+///
+/// Regression test for the corner bounds check in `qr_hom_fit`: the C source
+/// writes the limit as `_width << QR_FINDER_SUBPREC + 1`, which shifts by
+/// SUBPREC+1. Reading it as `(width << SUBPREC) + 1` halved the allowance, and
+/// codes filling the frame — everything from version 36 up — had their fitted
+/// corners rejected and never decoded at all.
+#[test]
+fn test_qr_version_40() {
+    let expected = Some((
+        "QR-Code".to_string(),
+        "VERSION 40 QR CODE TEST PAYLOAD".to_string(),
+    ));
+
+    let result_this = decode_image("examples/test-qr-version40.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-qr-version40.png", &expected);
+}
+
 #[test]
 fn test_qr_wifi_sharing() {
     let expected = Some((
@@ -605,6 +625,7 @@ fn test_all_examples_decode() {
         "examples/test-qr.jpg",
         "examples/test-qr.webp",
         "examples/pixel-wifi-sharing-qr-code.png",
+        "examples/test-qr-version40.png",
         // Explicitly DON'T pass these to `decode_image`.
         // "examples/qr-code-140-grid01.jpg",
         // "examples/qr-code-140-grid02.jpg",

@@ -941,12 +941,15 @@ fn qr_hom_fit(
             None => return -1,
         };
         // It's plausible for points to be somewhat outside the image, but too far
-        // and too much of the pattern will be gone for it to be decodable
+        // and too much of the pattern will be gone for it to be decodable.
+        // C writes the upper bound as `_width << QR_FINDER_SUBPREC + 1`, and
+        // `+` binds tighter than `<<`, so the shift is by SUBPREC+1: the limit
+        // is two image widths in finder units, not one width plus one.
         let p_i = &_p[i];
         if p_i[0] < (-_width << QR_FINDER_SUBPREC)
-            || p_i[0] >= ((_width << QR_FINDER_SUBPREC) + 1)
+            || p_i[0] >= (_width << (QR_FINDER_SUBPREC + 1))
             || p_i[1] < (-_height << QR_FINDER_SUBPREC)
-            || p_i[1] >= ((_height << QR_FINDER_SUBPREC) + 1)
+            || p_i[1] >= (_height << (QR_FINDER_SUBPREC + 1))
         {
             return -1;
         }
@@ -2808,15 +2811,18 @@ fn qr_sampling_grid_init(
         1,
     );
 
-    // Clamp the points somewhere near the image
+    // Clamp the points somewhere near the image. C writes the upper bound as
+    // `_width << QR_FINDER_SUBPREC + 1`, and `+` binds tighter than `<<`, so
+    // it is a shift by SUBPREC+1 — twice the image width in finder units, not
+    // one width plus one.
     for point in _p {
         point[0] = i32::max(
             -(_width << QR_FINDER_SUBPREC),
-            i32::min(point[0], (_width << QR_FINDER_SUBPREC) + 1),
+            i32::min(point[0], _width << (QR_FINDER_SUBPREC + 1)),
         );
         point[1] = i32::max(
             -(_height << QR_FINDER_SUBPREC),
-            i32::min(point[1], (_height << QR_FINDER_SUBPREC) + 1),
+            i32::min(point[1], _height << (QR_FINDER_SUBPREC + 1)),
         );
     }
 }
