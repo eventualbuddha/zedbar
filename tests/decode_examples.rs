@@ -446,6 +446,56 @@ fn test_ean13() {
     assert_matches_zbars("examples/test-ean13.png", &expected);
 }
 
+/// EAN-13 with a 2- or 5-digit add-on, which zbar reports as a composite of
+/// the main symbol and the add-on concatenated.
+///
+/// Regression test for the add-on state machine in `decode_pass`: stepping
+/// over an add-on character boundary advances both `pass->state` and the local
+/// index, and the port advanced only the state, leaving the
+/// character-boundary test reading a stale index.
+///
+/// Add-ons stay opt-in — zbar leaves EAN-2/EAN-5 disabled by default, and
+/// [`test_ean13_addon_ignored_by_default`] pins that.
+#[test]
+fn test_ean13_with_addons() {
+    use zedbar::config::{Ean2, Ean5};
+
+    for (path, expected) in [
+        ("examples/test-ean13-addon2.png", "590123412345712"),
+        ("examples/test-ean13-addon5.png", "590123412345712345"),
+    ] {
+        let img = image::open(path).expect("open").to_luma8();
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+        let config = DecoderConfig::all()
+            .enable(Ean2)
+            .enable(Ean5)
+            .enable_type(SymbolType::Composite);
+        let result = Scanner::with_config(config).scan(&mut image);
+
+        let symbol = result
+            .first()
+            .unwrap_or_else(|| panic!("no symbol in {path}"));
+        assert_eq!(symbol.symbol_type(), SymbolType::Composite, "{path}");
+        assert_eq!(symbol.data_string(), Some(expected), "{path}");
+    }
+}
+
+/// zbar ships with EAN-2/EAN-5 disabled, so an add-on is not read and only the
+/// main symbol comes back.
+#[test]
+fn test_ean13_addon_ignored_by_default() {
+    let expected = Some(("EAN-13".to_string(), "5901234123457".to_string()));
+
+    for path in [
+        "examples/test-ean13-addon2.png",
+        "examples/test-ean13-addon5.png",
+    ] {
+        assert_eq!(decode_image(path), expected, "zedbar failed for {path}");
+        assert_matches_zbars(path, &expected);
+    }
+}
+
 #[test]
 fn test_ean8_plain() {
     let expected = Some(("EAN-8".to_string(), "96385074".to_string()));
@@ -647,6 +697,8 @@ fn test_all_examples_decode() {
         "examples/test-ean13.png",
         "examples/test-ean8.png",
         "examples/test-ean8-plain.png",
+        "examples/test-ean13-addon2.png",
+        "examples/test-ean13-addon5.png",
         "examples/test-i25.png",
         "examples/test-upca.png",
         "examples/nine-barcodes.png",
