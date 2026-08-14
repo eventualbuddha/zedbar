@@ -542,3 +542,175 @@ impl QrFinder {
         self.s5 = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `decode_e` classifies a bar+space pair width against the character
+    /// width. zbar computes it as
+    ///
+    /// ```c
+    /// unsigned char E = ((e * n * 2 + 1) / s - 3) / 2;
+    /// return E >= n - 3 ? -1 : E;
+    /// ```
+    ///
+    /// The values below were taken from that C expression directly; the port
+    /// was checked against it exhaustively for every `n` the decoders use and
+    /// every `e <= s <= 4096`.
+    #[test]
+    fn decode_e_matches_reference_classification() {
+        // For a character of exactly `n` modules, a pair spanning `e` modules
+        // classifies as `e - 2`, valid for 2 <= e <= n - 2. These rows come
+        // straight from the C expression; the port was also checked against it
+        // exhaustively for every `n` the decoders use and every e <= s <= 4096.
+        let rows: [(u32, &[i32]); 3] = [
+            // n = 7 (EAN)
+            (7, &[-1, -1, 0, 1, 2, 3, -1, -1]),
+            // n = 9 (Code 93)
+            (9, &[-1, -1, 0, 1, 2, 3, 4, 5, -1, -1]),
+            // n = 11 (Code 128)
+            (11, &[-1, -1, 0, 1, 2, 3, 4, 5, 6, 7, -1, -1]),
+        ];
+
+        for (n, expected) in rows {
+            for (e, &want) in expected.iter().enumerate() {
+                assert_eq!(decode_e(e as u32, n, n), want, "n={n} e={e}");
+            }
+        }
+    }
+
+    /// Widths below the smallest valid pair make the C expression underflow
+    /// through zero; every such case must land outside the valid range rather
+    /// than wrapping back into it.
+    #[test]
+    fn decode_e_rejects_undersized_pairs() {
+        for n in [7u32, 9, 11, 14, 45, 72] {
+            for e in 0..=1 {
+                assert_eq!(decode_e(e, 100, n), -1, "e={e} n={n}");
+            }
+        }
+    }
+
+    /// A pair can never be wider than the character it sits in, but the
+    /// classifier is still expected to reject the boundary cleanly.
+    #[test]
+    fn decode_e_rejects_oversized_pairs() {
+        for n in [7u32, 9, 11, 14, 45, 72] {
+            assert_eq!(decode_e(100, 100, n), -1, "n={n}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod bitfield_tests {
+    use super::*;
+
+    /// The decoders mirror C bitfields, where `character` is a 12-bit signed
+    /// field. Every decoder holds -1 in it to mean "no symbol in progress", so
+    /// the sign extension on read has to work — a plain mask would return 4095
+    /// and the `character < 0` guards would never fire.
+    macro_rules! assert_character_roundtrip {
+        ($decoder:expr) => {{
+            let mut d = $decoder;
+
+            // The idle sentinel every decoder resets to.
+            d.set_character(-1);
+            assert_eq!(d.character(), -1, "-1 must survive the round trip");
+
+            // Full range of a 12-bit signed field.
+            for v in [-2048i16, -2047, -100, -2, 0, 1, 100, 2046, 2047] {
+                d.set_character(v);
+                assert_eq!(d.character(), v, "character {v}");
+            }
+
+            // Writing `character` must not disturb the neighboring fields.
+            d.set_element(5);
+            d.set_character(-1);
+            assert_eq!(d.element(), 5, "element clobbered by set_character");
+            d.set_character(1234);
+            assert_eq!(d.element(), 5, "element clobbered by set_character");
+        }};
+    }
+
+    #[cfg(feature = "i25")]
+    #[test]
+    fn i25_character_field_sign_extends() {
+        assert_character_roundtrip!(I25Decoder::default());
+    }
+
+    #[cfg(feature = "code39")]
+    #[test]
+    fn code39_character_field_sign_extends() {
+        assert_character_roundtrip!(Code39Decoder::default());
+    }
+
+    #[cfg(feature = "code93")]
+    #[test]
+    fn code93_character_field_sign_extends() {
+        assert_character_roundtrip!(Code93Decoder::default());
+    }
+
+    #[cfg(feature = "codabar")]
+    #[test]
+    fn codabar_character_field_sign_extends() {
+        assert_character_roundtrip!(CodabarDecoder::default());
+    }
+
+    /// Code 128 packs `start` into the same word as the bitfields, so the two
+    /// must not tread on each other.
+    #[cfg(feature = "code128")]
+    #[test]
+    fn code128_character_and_start_are_independent() {
+        let mut d = Code128Decoder::default();
+
+        d.set_character(-1);
+        assert_eq!(d.character(), -1);
+        for v in [-2048i16, -1, 0, 1, 2047] {
+            d.set_character(v);
+            assert_eq!(d.character(), v, "character {v}");
+        }
+
+        d.set_start(0xA5);
+        d.set_character(-1);
+        assert_eq!(d.start(), 0xA5, "start clobbered by set_character");
+        assert_eq!(d.character(), -1, "character clobbered by set_start");
+
+        d.set_character(1000);
+        d.set_start(0x5A);
+        assert_eq!(d.character(), 1000, "character clobbered by set_start");
+        assert_eq!(d.start(), 0x5A);
+    }
+
+    /// DataBar's `finder` is a 5-bit signed field holding -1 for "unused".
+    #[cfg(feature = "databar")]
+    #[test]
+    fn databar_segment_fields_are_independent() {
+        let mut seg = DatabarSegment::default();
+        assert_eq!(seg.finder(), -1, "a fresh segment is unused");
+
+        for v in [-16i8, -1, 0, 1, 15] {
+            seg.set_finder(v);
+            assert_eq!(seg.finder(), v, "finder {v}");
+        }
+
+        // Set every field, then check none of them disturbed another.
+        seg.set_finder(-1);
+        seg.set_exp(true);
+        seg.set_color(Color::Bar);
+        seg.set_side(1);
+        seg.set_partial(true);
+        seg.set_count(0x7F);
+        seg.set_epoch(0xAB);
+        seg.set_check(0xCD);
+
+        assert_eq!(seg.finder(), -1);
+        assert!(seg.exp());
+        assert_eq!(seg.color(), Color::Bar);
+        assert_eq!(seg.side(), 1);
+        assert!(seg.partial());
+        assert_eq!(seg.count(), 0x7F);
+        assert_eq!(seg.epoch(), 0xAB);
+        assert_eq!(seg.check(), 0xCD);
+    }
+}

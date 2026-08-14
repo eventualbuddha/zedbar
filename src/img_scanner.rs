@@ -57,6 +57,26 @@ fn qr_fixed(v: i32, rnd: i32) -> u32 {
     (((v as u32) << 1) + (rnd as u32)) << (QR_FINDER_SUBPREC - 1)
 }
 
+/// Whether the 2nd differential crosses zero between the two samples, which is
+/// the first local min/max of the intensity signal and so a candidate edge.
+///
+/// The test is deliberately asymmetric: a zero at the *current* sample counts,
+/// but a zero at the *previous* one does not. That is not an oversight — when
+/// `y2_2` is zero the crossing was already reported one sample earlier, where
+/// it was the current sample and matched the `y2_1 == 0` arm. Accepting it
+/// again here would fire twice for a single crossing.
+///
+/// zbar writes this as `!y2_1 || ((y2_1 > 0) ? y2_2 < 0 : y2_2 > 0)`.
+fn is_second_differential_crossing(y2_1: i32, y2_2: i32) -> bool {
+    if y2_1 == 0 {
+        true
+    } else if y2_1 > 0 {
+        y2_2 < 0
+    } else {
+        y2_2 > 0
+    }
+}
+
 // Scanner constants from line_scanner.rs
 const ZBAR_FIXED: i32 = 5;
 const ROUND: u32 = 1 << (ZBAR_FIXED - 1); // 16
@@ -377,18 +397,10 @@ impl ImageScanner {
 
         let mut edge = SymbolType::None;
 
-        // 2nd zero-crossing is 1st local min/max - could be edge.
-        // The sign test is asymmetric: y2_2 must strictly oppose y2_1, so a
-        // flat y2_2 never qualifies. (`(y2_1 > 0) == (y2_2 < 0)` would accept
-        // y2_1 < 0 with y2_2 == 0.)
-        let crossing = if y2_1 == 0 {
-            true
-        } else if y2_1 > 0 {
-            y2_2 < 0
-        } else {
-            y2_2 > 0
-        };
-        if crossing && (self.calc_thresh() <= y1_1.unsigned_abs()) {
+        // 2nd zero-crossing is 1st local min/max - could be edge
+        if is_second_differential_crossing(y2_1, y2_2)
+            && (self.calc_thresh() <= y1_1.unsigned_abs())
+        {
             // check for 1st sign change
             let y1_rev = if self.y1_sign > 0 { y1_1 < 0 } else { y1_1 > 0 };
 
@@ -1162,5 +1174,64 @@ impl ImageScanner {
         }
 
         self.add_symbol(sym);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The crossing test must fire exactly once per zero crossing of the 2nd
+    /// differential, which is why a zero at the previous sample does not
+    /// count — it was already reported when it was the current sample.
+    #[test]
+    fn second_differential_crossing_matches_zbar() {
+        // A zero at the current sample is always a crossing.
+        for y2_2 in [-5, -1, 0, 1, 5] {
+            assert!(is_second_differential_crossing(0, y2_2), "y2_2={y2_2}");
+        }
+
+        // Rising through zero.
+        assert!(is_second_differential_crossing(5, -5));
+        assert!(!is_second_differential_crossing(5, 0));
+        assert!(!is_second_differential_crossing(5, 5));
+
+        // Falling through zero: the mirror image, including the flat case.
+        assert!(is_second_differential_crossing(-5, 5));
+        assert!(
+            !is_second_differential_crossing(-5, 0),
+            "a flat previous sample is not a fresh crossing"
+        );
+        assert!(!is_second_differential_crossing(-5, -5));
+    }
+
+    /// Every sign combination, stated as the C expression evaluates it.
+    #[test]
+    fn second_differential_crossing_is_asymmetric_about_zero() {
+        for y2_1 in -3i32..=3 {
+            for y2_2 in -3i32..=3 {
+                let expected = if y2_1 == 0 {
+                    true
+                } else if y2_1 > 0 {
+                    y2_2 < 0
+                } else {
+                    y2_2 > 0
+                };
+                assert_eq!(
+                    is_second_differential_crossing(y2_1, y2_2),
+                    expected,
+                    "y2_1={y2_1} y2_2={y2_2}"
+                );
+            }
+        }
+
+        // The symmetric reading `(y2_1 > 0) == (y2_2 < 0)` differs on exactly
+        // one quadrant boundary; pin it so the simplification is not
+        // reintroduced.
+        assert_ne!(
+            is_second_differential_crossing(-1, 0),
+            (-1 > 0) == (0 < 0),
+            "the symmetric form wrongly accepts a falling-then-flat run"
+        );
     }
 }
