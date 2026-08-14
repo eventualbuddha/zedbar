@@ -4288,6 +4288,11 @@ impl QrReader {
             Vec::new()
         };
 
+        // Bound the cluster-derived candidates here rather than at the returns
+        // below: this early exit is itself a return path, and it is the one a
+        // cluttered image without three crossings takes.
+        fail_regions.truncate(MAX_FAIL_REGIONS);
+
         if centers.len() < 3 {
             return (vec![], fail_regions);
         }
@@ -4320,14 +4325,14 @@ impl QrReader {
             // the actual QR location. Fall back to the looser cluster
             // regions only when no such triplet survived (e.g. when the
             // detected centers didn't even pass the right-isosceles filter).
-            let mut regions = if !triplet_fail_regions.is_empty() {
+            // Both candidate lists are already bounded by MAX_FAIL_REGIONS:
+            // the per-triplet one as it is built, the cluster one above.
+            let regions = if !triplet_fail_regions.is_empty() {
                 triplet_fail_regions
             } else {
                 fail_regions
             };
-            // The cluster-derived regions are bounded only by the cluster
-            // count, so apply the same ceiling as the per-triplet ones.
-            regions.truncate(MAX_FAIL_REGIONS);
+            debug_assert!(regions.len() <= MAX_FAIL_REGIONS);
             (vec![], regions)
         } else {
             (symbols, Vec::new())

@@ -264,6 +264,13 @@ impl Scanner {
         // upscaled crop. A cluttered image can report dozens of candidates, so
         // cap how many are actually retried; the rest are handed back
         // unresolved for the caller to deal with as it sees fit.
+        //
+        // Taking the first N is not arbitrary. Finder centers are sorted by
+        // (bucketed) edge-point count before the triplet search, so the
+        // per-triplet candidates — which are the ones reported whenever any
+        // triplet looked like a QR — arrive in descending order of confidence.
+        // The cluster-derived fallback is only spatially ordered, but it is
+        // used solely when no triplet survived at all.
         const MAX_RETRIED_REGIONS: usize = 16;
 
         let mut unresolved: Vec<FinderRegion> = Vec::new();

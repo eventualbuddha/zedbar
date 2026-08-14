@@ -877,6 +877,16 @@ impl ImageScanner {
         #[cfg(feature = "sqcode")]
         self.sq.reset();
 
+        // Start each image from a clean decoder. `new_scan` below is only a
+        // soft reset — by design, since DataBar pairs segments and EAN pairs
+        // halves across the scan lines of one image — so on its own it would
+        // let a half found in one image pair with a half from the next and
+        // report a symbol present in neither. zbar can leave this open because
+        // it scans video frames behind an inter-frame cache; `Scanner::scan`
+        // takes one image at a time, so a result must not depend on what the
+        // scanner saw before it.
+        self.decoder_reset();
+
         // Clear previous symbols for new scan
         self.syms.clear();
 

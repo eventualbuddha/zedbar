@@ -348,3 +348,62 @@ fn dense_finder_pattern_grid_stays_bounded() {
         "scan took {elapsed:?}, expected the retry work to be bounded"
     );
 }
+
+/// A `Scanner` may be reused across images, so its result for one image must
+/// not depend on what it scanned before.
+///
+/// The per-scan-line reset is deliberately soft — DataBar pairs segments and
+/// EAN pairs halves across the scan lines of a single image — so without a
+/// full reset per image, a half found in one image can pair with a half from
+/// the next and report a symbol present in neither. zbar leaves this open
+/// because it scans video frames behind an inter-frame cache; this API takes
+/// one image at a time.
+#[test]
+fn scan_results_do_not_depend_on_scan_history() {
+    let fixtures = [
+        "examples/test-databar.png",
+        "examples/test-databar-exp.png",
+        "examples/test-ean13.png",
+        "examples/test-ean8-plain.png",
+        "examples/test-ean13-addon5.png",
+        "examples/test-code128.png",
+        "examples/test-qr.png",
+    ];
+
+    let loaded: Vec<(&str, Vec<u8>, u32, u32)> = fixtures
+        .iter()
+        .filter_map(|p| {
+            let img = image::open(p).ok()?.to_luma8();
+            Some((*p, img.as_raw().clone(), img.width(), img.height()))
+        })
+        .collect();
+    assert!(!loaded.is_empty(), "no fixtures loaded");
+
+    let decode = |scanner: &mut Scanner, (_, data, w, h): &(&str, Vec<u8>, u32, u32)| {
+        let mut image = Image::from_gray(data, *w, *h).expect("valid image");
+        let mut out: Vec<String> = scanner
+            .scan(&mut image)
+            .symbols()
+            .iter()
+            .map(|s| format!("{:?}:{:?}", s.symbol_type(), s.data()))
+            .collect();
+        out.sort();
+        out
+    };
+
+    for first in &loaded {
+        for second in &loaded {
+            let standalone = decode(&mut Scanner::new(), second);
+
+            let mut reused = Scanner::new();
+            let _ = decode(&mut reused, first);
+            let after = decode(&mut reused, second);
+
+            assert_eq!(
+                standalone, after,
+                "scanning {} changed the result for {}",
+                first.0, second.0
+            );
+        }
+    }
+}
