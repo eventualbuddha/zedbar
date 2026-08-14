@@ -448,6 +448,30 @@ fn test_i25() {
 }
 
 #[test]
+fn test_code128_single_character() {
+    // zbar sets no minimum length for Code 128, so a one-character payload
+    // (3 characters counting start and check) must still decode.
+    let expected = Some(("CODE-128".to_string(), "A".to_string()));
+
+    let result_this = decode_image("examples/test-code128-1char.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-code128-1char.png", &expected);
+}
+
+#[test]
+fn test_code93_single_character() {
+    // Likewise for Code 93: one data character plus the C and K check
+    // characters is three, which is above zbar's hard floor of two.
+    let expected = Some(("CODE-93".to_string(), "A".to_string()));
+
+    let result_this = decode_image("examples/test-code93-1char.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-code93-1char.png", &expected);
+}
+
+#[test]
 fn test_databar() {
     // GTIN-13 2001234567890 plus the emitted check digit, prefixed with AI 01.
     let expected = Some(("DataBar".to_string(), "0120012345678909".to_string()));
@@ -563,6 +587,8 @@ fn test_all_examples_decode() {
         "examples/test-databar-exp-alnum.png",
         "examples/test-code128.png",
         "examples/test-code128-2.png",
+        "examples/test-code128-1char.png",
+        "examples/test-code93-1char.png",
         "examples/test-code39.png",
         "examples/test-code93.png",
         "examples/test-ean13.png",
