@@ -22,13 +22,17 @@ jobs:
           app-id: ${{ secrets.ZEDBAR_BOT_APP_ID }}
           private-key: ${{ secrets.ZEDBAR_BOT_PRIVATE_KEY }}
 
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           # NB: no `release-type` here on purpose. Setting it puts the action
           # in its simple mode, where `release-please-config.json` is ignored
           # — and that config is the only place `bump-minor-pre-major` can be
           # set. The release type now lives in the config instead.
+          #
+          # The `release_created` and `tag_name` outputs below stay unprefixed
+          # under this manifest config because the package path is ".";
+          # any other path would emit them as `<path>--release_created`.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           # Use GitHub App token for authenticated, signed commits
