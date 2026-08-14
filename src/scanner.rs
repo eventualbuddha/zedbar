@@ -256,8 +256,19 @@ impl Scanner {
         let image_area = image.width() as u64 * image.height() as u64;
         let area_limit = image_area / 10;
 
+        // Each retried region costs up to one full rescan per scale, on an
+        // upscaled crop. A cluttered image can report dozens of candidates, so
+        // cap how many are actually retried; the rest are handed back
+        // unresolved for the caller to deal with as it sees fit.
+        const MAX_RETRIED_REGIONS: usize = 16;
+
         let mut unresolved: Vec<FinderRegion> = Vec::new();
+        let mut retried = 0usize;
         for region in &finder_regions {
+            if retried >= MAX_RETRIED_REGIONS {
+                unresolved.push(*region);
+                continue;
+            }
             if apply_area_filter {
                 let region_area = region.width as u64 * region.height as u64;
                 if region_area > area_limit {
@@ -278,6 +289,7 @@ impl Scanner {
                 continue;
             };
 
+            retried += 1;
             let mut decoded = false;
             for &scale in SCALES {
                 let Some(mut upscaled) = cropped.upscale(scale) else {

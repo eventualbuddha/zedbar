@@ -827,8 +827,7 @@ fn decode_pass(dcode: &mut ImageScanner, pass_index: usize) -> PartialSymbolType
             if (idx & 7) == 1 {
                 // C advances the local index alongside the state, and the
                 // character-boundary test below reads it.
-                dcode.ean.pass[pass_index].state =
-                    dcode.ean.pass[pass_index].state.wrapping_add(2);
+                dcode.ean.pass[pass_index].state = dcode.ean.pass[pass_index].state.wrapping_add(2);
                 idx += 2;
             }
         } else if (idx == 0x10 || idx == 0x11)
