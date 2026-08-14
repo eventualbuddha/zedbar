@@ -350,7 +350,7 @@ const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 /// Base64 encode a buffer
 fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
     let size = s.len();
-    let encoded_size = size.div_ceil(3) * 4 + 1;
+    let encoded_size = size.div_ceil(3) * 4;
     let mut encoded = Vec::with_capacity(encoded_size);
 
     let mut i = 0;
@@ -384,7 +384,9 @@ fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
         i += 1;
     }
 
-    encoded.push(0); // Null terminator
+    // C NUL-terminates the buffer but reports `datalen` without it. Symbol
+    // data here is length-delimited, so the terminator would show up as a
+    // trailing NUL byte in the decoded output.
     Some(encoded)
 }
 
