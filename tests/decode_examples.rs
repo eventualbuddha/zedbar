@@ -427,6 +427,38 @@ fn test_ean13() {
 }
 
 #[test]
+fn test_ean8_plain() {
+    let expected = Some(("EAN-8".to_string(), "96385074".to_string()));
+
+    let result_this = decode_image("examples/test-ean8-plain.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-ean8-plain.png", &expected);
+}
+
+/// With EMIT_CHECK turned off, zbar drops the trailing check digit and emits
+/// the rest. The port derived that shortened length by subtracting one from
+/// the symbology enum and converting back to a `SymbolType`; 7 (EAN-8 minus
+/// its check digit) names no symbology, so it collapsed to `None` and the
+/// decoder emitted an empty string. UPC-A and UPC-E hit the same hole.
+#[test]
+fn test_ean8_without_emitted_checksum() {
+    use zedbar::config::Ean8;
+
+    let img = image::open("examples/test-ean8-plain.png")
+        .expect("open")
+        .to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+    let config = DecoderConfig::new().set_checksum(Ean8, false, false);
+    let result = Scanner::with_config(config).scan(&mut image);
+
+    let symbol = result.first().expect("no symbol decoded");
+    assert_eq!(symbol.symbol_type(), SymbolType::Ean8);
+    assert_eq!(symbol.data_string(), Some("9638507"));
+}
+
+#[test]
 fn test_ean8_decoded_as_ean13() {
     // Note: This image is decoded as EAN13, not EAN8 or UPCA
     let expected = Some(("EAN-13".to_string(), "0000963850742".to_string()));
@@ -593,6 +625,7 @@ fn test_all_examples_decode() {
         "examples/test-code93.png",
         "examples/test-ean13.png",
         "examples/test-ean8.png",
+        "examples/test-ean8-plain.png",
         "examples/test-i25.png",
         "examples/test-upca.png",
         "examples/nine-barcodes.png",

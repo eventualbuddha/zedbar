@@ -358,7 +358,8 @@ pub(crate) fn decode_codabar(dcode: &mut ImageScanner) -> SymbolType {
         return SymbolType::Partial;
     }
 
-    let element = dcode.codabar.element() - 1;
+    // C decrements a 4-bit bitfield, so 0 wraps to 15 rather than trapping.
+    let element = dcode.codabar.element().wrapping_sub(1);
     dcode.codabar.set_element(element);
     if element != 0 {
         return SymbolType::None;

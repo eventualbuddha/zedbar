@@ -152,10 +152,15 @@ fn i25_decode_end(dcode: &mut ImageScanner) -> SymbolType {
 
     // Check exit condition
     let e = width_class(dcode.get_width(3), width);
+    // Only element 3 goes through C's `unsigned char E`; forward then tests
+    // `E - 3 > 4` (reject E > 7) and reverse tests `E > 2`. The follow-up
+    // element-4 comparison is inlined in C, so it stays a *signed* `int` and
+    // its -1 error value fails `> 2` rather than passing it — same as the
+    // element 1 and 2 comparisons in the quiet-zone check above.
     let valid = if !direction {
         e <= 7
     } else {
-        e <= 2 && width_class(dcode.get_width(4), width) <= 2
+        e <= 2 && decode_e(dcode.get_width(4), width, 45) <= 2
     };
 
     if !valid {
