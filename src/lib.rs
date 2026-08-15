@@ -8,13 +8,13 @@
 //! ```no_run
 //! use zedbar::{Image, Scanner};
 //!
-//! // Load and convert image to grayscale
+//! // Load an image and convert it for scanning. [`Image::from_dynamic`]
+//! // composites transparency over white; `to_luma8()` would drop the alpha
+//! // channel and leave a barcode on a transparent background black on black.
 //! let img = image::open("barcode.png").unwrap();
-//! let gray = img.to_luma8();
-//! let (width, height) = gray.dimensions();
+//! let mut img = Image::from_dynamic(&img).unwrap();
 //!
-//! // Create image and scanner
-//! let mut img = Image::from_gray(gray.as_raw(), width, height).unwrap();
+//! // Create a scanner
 //! let mut scanner = Scanner::new();
 //!
 //! // Scan for barcodes
@@ -23,6 +23,9 @@
 //!     println!("{:?}: {}", symbol.symbol_type(), symbol.data_string().unwrap_or(""));
 //! }
 //! ```
+//!
+//! If you already hold grayscale pixels, [`Image::from_gray`] takes them
+//! directly.
 //!
 //! # Configuration
 //!
@@ -55,9 +58,9 @@
 //! # Supported Formats
 //!
 //! - **2D Codes**: QR Code, SQCode
-//! - **Linear Codes**: EAN-13, EAN-8, UPC-A, UPC-E, ISBN-10, ISBN-13
+//! - **Linear Codes**: EAN-13, EAN-8, EAN-2, EAN-5, UPC-A, UPC-E, ISBN-10, ISBN-13
 //! - **Code Family**: Code 128, Code 93, Code 39, Codabar
-//! - **Industrial**: Interleaved 2 of 5, DataBar (RSS)
+//! - **Industrial**: Interleaved 2 of 5, DataBar (RSS), DataBar Expanded
 //!
 //! # Modules
 //!
