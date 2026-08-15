@@ -472,3 +472,31 @@ fn alignment_pattern_centre_stays_in_range() {
     // No assertion on the result: the point is that the scan completes.
     let _ = Scanner::with_config(config).scan(&mut image);
 }
+
+/// `retry_undecoded_regions` crops each undecoded QR finder region, upscales
+/// it and scans again. The crop comes from QR finder patterns and the upscale
+/// carries no detail the linear decoders lacked at full resolution — it only
+/// gives them more scan lines across a fragment, which is how a short read
+/// happens. Interleaved 2 of 5 is the clearest case, since any even-length
+/// substring of one is itself a valid symbol.
+///
+/// This image is a downscaled I2/5 barcode; the retry used to report
+/// `2351768220` alongside the real `11632351768220`.
+#[test]
+fn retry_does_not_invent_linear_symbols() {
+    let img = image::open("examples/i25-retry-shortread.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+
+    for retry in [false, true] {
+        let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+        let config = DecoderConfig::all().retry_undecoded_regions(retry);
+        let data: Vec<_> = Scanner::with_config(config)
+            .scan(&mut image)
+            .iter()
+            .filter_map(|s| s.data_string().map(str::to_owned))
+            .collect();
+        assert_eq!(data, ["11632351768220"], "retry_undecoded_regions({retry})");
+    }
+}
