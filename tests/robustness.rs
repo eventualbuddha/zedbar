@@ -432,3 +432,22 @@ fn alignment_pattern_corner_stays_in_range() {
     let data: Vec<_> = result.iter().filter_map(|s| s.data_string()).collect();
     assert_eq!(data, ["version 20 payload padding padding padding"]);
 }
+
+/// The 5x5 alignment-pattern probe offsets its template positions by the
+/// distance between the pattern's projected centre and the position being
+/// tried. Both come out of a projection that can collapse, so the offsets are
+/// unbounded — they are meant to run off the image, where the sampler clamps
+/// them, but adding them trapped first.
+///
+/// Fixture: a mutated version-40 code that reaches the alignment search with a
+/// degenerate cell.
+#[test]
+fn alignment_pattern_probe_offsets_do_not_trap() {
+    let img = image::open("examples/qr-alignment-fetch.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+    let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+    // No assertion on the result: the point is that the scan completes.
+    let _ = Scanner::with_config(DecoderConfig::all()).scan(&mut image);
+}

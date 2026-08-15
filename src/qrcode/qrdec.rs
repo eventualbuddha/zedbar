@@ -366,10 +366,19 @@ pub(crate) fn qr_point_translate(point: &qr_point, dx: i32, dy: i32) -> qr_point
 ///
 /// Returns the squared Euclidean distance, which avoids the need for
 /// expensive square root calculations when only relative distances matter.
+///
+/// Points are in sub-pixel units, so on a large image two of them can be far
+/// enough apart that the square overflows the `int` zbar computes it in, where
+/// it wraps and makes the pair look adjacent. Every caller only ranks or
+/// thresholds these, so saturating keeps the ordering right for every distance
+/// that still fits and collapses the rest — which are all beyond any threshold
+/// anyway — onto the same ceiling.
 pub(crate) fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> u32 {
-    let dx = p1[0] - p2[0];
-    let dy = p1[1] - p2[1];
-    (dx * dx + dy * dy) as u32
+    let dx = p1[0] as i64 - p2[0] as i64;
+    let dy = p1[1] as i64 - p2[1] as i64;
+    dx.saturating_mul(dx)
+        .saturating_add(dy.saturating_mul(dy))
+        .min(u32::MAX as i64) as u32
 }
 
 /// Check if three points are in counter-clockwise order
@@ -1355,8 +1364,9 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
             // We grossly approximate the standard deviation as 1 pixel in one
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
-            let thresh =
-                qr_isqrt(qr_point_distance2(&p0, &p1) << (2 * QR_FINDER_SUBPREC + 1)) as i32;
+            let thresh = qr_isqrt(
+                qr_point_distance2(&p0, &p1).saturating_mul(1 << (2 * QR_FINDER_SUBPREC + 1)),
+            ) as i32;
             let mut ninliers = 0;
 
             for j in 0..n as usize {
@@ -3417,13 +3427,18 @@ fn qr_alignment_pattern_fetch(
     width: i32,
     height: i32,
 ) -> u32 {
-    let dx = x0 - p[2][2][0];
-    let dy = y0 - p[2][2][1];
+    // The template positions come from a projection that may have collapsed,
+    // so the offsets can be arbitrary. `qr_img_get_bit` clamps whatever it is
+    // handed to the image, and zbar lets these wrap on the way there.
+    let dx = x0.wrapping_sub(p[2][2][0]);
+    let dy = y0.wrapping_sub(p[2][2][1]);
     let mut v = 0u32;
     let mut k = 0;
     for pi in p {
         for pij in pi {
-            v |= (qr_img_get_bit(img, width, height, pij[0] + dx, pij[1] + dy) as u32) << k;
+            let x = pij[0].wrapping_add(dx);
+            let y = pij[1].wrapping_add(dy);
+            v |= (qr_img_get_bit(img, width, height, x, y) as u32) << k;
             k += 1;
         }
     }
@@ -4121,13 +4136,16 @@ impl QrReader {
                         let d_jk = qr_point_distance2(&_centers[j].pos, &_centers[k].pos);
                         let max_d = d_ij.max(d_ik).max(d_jk);
                         let min_d = d_ij.min(d_ik).min(d_jk);
-                        let mid_d = d_ij + d_ik + d_jk - max_d - min_d;
+                        // The middle of the three, without summing them —
+                        // three squared distances do not fit in a `u32`.
+                        let mid_d =
+                            (d_ij as u64 + d_ik as u64 + d_jk as u64) - max_d as u64 - min_d as u64;
                         if min_d == 0 || max_d > min_d.saturating_mul(6) {
                             continue;
                         }
                         // For a right triangle, max ≈ min + mid. Allow 50% error
                         // for perspective distortion.
-                        let sum = min_d as u64 + mid_d as u64;
+                        let sum = min_d as u64 + mid_d;
                         let max_d64 = max_d as u64;
                         if max_d64.saturating_mul(2) > sum.saturating_mul(3)
                             || sum.saturating_mul(2) > max_d64.saturating_mul(3)
@@ -5446,5 +5464,24 @@ mod tests {
             1,
             "three-finder merge should produce one bbox"
         );
+    }
+
+    /// Finder-line positions are sub-pixel and unclamped, so two candidate
+    /// centres can be far enough apart that the squared distance leaves 32
+    /// bits. Every caller only ranks or thresholds the result, so it saturates
+    /// — the alternative, which is what the `int` in the C original does, is to
+    /// wrap and report two points at opposite ends of the image as adjacent.
+    #[test]
+    fn point_distance2_saturates_instead_of_wrapping() {
+        // Comfortably inside the range: exact.
+        assert_eq!(qr_point_distance2(&[0, 0], &[3, 4]), 25);
+        assert_eq!(qr_point_distance2(&[-3, -4], &[0, 0]), 25);
+        assert_eq!(qr_point_distance2(&[65535, 0], &[0, 0]), 65535 * 65535);
+
+        // Beyond it: pinned to the ceiling, and still ordered against
+        // everything that fits.
+        assert_eq!(qr_point_distance2(&[i32::MAX, 0], &[i32::MIN, 0]), u32::MAX);
+        assert_eq!(qr_point_distance2(&[0, 200_000], &[0, -200_000]), u32::MAX);
+        assert!(qr_point_distance2(&[0, 100_000], &[0, 0]) > 65535 * 65535);
     }
 }
