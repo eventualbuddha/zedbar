@@ -361,8 +361,9 @@ impl std::str::FromStr for SymbolType {
     type Err = ParseSymbolTypeError;
 
     /// Parse a symbology by its [`Display`] name (e.g. `"QR-Code"`,
-    /// `"EAN-13"`, `"CODE-128"`). Recognises every variant in
-    /// [`SymbolType::ALL`].
+    /// `"EAN-13"`, `"CODE-128"`). Every symbology this library decodes is
+    /// recognised; `None`, `Partial` and `Composite` name states a symbol can
+    /// be in rather than symbologies, so they are not.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .iter()

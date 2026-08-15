@@ -75,13 +75,14 @@ Options:
 
 Supported formats:
   - Images: PNG, JPEG, BMP, WebP
-  - Barcodes: QR Code, EAN-13, EAN-8, UPC-A, UPC-E, Code 128, Code 93,
-              Code 39, Codabar, Interleaved 2/5, DataBar, SQ Code
+  - Barcodes: QR Code, EAN-13, EAN-8, EAN-2, EAN-5, UPC-A, UPC-E, ISBN-10,
+              ISBN-13, Code 128, Code 93, Code 39, Codabar,
+              Interleaved 2/5, DataBar, DataBar Expanded, SQ Code
 
 Examples:
   zedbarimg barcode.png
   zedbarimg --quiet qrcode.jpg
-  zedbarimg image1.png image2.jpg image3.gif
+  zedbarimg image1.png image2.jpg image3.webp
 `);
 }
 
@@ -107,7 +108,8 @@ function main() {
       results = zedbar.scanImageBytes(imageBytes);
     } catch (err) {
       if (!options.quiet) {
-        console.error(`Failed to scan image '${filename}': ${err.message}`);
+        // The WASM boundary throws a plain string, which has no `.message`.
+        console.error(`Failed to scan image '${filename}': ${err.message ?? err}`);
       }
       process.exit(1);
     }

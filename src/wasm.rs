@@ -14,15 +14,22 @@ use image;
 ///
 /// All fields are optional and default to sensible values when omitted.
 ///
+/// This is a class, not a plain object literal: construct it with `new` and
+/// assign the properties you want.
+///
 /// ```js
 /// // Use defaults (every supported symbology, retry enabled):
 /// const results = scanGrayscale(data, width, height);
 ///
 /// // Disable automatic retry of small QR codes:
-/// const results = scanGrayscale(data, width, height, { retryUndecodedRegions: false });
+/// const options = new ScanOptions();
+/// options.retryUndecodedRegions = false;
+/// const results = scanGrayscale(data, width, height, options);
 ///
 /// // Restrict to QR codes only:
-/// const results = scanGrayscale(data, width, height, { symbologies: ["QR-Code"] });
+/// const options = new ScanOptions();
+/// options.symbologies = ["QR-Code"];
+/// const results = scanGrayscale(data, width, height, options);
 /// ```
 #[wasm_bindgen]
 #[derive(Default)]

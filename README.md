@@ -6,7 +6,7 @@ This is a port of the ZBar library to Rust, providing barcode detection and deco
 
 ## Features
 
-- **Multiple Barcode Formats**: QR Code, EAN-13, EAN-8, UPC-A, UPC-E, ISBN-10, ISBN-13, Code 128, Code 93, Code 39, Codabar, Interleaved 2 of 5, DataBar (RSS), SQCode
+- **Multiple Barcode Formats**: QR Code, EAN-13, EAN-8, EAN-2, EAN-5, UPC-A, UPC-E, ISBN-10, ISBN-13, Code 128, Code 93, Code 39, Codabar, Interleaved 2 of 5, DataBar (RSS), DataBar Expanded, SQCode
 - **Pure Rust**: No C dependencies, fully memory-safe implementation
 - **Type-Safe Configuration**: Compile-time validated configuration API
 - **Command-line Tool**: `zedbarimg` utility for scanning images from the command line
@@ -31,12 +31,12 @@ cargo add zedbar --no-default-features --features qrcode,ean
 
 - `qrcode` - QR Code 2D barcode
 - `sqcode` - SQ Code 2D barcode
-- `ean` - EAN-8, EAN-13, UPC-A, UPC-E, ISBN-10, ISBN-13
+- `ean` - EAN-8, EAN-13, EAN-2, EAN-5, UPC-A, UPC-E, ISBN-10, ISBN-13
 - `code128` - Code 128
 - `code39` - Code 39
 - `code93` - Code 93
 - `codabar` - Codabar
-- `databar` - GS1 DataBar (RSS)
+- `databar` - GS1 DataBar (RSS) and DataBar Expanded
 - `i25` - Interleaved 2 of 5
 
 #### Optional Dependencies
@@ -46,6 +46,7 @@ cargo add zedbar --no-default-features --features qrcode,ean
 - `encoding_rs`, `reed-solomon`, `rand`, `rand_chacha` - Required for QR code decoding (enabled with `qrcode` feature)
 - `image` - Image format loading (PNG, JPEG, etc.) - needed for tests and the `zedbarimg` binary
 - `clap` - Command-line parsing (needed for the `zedbarimg` binary)
+- `wasm-bindgen`, `js-sys`, `getrandom` - JavaScript bindings (enabled with the `wasm` feature, which is off by default and builds the [npm package](npm/README.md))
 
 **Note:** 1D barcode decoders (EAN, Code39, Code128, etc.) have **zero external dependencies**!
 
@@ -78,13 +79,11 @@ Note: Disabling a feature at compile-time means that symbology will not be compi
 ```rust
 use zedbar::{Image, Scanner};
 
-// Load and convert image to grayscale
+// Load an image and convert it for scanning
 let img = image::open("barcode.png")?;
-let gray = img.to_luma8();
-let (width, height) = gray.dimensions();
+let mut img = Image::from_dynamic(&img)?;
 
 // Create scanner and scan image
-let mut img = Image::from_gray(gray.as_raw(), width, height)?;
 let mut scanner = Scanner::new();
 let symbols = scanner.scan(&mut img);
 
@@ -94,9 +93,16 @@ for symbol in symbols {
 }
 ```
 
+`Image::from_dynamic` (available with the `image` feature) composites any
+transparency over white before converting to grayscale. Prefer it over
+`img.to_luma8()`: a barcode drawn in black on a transparent background — the
+usual shape of one rendered from SVG — loses its alpha in a direct conversion
+and becomes black on black. If you already hold grayscale pixels, pass them
+straight to `Image::from_gray(data, width, height)`.
+
 ### Locating a Symbol in the Image
 
-Each [`Symbol`] records the image-coordinate points where it was detected,
+Each symbol records the image-coordinate points where it was detected,
 which lets you draw a box around the decode or crop the source image.
 
 ```rust
@@ -168,17 +174,20 @@ automatic retry:
 use zedbar::config::*;
 use zedbar::{DecoderConfig, Scanner, Image};
 
-// Option 1: Automatic retry (crop + 4x upscale)
+// Option 1: Automatic retry. Each undecoded region is cropped, upscaled and
+// rescanned, and any QR or SQ code recovered from it joins the results with
+// its coordinates mapped back to the original image.
 let config = DecoderConfig::new()
     .enable(QrCode)
     .retry_undecoded_regions(true);
 let mut scanner = Scanner::with_config(config);
-let symbols = scanner.scan(&mut img);
+let result = scanner.scan(&mut img);
 
-// Option 2: Manual control via finder_region()
+// Option 2: Manual control via finder_regions(), which reports one entry per
+// cluster of finder patterns that did not yield a symbol.
 let mut scanner = Scanner::new();
 let result = scanner.scan(&mut img);
-if let Some(region) = result.finder_region() {
+for region in result.finder_regions() {
     let pad = region.width.max(region.height) / 2;
     let x = region.x.saturating_sub(pad);
     let y = region.y.saturating_sub(pad);
@@ -191,16 +200,40 @@ if let Some(region) = result.finder_region() {
 }
 ```
 
+With automatic retry, the regions left in `finder_regions()` are the ones the
+retry could not resolve.
+
 ### Command-line Tool
 
-```bash
-# Build the tool
-cargo build --release --bin zedbarimg
+`zedbarimg` scans one or more image files and prints what it finds, in the
+manner of ZBar's `zbarimg`:
 
-# Scan an image
-cargo run --bin zedbarimg examples/test-qr.png
-cargo run --bin zedbarimg examples/test-ean13.png
+```bash
+cargo install zedbar
+zedbarimg barcode.png qrcode.jpg
 ```
+
+`--quiet` prints only the decoded data, `--raw` leaves it unconverted by any
+charset, and `--disable-all` plus the `--enable-*` flags narrow the scan to
+chosen symbologies. `zedbarimg --help` lists them all.
+
+From a checkout of this repository, where the test images live:
+
+```bash
+# Install the binary from the working tree
+cargo install --path .
+zedbarimg examples/test-qr.png
+
+# Or run it without installing. Use --release: a debug build carries
+# overflow checks and no optimization, and scans far slower.
+cargo run --release --bin zedbarimg -- examples/test-ean13.png
+```
+
+### JavaScript
+
+The same scanner is published to npm as [`zedbar`](https://www.npmjs.com/package/zedbar),
+compiled to WebAssembly, with its own `zedbarimg` command. See
+[npm/README.md](npm/README.md).
 
 ## Testing
 
@@ -248,7 +281,7 @@ If this library doesn't meet your needs, consider these alternatives:
 - **[rqrr](https://crates.io/crates/rqrr)** - Pure Rust QR code reader with a different algorithm. Fast and reliable for QR codes specifically, but only supports QR codes.
 - **[bardecoder](https://crates.io/crates/bardecoder)** - Another Rust barcode decoder supporting various 1D formats.
 - **[rxing](https://crates.io/crates/rxing)** - Rust port of ZXing (Zebra Crossing) library, supports many formats.
-- **[quircs](https://crates.io/crates/quircs)** - Rust bindings to the quirc QR code library.
+- **[quircs](https://crates.io/crates/quircs)** - Pure Rust port of the quirc QR code library.
 
 ### C/C++ Libraries (via FFI)
 
