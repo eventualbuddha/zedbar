@@ -451,3 +451,24 @@ fn alignment_pattern_probe_offsets_do_not_trap() {
     // No assertion on the result: the point is that the scan completes.
     let _ = Scanner::with_config(DecoderConfig::all()).scan(&mut image);
 }
+
+/// The alignment-pattern search returns a centre found by walking a template
+/// over the image, then refines it by measuring crossings between template
+/// points. Both the template and the walk come from a projection that goes
+/// singular as the geometry degenerates, so either can land far outside the
+/// image — where the refinement's offsets leave 32 bits before the sampler's
+/// clamp could apply.
+///
+/// Fixture: a mutated version-40 code whose inverted pass drives the search
+/// into that state.
+#[test]
+fn alignment_pattern_centre_stays_in_range() {
+    let img = image::open("examples/qr-alignment-fetch.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+    let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+    let config = DecoderConfig::all().test_inverted(true);
+    // No assertion on the result: the point is that the scan completes.
+    let _ = Scanner::with_config(config).scan(&mut image);
+}

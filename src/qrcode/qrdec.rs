@@ -85,7 +85,11 @@ const MAX_FAILURE_BUDGET: i32 = 1 << 16;
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
 /// For x/y where the fractional part is exactly 0.5, rounds away from zero.
 fn qr_divround(x: i32, y: i32) -> i32 {
-    x.wrapping_add(x.signum().wrapping_mul(y >> 1)) / y
+    // The projections feed this saturated coordinates, so both the rounding
+    // adjustment and the division itself have to survive `i32::MIN`; C leaves
+    // the same expression to wrap.
+    x.wrapping_add(x.signum().wrapping_mul(y >> 1))
+        .wrapping_div(y)
 }
 
 /// Fixed-point multiply with rounding and shift
@@ -1081,11 +1085,14 @@ pub(crate) fn qr_hom_fproject(_hom: &qr_hom, mut _x: i32, mut _y: i32, mut _w: i
         ]
     } else {
         if _w < 0 {
-            _x = -_x;
-            _y = -_y;
-            _w = -_w;
+            _x = _x.wrapping_neg();
+            _y = _y.wrapping_neg();
+            _w = _w.wrapping_neg();
         }
-        [qr_divround(_x, _w) + _hom.x0, qr_divround(_y, _w) + _hom.y0]
+        [
+            qr_divround(_x, _w).wrapping_add(_hom.x0),
+            qr_divround(_y, _w).wrapping_add(_hom.y0),
+        ]
     }
 }
 
@@ -3325,13 +3332,13 @@ fn qr_hom_cell_fproject(_cell: &qr_hom_cell, mut _x: i32, mut _y: i32, mut _w: i
         ]
     } else {
         if _w < 0 {
-            _x = -_x;
-            _y = -_y;
-            _w = -_w;
+            _x = _x.wrapping_neg();
+            _y = _y.wrapping_neg();
+            _w = _w.wrapping_neg();
         }
         [
-            qr_divround(_x, _w) + _cell.x0,
-            qr_divround(_y, _w) + _cell.y0,
+            qr_divround(_x, _w).wrapping_add(_cell.x0),
+            qr_divround(_y, _w).wrapping_add(_cell.y0),
         ]
     }
 }
@@ -3513,15 +3520,22 @@ fn qr_alignment_pattern_search(
             w -= dwdu + dwdv;
 
             for j in 0..(4 * side_len) {
-                pc = qr_hom_cell_fproject(cell, x, y, w);
-                let match_val =
-                    qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
-                let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
-                if dist < best_dist {
-                    best_match = match_val;
-                    best_dist = dist;
-                    bestx = pc[0];
-                    besty = pc[1];
+                // A zero homogeneous coordinate puts this probe at infinity,
+                // which `qr_hom_cell_fproject` reports as `i32::MIN`/`MAX`.
+                // There is nothing to sample there, and letting it win the
+                // match would carry a saturated coordinate into every offset
+                // computed from the centre below.
+                if w != 0 {
+                    pc = qr_hom_cell_fproject(cell, x, y, w);
+                    let match_val =
+                        qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
+                    let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
+                    if dist < best_dist {
+                        best_match = match_val;
+                        best_dist = dist;
+                        bestx = pc[0];
+                        besty = pc[1];
+                    }
                 }
 
                 let dir = if j < 2 * side_len {
@@ -3554,6 +3568,26 @@ fn qr_alignment_pattern_search(
 
     // If the best result we got was sufficiently bad, reject the match
     if best_dist > 6 {
+        p[0] = pattern[2][2][0];
+        p[1] = pattern[2][2][1];
+        return -1;
+    }
+
+    // Everything below treats these as positions in the image: it slides the
+    // template by the distance from its own centre to the best centre, walks
+    // crossings between template points, and nudges the centre by their
+    // average. A point that is not in the image makes all of that meaningless,
+    // and the offsets leave 32 bits long before the sampler's clamp could
+    // apply. Both the template and the search that produced the centre come
+    // out of a projection that goes singular as the geometry degenerates, so
+    // they can be arbitrarily far away; zbar rides the wraparound.
+    let in_image = |q: &qr_point| {
+        q[0] >= (-width << QR_FINDER_SUBPREC)
+            && q[0] < (width << (QR_FINDER_SUBPREC + 1))
+            && q[1] >= (-height << QR_FINDER_SUBPREC)
+            && q[1] < (height << (QR_FINDER_SUBPREC + 1))
+    };
+    if !in_image(&[bestx, besty]) || !pattern.iter().flatten().all(in_image) {
         p[0] = pattern[2][2][0];
         p[1] = pattern[2][2][1];
         return -1;
