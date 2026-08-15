@@ -407,3 +407,28 @@ fn scan_results_do_not_depend_on_scan_history() {
         }
     }
 }
+
+/// The four corners of the code area are checked against the image bounds
+/// before a homography is fitted to them, but the bottom-right corner is
+/// replaced afterwards by one projected from an alignment pattern — and that
+/// projection divides by a determinant that can be near-degenerate, so it can
+/// land hundreds of image widths away. The cofactors built from such a corner
+/// are quadratic in the corner spacing and overflow, which trapped here and
+/// silently produced a meaningless transform in the C original.
+///
+/// This image reaches that projection on its inverted pass, and decodes once
+/// the out-of-range corner is discarded in favour of the edge intersection.
+#[test]
+fn alignment_pattern_corner_stays_in_range() {
+    let img = image::open("examples/qr-alignment-corner.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+    let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+
+    let config = DecoderConfig::all().test_inverted(true);
+    let result = Scanner::with_config(config).scan(&mut image);
+
+    let data: Vec<_> = result.iter().filter_map(|s| s.data_string()).collect();
+    assert_eq!(data, ["version 20 payload padding padding padding"]);
+}

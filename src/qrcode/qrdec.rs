@@ -632,48 +632,75 @@ pub(crate) fn qr_hom_init(
     _y3: i32,
     _res: i32,
 ) {
-    let dx10 = _x1 - _x0;
-    let dx20 = _x2 - _x0;
-    let dx30 = _x3 - _x0;
-    let dx31 = _x3 - _x1;
-    let dx32 = _x3 - _x2;
-    let dy10 = _y1 - _y0;
-    let dy20 = _y2 - _y0;
-    let dy30 = _y3 - _y0;
-    let dy31 = _y3 - _y1;
-    let dy32 = _y3 - _y2;
-    let a20 = dx32 * dy10 - dx10 * dy32;
-    let a21 = dx20 * dy31 - dx31 * dy20;
-    let a22 = dx32 * dy31 - dx31 * dy32;
+    // The cofactors below are quadratic in the corner spacing, so on a large
+    // enough image they exceed 32 bits even for corners the caller has already
+    // range-checked. zbar computes them in `int` and rides the signed overflow
+    // into a transform that no longer describes anything; the wrapping here
+    // reproduces that rather than trapping, and the resulting homography fails
+    // the same way it does there — no sampling grid built from it can satisfy
+    // the format-info or Reed-Solomon checks.
+    let dx10 = _x1.wrapping_sub(_x0);
+    let dx20 = _x2.wrapping_sub(_x0);
+    let dx30 = _x3.wrapping_sub(_x0);
+    let dx31 = _x3.wrapping_sub(_x1);
+    let dx32 = _x3.wrapping_sub(_x2);
+    let dy10 = _y1.wrapping_sub(_y0);
+    let dy20 = _y2.wrapping_sub(_y0);
+    let dy30 = _y3.wrapping_sub(_y0);
+    let dy31 = _y3.wrapping_sub(_y1);
+    let dy32 = _y3.wrapping_sub(_y2);
+    let a20 = (dx32.wrapping_mul(dy10)).wrapping_sub(dx10.wrapping_mul(dy32));
+    let a21 = (dx20.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy20));
+    let a22 = (dx32.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy32));
+    let a20_22 = a20.wrapping_add(a22);
+    let a21_22 = a21.wrapping_add(a22);
 
     // Figure out if we need to downscale anything
-    let b0 = qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 = qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let b0 = qr_ilog(dx10.unsigned_abs().max(dy10.unsigned_abs())) + qr_ilog(a20_22.unsigned_abs());
+    let b1 = qr_ilog(dx20.unsigned_abs().max(dy20.unsigned_abs())) + qr_ilog(a21_22.unsigned_abs());
+    let b2 = qr_ilog(
+        a20.unsigned_abs()
+            .max(a21.unsigned_abs())
+            .max(a22.unsigned_abs()),
+    );
     let s1 = i32::max(0, _res + i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 2));
     let r1 = (1i64 << s1) >> 1;
 
     // Compute the final coefficients of the forward transform
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
-    _hom.fwd[0][0] = qr_fixmul(dx10, a20 + a22, r1, s1);
-    _hom.fwd[0][1] = qr_fixmul(dx20, a21 + a22, r1, s1);
+    _hom.fwd[0][0] = qr_fixmul(dx10, a20_22, r1, s1);
+    _hom.fwd[0][1] = qr_fixmul(dx20, a21_22, r1, s1);
     _hom.x0 = _x0;
-    _hom.fwd[1][0] = qr_fixmul(dy10, a20 + a22, r1, s1);
-    _hom.fwd[1][1] = qr_fixmul(dy20, a21 + a22, r1, s1);
+    _hom.fwd[1][0] = qr_fixmul(dy10, a20_22, r1, s1);
+    _hom.fwd[1][1] = qr_fixmul(dy20, a21_22, r1, s1);
     _hom.y0 = _y0;
-    _hom.fwd[2][0] = (a20 + r1 as i32) >> s1;
-    _hom.fwd[2][1] = (a21 + r1 as i32) >> s1;
+    _hom.fwd[2][0] = a20.wrapping_add(r1 as i32) >> s1;
+    _hom.fwd[2][1] = a21.wrapping_add(r1 as i32) >> s1;
     _hom.fwd22 = if s1 > _res {
-        (a22 + ((r1 >> _res) as i32)) >> (s1 - _res)
+        a22.wrapping_add((r1 >> _res) as i32) >> (s1 - _res)
     } else {
-        a22 << (_res - s1)
+        a22.wrapping_shl((_res - s1) as u32)
     };
 
     // Now compute the inverse transform
-    let b0 = qr_ilog(i32::max(i32::max(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
-        + qr_ilog(i32::max(_hom.fwd[0][0].abs(), _hom.fwd[1][0].abs()) as u32);
-    let b1 = qr_ilog(i32::max(i32::max(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
-        + qr_ilog(i32::max(_hom.fwd[0][1].abs(), _hom.fwd[1][1].abs()) as u32);
+    let b0 = qr_ilog(
+        dx10.unsigned_abs()
+            .max(dx20.unsigned_abs())
+            .max(dx30.unsigned_abs()),
+    ) + qr_ilog(
+        _hom.fwd[0][0]
+            .unsigned_abs()
+            .max(_hom.fwd[1][0].unsigned_abs()),
+    );
+    let b1 = qr_ilog(
+        dy10.unsigned_abs()
+            .max(dy20.unsigned_abs())
+            .max(dy30.unsigned_abs()),
+    ) + qr_ilog(
+        _hom.fwd[0][1]
+            .unsigned_abs()
+            .max(_hom.fwd[1][1].unsigned_abs()),
+    );
     let b2 = qr_ilog(a22.unsigned_abs()) - s1;
     let s2 = i32::max(0, i32::max(b0, b1) + b2 - (QR_INT_BITS - 3));
     let r2 = (1i64 << s2) >> 1;
@@ -682,8 +709,8 @@ pub(crate) fn qr_hom_init(
 
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
     _hom.inv[0][0] = qr_fixmul(_hom.fwd[1][1], a22, r1, s1);
-    _hom.inv[0][1] = qr_fixmul(-_hom.fwd[0][1], a22, r1, s1);
-    _hom.inv[1][0] = qr_fixmul(-_hom.fwd[1][0], a22, r1, s1);
+    _hom.inv[0][1] = qr_fixmul(_hom.fwd[0][1].wrapping_neg(), a22, r1, s1);
+    _hom.inv[1][0] = qr_fixmul(_hom.fwd[1][0].wrapping_neg(), a22, r1, s1);
     _hom.inv[1][1] = qr_fixmul(_hom.fwd[0][0], a22, r1, s1);
     _hom.inv[2][0] = qr_fixmul(
         _hom.fwd[1][0],
@@ -993,10 +1020,20 @@ fn qr_hom_fit(
             // We do need four points in a square to initialize our homography,
             // so project the point from the alignment center to the corner of the code area
             match qr_hom_project_alignment_to_corner(_p, &p3, dim) {
-                Ok((x, y)) => {
+                // The projected corner gets the same range check as the four
+                // intersections above. Unlike them it comes out of a division
+                // by a near-degenerate determinant, so it can land hundreds of
+                // image widths away — far enough that the products in
+                // `qr_hom_init` overflow. zbar has the same gap and rides the
+                // wraparound into a garbage transform; there is nothing to
+                // salvage from such a projection, so fall back to the edge
+                // intersection, which is the corner that would have been used
+                // had the alignment search simply failed.
+                Ok((x, y)) if corner_in_range(&[x, y]) => {
                     brx = x;
                     bry = y;
                 }
+                Ok(_) => {}
                 Err(_) => return -1,
             }
         }
