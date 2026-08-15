@@ -491,7 +491,8 @@ pub(crate) fn decode_code39(dcode: &mut ImageScanner) -> SymbolType {
             } else {
                 let (min_len, max_len) = dcode
                     .get_length_limits(SymbolType::Code39)
-                    .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
+                    // zbar's Code 39 default is MIN_LEN=1.
+                    .unwrap_or((1, 0));
 
                 if character < min_len as i16 || (max_len > 0 && character > max_len as i16) {
                     // Failed length check

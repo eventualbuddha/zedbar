@@ -58,6 +58,24 @@ const QR_SMALL_VERSION_SLACK: i32 = 1;
 /// version for larger versions can be off by larger amounts.
 const QR_LARGE_VERSION_SLACK: i32 = 3;
 
+/// Upper bound on the undecoded finder regions reported from one scan.
+///
+/// Every triplet of centers that looks like a QR but fails to decode
+/// contributes a candidate, and the search over triplets is cubic in the
+/// number of centers, so a cluttered image can generate them by the hundred
+/// thousand. The regions exist so a caller can re-scan a handful of likely
+/// spots at higher resolution; past a few dozen the retry costs far more than
+/// it could recover, and the count no longer means "roughly one per undecoded
+/// code" the way the public API describes.
+const MAX_FAIL_REGIONS: usize = 64;
+
+/// Ceiling on the failed-triplet budget contributed by the centre count.
+///
+/// Keeps a densely cluttered image from turning the cubic triplet search into
+/// hundreds of thousands of homography fits. 64K failures is still an order of
+/// magnitude above what any of the multi-code test images consume.
+const MAX_FAILURE_BUDGET: i32 = 1 << 16;
+
 /// Helper function: divide with exact rounding
 ///
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
@@ -941,12 +959,15 @@ fn qr_hom_fit(
             None => return -1,
         };
         // It's plausible for points to be somewhat outside the image, but too far
-        // and too much of the pattern will be gone for it to be decodable
+        // and too much of the pattern will be gone for it to be decodable.
+        // C writes the upper bound as `_width << QR_FINDER_SUBPREC + 1`, and
+        // `+` binds tighter than `<<`, so the shift is by SUBPREC+1: the limit
+        // is two image widths in finder units, not one width plus one.
         let p_i = &_p[i];
         if p_i[0] < (-_width << QR_FINDER_SUBPREC)
-            || p_i[0] >= ((_width << QR_FINDER_SUBPREC) + 1)
+            || p_i[0] >= (_width << (QR_FINDER_SUBPREC + 1))
             || p_i[1] < (-_height << QR_FINDER_SUBPREC)
-            || p_i[1] >= ((_height << QR_FINDER_SUBPREC) + 1)
+            || p_i[1] >= (_height << (QR_FINDER_SUBPREC + 1))
         {
             return -1;
         }
@@ -2808,15 +2829,18 @@ fn qr_sampling_grid_init(
         1,
     );
 
-    // Clamp the points somewhere near the image
+    // Clamp the points somewhere near the image. C writes the upper bound as
+    // `_width << QR_FINDER_SUBPREC + 1`, and `+` binds tighter than `<<`, so
+    // it is a shift by SUBPREC+1 — twice the image width in finder units, not
+    // one width plus one.
     for point in _p {
         point[0] = i32::max(
             -(_width << QR_FINDER_SUBPREC),
-            i32::min(point[0], (_width << QR_FINDER_SUBPREC) + 1),
+            i32::min(point[0], _width << (QR_FINDER_SUBPREC + 1)),
         );
         point[1] = i32::max(
             -(_height << QR_FINDER_SUBPREC),
-            i32::min(point[1], (_height << QR_FINDER_SUBPREC) + 1),
+            i32::min(point[1], _height << (QR_FINDER_SUBPREC + 1)),
         );
     }
 }
@@ -4024,11 +4048,20 @@ impl QrReader {
         // (for quality), the three finder centers of a single QR code can end up
         // far apart in the sorted array if they have different edge_pts counts.
         // This causes many more failed triplet attempts before finding valid ones.
+        // zbar's budget is `max(8192, width * height >> 9)`. The extra
+        // n^2 term widens it for images holding many codes, where the three
+        // centers of one code can sit far apart in the confidence-sorted
+        // array. It needs a ceiling of its own: the triplet search is cubic
+        // in the number of centers, so on a cluttered image an uncapped n^2
+        // budget is hundreds of thousands of `try_configuration` calls — and
+        // the counter already resets after every successful decode, which is
+        // what actually carries a page of many codes through.
+        let ncenters = _centers.len() as i32;
         let nfailures_max = i32::max(
             8192,
             i32::max(
                 (width * height) >> 9,
-                (_centers.len() * _centers.len()) as i32,
+                ncenters.saturating_mul(ncenters).min(MAX_FAILURE_BUDGET),
             ),
         );
         let mut nfailures = 0;
@@ -4179,13 +4212,23 @@ impl QrReader {
                             let max_x = pi[0].max(pj[0]).max(pk[0]) >> QR_FINDER_SUBPREC;
                             let min_y = pi[1].min(pj[1]).min(pk[1]) >> QR_FINDER_SUBPREC;
                             let max_y = pi[1].max(pj[1]).max(pk[1]) >> QR_FINDER_SUBPREC;
-                            if min_x >= 0 && min_y >= 0 && max_x > min_x && max_y > min_y {
-                                triplet_fail_regions.push((
+                            if min_x >= 0
+                                && min_y >= 0
+                                && max_x > min_x
+                                && max_y > min_y
+                                && triplet_fail_regions.len() < MAX_FAIL_REGIONS
+                            {
+                                let region = (
                                     min_x as u32,
                                     min_y as u32,
                                     (max_x - min_x) as u32,
                                     (max_y - min_y) as u32,
-                                ));
+                                );
+                                // Failing triplets that share two centers
+                                // produce the same box over and over.
+                                if !triplet_fail_regions.contains(&region) {
+                                    triplet_fail_regions.push(region);
+                                }
                             }
 
                             nfailures += 1;
@@ -4245,6 +4288,11 @@ impl QrReader {
             Vec::new()
         };
 
+        // Bound the cluster-derived candidates here rather than at the returns
+        // below: this early exit is itself a return path, and it is the one a
+        // cluttered image without three crossings takes.
+        fail_regions.truncate(MAX_FAIL_REGIONS);
+
         if centers.len() < 3 {
             return (vec![], fail_regions);
         }
@@ -4277,11 +4325,14 @@ impl QrReader {
             // the actual QR location. Fall back to the looser cluster
             // regions only when no such triplet survived (e.g. when the
             // detected centers didn't even pass the right-isosceles filter).
+            // Both candidate lists are already bounded by MAX_FAIL_REGIONS:
+            // the per-triplet one as it is built, the cluster one above.
             let regions = if !triplet_fail_regions.is_empty() {
                 triplet_fail_regions
             } else {
                 fail_regions
             };
+            debug_assert!(regions.len() <= MAX_FAIL_REGIONS);
             (vec![], regions)
         } else {
             (symbols, Vec::new())

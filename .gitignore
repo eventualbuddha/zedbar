@@ -7,3 +7,8 @@
 zbarimg/zbarimg
 target/
 test_images/
+
+# coverage reports
+/cov/
+coverage.txt
+lcov.info

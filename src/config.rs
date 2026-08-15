@@ -241,6 +241,11 @@ impl DecoderConfig {
             config.checksum_flags.insert(sym, (false, true));
         }
 
+        // DataBar: emit the GTIN-14 check digit, matching zbar's default
+        for sym in [SymbolType::Databar, SymbolType::DatabarExp] {
+            config.checksum_flags.insert(sym, (false, true));
+        }
+
         // Default length limits for variable-length symbologies
         config.length_limits.insert(SymbolType::I25, (6, 256));
         config.length_limits.insert(SymbolType::Codabar, (4, 256));
@@ -354,8 +359,11 @@ impl DecoderConfig {
     /// Set uncertainty threshold for edge detection, enabling the symbology
     /// if not already enabled.
     ///
-    /// Higher values are more tolerant of poor quality images but may
-    /// produce more false positives.
+    /// In zbar this threshold is consulted only by the inter-frame symbol
+    /// cache, which decides how many times a symbol must be seen across
+    /// frames before it is reported. zedbar scans single images and has no
+    /// such cache, so the value is recorded but does not currently affect
+    /// decoding. It is retained for configuration compatibility.
     pub fn set_uncertainty<S: Symbology + SupportsUncertainty>(
         mut self,
         _: S,

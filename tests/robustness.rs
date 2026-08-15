@@ -290,3 +290,120 @@ fn from_dynamic_matches_to_luma8_for_opaque_images() {
     let actual = Image::from_dynamic(&img).expect("convert image");
     assert_eq!(actual.data(), expected.as_raw());
 }
+
+/// A dense grid of bare QR finder patterns produces enormous numbers of
+/// candidate finder centers that can never form a decodable code. Every
+/// triplet the geometric pre-filter lets through becomes an undecoded region,
+/// and the triplet search is cubic in the center count, so this used to
+/// report hundreds of thousands of regions — which
+/// [`DecoderConfig::retry_undecoded_regions`] then cropped, upscaled and
+/// re-scanned one by one, turning a small image into an effective hang.
+#[cfg(feature = "qrcode")]
+#[test]
+fn dense_finder_pattern_grid_stays_bounded() {
+    use std::time::Instant;
+
+    const MODULE: usize = 4;
+    const CELL: usize = 10 * MODULE; // 7-module finder plus a 3-module gap
+    const GRID: usize = 9;
+    let dim = GRID * CELL;
+
+    let mut data = vec![255u8; dim * dim];
+    for gy in 0..GRID {
+        for gx in 0..GRID {
+            for y in 0..7 * MODULE {
+                for x in 0..7 * MODULE {
+                    let (mx, my) = (x / MODULE, y / MODULE);
+                    let dark = mx == 0
+                        || mx == 6
+                        || my == 0
+                        || my == 6
+                        || (2..=4).contains(&mx) && (2..=4).contains(&my);
+                    if dark {
+                        data[(gy * CELL + y) * dim + gx * CELL + x] = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    let config = DecoderConfig::new()
+        .enable(QrCode)
+        .retry_undecoded_regions(true);
+    let mut image = Image::from_gray(&data, dim as u32, dim as u32).expect("valid dimensions");
+
+    let started = Instant::now();
+    let result = Scanner::with_config(config).scan(&mut image);
+    let elapsed = started.elapsed();
+
+    assert!(
+        result.finder_regions().len() <= 64,
+        "unbounded region count: {}",
+        result.finder_regions().len()
+    );
+    // Generous: the point is that the work is bounded at all, not that it is
+    // fast. Before the caps this did not terminate in any practical time.
+    assert!(
+        elapsed.as_secs() < 120,
+        "scan took {elapsed:?}, expected the retry work to be bounded"
+    );
+}
+
+/// A `Scanner` may be reused across images, so its result for one image must
+/// not depend on what it scanned before.
+///
+/// The per-scan-line reset is deliberately soft — DataBar pairs segments and
+/// EAN pairs halves across the scan lines of a single image — so without a
+/// full reset per image, a half found in one image can pair with a half from
+/// the next and report a symbol present in neither. zbar leaves this open
+/// because it scans video frames behind an inter-frame cache; this API takes
+/// one image at a time.
+#[test]
+fn scan_results_do_not_depend_on_scan_history() {
+    let fixtures = [
+        "examples/test-databar.png",
+        "examples/test-databar-exp.png",
+        "examples/test-ean13.png",
+        "examples/test-ean8-plain.png",
+        "examples/test-ean13-addon5.png",
+        "examples/test-code128.png",
+        "examples/test-qr.png",
+    ];
+
+    let loaded: Vec<(&str, Vec<u8>, u32, u32)> = fixtures
+        .iter()
+        .filter_map(|p| {
+            let img = image::open(p).ok()?.to_luma8();
+            Some((*p, img.as_raw().clone(), img.width(), img.height()))
+        })
+        .collect();
+    assert!(!loaded.is_empty(), "no fixtures loaded");
+
+    let decode = |scanner: &mut Scanner, (_, data, w, h): &(&str, Vec<u8>, u32, u32)| {
+        let mut image = Image::from_gray(data, *w, *h).expect("valid image");
+        let mut out: Vec<String> = scanner
+            .scan(&mut image)
+            .symbols()
+            .iter()
+            .map(|s| format!("{:?}:{:?}", s.symbol_type(), s.data()))
+            .collect();
+        out.sort();
+        out
+    };
+
+    for first in &loaded {
+        for second in &loaded {
+            let standalone = decode(&mut Scanner::new(), second);
+
+            let mut reused = Scanner::new();
+            let _ = decode(&mut reused, first);
+            let after = decode(&mut reused, second);
+
+            assert_eq!(
+                standalone, after,
+                "scanning {} changed the result for {}",
+                first.0, second.0
+            );
+        }
+    }
+}

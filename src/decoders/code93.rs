@@ -138,15 +138,22 @@ fn decode_start(dcode: &mut ImageScanner) -> SymbolType {
 
     let dir = (c >> 7) != 0;
 
-    let qz = if dir {
-        if decode_e(dcode.pair_width(0), s, 9) != 0 {
-            return SymbolType::None;
-        }
-        dcode.get_width(8)
-    } else {
-        dcode.get_width(7)
-    };
+    if dir && decode_e(dcode.pair_width(0), s, 9) != 0 {
+        return SymbolType::None;
+    }
 
+    // NB: zbar computes `qz = get_width(dcode, 8)` inside the reverse branch
+    // and then unconditionally overwrites it with `get_width(dcode, 7)`, so
+    // element 7 is what actually gets quiet-zone checked in both directions.
+    // The dead assignment reads like a missing `else`, and in reverse element
+    // 7 is a data element rather than the quiet zone, so the check there
+    // effectively always fails and Code 93 is only ever started forwards.
+    // That costs nothing in practice — the image scanner sweeps each row in
+    // both directions, so a forward start is always available too — and both
+    // readings decode the whole test corpus identically. Matching zbar keeps
+    // the reference cross-checks meaningful; revisit only with a case that
+    // decodes one way and not the other.
+    let qz = dcode.get_width(7);
     if qz != 0 && qz < (s * 3) / 4 {
         return SymbolType::None;
     }
@@ -177,7 +184,9 @@ fn check_stop(dcode: &ImageScanner) -> bool {
     let s = dcode.s6;
     let (min_len, max_len) = dcode
         .get_length_limits(SymbolType::Code93)
-        .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
+        // zbar sets no MIN_LEN for Code 93; the `n < 2` test below is the
+        // only floor.
+        .unwrap_or((0, 0));
 
     if n < 2 || n < min_len as i32 || (max_len != 0 && n > max_len as i32) {
         return false;

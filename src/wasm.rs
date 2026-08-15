@@ -146,8 +146,9 @@ impl DecodeResult {
 
     /// Raw decoded bytes.
     ///
-    /// For 2D codes (QR, SQ), these are the original bytes as encoded
-    /// in the barcode, before any text encoding or base64 conversion.
+    /// For QR codes these are the original bytes as encoded in the barcode,
+    /// before any text encoding conversion. For SQ codes they are the sampled
+    /// bit matrix, which is all that symbology decodes to.
     #[wasm_bindgen(getter)]
     pub fn data(&self) -> Vec<u8> {
         self.data.clone()
@@ -155,9 +156,14 @@ impl DecodeResult {
 
     /// Decoded data as text, or null if not decodable as text.
     ///
-    /// For 2D codes, the text is produced by detecting the encoding (UTF-8,
+    /// For QR codes, the text is produced by detecting the encoding (UTF-8,
     /// Shift-JIS, Windows-1252, etc.) and converting to a UTF-8 string.
     /// For linear barcodes, the data is always ASCII text.
+    ///
+    /// SQ codes have no data layer, so their payload is arbitrary binary and
+    /// this is null unless those bytes happen to be valid UTF-8. Use
+    /// [`data`](Self::data) for them, and encode it yourself if you want the
+    /// base64 form zbar reports.
     #[wasm_bindgen(getter)]
     pub fn text(&self) -> Option<String> {
         self.text.clone()

@@ -57,6 +57,26 @@ fn qr_fixed(v: i32, rnd: i32) -> u32 {
     (((v as u32) << 1) + (rnd as u32)) << (QR_FINDER_SUBPREC - 1)
 }
 
+/// Whether the 2nd differential crosses zero between the two samples, which is
+/// the first local min/max of the intensity signal and so a candidate edge.
+///
+/// The test is deliberately asymmetric: a zero at the *current* sample counts,
+/// but a zero at the *previous* one does not. That is not an oversight — when
+/// `y2_2` is zero the crossing was already reported one sample earlier, where
+/// it was the current sample and matched the `y2_1 == 0` arm. Accepting it
+/// again here would fire twice for a single crossing.
+///
+/// zbar writes this as `!y2_1 || ((y2_1 > 0) ? y2_2 < 0 : y2_2 > 0)`.
+fn is_second_differential_crossing(y2_1: i32, y2_2: i32) -> bool {
+    if y2_1 == 0 {
+        true
+    } else if y2_1 > 0 {
+        y2_2 < 0
+    } else {
+        y2_2 > 0
+    }
+}
+
 // Scanner constants from line_scanner.rs
 const ZBAR_FIXED: i32 = 5;
 const ROUND: u32 = 1 << (ZBAR_FIXED - 1); // 16
@@ -66,7 +86,7 @@ const EWMA_WEIGHT: u32 = 25;
 const THRESH_INIT: u32 = 14;
 
 // Decoder constants from decoder.rs
-const BUFFER_MIN: usize = 0x20;
+pub(crate) const BUFFER_MIN: usize = 0x20;
 pub(crate) const BUFFER_MAX: usize = 0x100;
 
 /// image scanner state
@@ -223,23 +243,13 @@ impl ImageScanner {
     pub(crate) fn with_config(config: DecoderConfig) -> Self {
         let decoder_state: DecoderState = (&config).into();
 
-        let mut scanner_config = ImageScannerConfig {
+        let scanner_config = ImageScannerConfig {
             position_tracking: decoder_state.scanner.position_tracking,
             test_inverted: decoder_state.scanner.test_inverted,
             x_density: decoder_state.scanner.x_density,
             y_density: decoder_state.scanner.y_density,
             ean_composite: decoder_state.is_enabled(SymbolType::Composite),
-            uncertainty: Default::default(),
         };
-
-        // Sync uncertainty values from decoder state
-        for sym in SymbolType::ALL.iter() {
-            if let Some(sym_config) = decoder_state.get(*sym) {
-                scanner_config
-                    .uncertainty
-                    .insert(*sym, sym_config.uncertainty);
-            }
-        }
 
         let mut scanner = Self {
             config: decoder_state,
@@ -388,7 +398,8 @@ impl ImageScanner {
         let mut edge = SymbolType::None;
 
         // 2nd zero-crossing is 1st local min/max - could be edge
-        if (y2_1 == 0 || ((y2_1 > 0) == (y2_2 < 0))) && (self.calc_thresh() <= y1_1.unsigned_abs())
+        if is_second_differential_crossing(y2_1, y2_2)
+            && (self.calc_thresh() <= y1_1.unsigned_abs())
         {
             // check for 1st sign change
             let y1_rev = if self.y1_sign > 0 { y1_1 < 0 } else { y1_1 > 0 };
@@ -638,8 +649,11 @@ impl ImageScanner {
         self.ean.new_scan();
         #[cfg(feature = "i25")]
         self.i25.reset();
+        // Only a soft reset: DataBar accumulates complete segments across scan
+        // lines, so a full `reset()` here would throw away the halves already
+        // found and prevent any multi-line symbol from ever pairing up.
         #[cfg(feature = "databar")]
-        self.databar.reset();
+        self.databar.new_scan();
         #[cfg(feature = "codabar")]
         self.codabar.reset();
         #[cfg(feature = "code39")]
@@ -862,6 +876,16 @@ impl ImageScanner {
         self.qr.reset();
         #[cfg(feature = "sqcode")]
         self.sq.reset();
+
+        // Start each image from a clean decoder. `new_scan` below is only a
+        // soft reset — by design, since DataBar pairs segments and EAN pairs
+        // halves across the scan lines of one image — so on its own it would
+        // let a half found in one image pair with a half from the next and
+        // report a symbol present in neither. zbar can leave this open because
+        // it scans video frames behind an inter-frame cache; `Scanner::scan`
+        // takes one image at a time, so a result must not depend on what the
+        // scanner saw before it.
+        self.decoder_reset();
 
         // Clear previous symbols for new scan
         self.syms.clear();
@@ -1160,5 +1184,64 @@ impl ImageScanner {
         }
 
         self.add_symbol(sym);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The crossing test must fire exactly once per zero crossing of the 2nd
+    /// differential, which is why a zero at the previous sample does not
+    /// count — it was already reported when it was the current sample.
+    #[test]
+    fn second_differential_crossing_matches_zbar() {
+        // A zero at the current sample is always a crossing.
+        for y2_2 in [-5, -1, 0, 1, 5] {
+            assert!(is_second_differential_crossing(0, y2_2), "y2_2={y2_2}");
+        }
+
+        // Rising through zero.
+        assert!(is_second_differential_crossing(5, -5));
+        assert!(!is_second_differential_crossing(5, 0));
+        assert!(!is_second_differential_crossing(5, 5));
+
+        // Falling through zero: the mirror image, including the flat case.
+        assert!(is_second_differential_crossing(-5, 5));
+        assert!(
+            !is_second_differential_crossing(-5, 0),
+            "a flat previous sample is not a fresh crossing"
+        );
+        assert!(!is_second_differential_crossing(-5, -5));
+    }
+
+    /// Every sign combination, stated as the C expression evaluates it.
+    #[test]
+    fn second_differential_crossing_is_asymmetric_about_zero() {
+        for y2_1 in -3i32..=3 {
+            for y2_2 in -3i32..=3 {
+                let expected = if y2_1 == 0 {
+                    true
+                } else if y2_1 > 0 {
+                    y2_2 < 0
+                } else {
+                    y2_2 > 0
+                };
+                assert_eq!(
+                    is_second_differential_crossing(y2_1, y2_2),
+                    expected,
+                    "y2_1={y2_1} y2_2={y2_2}"
+                );
+            }
+        }
+
+        // The symmetric reading `(y2_1 > 0) == (y2_2 < 0)` differs on exactly
+        // one quadrant boundary; pin it so the simplification is not
+        // reintroduced.
+        assert_ne!(
+            is_second_differential_crossing(-1, 0),
+            (-1 > 0) == (0 < 0),
+            "the symmetric form wrongly accepts a falling-then-flat run"
+        );
     }
 }

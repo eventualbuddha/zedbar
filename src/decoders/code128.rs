@@ -672,7 +672,8 @@ pub(crate) fn decode_code128(dcode: &mut ImageScanner) -> SymbolType {
         #[allow(clippy::if_same_then_else)]
         let (min_len, max_len) = dcode
             .get_length_limits(SymbolType::Code128)
-            .unwrap_or((4, 0)); // Default: min=4, max=0 (unlimited)
+            // zbar sets no MIN_LEN for Code 128, so short payloads decode.
+            .unwrap_or((0, 0));
 
         if validate_checksum(dcode)
             || postprocess(dcode)

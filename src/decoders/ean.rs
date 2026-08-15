@@ -721,27 +721,31 @@ fn postprocess(dcode: &mut ImageScanner, sym: SymbolType) {
         base = sym;
 
         if base > SymbolType::Partial {
+            // C reuses `base` as the digit count, leaning on the symbology
+            // enum values being the number of digits each carries. Track that
+            // count as a plain integer: the intermediate values (7, 11) are
+            // not symbologies, so routing them back through `SymbolType`
+            // would collapse them to `None` and emit nothing.
+            let mut len = base as i32;
             match base {
-                SymbolType::Upca | SymbolType::Upce => i = 1,
+                SymbolType::Upca => i = 1,
+                SymbolType::Upce => {
+                    i = 1;
+                    len -= 1;
+                }
+                SymbolType::Isbn13 => len = SymbolType::Ean13 as i32,
                 SymbolType::Isbn10 => i = 3,
                 _ => {}
             }
 
-            let mut calc_base = base;
-            match base {
-                SymbolType::Isbn13 => calc_base = SymbolType::Ean13,
-                SymbolType::Upce => calc_base = SymbolType::Ean8,
-                _ => {}
-            }
-
             if base == SymbolType::Isbn10
-                || (calc_base > SymbolType::Ean5 && !dcode.should_emit_checksum(sym))
+                || (len > SymbolType::Ean5 as i32 && !dcode.should_emit_checksum(sym))
             {
-                calc_base = (calc_base as i32 - 1).into();
+                len -= 1;
             }
 
             // Copy to temp buffer
-            while j < calc_base as usize && j < 18 && ean.buf[i] >= 0 {
+            while (j as i32) < len && j < 18 && ean.buf[i] >= 0 {
                 temp_buf[j] = ean.buf[i];
                 i += 1;
                 j += 1;
@@ -795,7 +799,7 @@ fn postprocess(dcode: &mut ImageScanner, sym: SymbolType) {
 /// Update state for one of 4 parallel passes
 fn decode_pass(dcode: &mut ImageScanner, pass_index: usize) -> PartialSymbolType {
     dcode.ean.pass[pass_index].state = dcode.ean.pass[pass_index].state.wrapping_add(1);
-    let idx = dcode.ean.pass[pass_index].state & STATE_IDX;
+    let mut idx = dcode.ean.pass[pass_index].state & STATE_IDX;
     let fwd = (dcode.ean.pass[pass_index].state & 1) as u8;
 
     if dcode.color() == Color::Space {
@@ -821,7 +825,10 @@ fn decode_pass(dcode: &mut ImageScanner, pass_index: usize) -> PartialSymbolType
                 }
             }
             if (idx & 7) == 1 {
-                dcode.ean.pass[pass_index].state += 2;
+                // C advances the local index alongside the state, and the
+                // character-boundary test below reads it.
+                dcode.ean.pass[pass_index].state = dcode.ean.pass[pass_index].state.wrapping_add(2);
+                idx += 2;
             }
         } else if (idx == 0x10 || idx == 0x11)
             && dcode.is_enabled(SymbolType::Ean8)
@@ -854,7 +861,6 @@ fn decode_pass(dcode: &mut ImageScanner, pass_index: usize) -> PartialSymbolType
         }
     }
 
-    let mut idx = idx;
     if (dcode.ean.pass[pass_index].state & STATE_ADDON) != 0 {
         idx >>= 1;
     }

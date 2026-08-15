@@ -345,60 +345,18 @@ impl SqReader {
     }
 }
 
-const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/// Base64 encode a buffer
-fn base64_encode_buffer(s: &[u8]) -> Option<Vec<u8>> {
-    let size = s.len();
-    let encoded_size = size.div_ceil(3) * 4 + 1;
-    let mut encoded = Vec::with_capacity(encoded_size);
-
-    let mut i = 0;
-    while i < size {
-        let c = (s[i] >> 2) & 0x3f;
-        encoded.push(BASE64_TABLE[c as usize]);
-
-        let mut c = (s[i] << 4) & 0x30;
-        i += 1;
-        if i >= size {
-            encoded.push(BASE64_TABLE[c as usize]);
-            encoded.push(b'=');
-            encoded.push(b'=');
-            break;
-        }
-
-        c |= (s[i] >> 4) & 0x0f;
-        encoded.push(BASE64_TABLE[c as usize]);
-        c = (s[i] << 2) & 0x3c;
-        i += 1;
-        if i >= size {
-            encoded.push(BASE64_TABLE[c as usize]);
-            encoded.push(b'=');
-            break;
-        }
-
-        c |= (s[i] >> 6) & 0x03;
-        encoded.push(BASE64_TABLE[c as usize]);
-        c = s[i] & 0x3f;
-        encoded.push(BASE64_TABLE[c as usize]);
-        i += 1;
-    }
-
-    encoded.push(0); // Null terminator
-    Some(encoded)
-}
-
-/// Extract text from buffer and add to scanner results
+/// Build the symbol from the sampled bit matrix.
+///
+/// zbar base64-encodes this before reporting it, because `zbar_symbol_get_data`
+/// hands back a NUL-terminated `const char *` and the payload is arbitrary
+/// binary: the SQ Code decoder implements no data layer at all — no error
+/// correction, no encoding mode, no de-masking — so what comes out is the raw
+/// sampled bits. That constraint does not exist here, where symbol data is a
+/// length-delimited byte slice, so the bits are reported as they are and any
+/// caller wanting base64 can encode them.
 fn sq_extract_text(buf: &[u8], len: usize) -> Result<Symbol, ()> {
     let mut sym = Symbol::new(SymbolType::SqCode);
-
-    let encoded = match base64_encode_buffer(&buf[..len]) {
-        Some(e) => e,
-        None => return Err(()),
-    };
-
-    sym.raw_data = Some(buf[..len].to_vec());
-    sym.data = encoded;
+    sym.data = buf[..len].to_vec();
     Ok(sym)
 }
 

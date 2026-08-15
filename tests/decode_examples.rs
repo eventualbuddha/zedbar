@@ -210,6 +210,26 @@ fn test_qr_webp() {
     }
 }
 
+/// A version-40 (177x177 module) code, the largest QR defines.
+///
+/// Regression test for the corner bounds check in `qr_hom_fit`: the C source
+/// writes the limit as `_width << QR_FINDER_SUBPREC + 1`, which shifts by
+/// SUBPREC+1. Reading it as `(width << SUBPREC) + 1` halved the allowance, and
+/// codes filling the frame — everything from version 36 up — had their fitted
+/// corners rejected and never decoded at all.
+#[test]
+fn test_qr_version_40() {
+    let expected = Some((
+        "QR-Code".to_string(),
+        "VERSION 40 QR CODE TEST PAYLOAD".to_string(),
+    ));
+
+    let result_this = decode_image("examples/test-qr-version40.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-qr-version40.png", &expected);
+}
+
 #[test]
 fn test_qr_wifi_sharing() {
     let expected = Some((
@@ -426,6 +446,236 @@ fn test_ean13() {
     assert_matches_zbars("examples/test-ean13.png", &expected);
 }
 
+/// A 978-prefixed EAN-13 is a Bookland ISBN. zbar relabels it ISBN-13 when
+/// that symbology is opted in, and reduces it to the 10-digit form (prefix
+/// dropped, check digit recomputed mod 11) for ISBN-10.
+///
+/// ISBN-13 wins when both are enabled, which is the ordering in
+/// `integrate_partial`. Cross-checked against
+/// `zbarimg -S isbn13.enable=1` / `-S isbn10.enable=1`.
+#[test]
+fn test_isbn13_and_isbn10() {
+    use zedbar::config::{Isbn10, Isbn13};
+
+    let path = "examples/test-isbn13.png";
+    let img = image::open(path).expect("open").to_luma8();
+    let raw = img.as_raw();
+    let (w, h) = (img.width(), img.height());
+
+    let decode = |config: DecoderConfig| {
+        let mut image = Image::from_gray(raw, w, h).expect("image");
+        let result = Scanner::with_config(config).scan(&mut image);
+        let s = result.first().expect("no symbol decoded");
+        (s.symbol_type(), s.data_string().unwrap_or("").to_string())
+    };
+
+    // Neither opted in: it stays an ordinary EAN-13.
+    assert_eq!(
+        decode(DecoderConfig::all()),
+        (SymbolType::Ean13, "9780306406157".into())
+    );
+
+    assert_eq!(
+        decode(DecoderConfig::all().enable(Isbn13)),
+        (SymbolType::Isbn13, "9780306406157".into())
+    );
+
+    assert_eq!(
+        decode(DecoderConfig::all().enable(Isbn10)),
+        (SymbolType::Isbn10, "0306406152".into())
+    );
+
+    // ISBN-13 takes precedence over ISBN-10.
+    assert_eq!(
+        decode(DecoderConfig::all().enable(Isbn10).enable(Isbn13)),
+        (SymbolType::Isbn13, "9780306406157".into())
+    );
+}
+
+/// EAN-13 with a 2- or 5-digit add-on, which zbar reports as a composite of
+/// the main symbol and the add-on concatenated.
+///
+/// Regression test for the add-on state machine in `decode_pass`: stepping
+/// over an add-on character boundary advances both `pass->state` and the local
+/// index, and the port advanced only the state, leaving the
+/// character-boundary test reading a stale index.
+///
+/// Add-ons stay opt-in — zbar leaves EAN-2/EAN-5 disabled by default, and
+/// [`test_ean13_addon_ignored_by_default`] pins that.
+#[test]
+fn test_ean13_with_addons() {
+    use zedbar::config::{Ean2, Ean5};
+
+    for (path, expected) in [
+        ("examples/test-ean13-addon2.png", "590123412345712"),
+        ("examples/test-ean13-addon5.png", "590123412345712345"),
+    ] {
+        let img = image::open(path).expect("open").to_luma8();
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+        let config = DecoderConfig::all()
+            .enable(Ean2)
+            .enable(Ean5)
+            .enable_type(SymbolType::Composite);
+        let result = Scanner::with_config(config).scan(&mut image);
+
+        let symbol = result
+            .first()
+            .unwrap_or_else(|| panic!("no symbol in {path}"));
+        assert_eq!(symbol.symbol_type(), SymbolType::Composite, "{path}");
+        assert_eq!(symbol.data_string(), Some(expected), "{path}");
+    }
+}
+
+/// Without `Composite` the add-on is reported as its own EAN-2 / EAN-5
+/// symbol alongside the main EAN-13, which is how zbar behaves with
+/// `-S ean2.enable=1 -S ean5.enable=1` and composite left off.
+#[test]
+fn test_ean2_and_ean5_as_standalone_symbols() {
+    use zedbar::config::{Ean2, Ean5};
+
+    for (path, addon_type, addon_data) in [
+        ("examples/test-ean13-addon2.png", SymbolType::Ean2, "12"),
+        ("examples/test-ean13-addon5.png", SymbolType::Ean5, "12345"),
+    ] {
+        let img = image::open(path).expect("open").to_luma8();
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+        let config = DecoderConfig::all().enable(Ean2).enable(Ean5);
+        let result = Scanner::with_config(config).scan(&mut image);
+
+        let found: Vec<(SymbolType, &str)> = result
+            .symbols()
+            .iter()
+            .map(|s| (s.symbol_type(), s.data_string().unwrap_or("")))
+            .collect();
+
+        assert!(
+            found.contains(&(SymbolType::Ean13, "5901234123457")),
+            "{path}: missing the main symbol, got {found:?}"
+        );
+        assert!(
+            found.contains(&(addon_type, addon_data)),
+            "{path}: missing the add-on, got {found:?}"
+        );
+    }
+}
+
+/// zbar ships with EAN-2/EAN-5 disabled, so an add-on is not read and only the
+/// main symbol comes back.
+#[test]
+fn test_ean13_addon_ignored_by_default() {
+    let expected = Some(("EAN-13".to_string(), "5901234123457".to_string()));
+
+    for path in [
+        "examples/test-ean13-addon2.png",
+        "examples/test-ean13-addon5.png",
+    ] {
+        assert_eq!(decode_image(path), expected, "zedbar failed for {path}");
+        assert_matches_zbars(path, &expected);
+    }
+}
+
+/// SQ Code, reported base64-encoded like zbar does.
+///
+/// No encoder for this symbology exists in any tool I could find — zint,
+/// ZXing and zbar all only read it, and zbar ships no sample — so the
+/// fixtures are generated by `examples/generate_sqcode_fixture.rs`, which
+/// derives the layout from zbar's decoder. `zbarimg` reads them, which is
+/// what makes them trustworthy: an independent implementation agrees on
+/// both the geometry and the payload.
+///
+/// The two sizes cover an 8x8 and a 12x12 data area, so the border walk runs
+/// over different numbers of alignment dots.
+///
+/// zedbar reports the sampled bits directly where zbar reports them
+/// base64-encoded, so the cross-check encodes before comparing — which also
+/// documents the relationship between the two.
+#[test]
+fn test_sqcode() {
+    for (path, payload) in [
+        ("examples/test-sqcode.png", &b"zedbar!!"[..]),
+        ("examples/test-sqcode-large.png", &b"zedbar SQ Code fix"[..]),
+    ] {
+        let img = image::open(path).expect("open").to_luma8();
+        let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+        let result = Scanner::new().scan(&mut image);
+        let symbol = result
+            .first()
+            .unwrap_or_else(|| panic!("nothing decoded in {path}"));
+
+        assert_eq!(symbol.symbol_type(), SymbolType::SqCode, "{path}");
+        assert_eq!(symbol.data(), payload, "{path}");
+        // No text conversion happens, so there is nothing for `raw_data` to
+        // hand back that `data` does not already carry.
+        assert_eq!(symbol.raw_data(), None, "{path}");
+
+        if zbarimg_available() {
+            assert_eq!(
+                decode_with_zbars(path),
+                Some(("SQ-Code".to_string(), base64(payload))),
+                "zbars disagreed for {path}"
+            );
+        }
+    }
+}
+
+/// Base64 as zbar emits it, for the SQ cross-check above. Small enough not to
+/// be worth a dev-dependency.
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = u32::from_be_bytes([0, b[0], b[1], b[2]]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[(n >> (18 - 6 * i)) as usize & 0x3f] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn test_ean8_plain() {
+    let expected = Some(("EAN-8".to_string(), "96385074".to_string()));
+
+    let result_this = decode_image("examples/test-ean8-plain.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-ean8-plain.png", &expected);
+}
+
+/// With EMIT_CHECK turned off, zbar drops the trailing check digit and emits
+/// the rest. The port derived that shortened length by subtracting one from
+/// the symbology enum and converting back to a `SymbolType`; 7 (EAN-8 minus
+/// its check digit) names no symbology, so it collapsed to `None` and the
+/// decoder emitted an empty string. UPC-A and UPC-E hit the same hole.
+#[test]
+fn test_ean8_without_emitted_checksum() {
+    use zedbar::config::Ean8;
+
+    let img = image::open("examples/test-ean8-plain.png")
+        .expect("open")
+        .to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).expect("image");
+
+    let config = DecoderConfig::new().set_checksum(Ean8, false, false);
+    let result = Scanner::with_config(config).scan(&mut image);
+
+    let symbol = result.first().expect("no symbol decoded");
+    assert_eq!(symbol.symbol_type(), SymbolType::Ean8);
+    assert_eq!(symbol.data_string(), Some("9638507"));
+}
+
 #[test]
 fn test_ean8_decoded_as_ean13() {
     // Note: This image is decoded as EAN13, not EAN8 or UPCA
@@ -445,6 +695,67 @@ fn test_i25() {
 
     assert_eq!(result_this, expected, "zedbar failed");
     assert_matches_zbars("examples/test-i25.png", &expected);
+}
+
+#[test]
+fn test_code128_single_character() {
+    // zbar sets no minimum length for Code 128, so a one-character payload
+    // (3 characters counting start and check) must still decode.
+    let expected = Some(("CODE-128".to_string(), "A".to_string()));
+
+    let result_this = decode_image("examples/test-code128-1char.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-code128-1char.png", &expected);
+}
+
+#[test]
+fn test_code93_single_character() {
+    // Likewise for Code 93: one data character plus the C and K check
+    // characters is three, which is above zbar's hard floor of two.
+    let expected = Some(("CODE-93".to_string(), "A".to_string()));
+
+    let result_this = decode_image("examples/test-code93-1char.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-code93-1char.png", &expected);
+}
+
+#[test]
+fn test_databar() {
+    // GTIN-13 2001234567890 plus the emitted check digit, prefixed with AI 01.
+    let expected = Some(("DataBar".to_string(), "0120012345678909".to_string()));
+
+    let result_this = decode_image("examples/test-databar.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-databar.png", &expected);
+}
+
+#[test]
+fn test_databar_expanded() {
+    // AI 01 (GTIN-14) + AI 3202 (net weight) + AI 15 (best before date).
+    let expected = Some((
+        "DataBar-Exp".to_string(),
+        "0198898765432106320201234515991231".to_string(),
+    ));
+
+    let result_this = decode_image("examples/test-databar-exp.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-databar-exp.png", &expected);
+}
+
+#[test]
+fn test_databar_expanded_alphanumeric() {
+    // Exercises the general-purpose data compaction tail, which needs the bit
+    // feeder to actually advance through the character stream.
+    let expected = Some(("DataBar-Exp".to_string(), "10ABC123".to_string()));
+
+    let result_this = decode_image("examples/test-databar-exp-alnum.png");
+
+    assert_eq!(result_this, expected, "zedbar failed");
+    assert_matches_zbars("examples/test-databar-exp-alnum.png", &expected);
 }
 
 #[test]
@@ -512,6 +823,7 @@ fn test_all_examples_decode() {
         "examples/test-qr.jpg",
         "examples/test-qr.webp",
         "examples/pixel-wifi-sharing-qr-code.png",
+        "examples/test-qr-version40.png",
         // Explicitly DON'T pass these to `decode_image`.
         // "examples/qr-code-140-grid01.jpg",
         // "examples/qr-code-140-grid02.jpg",
@@ -521,12 +833,23 @@ fn test_all_examples_decode() {
         "examples/qr-code-low-contrast.png",
         "examples/qr-code-pacman.png",
         "examples/test-codabar.png",
+        "examples/test-databar.png",
+        "examples/test-databar-exp.png",
+        "examples/test-databar-exp-alnum.png",
         "examples/test-code128.png",
         "examples/test-code128-2.png",
+        "examples/test-code128-1char.png",
+        "examples/test-code93-1char.png",
         "examples/test-code39.png",
         "examples/test-code93.png",
         "examples/test-ean13.png",
         "examples/test-ean8.png",
+        "examples/test-ean8-plain.png",
+        "examples/test-ean13-addon2.png",
+        "examples/test-ean13-addon5.png",
+        "examples/test-isbn13.png",
+        "examples/test-sqcode.png",
+        "examples/test-sqcode-large.png",
         "examples/test-i25.png",
         "examples/test-upca.png",
         "examples/nine-barcodes.png",

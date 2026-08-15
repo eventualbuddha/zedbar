@@ -116,6 +116,10 @@ impl ScanResult {
     /// one per undecoded QR code in the image. Cropping and upscaling
     /// each region may yield successful decodes.
     ///
+    /// The count is capped: an image dense with finder-like patterns can
+    /// produce candidates faster than any caller could usefully act on them,
+    /// so only the first several dozen are reported.
+    ///
     /// Empty when no undecoded regions were found, or when the `qrcode`
     /// feature is disabled.
     pub fn finder_regions(&self) -> &[FinderRegion] {
@@ -256,8 +260,26 @@ impl Scanner {
         let image_area = image.width() as u64 * image.height() as u64;
         let area_limit = image_area / 10;
 
+        // Each retried region costs up to one full rescan per scale, on an
+        // upscaled crop. A cluttered image can report dozens of candidates, so
+        // cap how many are actually retried; the rest are handed back
+        // unresolved for the caller to deal with as it sees fit.
+        //
+        // Taking the first N is not arbitrary. Finder centers are sorted by
+        // (bucketed) edge-point count before the triplet search, so the
+        // per-triplet candidates — which are the ones reported whenever any
+        // triplet looked like a QR — arrive in descending order of confidence.
+        // The cluster-derived fallback is only spatially ordered, but it is
+        // used solely when no triplet survived at all.
+        const MAX_RETRIED_REGIONS: usize = 16;
+
         let mut unresolved: Vec<FinderRegion> = Vec::new();
+        let mut retried = 0usize;
         for region in &finder_regions {
+            if retried >= MAX_RETRIED_REGIONS {
+                unresolved.push(*region);
+                continue;
+            }
             if apply_area_filter {
                 let region_area = region.width as u64 * region.height as u64;
                 if region_area > area_limit {
@@ -278,6 +300,7 @@ impl Scanner {
                 continue;
             };
 
+            retried += 1;
             let mut decoded = false;
             for &scale in SCALES {
                 let Some(mut upscaled) = cropped.upscale(scale) else {

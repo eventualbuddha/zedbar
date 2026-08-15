@@ -12,9 +12,14 @@ use crate::{SymbolType, color::Color, decoder::decode_e, img_scanner::ImageScann
 ///
 /// Searches for the 1:1:3:1:1 ratio pattern characteristic of QR code finders.
 pub(crate) fn find_qr(dcode: &mut ImageScanner) -> SymbolType {
-    // Update latest finder pattern width
-    dcode.qrf.s5 -= dcode.get_width(6);
-    dcode.qrf.s5 += dcode.get_width(1);
+    // Update latest finder pattern width. The other decoders keep their
+    // sliding sums in wrapping arithmetic the way C does; this one is no
+    // different, even though the window invariant should keep it in range.
+    dcode.qrf.s5 = dcode
+        .qrf
+        .s5
+        .wrapping_sub(dcode.get_width(6))
+        .wrapping_add(dcode.get_width(1));
     let s = dcode.qrf.s5;
 
     // TODO: The 2005 standard allows reflectance-reversed codes (light on dark
