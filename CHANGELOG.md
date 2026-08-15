@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.1](https://github.com/eventualbuddha/zedbar/compare/v0.5.0...v0.5.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **cli:** say why an image could not be scanned ([792961a](https://github.com/eventualbuddha/zedbar/commit/792961a1638ad8218889041da1d597c915e1a576))
+* **qrcode:** correct GS1, encoding and structured-append decoding, and five overflow traps ([daa7edd](https://github.com/eventualbuddha/zedbar/commit/daa7eddd974285122142bcb3c1ab2648c6e2536a))
+* **qrcode:** correct three faults in QR text extraction ([ce40222](https://github.com/eventualbuddha/zedbar/commit/ce40222a045425e70e5bc7ff47a1872b2c14cb07))
+* **qrcode:** keep the alignment-pattern centre inside the image ([932002c](https://github.com/eventualbuddha/zedbar/commit/932002c8c2e55f3a7fa8ab5f9f6b7c10f707b24b))
+* **qrcode:** make the second homography builder survive runaway corners ([34ab80e](https://github.com/eventualbuddha/zedbar/commit/34ab80e496977be05c45c7d73ca0fd548678b5b4))
+* **qrcode:** reject an alignment-pattern corner outside the image ([08e223e](https://github.com/eventualbuddha/zedbar/commit/08e223e99c2d3ccd49af927d6801a43e99836ace))
+* **qrcode:** report an incomplete structured-append group as partial ([d503fdc](https://github.com/eventualbuddha/zedbar/commit/d503fdccc77b7cc82f619f2bd2695f7f71128550))
+* **qrcode:** saturate the turn test the way the distance test already does ([c8bcea5](https://github.com/eventualbuddha/zedbar/commit/c8bcea54cb8656394329eb812c1f6c329a206eef))
+* **qrcode:** stop three more corner computations from trapping ([c29b7a5](https://github.com/eventualbuddha/zedbar/commit/c29b7a570903c7e3f1afab408c88841353425695))
+* reject a zero-width reference character instead of dividing by it ([cc927f2](https://github.com/eventualbuddha/zedbar/commit/cc927f29317af5b8c8ae5157c1cffa82ed7a8e44))
+* **scanner:** take only 2D symbols from a retried finder region ([14f9ce0](https://github.com/eventualbuddha/zedbar/commit/14f9ce03af27298d899ef69b5391748a4272ad13))
+* **zedbarimg:** keep incomplete symbols out of the decoded output ([018449b](https://github.com/eventualbuddha/zedbar/commit/018449bc5c7182da4a036053aa0289ced17f2e43))
+
 ## [0.5.0](https://github.com/eventualbuddha/zedbar/compare/v0.4.2...v0.5.0) (2026-08-15)
 
 
