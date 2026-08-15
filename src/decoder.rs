@@ -21,6 +21,17 @@ pub(crate) const DECODE_WINDOW: usize = 16;
 /// Returns encoded number of units - 2 (for use as zero based index)
 /// or -1 if invalid
 pub(crate) fn decode_e(e: u32, s: u32, n: u32) -> i32 {
+    // A reference character of zero width is not a character, so nothing can
+    // be classified against it. zbar divides by `s` unguarded and every caller
+    // is expected to have ruled this out — but `ean::aux_end` computes its own
+    // reference width and does not, so a run of zero-width elements reaches
+    // here and takes the C process down with SIGFPE. No image produces that
+    // run (the scanner never emits four zero widths in a row), but the
+    // decoder accepts it, and "invalid" is the answer the classifier already
+    // has for input it cannot use.
+    if s == 0 {
+        return -1;
+    }
     let e_val = ((e * n * 2 + 1) / s).wrapping_sub(3) / 2;
     if e_val >= n - 3 { -1 } else { e_val as i32 }
 }
@@ -588,6 +599,20 @@ mod tests {
         for n in [7u32, 9, 11, 14, 45, 72] {
             for e in 0..=1 {
                 assert_eq!(decode_e(e, 100, n), -1, "e={e} n={n}");
+            }
+        }
+    }
+
+    /// `ean::aux_end` builds its own reference width by summing four elements
+    /// and does not check the result, so a run of zero-width elements reaches
+    /// the classifier with nothing to classify against. zbar divides by it
+    /// regardless and dies with SIGFPE; there is no width for which that is a
+    /// useful answer, so it is rejected like any other unusable input.
+    #[test]
+    fn decode_e_rejects_a_zero_width_character() {
+        for n in [7u32, 9, 11, 14, 45, 72] {
+            for e in [0u32, 1, 7, 100, u32::MAX / (2 * n)] {
+                assert_eq!(decode_e(e, 0, n), -1, "e={e} n={n}");
             }
         }
     }
