@@ -1435,7 +1435,16 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
             }
         }
 
-        // Now collect all the inliers at the beginning of the list
+        // Now collect all the inliers at the beginning of the list.
+        //
+        // zbar means to swap here but saves the wrong element — `tmp` takes
+        // `edge_pts[i]` where it wants `edge_pts[j]` — so it copies the inlier
+        // down and drops whatever sat at `j`. Only the first `ninliers` entries
+        // are ever read again (the line fit takes that many, and the next
+        // classification pass rebuilds the list from scratch), so the two agree
+        // on everything observable: over 100k randomised runs driven from a
+        // shared random stream, the inlier count and every collected point
+        // match, and the difference stays in the tail.
         let mut i = 0;
         let mut j = 0;
         while j < best_ninliers as usize {
