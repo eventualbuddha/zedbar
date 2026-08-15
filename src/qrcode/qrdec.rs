@@ -211,7 +211,15 @@ fn qr_hom_fit_edge_line(
             line[1] = (-aff.fwd[0][0] + round) >> shift;
         }
 
-        // Compute line constant term
+        // Compute line constant term.
+        //
+        // zbar writes this out twice, once per edge, and the bottom-edge copy
+        // reads its normal out of the *right* edge's line — `l[1][0]*p[0] +
+        // l[1][1]*p[1]` where it means `l[3]`. That anchors the bottom edge to
+        // a line perpendicular to the one it wants, and only bites when the
+        // bottom edge collected at most one sample point, which is why it
+        // survived there. Using this edge's own normal is the whole point of
+        // the coefficients computed just above.
         line[2] = -(line[0] * p[0] + line[1] * p[1]);
     }
 }
@@ -777,22 +785,24 @@ fn qr_hom_fit(
     let mut bu = _dl.o[0] - 2 * dbu;
     let mut bv = _dl.o[1] + 3 * _dl.size[1] - 2 * dbv;
 
-    // Set up the initial point lists
+    // Set up the initial point lists. zbar sizes these up front from the number
+    // of steps the walk below can take and doubles them by hand when it runs
+    // out; that estimate divides by the step size, which is a module size
+    // halved and so may be zero. `Vec` grows on its own, so the estimate is
+    // simply not needed here.
     let mut nr = _ur.ninliers[1];
     let mut rlastfit = nr;
-    let mut cr = nr + (_dl.o[1] - rv + drv - 1) / drv;
-    let mut r: Vec<qr_point> = Vec::with_capacity(cr as usize);
-    for i in 0.._ur.ninliers[1] as usize {
-        r.push(_ur.edge_pts[1][i].pos);
-    }
+    let mut r: Vec<qr_point> = _ur.edge_pts[1][..nr as usize]
+        .iter()
+        .map(|p| p.pos)
+        .collect();
 
     let mut nb = _dl.ninliers[3];
     let mut blastfit = nb;
-    let mut cb = nb + (_ur.o[0] - bu + dbu - 1) / dbu;
-    let mut b: Vec<qr_point> = Vec::with_capacity(cb as usize);
-    for i in 0.._dl.ninliers[3] as usize {
-        b.push(_dl.edge_pts[3][i].pos);
-    }
+    let mut b: Vec<qr_point> = _dl.edge_pts[3][..nb as usize]
+        .iter()
+        .map(|p| p.pos)
+        .collect();
 
     // Set up the step parameters for the affine projection
     let ox = (_aff.x0 << _aff.res) + (1 << (_aff.res - 1));
@@ -823,30 +833,16 @@ fn qr_hom_fit(
             let x1 = (rx - drxj) >> (_aff.res + QR_FINDER_SUBPREC);
             let y1 = (ry - dryj) >> (_aff.res + QR_FINDER_SUBPREC);
 
-            if nr >= cr {
-                cr = (cr << 1) | 1;
-                r.reserve((cr - nr) as usize);
-            }
-
+            let mut pt = qr_point::default();
             let mut ret = qr_finder_quick_crossing_check(img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
-                r.push([0; 2]);
-                ret = qr_finder_locate_crossing(
-                    img,
-                    _width,
-                    _height,
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    1,
-                    &mut r[nr as usize],
-                );
+                ret = qr_finder_locate_crossing(img, _width, _height, x0, y0, x1, y1, 1, &mut pt);
             }
 
             if ret >= 0 {
                 if ret == 0 {
-                    let q = qr_aff_unproject(_aff, r[nr as usize][0], r[nr as usize][1]);
+                    r.push(pt);
+                    let q = qr_aff_unproject(_aff, pt[0], pt[1]);
                     // Move the current point halfway towards the crossing
                     ru = (ru + q[0]) >> 1;
                     // But ensure that rv monotonically increases
@@ -886,30 +882,16 @@ fn qr_hom_fit(
             let x1 = (bx - dbxj) >> (_aff.res + QR_FINDER_SUBPREC);
             let y1 = (by - dbyj) >> (_aff.res + QR_FINDER_SUBPREC);
 
-            if nb >= cb {
-                cb = (cb << 1) | 1;
-                b.reserve((cb - nb) as usize);
-            }
-
+            let mut pt = qr_point::default();
             let mut ret = qr_finder_quick_crossing_check(img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
-                b.push([0; 2]);
-                ret = qr_finder_locate_crossing(
-                    img,
-                    _width,
-                    _height,
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    1,
-                    &mut b[nb as usize],
-                );
+                ret = qr_finder_locate_crossing(img, _width, _height, x0, y0, x1, y1, 1, &mut pt);
             }
 
             if ret >= 0 {
                 if ret == 0 {
-                    let q = qr_aff_unproject(_aff, b[nb as usize][0], b[nb as usize][1]);
+                    b.push(pt);
+                    let q = qr_aff_unproject(_aff, pt[0], pt[1]);
                     // Move the current point halfway towards the crossing
                     // But ensure that bu monotonically increases
                     if q[0] + dbu > bu {
@@ -952,23 +934,26 @@ fn qr_hom_fit(
     qr_hom_fit_edge_line(&mut l[1], &mut r, nr as usize, _ur, _aff, 1);
     qr_hom_fit_edge_line(&mut l[3], &mut b, nb as usize, _dl, _aff, 3);
 
+    // It's plausible for corners to be somewhat outside the image, but too far
+    // and too much of the pattern will be gone for it to be decodable.
+    //
+    // C writes the upper bound as `_width << QR_FINDER_SUBPREC + 1`, and `+`
+    // binds tighter than `<<`, so the shift is by SUBPREC+1: the limit is two
+    // image widths in finder units, not one width plus one.
+    let corner_in_range = |p: &qr_point| {
+        p[0] >= (-_width << QR_FINDER_SUBPREC)
+            && p[0] < (_width << (QR_FINDER_SUBPREC + 1))
+            && p[1] >= (-_height << QR_FINDER_SUBPREC)
+            && p[1] < (_height << (QR_FINDER_SUBPREC + 1))
+    };
+
     // Compute line intersections
     for i in 0..4 {
         _p[i] = match qr_line_isect(&l[i & 1], &l[2 + (i >> 1)]) {
             Some(p) => p,
             None => return -1,
         };
-        // It's plausible for points to be somewhat outside the image, but too far
-        // and too much of the pattern will be gone for it to be decodable.
-        // C writes the upper bound as `_width << QR_FINDER_SUBPREC + 1`, and
-        // `+` binds tighter than `<<`, so the shift is by SUBPREC+1: the limit
-        // is two image widths in finder units, not one width plus one.
-        let p_i = &_p[i];
-        if p_i[0] < (-_width << QR_FINDER_SUBPREC)
-            || p_i[0] >= (_width << (QR_FINDER_SUBPREC + 1))
-            || p_i[1] < (-_height << QR_FINDER_SUBPREC)
-            || p_i[1] >= (_height << (QR_FINDER_SUBPREC + 1))
-        {
+        if !corner_in_range(&_p[i]) {
             return -1;
         }
     }
