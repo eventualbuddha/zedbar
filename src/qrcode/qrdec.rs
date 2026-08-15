@@ -4815,6 +4815,13 @@ impl qr_code_data {
                     // variable-width like UTF-8: `0bbbbbbb`, `10bbbbbb bbbbbbbb`
                     // or `110bbbbb` followed by two more bytes.
                     //
+                    // ISO/IEC 18004 Table 4: one codeword `0bbbbbbb` for
+                    // 0..=127, two `10bbbbbb bbbbbbbb` for 0..=16383, three
+                    // `110bbbbb bbbbbbbb bbbbbbbb` for 0..=999999, where
+                    // b...b is the binary value — "the bit sequence after the
+                    // first 0 bit is the binary representation of the ECI
+                    // Assignment number" (7.4.2.2).
+                    //
                     // zbar masks the lead byte with `bits & 0x3F << 8` (and
                     // `& 0x1F << 16`), where `<<` binds tighter than `&`, so it
                     // ands an 8-bit value against a mask that has no bits below
@@ -5341,7 +5348,19 @@ const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 /// understand.
 ///
 /// ECI 3..=18 select ISO 8859-1 through -16 (there is no -12, hence the gap at
-/// 14), 20 is Shift-JIS and 26 is UTF-8. `encoding_rs` implements the WHATWG
+/// 14), 20 is Shift-JIS and 26 is UTF-8. ISO/IEC 18004 does not carry the
+/// assignments itself — 7.4.2.1 defers to the AIM ECI specification — so these
+/// come from agreement between independent implementations and are checked by
+/// round trip: `zint` encodes text in each character set and this decodes it
+/// back unchanged (`test_qr_eci_selects_the_named_charset`).
+///
+/// Note that this library resolves the character set and returns text, which
+/// is not what 18004 clause 14.3 asks a conforming decoder to do — that says
+/// the ECI shall be transmitted as an escape `\\nnnnnn`, a backslash followed
+/// by the six-digit assignment number, leaving the interpretation to the
+/// application (and a literal backslash in the data doubled). Every decoder
+/// in common use resolves instead, including zbar and ZXing, and callers of a
+/// Rust library expect a decoded string rather than an escaped byte stream. `encoding_rs` implements the WHATWG
 /// Encoding Standard, which unifies a few of these with their Windows
 /// counterparts: the two differ only over 0x80..0xA0, where ISO 8859 puts
 /// seldom-used C1 controls and the Windows code pages put printable
@@ -5456,9 +5475,15 @@ fn flush_byte_run(
 ///
 /// Alphanumeric mode has no code point for the GS (0x1D) field separator that
 /// GS1 uses to end a variable-length element, so GS1 transmits it as `%`, and
-/// escapes a literal `%` by doubling it. Without this pass a GS1 QR code
+/// escapes a literal `%` by doubling it. ISO/IEC 18004 7.4.8.2 puts the
+/// obligation on the reader: "Decoders encountering % in these symbols shall
+/// transmit it as ASCII/JIS8 value 1D_HEX, and if %% is encountered it shall
+/// be transmitted as a single % character." Without this pass a GS1 QR code
 /// reports `…LOT1%17251231` where the separator belongs, and doubles every
 /// literal percent sign.
+///
+/// The substitution belongs to alphanumeric mode alone — the same clause has
+/// byte mode carry a literal GS — and applies under either FNC1 position.
 fn push_alnum_segment(sa_text: &mut Vec<u8>, data: &[u8], fnc1: bool) {
     if !fnc1 {
         sa_text.extend_from_slice(data);
