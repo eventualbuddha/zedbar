@@ -1270,3 +1270,27 @@ fn test_qr_structured_append_with_a_missing_part() {
         [SymbolType::QrCode, SymbolType::Partial, SymbolType::QrCode]
     );
 }
+
+/// ECI designators 3..=18 select ISO 8859-1 through -16 (there is no -12).
+/// Reading them all as Latin-1 turns anything outside Western European text
+/// into mojibake, so each one has to reach the character set it names.
+///
+/// Fixture: three codes from `zint -b 58 --eci=N`, N = 4 (Latin-2), 7
+/// (Cyrillic) and 9 (Greek), appended side by side with quiet zones.
+#[test]
+fn test_qr_eci_selects_the_named_charset() {
+    let path = "examples/test-qr-eci-charsets.png";
+    let img = image::open(path).unwrap().to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+
+    let mut decoded: Vec<_> = Scanner::new()
+        .scan(&mut image)
+        .iter()
+        .map(|s| s.data_string().unwrap_or("<not utf-8>").to_string())
+        .collect();
+    decoded.sort();
+
+    let mut expected = ["Příliš žluťoučký kůň", "Привет мир", "Γειά σου κόσμε"];
+    expected.sort();
+    assert_eq!(decoded, expected);
+}
