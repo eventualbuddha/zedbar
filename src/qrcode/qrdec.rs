@@ -405,18 +405,28 @@ pub(crate) fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> u32 {
 /// Check if three points are in counter-clockwise order
 ///
 /// Returns the cross product of the vectors (p1-p0) and (p2-p0).
+///
 /// - Positive: points are in CCW order (in right-handed coordinate system)
 /// - Zero: points are collinear
 /// - Negative: points are in CW order
+///
+/// Like [`qr_point_distance2`], this is a product of coordinate differences
+/// taken from unclamped sub-pixel positions, so it leaves 32 bits on a large
+/// image. Callers want its sign (which way the triple turns), whether it is
+/// zero (collinear), and its magnitude against a threshold — all three survive
+/// saturation, where the wraparound the C relies on can reverse the turn.
+///
+/// The floor is `-i32::MAX` rather than `i32::MIN`, because the RANSAC inlier
+/// test takes `.abs()` of the result.
 pub(crate) fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> i32 {
-    let p0x = p0[0];
-    let p0y = p0[1];
-    let p1x = p1[0];
-    let p1y = p1[1];
-    let p2x = p2[0];
-    let p2y = p2[1];
+    let dx1 = p1[0] as i64 - p0[0] as i64;
+    let dy1 = p1[1] as i64 - p0[1] as i64;
+    let dx2 = p2[0] as i64 - p0[0] as i64;
+    let dy2 = p2[1] as i64 - p0[1] as i64;
 
-    (p1x - p0x) * (p2y - p0y) - (p1y - p0y) * (p2x - p0x)
+    dx1.saturating_mul(dy2)
+        .saturating_sub(dy1.saturating_mul(dx2))
+        .clamp(-(i32::MAX as i64), i32::MAX as i64) as i32
 }
 
 /// Evaluate a line equation at a point
@@ -5573,6 +5583,34 @@ mod tests {
         assert_eq!(qr_point_distance2(&[i32::MAX, 0], &[i32::MIN, 0]), u32::MAX);
         assert_eq!(qr_point_distance2(&[0, 200_000], &[0, -200_000]), u32::MAX);
         assert!(qr_point_distance2(&[0, 100_000], &[0, 0]) > 65535 * 65535);
+    }
+
+    /// The turn direction of three candidate finder centres, from the same
+    /// unclamped sub-pixel positions as [`qr_point_distance2`]. Saturating
+    /// keeps the sign, the collinear case and any threshold comparison intact;
+    /// wrapping, which is what the C does, can report a left turn as a right
+    /// one.
+    #[test]
+    fn point_ccw_saturates_instead_of_wrapping() {
+        // Inside the range: exact, and oriented the way the name says.
+        assert_eq!(qr_point_ccw(&[0, 0], &[1, 0], &[0, 1]), 1);
+        assert_eq!(qr_point_ccw(&[0, 0], &[0, 1], &[1, 0]), -1);
+        assert_eq!(qr_point_ccw(&[0, 0], &[2, 2], &[4, 4]), 0);
+        assert_eq!(
+            qr_point_ccw(&[0, 0], &[30_000, 0], &[0, 30_000]),
+            30_000 * 30_000
+        );
+
+        // Beyond it: pinned, still signed, and still safe to take `.abs()` of.
+        let far = qr_point_ccw(&[0, 0], &[i32::MAX, 0], &[0, i32::MAX]);
+        assert_eq!(far, i32::MAX);
+        let far_neg = qr_point_ccw(&[0, 0], &[0, i32::MAX], &[i32::MAX, 0]);
+        assert_eq!(far_neg, -i32::MAX);
+        assert_eq!(far_neg.abs(), i32::MAX);
+        assert_eq!(
+            qr_point_ccw(&[i32::MIN, i32::MIN], &[i32::MAX, 0], &[0, i32::MAX]),
+            i32::MAX
+        );
     }
 
     /// Both homography builders take four image corners and form cofactors
