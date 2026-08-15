@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/eventualbuddha/zedbar/compare/v0.4.2...v0.5.0) (2026-08-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Symbol::data()` returns the raw bit matrix for SQ Code symbols rather than its base64 encoding, and `Symbol::raw_data()` returns `None` for them. Callers wanting the previous value should base64-encode `data()`. `zedbarimg` prints the decoded bytes where it used to print base64.
+
+### Bug Fixes
+
+* correct EAN add-on indexing, checksum-suppressed length, and i25 exit check ([e174c8c](https://github.com/eventualbuddha/zedbar/commit/e174c8c1613ac2ff726e874c5a22d8fc608d7ee0))
+* **databar:** repair the output buffer layout and expanded bit feeder ([e32104f](https://github.com/eventualbuddha/zedbar/commit/e32104faa37931c46da6b89118bdfc7348cbd5b0))
+* **qrcode:** bound the undecoded-region search and the retry that consumes it ([4f71022](https://github.com/eventualbuddha/zedbar/commit/4f710227f4269474e534876cc50b9c9d000acb84))
+* **qrcode:** read the corner bounds shift with C's operator precedence ([49663a9](https://github.com/eventualbuddha/zedbar/commit/49663a9d59b6033e7064bab132cb95ec5bfa6d6d))
+* report SQ Code payloads as bytes instead of base64 ([0134c37](https://github.com/eventualbuddha/zedbar/commit/0134c37a7de0a956c82f732956aa34610d596911))
+* reset decoder state between images and cap regions on every exit ([9b8a49f](https://github.com/eventualbuddha/zedbar/commit/9b8a49fa30ec25dafdb7515c9cc8156b6b34cdb6))
+* **scanner:** reject flat 2nd differentials when detecting edges ([044a8d5](https://github.com/eventualbuddha/zedbar/commit/044a8d56a31e4ecefcba80237d322cd5975eb948))
+* **sqcode:** stop reporting the base64 payload with a trailing NUL ([74277c4](https://github.com/eventualbuddha/zedbar/commit/74277c426c929db93d529262ed0821a18017c09b))
+* stop imposing a four-character minimum on Code 93 and Code 128 ([0659320](https://github.com/eventualbuddha/zedbar/commit/06593204bbe3b24c53cc1ed6eca0b95736a557c6))
+
 ## [0.4.2](https://github.com/eventualbuddha/zedbar/compare/v0.4.1...v0.4.2) (2026-08-13)
 
 
