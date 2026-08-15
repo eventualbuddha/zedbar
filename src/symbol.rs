@@ -150,6 +150,10 @@ impl Symbol {
     }
 
     /// Get the component symbols (for composite symbols like EAN+add-on or QR structured append)
+    ///
+    /// For a structured-append QR group there is one component per member, in
+    /// order, and a member that was not found in the image is present as a
+    /// [`SymbolType::Partial`] placeholder.
     pub fn components(&self) -> &[Symbol] {
         &self.components
     }
@@ -217,10 +221,22 @@ pub struct Bounds {
     pub height: u32,
 }
 
+/// The symbology a [`Symbol`] was decoded as.
+///
+/// The discriminants are zbar's, so ordering comparisons between variants
+/// behave as they do there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub enum SymbolType {
     #[default]
     None = 0,
+    /// Something was read, but not a whole symbol.
+    ///
+    /// Scan results carry this for a structured-append QR group that is
+    /// missing at least one of its codes: the data is the parts that were
+    /// found, joined with a NUL where each absent part belongs, and
+    /// [`components`](Symbol::components) holds a `Partial` entry in its
+    /// place. Treat the data as a fragment — the full message needs the rest
+    /// of the group in frame.
     Partial = 1,
     Ean2 = 2,
     Ean5 = 5,

@@ -139,6 +139,11 @@ pub struct DecodeResult {
 #[wasm_bindgen]
 impl DecodeResult {
     /// The barcode format name (e.g. "QR-Code", "EAN-13").
+    ///
+    /// `"Partial"` means something was read but not a whole symbol — a
+    /// structured-append QR group with at least one of its codes missing from
+    /// the image. Its `data` is the parts that were found, joined with a NUL
+    /// byte wherever an absent part belongs.
     #[wasm_bindgen(getter, js_name = "symbolType")]
     pub fn symbol_type(&self) -> String {
         self.symbol_type.clone()
