@@ -28,7 +28,7 @@ compile_error!(
 use clap::Parser;
 use std::io::Write;
 use std::process;
-use zedbar::{DecoderConfig, Image, Scanner, config::*};
+use zedbar::{DecoderConfig, Image, Scanner, SymbolType, config::*};
 
 /// Scan and decode bar codes from one or more image files
 #[derive(Parser)]
@@ -287,6 +287,7 @@ fn main() {
     .retry_undecoded_regions(true);
 
     let mut total_symbols = 0;
+    let mut partial_symbols = 0;
 
     for filename in &args.files {
         // Load the image
@@ -326,12 +327,20 @@ fn main() {
         // Scan the image
         let symbols = scanner.scan(&mut zedbar_img);
 
-        total_symbols += symbols.len();
-
         // Print results
         for symbol in symbols {
             let symbol_type = symbol.symbol_type();
             let data_bytes = symbol.data();
+
+            // A partial symbol is a fragment — a structured-append QR group
+            // with codes missing from the frame. Its data reads exactly like a
+            // complete payload, and `--raw` prints no symbol type to tell them
+            // apart, so it is counted and reported but not written to stdout.
+            if symbol_type == SymbolType::Partial {
+                partial_symbols += 1;
+                continue;
+            }
+            total_symbols += 1;
 
             if args.raw {
                 // Raw mode: output the raw bytes (before encoding conversion) with newline
@@ -355,6 +364,12 @@ fn main() {
 
     // Print statistics unless quiet mode
     if !args.quiet {
+        if partial_symbols > 0 {
+            eprintln!(
+                "skipped {partial_symbols} incomplete symbol(s): a structured-append \
+                 group needs every one of its codes in the image"
+            );
+        }
         if total_symbols == 0 {
             eprintln!("No barcodes found");
             process::exit(1);
