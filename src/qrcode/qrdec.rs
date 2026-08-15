@@ -10,7 +10,11 @@ use std::{collections::VecDeque, mem::swap};
 
 use crate::decoder::BBox;
 
-use encoding_rs::{BIG5, Encoding, SHIFT_JIS, UTF_8, WINDOWS_1252};
+use encoding_rs::{
+    BIG5, Encoding, ISO_8859_2, ISO_8859_3, ISO_8859_4, ISO_8859_5, ISO_8859_6, ISO_8859_7,
+    ISO_8859_8, ISO_8859_10, ISO_8859_13, ISO_8859_14, ISO_8859_15, ISO_8859_16, SHIFT_JIS, UTF_8,
+    WINDOWS_874, WINDOWS_1252, WINDOWS_1254,
+};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
@@ -4698,7 +4702,16 @@ impl qr_code_data {
                     qr_code_data_payload::Fnc1FirstPositionMarker
                 }
                 qr_mode::Eci => {
-                    // Extended Channel Interpretation
+                    // Extended Channel Interpretation. The designator is
+                    // variable-width like UTF-8: `0bbbbbbb`, `10bbbbbb bbbbbbbb`
+                    // or `110bbbbb` followed by two more bytes.
+                    //
+                    // zbar masks the lead byte with `bits & 0x3F << 8` (and
+                    // `& 0x1F << 16`), where `<<` binds tighter than `&`, so it
+                    // ands an 8-bit value against a mask that has no bits below
+                    // 0x100: the lead byte's payload is dropped and every
+                    // two-byte designator collapses onto its trailing byte.
+                    // The shift belongs to the payload, as below.
                     let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
                         return -1;
                     };
@@ -5068,7 +5081,8 @@ impl qr_code_data_list {
 
                     let entries = &qrdataj.entries;
                     for entry in entries.iter() {
-                        // Process byte buffer if needed
+                        // A run of byte/kanji segments is converted as one unit,
+                        // so flush it as soon as some other mode turns up.
                         if !bytebuf.is_empty()
                             && !matches!(
                                 entry.payload,
@@ -5076,60 +5090,29 @@ impl qr_code_data_list {
                             )
                         {
                             sa_raw.extend_from_slice(&bytebuf);
-                            // convert bytes to text
-                            if let Some(enc) = eci {
-                                let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                                if had_errors {
-                                    err = true;
-                                    break;
-                                }
-                                sa_text.extend_from_slice(res.as_bytes());
-                            } else {
-                                if has_kanji {
-                                    enc_list_mtf(&mut enc_list, SHIFT_JIS);
-                                } else if bytebuf.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                                    let (res, _enc, had_errors) = UTF_8.decode(&bytebuf[3..]);
-                                    if !had_errors {
-                                        sa_text.extend_from_slice(res.as_bytes());
-                                        enc_list_mtf(&mut enc_list, UTF_8);
-                                    } else {
-                                        err = true;
-                                    }
-                                } else if text_is_ascii(&bytebuf) {
-                                    enc_list_mtf(&mut enc_list, UTF_8);
-                                } else if text_is_big5(&bytebuf) {
-                                    enc_list_mtf(&mut enc_list, BIG5);
-                                }
-
-                                if !err {
-                                    let mut decoded = false;
-                                    for &enc in &enc_list {
-                                        if enc == WINDOWS_1252 && !text_is_latin1(&bytebuf) {
-                                            continue;
-                                        }
-                                        let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                                        if !had_errors {
-                                            sa_text.extend_from_slice(res.as_bytes());
-                                            enc_list_mtf(&mut enc_list, enc);
-                                            decoded = true;
-                                            break;
-                                        }
-                                    }
-                                    if !decoded {
-                                        err = true;
-                                    }
-                                }
+                            if !flush_byte_run(
+                                &bytebuf,
+                                eci,
+                                has_kanji,
+                                &mut enc_list,
+                                &mut sa_text,
+                            ) {
+                                err = true;
+                                break;
                             }
                             bytebuf.clear();
                         }
-                        if err {
-                            break;
-                        }
 
                         match &entry.payload {
-                            qr_code_data_payload::Numeric(data)
-                            | qr_code_data_payload::Alphanumeric(data) => {
+                            qr_code_data_payload::Numeric(data) => {
                                 sa_text.extend_from_slice(data);
+                                sa_raw.extend_from_slice(data);
+                            }
+                            qr_code_data_payload::Alphanumeric(data) => {
+                                // `sa_raw` keeps the characters as the symbol
+                                // carries them, escapes and all; only the text
+                                // output gets the GS1 substitution.
+                                push_alnum_segment(&mut sa_text, data, fnc1 != 0);
                                 sa_raw.extend_from_slice(data);
                             }
                             qr_code_data_payload::Bytes(data)
@@ -5137,76 +5120,26 @@ impl qr_code_data_list {
                                 bytebuf.extend_from_slice(data);
                             }
                             qr_code_data_payload::ExtendedChannelInterpretation(val) => {
-                                // Simplified ECI handling
-                                eci = match val {
-                                    3..=13 | 15..=18 => Some(WINDOWS_1252), // approx
-                                    20 => Some(SHIFT_JIS),
-                                    26 => Some(UTF_8),
-                                    _ => None,
-                                };
+                                eci = eci_encoding(*val).or(eci);
                             }
                             _ => {}
                         }
                     }
 
+                    // Flush at the end of each code, not of the whole group: a
+                    // multi-byte character may be split across the segments of
+                    // one code, but not across two separate codes.
+                    if !err && !bytebuf.is_empty() {
+                        sa_raw.extend_from_slice(&bytebuf);
+                        if !flush_byte_run(&bytebuf, eci, has_kanji, &mut enc_list, &mut sa_text) {
+                            err = true;
+                        }
+                        bytebuf.clear();
+                    }
+
                     // Add the symbol to our collection
                     component_syms.push(sym);
                     j += 1;
-                }
-
-                if !err && !bytebuf.is_empty() {
-                    sa_raw.extend_from_slice(&bytebuf);
-                    // convert bytes to text
-                    if let Some(enc) = eci {
-                        let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                        if had_errors {
-                            err = true;
-                        } else {
-                            sa_text.extend_from_slice(res.as_bytes());
-                        }
-                    } else {
-                        if has_kanji {
-                            enc_list_mtf(&mut enc_list, SHIFT_JIS);
-                        } else if bytebuf.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                            let (res, _enc, had_errors) = UTF_8.decode(&bytebuf[3..]);
-                            if !had_errors {
-                                sa_text.extend_from_slice(res.as_bytes());
-                                enc_list_mtf(&mut enc_list, UTF_8);
-                            } else {
-                                err = true;
-                            }
-                        } else if text_is_ascii(&bytebuf) {
-                            enc_list_mtf(&mut enc_list, UTF_8);
-                        } else if text_is_big5(&bytebuf) {
-                            enc_list_mtf(&mut enc_list, BIG5);
-                        }
-
-                        if !err {
-                            let mut decoded = false;
-                            // Move WINDOWS_1252 to end if it has C1 control chars
-                            if enc_list.front() == Some(&WINDOWS_1252) && !text_is_latin1(&bytebuf)
-                            {
-                                enc_list.pop_front();
-                                enc_list.push_back(WINDOWS_1252);
-                            }
-
-                            for &enc in &enc_list {
-                                let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                                if !had_errors {
-                                    sa_text.extend_from_slice(res.as_bytes());
-                                    enc_list_mtf(&mut enc_list, enc);
-                                    decoded = true;
-                                    break;
-                                }
-                            }
-                            // Note: Unlike some encoding errors, C does not set err=1 if decoding fails
-                            // If no encoding worked, just copy the raw bytes
-                            if !decoded {
-                                sa_text.extend_from_slice(&bytebuf);
-                            }
-                        }
-                    }
-                    bytebuf.clear();
                 }
 
                 if !err {
@@ -5270,6 +5203,152 @@ fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encodi
         let e = enc_list.remove(pos).unwrap();
         enc_list.push_front(e);
     }
+}
+
+/// The UTF-8 byte order mark.
+const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+
+/// The character set an ECI designator names, or `None` when this decoder has
+/// no encoder for it — in which case the byte run is auto-detected instead,
+/// which is also what happens for a designator no QR decoder is expected to
+/// understand.
+///
+/// ECI 3..=18 select ISO 8859-1 through -16 (there is no -12, hence the gap at
+/// 14), 20 is Shift-JIS and 26 is UTF-8. `encoding_rs` implements the WHATWG
+/// Encoding Standard, which unifies a few of these with their Windows
+/// counterparts: the two differ only over 0x80..0xA0, where ISO 8859 puts
+/// seldom-used C1 controls and the Windows code pages put printable
+/// punctuation. Real-world payloads in that range are overwhelmingly the
+/// latter, so the substitution is the more useful reading, not just the
+/// available one.
+///
+/// ECI 0, 1 and 2 select code page 437, which `encoding_rs` does not implement.
+fn eci_encoding(eci: u32) -> Option<&'static Encoding> {
+    Some(match eci {
+        1 | 3 => WINDOWS_1252, // ISO 8859-1
+        4 => ISO_8859_2,       // Latin-2
+        5 => ISO_8859_3,       // Latin-3
+        6 => ISO_8859_4,       // Latin-4
+        7 => ISO_8859_5,       // Cyrillic
+        8 => ISO_8859_6,       // Arabic
+        9 => ISO_8859_7,       // Greek
+        10 => ISO_8859_8,      // Hebrew
+        11 => WINDOWS_1254,    // ISO 8859-9, Turkish
+        12 => ISO_8859_10,     // Latin-6
+        13 => WINDOWS_874,     // ISO 8859-11, Thai
+        15 => ISO_8859_13,     // Latin-7
+        16 => ISO_8859_14,     // Latin-8
+        17 => ISO_8859_15,     // Latin-9
+        18 => ISO_8859_16,     // Latin-10
+        20 => SHIFT_JIS,
+        26 => UTF_8,
+        _ => return None,
+    })
+}
+
+/// Convert an accumulated run of byte-mode (and kanji-mode) bytes to text and
+/// append it to `sa_text`.
+///
+/// The run is accumulated across adjacent byte/kanji segments so that a
+/// multi-byte character split across two segments still converts, and is
+/// flushed as soon as a segment of some other mode — or the end of the code —
+/// is reached.
+///
+/// Returns `false` if the run could not be converted, which drops the symbol.
+fn flush_byte_run(
+    bytebuf: &[u8],
+    eci: Option<&'static Encoding>,
+    has_kanji: bool,
+    enc_list: &mut VecDeque<&'static Encoding>,
+    sa_text: &mut Vec<u8>,
+) -> bool {
+    // An ECI designator names the character set outright. The spec says data
+    // is then treated as coming from that set even in kanji mode.
+    if let Some(enc) = eci {
+        let (text, _, had_errors) = enc.decode(bytebuf);
+        if had_errors {
+            return false;
+        }
+        sa_text.extend_from_slice(text.as_bytes());
+        return true;
+    }
+
+    // Otherwise guess: promote one candidate to the front of the list on a
+    // cheap classification, then try the list in order.
+    if has_kanji {
+        // Data encoded in kanji mode means the byte segments are probably
+        // Shift-JIS too.
+        enc_list_mtf(enc_list, SHIFT_JIS);
+    } else if let Some(rest) = bytebuf.strip_prefix(UTF8_BOM) {
+        // UTF-8 is rarely announced with an ECI, so a BOM is the most reliable
+        // in-band signal for it. If the rest converts we are done: the run must
+        // *not* also go through the list below, or its text would be appended a
+        // second time.
+        let (text, _, had_errors) = UTF_8.decode(rest);
+        if had_errors {
+            return false;
+        }
+        sa_text.extend_from_slice(text.as_bytes());
+        enc_list_mtf(enc_list, UTF_8);
+        return true;
+    } else if text_is_ascii(bytebuf) {
+        // 8-bit-clean text: prefer UTF-8 over Shift-JIS, which would otherwise
+        // corrupt the backslashes used by the DoCoMo formats.
+        enc_list_mtf(enc_list, UTF_8);
+    } else if text_is_big5(bytebuf) {
+        enc_list_mtf(enc_list, BIG5);
+    }
+
+    // ISO 8859-1 is the character set the standard names as the default, but
+    // its 0x80..0xA0 range holds seldom-used C1 controls that in practice are
+    // far more often the lead bytes of some other encoding. Demote it to last
+    // place when the run uses that range — demote, not skip, because it is the
+    // catch-all that makes this loop total: every byte decodes as *something*
+    // under it, so a run that no other candidate accepts still produces text
+    // instead of discarding the whole symbol.
+    if !text_is_latin1(bytebuf)
+        && let Some(pos) = enc_list.iter().position(|&e| e == WINDOWS_1252)
+    {
+        let e = enc_list.remove(pos).unwrap();
+        enc_list.push_back(e);
+    }
+
+    for &enc in &*enc_list {
+        let (text, _, had_errors) = enc.decode(bytebuf);
+        if !had_errors {
+            sa_text.extend_from_slice(text.as_bytes());
+            enc_list_mtf(enc_list, enc);
+            return true;
+        }
+    }
+    false
+}
+
+/// Append an alphanumeric segment, applying the GS1 escapes when the code
+/// carries an FNC1 marker.
+///
+/// Alphanumeric mode has no code point for the GS (0x1D) field separator that
+/// GS1 uses to end a variable-length element, so GS1 transmits it as `%`, and
+/// escapes a literal `%` by doubling it. Without this pass a GS1 QR code
+/// reports `…LOT1%17251231` where the separator belongs, and doubles every
+/// literal percent sign.
+fn push_alnum_segment(sa_text: &mut Vec<u8>, data: &[u8], fnc1: bool) {
+    if !fnc1 {
+        sa_text.extend_from_slice(data);
+        return;
+    }
+    let mut rest = data;
+    while let Some(i) = rest.iter().position(|&c| c == b'%') {
+        sa_text.extend_from_slice(&rest[..i]);
+        if rest.get(i + 1) == Some(&b'%') {
+            sa_text.push(b'%');
+            rest = &rest[i + 2..];
+        } else {
+            sa_text.push(0x1D);
+            rest = &rest[i + 1..];
+        }
+    }
+    sa_text.extend_from_slice(rest);
 }
 
 #[cfg(test)]

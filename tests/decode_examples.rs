@@ -1163,3 +1163,59 @@ fn test_nine_barcodes() {
         assert_eq!(actual.1, expected.1, "data mismatch for {:?}", expected.0);
     }
 }
+
+/// GS1 QR codes carry their field separators through alphanumeric mode, which
+/// has no code point for GS (0x1D): GS1 sends `%` for the separator and doubles
+/// a literal `%` to escape it. Without the unescaping pass, a variable-length
+/// element reports `LOT1%17…` where the separator belongs and every literal
+/// percent sign comes out doubled.
+///
+/// Fixture: `zint -b 58 --gs1 -d "[01]09501101530003[10]A%B[17]251231" --scale=4`
+#[test]
+fn test_qr_gs1_percent_escapes() {
+    let path = "examples/test-qr-gs1.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("GS1 QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    // (01) is fixed-length so it runs straight into (10); (10) is variable, so
+    // the separator before (17) is a GS, and the escaped `%%` collapses to one.
+    let expected = b"010950110153000310A%B\x1d17251231".to_vec();
+    assert_eq!(data, expected);
+    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(expected));
+}
+
+/// A UTF-8 BOM is the one reliable in-band signal that a byte segment is UTF-8,
+/// since encoders rarely announce it with an ECI. Recognising it must not also
+/// let the run fall through to the general encoding search, which would append
+/// its text a second time.
+///
+/// Fixture: `zint -b 58 --binary --esc -d '\xEF\xBB\xBFcaf\xC3\xA9 \xE2\x9C\x93' --scale=4`
+#[test]
+fn test_qr_utf8_bom_is_not_decoded_twice() {
+    let path = "examples/test-qr-utf8-bom.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("BOM QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    assert_eq!(String::from_utf8_lossy(&data), "café ✓");
+    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+}
+
+/// Bytes in 0x80..0xA0 are C1 controls in ISO 8859-1 and printable punctuation
+/// in the Windows code pages, so a run that uses them is decoded by the
+/// single-byte catch-all only after every multi-byte candidate has been tried.
+/// That candidate has to stay in the list — dropping it leaves runs that
+/// nothing else accepts with no encoding at all, which used to discard the
+/// whole symbol whenever another segment followed the byte run.
+///
+/// Fixture: `zint -b 58 --binary --esc -d '\x93quoted\x94 12345678901234567890' --scale=4`
+#[test]
+fn test_qr_byte_run_followed_by_another_segment() {
+    let path = "examples/test-qr-latin1-mixed.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("mixed-mode QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    // zbar reads 0x93/0x94 as the ISO 8859-1 C1 controls U+0093/U+0094; this
+    // port reads them through Windows-1252, where they are the typographic
+    // quotes that real payloads in that range almost always mean.
+    assert_eq!(
+        String::from_utf8_lossy(&data),
+        "\u{201c}quoted\u{201d} 12345678901234567890"
+    );
+}
