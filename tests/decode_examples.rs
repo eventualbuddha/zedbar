@@ -1294,3 +1294,55 @@ fn test_qr_eci_selects_the_named_charset() {
     expected.sort();
     assert_eq!(decoded, expected);
 }
+
+/// Code 93 encodes lowercase, punctuation and control characters as a shift
+/// character followed by a letter, and the four shifts each map their operand
+/// differently. Nothing exercised that path — the suite and every generated
+/// corpus used uppercase and digits, which never shift — so the whole
+/// lower half of the character set went undecoded by any test.
+///
+/// Fixture: `zint -b 25 -d 'Code93 shift: a-z {|}~' --scale=4`
+#[test]
+fn test_code93_shift_characters() {
+    let path = "examples/test-code93-shifts.png";
+    let expected = Some(("CODE-93".to_string(), "Code93 shift: a-z {|}~".to_string()));
+    assert_eq!(decode_image(path), expected, "zedbar failed");
+    assert_matches_zbars(path, &expected);
+}
+
+/// GS1-128 marks a variable-length element's end with FNC1, which the decoder
+/// turns into the GS (0x1D) separator — the same rule that was missing from
+/// the QR alphanumeric path, on a symbology that had no test for it either.
+/// The FNC1 in first position also sets the GS1 modifier.
+///
+/// Fixture: `zint -b 16 -d '[01]09501101530003[10]AB12[17]251231' --scale=4`
+#[test]
+fn test_code128_gs1_separators() {
+    let path = "examples/test-code128-gs1.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("GS1-128 should decode");
+    assert_eq!(symbol_type, "CODE-128");
+    // (10) is variable-length, so a GS closes it before (17).
+    assert_eq!(data, b"010950110153000310AB12\x1d17251231".to_vec());
+    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+}
+
+/// An ECI designator above 127 is sent as two bytes, `10bbbbbb bbbbbbbb`.
+/// zbar masks the lead byte with `bits & 0x3F << 8`, where `<<` binds tighter
+/// than `&`, so it ands an 8-bit value against a mask with no bits below 0x100
+/// and keeps only the trailing byte — turning ECI 264 into ECI 8, which it
+/// reads as ISO 8859-6 and then fails to convert, dropping the symbol.
+///
+/// This is the one path where the port and the reference are meant to differ,
+/// so there is no cross-check here: 264 is unassigned, and ignoring an ECI it
+/// does not recognise leaves the payload to be detected, which recovers a
+/// symbol `zbarimg` reports nothing at all for.
+///
+/// Fixture: `zint -b 58 --eci=264 --binary --esc -d '\x82\xa0\x82\xa2 test'`
+#[test]
+fn test_qr_multibyte_eci_designator() {
+    let path = "examples/test-qr-eci-multibyte.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    // Shift-JIS 0x82A0 0x82A2 are the kana that follow.
+    assert_eq!(String::from_utf8_lossy(&data), "あい test");
+}
