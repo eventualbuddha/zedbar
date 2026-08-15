@@ -1333,9 +1333,10 @@ fn test_code128_gs1_separators() {
 /// reads as ISO 8859-6 and then fails to convert, dropping the symbol.
 ///
 /// This is the one path where the port and the reference are meant to differ,
-/// so there is no cross-check here: 264 is unassigned, and ignoring an ECI it
-/// does not recognise leaves the payload to be detected, which recovers a
-/// symbol `zbarimg` reports nothing at all for.
+/// so there is no cross-check here: 264 is not a value this decoder has a
+/// character set for, and leaving an unrecognised designator alone lets the
+/// payload be detected instead — which recovers a symbol `zbarimg` reports
+/// nothing at all for.
 ///
 /// Fixture: `zint -b 58 --eci=264 --binary --esc -d '\x82\xa0\x82\xa2 test'`
 #[test]
