@@ -1219,3 +1219,54 @@ fn test_qr_byte_run_followed_by_another_segment() {
         "\u{201c}quoted\u{201d} 12345678901234567890"
     );
 }
+
+/// Structured append splits one message across several QR codes, which are
+/// reported as a single symbol whose `components` are the codes it was
+/// assembled from.
+///
+/// Fixture: three codes from `zint -b 58 --structapp="N,3" -d "Part … "`,
+/// appended side by side with quiet zones.
+#[test]
+fn test_qr_structured_append_complete() {
+    let path = "examples/test-qr-structured-append.png";
+    let img = image::open(path).unwrap().to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let result = Scanner::new().scan(&mut image);
+
+    assert_eq!(result.len(), 1);
+    let sym = &result[0];
+    assert_eq!(sym.symbol_type(), SymbolType::QrCode);
+    assert_eq!(
+        sym.data_string(),
+        Some("Part one of three. Part two of three. Part three of three.")
+    );
+    assert_eq!(sym.components().len(), 3);
+    assert_matches_zbars(path, &decode_image(path));
+}
+
+/// When a member of the group is missing, the text is a fragment. Reporting a
+/// fragment as a complete QR code leaves a caller no way to tell, so the group
+/// comes back as `Partial`, with a NUL where the absent part belongs and a
+/// `Partial` component standing in its place.
+///
+/// Fixture: parts 1 and 3 of the same three-code group, part 2 omitted.
+#[test]
+fn test_qr_structured_append_with_a_missing_part() {
+    let path = "examples/test-qr-structured-append-gap.png";
+    let img = image::open(path).unwrap().to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let result = Scanner::new().scan(&mut image);
+
+    assert_eq!(result.len(), 1);
+    let sym = &result[0];
+    assert_eq!(sym.symbol_type(), SymbolType::Partial);
+    assert_eq!(
+        sym.data(),
+        b"Part one of three. \0Part three of three.".as_slice()
+    );
+    let kinds: Vec<_> = sym.components().iter().map(|c| c.symbol_type()).collect();
+    assert_eq!(
+        kinds,
+        [SymbolType::QrCode, SymbolType::Partial, SymbolType::QrCode]
+    );
+}

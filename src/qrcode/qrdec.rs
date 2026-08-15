@@ -5071,6 +5071,7 @@ impl qr_code_data_list {
                 let mut err = false;
                 let mut bytebuf: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
                 let mut component_syms = Vec::new();
+                let mut incomplete = false;
 
                 let mut j = 0;
                 while j < sa_size {
@@ -5080,6 +5081,7 @@ impl qr_code_data_list {
                     let mut sym = Symbol::new(SymbolType::QrCode);
 
                     if sa[j] < 0 {
+                        incomplete = true;
                         component_syms.push(Symbol::new(SymbolType::Partial));
                         let mut k = j + 1;
                         while k < sa_size && sa[k] < 0 {
@@ -5089,6 +5091,11 @@ impl qr_code_data_list {
                         if j >= sa_size {
                             break;
                         }
+                        // A part is missing between two we do have: mark the
+                        // break so a caller can see where text is absent
+                        // rather than reading across the seam.
+                        sa_text.push(0);
+                        sa_raw.push(0);
                     }
 
                     let qrdataj = &qrdata[sa[j] as usize];
@@ -5173,8 +5180,19 @@ impl qr_code_data_list {
                             symbols.push(sym);
                         }
                     } else {
-                        // Multiple QR codes - create structured append symbol
-                        let mut sa_sym = Symbol::new(SymbolType::QrCode);
+                        // A structured-append group: one symbol standing for
+                        // the whole message, with the codes that make it up as
+                        // its components. If any of them is missing the text is
+                        // a fragment, and reporting a fragment as a complete QR
+                        // code gives a caller no way to tell — so the group is
+                        // reported as `Partial`, with the missing places held
+                        // by `Partial` components.
+                        let sa_type = if incomplete {
+                            SymbolType::Partial
+                        } else {
+                            SymbolType::QrCode
+                        };
+                        let mut sa_sym = Symbol::new(sa_type);
                         sa_sym.components = component_syms;
                         sa_sym.data = sa_text;
                         sa_sym.raw_data = Some(sa_raw);
