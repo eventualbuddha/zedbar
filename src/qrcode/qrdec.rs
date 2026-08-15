@@ -97,7 +97,24 @@ fn qr_divround(x: i32, y: i32) -> i32 {
 /// Multiplies 32-bit numbers a and b, adds r, and takes bits [s, s+31] of the result.
 /// This is used for fixed-point arithmetic to avoid overflow.
 fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> i32 {
-    ((a as i64 * b as i64 + r) >> s) as i32
+    ((a as i64 * b as i64 + r) >> s.clamp(0, 63)) as i32
+}
+
+/// Arithmetic right shift with the count clamped to the width of the value.
+///
+/// The downscaling exponents in the homography builders come from `qr_ilog` of
+/// magnitudes that can span the whole 32-bit range, so they can exceed 31 —
+/// which means the transform is too large to represent at all. The only
+/// answer left is the sign bit repeated, which is what this gives; C leaves
+/// the shift undefined, and on x86 it silently uses `count & 31` instead.
+fn qr_shr(x: i32, n: i32) -> i32 {
+    x >> n.clamp(0, 31)
+}
+
+/// The rounding constant `(1 << s) >> 1` for a downscale of `s` bits, for
+/// exponents too large to shift by.
+fn qr_round_const(s: i32) -> i64 {
+    if s <= 0 { 0 } else { 1i64 << (s - 1).min(62) }
 }
 
 /// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
@@ -681,7 +698,7 @@ pub(crate) fn qr_hom_init(
             .max(a22.unsigned_abs()),
     );
     let s1 = i32::max(0, _res + i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 2));
-    let r1 = (1i64 << s1) >> 1;
+    let r1 = qr_round_const(s1);
 
     // Compute the final coefficients of the forward transform
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
@@ -691,10 +708,13 @@ pub(crate) fn qr_hom_init(
     _hom.fwd[1][0] = qr_fixmul(dy10, a20_22, r1, s1);
     _hom.fwd[1][1] = qr_fixmul(dy20, a21_22, r1, s1);
     _hom.y0 = _y0;
-    _hom.fwd[2][0] = a20.wrapping_add(r1 as i32) >> s1;
-    _hom.fwd[2][1] = a21.wrapping_add(r1 as i32) >> s1;
+    _hom.fwd[2][0] = qr_shr(a20.wrapping_add(r1 as i32), s1);
+    _hom.fwd[2][1] = qr_shr(a21.wrapping_add(r1 as i32), s1);
     _hom.fwd22 = if s1 > _res {
-        a22.wrapping_add((r1 >> _res) as i32) >> (s1 - _res)
+        qr_shr(
+            a22.wrapping_add((r1 >> _res.clamp(0, 63)) as i32),
+            s1 - _res,
+        )
     } else {
         a22.wrapping_shl((_res - s1) as u32)
     };
@@ -720,9 +740,9 @@ pub(crate) fn qr_hom_init(
     );
     let b2 = qr_ilog(a22.unsigned_abs()) - s1;
     let s2 = i32::max(0, i32::max(b0, b1) + b2 - (QR_INT_BITS - 3));
-    let r2 = (1i64 << s2) >> 1;
+    let r2 = qr_round_const(s2);
     let s1 = s1 + s2;
-    let r1 = r1 << s2;
+    let r1 = qr_round_const(s1);
 
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
     _hom.inv[0][0] = qr_fixmul(_hom.fwd[1][1], a22, r1, s1);
@@ -3227,36 +3247,48 @@ fn qr_hom_cell_init(
         0
     };
 
-    // Compute map from unit square to image
-    let dx10 = x1 - x0;
-    let dx20 = x2 - x0;
-    let dx30 = x3 - x0;
-    let dx31 = x3 - x1;
-    let dx32 = x3 - x2;
-    let dy10 = y1 - y0;
-    let dy20 = y2 - y0;
-    let dy30 = y3 - y0;
-    let dy31 = y3 - y1;
-    let dy32 = y3 - y2;
-    let a20 = dx32 * dy10 - dx10 * dy32;
-    let a21 = dx20 * dy31 - dx31 * dy20;
-    let a22 = dx32 * dy31 - dx31 * dy32;
+    // Compute map from unit square to image.
+    //
+    // These cofactors are quadratic in the corner spacing, and the corners
+    // come from a projection that can run far outside the image, so they leave
+    // 32 bits. See `qr_hom_init`, which computes the same thing from the same
+    // kind of input: the wrapping is what the C does, and a cell built from
+    // wrapped cofactors goes on to fail the checks downstream.
+    let dx10 = x1.wrapping_sub(x0);
+    let dx20 = x2.wrapping_sub(x0);
+    let dx30 = x3.wrapping_sub(x0);
+    let dx31 = x3.wrapping_sub(x1);
+    let dx32 = x3.wrapping_sub(x2);
+    let dy10 = y1.wrapping_sub(y0);
+    let dy20 = y2.wrapping_sub(y0);
+    let dy30 = y3.wrapping_sub(y0);
+    let dy31 = y3.wrapping_sub(y1);
+    let dy32 = y3.wrapping_sub(y2);
+    let a20 = (dx32.wrapping_mul(dy10)).wrapping_sub(dx10.wrapping_mul(dy32));
+    let a21 = (dx20.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy20));
+    let a22 = (dx32.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy32));
+    let a20_22 = a20.wrapping_add(a22);
+    let a21_22 = a21.wrapping_add(a22);
 
     // Figure out if we need to downscale
-    let b0 = qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 = qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let b0 = qr_ilog(dx10.unsigned_abs().max(dy10.unsigned_abs())) + qr_ilog(a20_22.unsigned_abs());
+    let b1 = qr_ilog(dx20.unsigned_abs().max(dy20.unsigned_abs())) + qr_ilog(a21_22.unsigned_abs());
+    let b2 = qr_ilog(
+        a20.unsigned_abs()
+            .max(a21.unsigned_abs())
+            .max(a22.unsigned_abs()),
+    );
     let shift = i32::max(
         0,
         i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC),
     );
-    let round = (1i64 << shift) >> 1;
+    let round = qr_round_const(shift);
 
     // Compute final coefficients of forward transform
-    let a00 = qr_fixmul(dx10, a20 + a22, round, shift);
-    let a01 = qr_fixmul(dx20, a21 + a22, round, shift);
-    let a10 = qr_fixmul(dy10, a20 + a22, round, shift);
-    let a11 = qr_fixmul(dy20, a21 + a22, round, shift);
+    let a00 = qr_fixmul(dx10, a20_22, round, shift);
+    let a01 = qr_fixmul(dx20, a21_22, round, shift);
+    let a10 = qr_fixmul(dy10, a20_22, round, shift);
+    let a11 = qr_fixmul(dy20, a21_22, round, shift);
 
     // Compose the two transforms (divide by inverted coefficients)
     cell.fwd[0][0] = (if i00 != 0 { qr_divround(a00, i00) } else { 0 })
@@ -3267,40 +3299,46 @@ fn qr_hom_cell_init(
         + (if i10 != 0 { qr_divround(a11, i10) } else { 0 });
     cell.fwd[1][1] = (if i01 != 0 { qr_divround(a10, i01) } else { 0 })
         + (if i11 != 0 { qr_divround(a11, i11) } else { 0 });
-    cell.fwd[2][0] = ((if i00 != 0 { qr_divround(a20, i00) } else { 0 })
-        + (if i10 != 0 { qr_divround(a21, i10) } else { 0 })
-        + (if i20 != 0 { qr_divround(a22, i20) } else { 0 })
-        + round as i32)
-        >> shift;
-    cell.fwd[2][1] = ((if i01 != 0 { qr_divround(a20, i01) } else { 0 })
-        + (if i11 != 0 { qr_divround(a21, i11) } else { 0 })
-        + (if i21 != 0 { qr_divround(a22, i21) } else { 0 })
-        + round as i32)
-        >> shift;
-    cell.fwd[2][2] = (a22 + round as i32) >> shift;
+    cell.fwd[2][0] = qr_shr(
+        (if i00 != 0 { qr_divround(a20, i00) } else { 0 })
+            .wrapping_add(if i10 != 0 { qr_divround(a21, i10) } else { 0 })
+            .wrapping_add(if i20 != 0 { qr_divround(a22, i20) } else { 0 })
+            .wrapping_add(round as i32),
+        shift,
+    );
+    cell.fwd[2][1] = qr_shr(
+        (if i01 != 0 { qr_divround(a20, i01) } else { 0 })
+            .wrapping_add(if i11 != 0 { qr_divround(a21, i11) } else { 0 })
+            .wrapping_add(if i21 != 0 { qr_divround(a22, i21) } else { 0 })
+            .wrapping_add(round as i32),
+        shift,
+    );
+    cell.fwd[2][2] = qr_shr(a22.wrapping_add(round as i32), shift);
 
     // Compute offsets to distribute rounding error over whole range
     // (instead of concentrating it in the (u3,v3) corner)
-    let mut x = cell.fwd[0][0] * du10 + cell.fwd[0][1] * dv10;
-    let mut y = cell.fwd[1][0] * du10 + cell.fwd[1][1] * dv10;
-    let mut w = cell.fwd[2][0] * du10 + cell.fwd[2][1] * dv10 + cell.fwd[2][2];
-    let mut a02 = dx10 * w - x;
-    let mut a12 = dy10 * w - y;
+    let project = |du: i32, dv: i32| {
+        let x = (cell.fwd[0][0].wrapping_mul(du)).wrapping_add(cell.fwd[0][1].wrapping_mul(dv));
+        let y = (cell.fwd[1][0].wrapping_mul(du)).wrapping_add(cell.fwd[1][1].wrapping_mul(dv));
+        let w = (cell.fwd[2][0].wrapping_mul(du))
+            .wrapping_add(cell.fwd[2][1].wrapping_mul(dv))
+            .wrapping_add(cell.fwd[2][2]);
+        (x, y, w)
+    };
+    let mut a02 = 0i32;
+    let mut a12 = 0i32;
+    for (du, dv, dx, dy) in [
+        (du10, dv10, dx10, dy10),
+        (du20, dv20, dx20, dy20),
+        (du30, dv30, dx30, dy30),
+    ] {
+        let (x, y, w) = project(du, dv);
+        a02 = a02.wrapping_add(dx.wrapping_mul(w).wrapping_sub(x));
+        a12 = a12.wrapping_add(dy.wrapping_mul(w).wrapping_sub(y));
+    }
 
-    x = cell.fwd[0][0] * du20 + cell.fwd[0][1] * dv20;
-    y = cell.fwd[1][0] * du20 + cell.fwd[1][1] * dv20;
-    w = cell.fwd[2][0] * du20 + cell.fwd[2][1] * dv20 + cell.fwd[2][2];
-    a02 += dx20 * w - x;
-    a12 += dy20 * w - y;
-
-    x = cell.fwd[0][0] * du30 + cell.fwd[0][1] * dv30;
-    y = cell.fwd[1][0] * du30 + cell.fwd[1][1] * dv30;
-    w = cell.fwd[2][0] * du30 + cell.fwd[2][1] * dv30 + cell.fwd[2][2];
-    a02 += dx30 * w - x;
-    a12 += dy30 * w - y;
-
-    cell.fwd[0][2] = (a02 + 2) >> 2;
-    cell.fwd[1][2] = (a12 + 2) >> 2;
+    cell.fwd[0][2] = a02.wrapping_add(2) >> 2;
+    cell.fwd[1][2] = a12.wrapping_add(2) >> 2;
     cell.x0 = x0;
     cell.y0 = y0;
     cell.u0 = u0;
@@ -5535,5 +5573,30 @@ mod tests {
         assert_eq!(qr_point_distance2(&[i32::MAX, 0], &[i32::MIN, 0]), u32::MAX);
         assert_eq!(qr_point_distance2(&[0, 200_000], &[0, -200_000]), u32::MAX);
         assert!(qr_point_distance2(&[0, 100_000], &[0, 0]) > 65535 * 65535);
+    }
+
+    /// Both homography builders take four image corners and form cofactors
+    /// that are quadratic in the spacing between them. The corners come from
+    /// projections that go singular as the geometry degenerates — one of them
+    /// reports a point at infinity as `i32::MIN`/`MAX` outright — so the
+    /// cofactors have to survive corners anywhere in the range. zbar computes
+    /// them in `int` and lets them wrap; what must not happen is a trap.
+    #[test]
+    fn homographies_survive_saturated_corners() {
+        const EXTREMES: [i32; 5] = [i32::MIN, -100_000, 0, 100_000, i32::MAX];
+
+        for &a in &EXTREMES {
+            for &b in &EXTREMES {
+                let mut hom = qr_hom::default();
+                qr_hom_init(&mut hom, a, b, b, a, a, a, b, b, QR_HOM_BITS);
+
+                let mut cell = qr_hom_cell::default();
+                // Code-space corners stay a sane unit square; it is the image
+                // corners that come from the runaway projection.
+                qr_hom_cell_init(
+                    &mut cell, 0, 0, 176, 0, 0, 176, 176, 176, a, b, b, a, a, a, b, b,
+                );
+            }
+        }
     }
 }
