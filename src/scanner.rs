@@ -31,7 +31,7 @@
 use crate::config::DecoderConfig;
 use crate::image::Image;
 use crate::img_scanner::ImageScanner;
-use crate::symbol::Symbol;
+use crate::symbol::{Symbol, SymbolType};
 
 /// A region where QR finder patterns were detected but decoding failed.
 ///
@@ -225,9 +225,12 @@ impl Scanner {
     /// the current resolution.
     ///
     /// When [`DecoderConfig::retry_undecoded_regions`] is enabled, each
-    /// undecoded finder region is automatically cropped, upscaled 4x, and
-    /// re-scanned. Successfully decoded symbols have their coordinates
-    /// mapped back to the original image frame.
+    /// undecoded finder region is automatically cropped, upscaled, and
+    /// re-scanned. Only QR and SQ codes are taken from those re-scans — the
+    /// regions come from QR finder patterns, and a linear symbology gains
+    /// nothing from upscaling a fragment it already saw at full resolution.
+    /// Recovered symbols have their coordinates mapped back to the original
+    /// image frame.
     pub fn scan(&mut self, image: &mut Image) -> ScanResult {
         let (mut symbols, raw_regions) = self.scanner.scan_image(image.as_mut_image());
         let finder_regions: Vec<FinderRegion> = raw_regions
@@ -306,7 +309,17 @@ impl Scanner {
                 let Some(mut upscaled) = cropped.upscale(scale) else {
                     continue;
                 };
-                let (mut retry_symbols, _) = self.scanner.scan_image(upscaled.as_mut_image());
+                let (retry_symbols, _) = self.scanner.scan_image(upscaled.as_mut_image());
+                // The crop is a QR finder region and the upscale carries no
+                // detail the linear decoders did not already have at full
+                // resolution — only more scan lines across a fragment of the
+                // image, which is how a short read happens. Interleaved 2 of 5
+                // is the clearest case: any even-length substring of one is
+                // itself a valid symbol. Take only what the retry exists for.
+                let mut retry_symbols: Vec<Symbol> = retry_symbols
+                    .into_iter()
+                    .filter(|s| matches!(s.symbol_type(), SymbolType::QrCode | SymbolType::SqCode))
+                    .collect();
                 if retry_symbols.is_empty() {
                     continue;
                 }

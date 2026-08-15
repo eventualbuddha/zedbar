@@ -407,3 +407,96 @@ fn scan_results_do_not_depend_on_scan_history() {
         }
     }
 }
+
+/// The four corners of the code area are checked against the image bounds
+/// before a homography is fitted to them, but the bottom-right corner is
+/// replaced afterwards by one projected from an alignment pattern — and that
+/// projection divides by a determinant that can be near-degenerate, so it can
+/// land hundreds of image widths away. The cofactors built from such a corner
+/// are quadratic in the corner spacing and overflow, which trapped here and
+/// silently produced a meaningless transform in the C original.
+///
+/// This image reaches that projection on its inverted pass, and decodes once
+/// the out-of-range corner is discarded in favour of the edge intersection.
+#[test]
+fn alignment_pattern_corner_stays_in_range() {
+    let img = image::open("examples/qr-alignment-corner.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+    let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+
+    let config = DecoderConfig::all().test_inverted(true);
+    let result = Scanner::with_config(config).scan(&mut image);
+
+    let data: Vec<_> = result.iter().filter_map(|s| s.data_string()).collect();
+    assert_eq!(data, ["version 20 payload padding padding padding"]);
+}
+
+/// The 5x5 alignment-pattern probe offsets its template positions by the
+/// distance between the pattern's projected centre and the position being
+/// tried. Both come out of a projection that can collapse, so the offsets are
+/// unbounded — they are meant to run off the image, where the sampler clamps
+/// them, but adding them trapped first.
+///
+/// Fixture: a mutated version-40 code that reaches the alignment search with a
+/// degenerate cell.
+#[test]
+fn alignment_pattern_probe_offsets_do_not_trap() {
+    let img = image::open("examples/qr-alignment-fetch.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+    let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+    // No assertion on the result: the point is that the scan completes.
+    let _ = Scanner::with_config(DecoderConfig::all()).scan(&mut image);
+}
+
+/// The alignment-pattern search returns a centre found by walking a template
+/// over the image, then refines it by measuring crossings between template
+/// points. Both the template and the walk come from a projection that goes
+/// singular as the geometry degenerates, so either can land far outside the
+/// image — where the refinement's offsets leave 32 bits before the sampler's
+/// clamp could apply.
+///
+/// Fixture: a mutated version-40 code whose inverted pass drives the search
+/// into that state.
+#[test]
+fn alignment_pattern_centre_stays_in_range() {
+    let img = image::open("examples/qr-alignment-fetch.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+    let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+    let config = DecoderConfig::all().test_inverted(true);
+    // No assertion on the result: the point is that the scan completes.
+    let _ = Scanner::with_config(config).scan(&mut image);
+}
+
+/// `retry_undecoded_regions` crops each undecoded QR finder region, upscales
+/// it and scans again. The crop comes from QR finder patterns and the upscale
+/// carries no detail the linear decoders lacked at full resolution — it only
+/// gives them more scan lines across a fragment, which is how a short read
+/// happens. Interleaved 2 of 5 is the clearest case, since any even-length
+/// substring of one is itself a valid symbol.
+///
+/// This image is a downscaled I2/5 barcode; the retry used to report
+/// `2351768220` alongside the real `11632351768220`.
+#[test]
+fn retry_does_not_invent_linear_symbols() {
+    let img = image::open("examples/i25-retry-shortread.png")
+        .expect("fixture missing")
+        .to_luma8();
+    let (w, h) = (img.width(), img.height());
+
+    for retry in [false, true] {
+        let mut image = Image::from_gray(img.as_raw(), w, h).unwrap();
+        let config = DecoderConfig::all().retry_undecoded_regions(retry);
+        let data: Vec<_> = Scanner::with_config(config)
+            .scan(&mut image)
+            .iter()
+            .filter_map(|s| s.data_string().map(str::to_owned))
+            .collect();
+        assert_eq!(data, ["11632351768220"], "retry_undecoded_regions({retry})");
+    }
+}

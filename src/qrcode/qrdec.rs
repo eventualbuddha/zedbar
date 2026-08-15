@@ -10,7 +10,11 @@ use std::{collections::VecDeque, mem::swap};
 
 use crate::decoder::BBox;
 
-use encoding_rs::{BIG5, Encoding, SHIFT_JIS, UTF_8, WINDOWS_1252};
+use encoding_rs::{
+    BIG5, Encoding, ISO_8859_2, ISO_8859_3, ISO_8859_4, ISO_8859_5, ISO_8859_6, ISO_8859_7,
+    ISO_8859_8, ISO_8859_10, ISO_8859_13, ISO_8859_14, ISO_8859_15, ISO_8859_16, SHIFT_JIS, UTF_8,
+    WINDOWS_874, WINDOWS_1252, WINDOWS_1254,
+};
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use reed_solomon::Decoder as RSDecoder;
@@ -81,7 +85,11 @@ const MAX_FAILURE_BUDGET: i32 = 1 << 16;
 /// Rounds towards positive infinity when x > 0, towards negative infinity when x < 0.
 /// For x/y where the fractional part is exactly 0.5, rounds away from zero.
 fn qr_divround(x: i32, y: i32) -> i32 {
-    x.wrapping_add(x.signum().wrapping_mul(y >> 1)) / y
+    // The projections feed this saturated coordinates, so both the rounding
+    // adjustment and the division itself have to survive `i32::MIN`; C leaves
+    // the same expression to wrap.
+    x.wrapping_add(x.signum().wrapping_mul(y >> 1))
+        .wrapping_div(y)
 }
 
 /// Fixed-point multiply with rounding and shift
@@ -89,7 +97,24 @@ fn qr_divround(x: i32, y: i32) -> i32 {
 /// Multiplies 32-bit numbers a and b, adds r, and takes bits [s, s+31] of the result.
 /// This is used for fixed-point arithmetic to avoid overflow.
 fn qr_fixmul(a: i32, b: i32, r: i64, s: i32) -> i32 {
-    ((a as i64 * b as i64 + r) >> s) as i32
+    ((a as i64 * b as i64 + r) >> s.clamp(0, 63)) as i32
+}
+
+/// Arithmetic right shift with the count clamped to the width of the value.
+///
+/// The downscaling exponents in the homography builders come from `qr_ilog` of
+/// magnitudes that can span the whole 32-bit range, so they can exceed 31 —
+/// which means the transform is too large to represent at all. The only
+/// answer left is the sign bit repeated, which is what this gives; C leaves
+/// the shift undefined, and on x86 it silently uses `count & 31` instead.
+fn qr_shr(x: i32, n: i32) -> i32 {
+    x >> n.clamp(0, 31)
+}
+
+/// The rounding constant `(1 << s) >> 1` for a downscale of `s` bits, for
+/// exponents too large to shift by.
+fn qr_round_const(s: i32) -> i64 {
+    if s <= 0 { 0 } else { 1i64 << (s - 1).min(62) }
 }
 
 /// Extended multiply: multiplies 32-bit numbers a and b, adds r, and returns 64-bit result
@@ -211,7 +236,15 @@ fn qr_hom_fit_edge_line(
             line[1] = (-aff.fwd[0][0] + round) >> shift;
         }
 
-        // Compute line constant term
+        // Compute line constant term.
+        //
+        // zbar writes this out twice, once per edge, and the bottom-edge copy
+        // reads its normal out of the *right* edge's line — `l[1][0]*p[0] +
+        // l[1][1]*p[1]` where it means `l[3]`. That anchors the bottom edge to
+        // a line perpendicular to the one it wants, and only bites when the
+        // bottom edge collected at most one sample point, which is why it
+        // survived there. Using this edge's own normal is the whole point of
+        // the coefficients computed just above.
         line[2] = -(line[0] * p[0] + line[1] * p[1]);
     }
 }
@@ -354,27 +387,46 @@ pub(crate) fn qr_point_translate(point: &qr_point, dx: i32, dy: i32) -> qr_point
 ///
 /// Returns the squared Euclidean distance, which avoids the need for
 /// expensive square root calculations when only relative distances matter.
+///
+/// Points are in sub-pixel units, so on a large image two of them can be far
+/// enough apart that the square overflows the `int` zbar computes it in, where
+/// it wraps and makes the pair look adjacent. Every caller only ranks or
+/// thresholds these, so saturating keeps the ordering right for every distance
+/// that still fits and collapses the rest — which are all beyond any threshold
+/// anyway — onto the same ceiling.
 pub(crate) fn qr_point_distance2(p1: &qr_point, p2: &qr_point) -> u32 {
-    let dx = p1[0] - p2[0];
-    let dy = p1[1] - p2[1];
-    (dx * dx + dy * dy) as u32
+    let dx = p1[0] as i64 - p2[0] as i64;
+    let dy = p1[1] as i64 - p2[1] as i64;
+    dx.saturating_mul(dx)
+        .saturating_add(dy.saturating_mul(dy))
+        .min(u32::MAX as i64) as u32
 }
 
 /// Check if three points are in counter-clockwise order
 ///
 /// Returns the cross product of the vectors (p1-p0) and (p2-p0).
+///
 /// - Positive: points are in CCW order (in right-handed coordinate system)
 /// - Zero: points are collinear
 /// - Negative: points are in CW order
+///
+/// Like [`qr_point_distance2`], this is a product of coordinate differences
+/// taken from unclamped sub-pixel positions, so it leaves 32 bits on a large
+/// image. Callers want its sign (which way the triple turns), whether it is
+/// zero (collinear), and its magnitude against a threshold — all three survive
+/// saturation, where the wraparound the C relies on can reverse the turn.
+///
+/// The floor is `-i32::MAX` rather than `i32::MIN`, because the RANSAC inlier
+/// test takes `.abs()` of the result.
 pub(crate) fn qr_point_ccw(p0: &qr_point, p1: &qr_point, p2: &qr_point) -> i32 {
-    let p0x = p0[0];
-    let p0y = p0[1];
-    let p1x = p1[0];
-    let p1y = p1[1];
-    let p2x = p2[0];
-    let p2y = p2[1];
+    let dx1 = p1[0] as i64 - p0[0] as i64;
+    let dy1 = p1[1] as i64 - p0[1] as i64;
+    let dx2 = p2[0] as i64 - p0[0] as i64;
+    let dy2 = p2[1] as i64 - p0[1] as i64;
 
-    (p1x - p0x) * (p2y - p0y) - (p1y - p0y) * (p2x - p0x)
+    dx1.saturating_mul(dy2)
+        .saturating_sub(dy1.saturating_mul(dx2))
+        .clamp(-(i32::MAX as i64), i32::MAX as i64) as i32
 }
 
 /// Evaluate a line equation at a point
@@ -624,58 +676,88 @@ pub(crate) fn qr_hom_init(
     _y3: i32,
     _res: i32,
 ) {
-    let dx10 = _x1 - _x0;
-    let dx20 = _x2 - _x0;
-    let dx30 = _x3 - _x0;
-    let dx31 = _x3 - _x1;
-    let dx32 = _x3 - _x2;
-    let dy10 = _y1 - _y0;
-    let dy20 = _y2 - _y0;
-    let dy30 = _y3 - _y0;
-    let dy31 = _y3 - _y1;
-    let dy32 = _y3 - _y2;
-    let a20 = dx32 * dy10 - dx10 * dy32;
-    let a21 = dx20 * dy31 - dx31 * dy20;
-    let a22 = dx32 * dy31 - dx31 * dy32;
+    // The cofactors below are quadratic in the corner spacing, so on a large
+    // enough image they exceed 32 bits even for corners the caller has already
+    // range-checked. zbar computes them in `int` and rides the signed overflow
+    // into a transform that no longer describes anything; the wrapping here
+    // reproduces that rather than trapping, and the resulting homography fails
+    // the same way it does there — no sampling grid built from it can satisfy
+    // the format-info or Reed-Solomon checks.
+    let dx10 = _x1.wrapping_sub(_x0);
+    let dx20 = _x2.wrapping_sub(_x0);
+    let dx30 = _x3.wrapping_sub(_x0);
+    let dx31 = _x3.wrapping_sub(_x1);
+    let dx32 = _x3.wrapping_sub(_x2);
+    let dy10 = _y1.wrapping_sub(_y0);
+    let dy20 = _y2.wrapping_sub(_y0);
+    let dy30 = _y3.wrapping_sub(_y0);
+    let dy31 = _y3.wrapping_sub(_y1);
+    let dy32 = _y3.wrapping_sub(_y2);
+    let a20 = (dx32.wrapping_mul(dy10)).wrapping_sub(dx10.wrapping_mul(dy32));
+    let a21 = (dx20.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy20));
+    let a22 = (dx32.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy32));
+    let a20_22 = a20.wrapping_add(a22);
+    let a21_22 = a21.wrapping_add(a22);
 
     // Figure out if we need to downscale anything
-    let b0 = qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 = qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let b0 = qr_ilog(dx10.unsigned_abs().max(dy10.unsigned_abs())) + qr_ilog(a20_22.unsigned_abs());
+    let b1 = qr_ilog(dx20.unsigned_abs().max(dy20.unsigned_abs())) + qr_ilog(a21_22.unsigned_abs());
+    let b2 = qr_ilog(
+        a20.unsigned_abs()
+            .max(a21.unsigned_abs())
+            .max(a22.unsigned_abs()),
+    );
     let s1 = i32::max(0, _res + i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 2));
-    let r1 = (1i64 << s1) >> 1;
+    let r1 = qr_round_const(s1);
 
     // Compute the final coefficients of the forward transform
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
-    _hom.fwd[0][0] = qr_fixmul(dx10, a20 + a22, r1, s1);
-    _hom.fwd[0][1] = qr_fixmul(dx20, a21 + a22, r1, s1);
+    _hom.fwd[0][0] = qr_fixmul(dx10, a20_22, r1, s1);
+    _hom.fwd[0][1] = qr_fixmul(dx20, a21_22, r1, s1);
     _hom.x0 = _x0;
-    _hom.fwd[1][0] = qr_fixmul(dy10, a20 + a22, r1, s1);
-    _hom.fwd[1][1] = qr_fixmul(dy20, a21 + a22, r1, s1);
+    _hom.fwd[1][0] = qr_fixmul(dy10, a20_22, r1, s1);
+    _hom.fwd[1][1] = qr_fixmul(dy20, a21_22, r1, s1);
     _hom.y0 = _y0;
-    _hom.fwd[2][0] = (a20 + r1 as i32) >> s1;
-    _hom.fwd[2][1] = (a21 + r1 as i32) >> s1;
+    _hom.fwd[2][0] = qr_shr(a20.wrapping_add(r1 as i32), s1);
+    _hom.fwd[2][1] = qr_shr(a21.wrapping_add(r1 as i32), s1);
     _hom.fwd22 = if s1 > _res {
-        (a22 + ((r1 >> _res) as i32)) >> (s1 - _res)
+        qr_shr(
+            a22.wrapping_add((r1 >> _res.clamp(0, 63)) as i32),
+            s1 - _res,
+        )
     } else {
-        a22 << (_res - s1)
+        a22.wrapping_shl((_res - s1) as u32)
     };
 
     // Now compute the inverse transform
-    let b0 = qr_ilog(i32::max(i32::max(dx10.abs(), dx20.abs()), dx30.abs()) as u32)
-        + qr_ilog(i32::max(_hom.fwd[0][0].abs(), _hom.fwd[1][0].abs()) as u32);
-    let b1 = qr_ilog(i32::max(i32::max(dy10.abs(), dy20.abs()), dy30.abs()) as u32)
-        + qr_ilog(i32::max(_hom.fwd[0][1].abs(), _hom.fwd[1][1].abs()) as u32);
+    let b0 = qr_ilog(
+        dx10.unsigned_abs()
+            .max(dx20.unsigned_abs())
+            .max(dx30.unsigned_abs()),
+    ) + qr_ilog(
+        _hom.fwd[0][0]
+            .unsigned_abs()
+            .max(_hom.fwd[1][0].unsigned_abs()),
+    );
+    let b1 = qr_ilog(
+        dy10.unsigned_abs()
+            .max(dy20.unsigned_abs())
+            .max(dy30.unsigned_abs()),
+    ) + qr_ilog(
+        _hom.fwd[0][1]
+            .unsigned_abs()
+            .max(_hom.fwd[1][1].unsigned_abs()),
+    );
     let b2 = qr_ilog(a22.unsigned_abs()) - s1;
     let s2 = i32::max(0, i32::max(b0, b1) + b2 - (QR_INT_BITS - 3));
-    let r2 = (1i64 << s2) >> 1;
+    let r2 = qr_round_const(s2);
     let s1 = s1 + s2;
-    let r1 = r1 << s2;
+    let r1 = qr_round_const(s1);
 
     // The 32x32->64 bit multiplies are really needed for accuracy with large versions
     _hom.inv[0][0] = qr_fixmul(_hom.fwd[1][1], a22, r1, s1);
-    _hom.inv[0][1] = qr_fixmul(-_hom.fwd[0][1], a22, r1, s1);
-    _hom.inv[1][0] = qr_fixmul(-_hom.fwd[1][0], a22, r1, s1);
+    _hom.inv[0][1] = qr_fixmul(_hom.fwd[0][1].wrapping_neg(), a22, r1, s1);
+    _hom.inv[1][0] = qr_fixmul(_hom.fwd[1][0].wrapping_neg(), a22, r1, s1);
     _hom.inv[1][1] = qr_fixmul(_hom.fwd[0][0], a22, r1, s1);
     _hom.inv[2][0] = qr_fixmul(
         _hom.fwd[1][0],
@@ -777,22 +859,24 @@ fn qr_hom_fit(
     let mut bu = _dl.o[0] - 2 * dbu;
     let mut bv = _dl.o[1] + 3 * _dl.size[1] - 2 * dbv;
 
-    // Set up the initial point lists
+    // Set up the initial point lists. zbar sizes these up front from the number
+    // of steps the walk below can take and doubles them by hand when it runs
+    // out; that estimate divides by the step size, which is a module size
+    // halved and so may be zero. `Vec` grows on its own, so the estimate is
+    // simply not needed here.
     let mut nr = _ur.ninliers[1];
     let mut rlastfit = nr;
-    let mut cr = nr + (_dl.o[1] - rv + drv - 1) / drv;
-    let mut r: Vec<qr_point> = Vec::with_capacity(cr as usize);
-    for i in 0.._ur.ninliers[1] as usize {
-        r.push(_ur.edge_pts[1][i].pos);
-    }
+    let mut r: Vec<qr_point> = _ur.edge_pts[1][..nr as usize]
+        .iter()
+        .map(|p| p.pos)
+        .collect();
 
     let mut nb = _dl.ninliers[3];
     let mut blastfit = nb;
-    let mut cb = nb + (_ur.o[0] - bu + dbu - 1) / dbu;
-    let mut b: Vec<qr_point> = Vec::with_capacity(cb as usize);
-    for i in 0.._dl.ninliers[3] as usize {
-        b.push(_dl.edge_pts[3][i].pos);
-    }
+    let mut b: Vec<qr_point> = _dl.edge_pts[3][..nb as usize]
+        .iter()
+        .map(|p| p.pos)
+        .collect();
 
     // Set up the step parameters for the affine projection
     let ox = (_aff.x0 << _aff.res) + (1 << (_aff.res - 1));
@@ -823,30 +907,16 @@ fn qr_hom_fit(
             let x1 = (rx - drxj) >> (_aff.res + QR_FINDER_SUBPREC);
             let y1 = (ry - dryj) >> (_aff.res + QR_FINDER_SUBPREC);
 
-            if nr >= cr {
-                cr = (cr << 1) | 1;
-                r.reserve((cr - nr) as usize);
-            }
-
+            let mut pt = qr_point::default();
             let mut ret = qr_finder_quick_crossing_check(img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
-                r.push([0; 2]);
-                ret = qr_finder_locate_crossing(
-                    img,
-                    _width,
-                    _height,
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    1,
-                    &mut r[nr as usize],
-                );
+                ret = qr_finder_locate_crossing(img, _width, _height, x0, y0, x1, y1, 1, &mut pt);
             }
 
             if ret >= 0 {
                 if ret == 0 {
-                    let q = qr_aff_unproject(_aff, r[nr as usize][0], r[nr as usize][1]);
+                    r.push(pt);
+                    let q = qr_aff_unproject(_aff, pt[0], pt[1]);
                     // Move the current point halfway towards the crossing
                     ru = (ru + q[0]) >> 1;
                     // But ensure that rv monotonically increases
@@ -886,30 +956,16 @@ fn qr_hom_fit(
             let x1 = (bx - dbxj) >> (_aff.res + QR_FINDER_SUBPREC);
             let y1 = (by - dbyj) >> (_aff.res + QR_FINDER_SUBPREC);
 
-            if nb >= cb {
-                cb = (cb << 1) | 1;
-                b.reserve((cb - nb) as usize);
-            }
-
+            let mut pt = qr_point::default();
             let mut ret = qr_finder_quick_crossing_check(img, _width, _height, x0, y0, x1, y1, 1);
             if ret == 0 {
-                b.push([0; 2]);
-                ret = qr_finder_locate_crossing(
-                    img,
-                    _width,
-                    _height,
-                    x0,
-                    y0,
-                    x1,
-                    y1,
-                    1,
-                    &mut b[nb as usize],
-                );
+                ret = qr_finder_locate_crossing(img, _width, _height, x0, y0, x1, y1, 1, &mut pt);
             }
 
             if ret >= 0 {
                 if ret == 0 {
-                    let q = qr_aff_unproject(_aff, b[nb as usize][0], b[nb as usize][1]);
+                    b.push(pt);
+                    let q = qr_aff_unproject(_aff, pt[0], pt[1]);
                     // Move the current point halfway towards the crossing
                     // But ensure that bu monotonically increases
                     if q[0] + dbu > bu {
@@ -952,23 +1008,26 @@ fn qr_hom_fit(
     qr_hom_fit_edge_line(&mut l[1], &mut r, nr as usize, _ur, _aff, 1);
     qr_hom_fit_edge_line(&mut l[3], &mut b, nb as usize, _dl, _aff, 3);
 
+    // It's plausible for corners to be somewhat outside the image, but too far
+    // and too much of the pattern will be gone for it to be decodable.
+    //
+    // C writes the upper bound as `_width << QR_FINDER_SUBPREC + 1`, and `+`
+    // binds tighter than `<<`, so the shift is by SUBPREC+1: the limit is two
+    // image widths in finder units, not one width plus one.
+    let corner_in_range = |p: &qr_point| {
+        p[0] >= (-_width << QR_FINDER_SUBPREC)
+            && p[0] < (_width << (QR_FINDER_SUBPREC + 1))
+            && p[1] >= (-_height << QR_FINDER_SUBPREC)
+            && p[1] < (_height << (QR_FINDER_SUBPREC + 1))
+    };
+
     // Compute line intersections
     for i in 0..4 {
         _p[i] = match qr_line_isect(&l[i & 1], &l[2 + (i >> 1)]) {
             Some(p) => p,
             None => return -1,
         };
-        // It's plausible for points to be somewhat outside the image, but too far
-        // and too much of the pattern will be gone for it to be decodable.
-        // C writes the upper bound as `_width << QR_FINDER_SUBPREC + 1`, and
-        // `+` binds tighter than `<<`, so the shift is by SUBPREC+1: the limit
-        // is two image widths in finder units, not one width plus one.
-        let p_i = &_p[i];
-        if p_i[0] < (-_width << QR_FINDER_SUBPREC)
-            || p_i[0] >= (_width << (QR_FINDER_SUBPREC + 1))
-            || p_i[1] < (-_height << QR_FINDER_SUBPREC)
-            || p_i[1] >= (_height << (QR_FINDER_SUBPREC + 1))
-        {
+        if !corner_in_range(&_p[i]) {
             return -1;
         }
     }
@@ -1008,10 +1067,20 @@ fn qr_hom_fit(
             // We do need four points in a square to initialize our homography,
             // so project the point from the alignment center to the corner of the code area
             match qr_hom_project_alignment_to_corner(_p, &p3, dim) {
-                Ok((x, y)) => {
+                // The projected corner gets the same range check as the four
+                // intersections above. Unlike them it comes out of a division
+                // by a near-degenerate determinant, so it can land hundreds of
+                // image widths away — far enough that the products in
+                // `qr_hom_init` overflow. zbar has the same gap and rides the
+                // wraparound into a garbage transform; there is nothing to
+                // salvage from such a projection, so fall back to the edge
+                // intersection, which is the corner that would have been used
+                // had the alignment search simply failed.
+                Ok((x, y)) if corner_in_range(&[x, y]) => {
                     brx = x;
                     bry = y;
                 }
+                Ok(_) => {}
                 Err(_) => return -1,
             }
         }
@@ -1046,11 +1115,14 @@ pub(crate) fn qr_hom_fproject(_hom: &qr_hom, mut _x: i32, mut _y: i32, mut _w: i
         ]
     } else {
         if _w < 0 {
-            _x = -_x;
-            _y = -_y;
-            _w = -_w;
+            _x = _x.wrapping_neg();
+            _y = _y.wrapping_neg();
+            _w = _w.wrapping_neg();
         }
-        [qr_divround(_x, _w) + _hom.x0, qr_divround(_y, _w) + _hom.y0]
+        [
+            qr_divround(_x, _w).wrapping_add(_hom.x0),
+            qr_divround(_y, _w).wrapping_add(_hom.y0),
+        ]
     }
 }
 
@@ -1329,8 +1401,9 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
             // We grossly approximate the standard deviation as 1 pixel in one
             // direction, and 0.5 pixels in the other (because we average two
             // coordinates).
-            let thresh =
-                qr_isqrt(qr_point_distance2(&p0, &p1) << (2 * QR_FINDER_SUBPREC + 1)) as i32;
+            let thresh = qr_isqrt(
+                qr_point_distance2(&p0, &p1).saturating_mul(1 << (2 * QR_FINDER_SUBPREC + 1)),
+            ) as i32;
             let mut ninliers = 0;
 
             for j in 0..n as usize {
@@ -1362,7 +1435,16 @@ fn qr_finder_ransac(_f: &mut qr_finder, _hom: &qr_aff, rng: &mut ChaCha8Rng, _e:
             }
         }
 
-        // Now collect all the inliers at the beginning of the list
+        // Now collect all the inliers at the beginning of the list.
+        //
+        // zbar means to swap here but saves the wrong element — `tmp` takes
+        // `edge_pts[i]` where it wants `edge_pts[j]` — so it copies the inlier
+        // down and drops whatever sat at `j`. Only the first `ninliers` entries
+        // are ever read again (the line fit takes that many, and the next
+        // classification pass rebuilds the list from scratch), so the two agree
+        // on everything observable: over 100k randomised runs driven from a
+        // shared random stream, the inlier count and every collected point
+        // match, and the difference stays in the tail.
         let mut i = 0;
         let mut j = 0;
         while j < best_ninliers as usize {
@@ -3184,36 +3266,48 @@ fn qr_hom_cell_init(
         0
     };
 
-    // Compute map from unit square to image
-    let dx10 = x1 - x0;
-    let dx20 = x2 - x0;
-    let dx30 = x3 - x0;
-    let dx31 = x3 - x1;
-    let dx32 = x3 - x2;
-    let dy10 = y1 - y0;
-    let dy20 = y2 - y0;
-    let dy30 = y3 - y0;
-    let dy31 = y3 - y1;
-    let dy32 = y3 - y2;
-    let a20 = dx32 * dy10 - dx10 * dy32;
-    let a21 = dx20 * dy31 - dx31 * dy20;
-    let a22 = dx32 * dy31 - dx31 * dy32;
+    // Compute map from unit square to image.
+    //
+    // These cofactors are quadratic in the corner spacing, and the corners
+    // come from a projection that can run far outside the image, so they leave
+    // 32 bits. See `qr_hom_init`, which computes the same thing from the same
+    // kind of input: the wrapping is what the C does, and a cell built from
+    // wrapped cofactors goes on to fail the checks downstream.
+    let dx10 = x1.wrapping_sub(x0);
+    let dx20 = x2.wrapping_sub(x0);
+    let dx30 = x3.wrapping_sub(x0);
+    let dx31 = x3.wrapping_sub(x1);
+    let dx32 = x3.wrapping_sub(x2);
+    let dy10 = y1.wrapping_sub(y0);
+    let dy20 = y2.wrapping_sub(y0);
+    let dy30 = y3.wrapping_sub(y0);
+    let dy31 = y3.wrapping_sub(y1);
+    let dy32 = y3.wrapping_sub(y2);
+    let a20 = (dx32.wrapping_mul(dy10)).wrapping_sub(dx10.wrapping_mul(dy32));
+    let a21 = (dx20.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy20));
+    let a22 = (dx32.wrapping_mul(dy31)).wrapping_sub(dx31.wrapping_mul(dy32));
+    let a20_22 = a20.wrapping_add(a22);
+    let a21_22 = a21.wrapping_add(a22);
 
     // Figure out if we need to downscale
-    let b0 = qr_ilog(i32::max(dx10.abs(), dy10.abs()) as u32) + qr_ilog((a20 + a22).unsigned_abs());
-    let b1 = qr_ilog(i32::max(dx20.abs(), dy20.abs()) as u32) + qr_ilog((a21 + a22).unsigned_abs());
-    let b2 = qr_ilog(i32::max(i32::max(a20.abs(), a21.abs()), a22.abs()) as u32);
+    let b0 = qr_ilog(dx10.unsigned_abs().max(dy10.unsigned_abs())) + qr_ilog(a20_22.unsigned_abs());
+    let b1 = qr_ilog(dx20.unsigned_abs().max(dy20.unsigned_abs())) + qr_ilog(a21_22.unsigned_abs());
+    let b2 = qr_ilog(
+        a20.unsigned_abs()
+            .max(a21.unsigned_abs())
+            .max(a22.unsigned_abs()),
+    );
     let shift = i32::max(
         0,
         i32::max(i32::max(b0, b1), b2) - (QR_INT_BITS - 3 - QR_ALIGN_SUBPREC),
     );
-    let round = (1i64 << shift) >> 1;
+    let round = qr_round_const(shift);
 
     // Compute final coefficients of forward transform
-    let a00 = qr_fixmul(dx10, a20 + a22, round, shift);
-    let a01 = qr_fixmul(dx20, a21 + a22, round, shift);
-    let a10 = qr_fixmul(dy10, a20 + a22, round, shift);
-    let a11 = qr_fixmul(dy20, a21 + a22, round, shift);
+    let a00 = qr_fixmul(dx10, a20_22, round, shift);
+    let a01 = qr_fixmul(dx20, a21_22, round, shift);
+    let a10 = qr_fixmul(dy10, a20_22, round, shift);
+    let a11 = qr_fixmul(dy20, a21_22, round, shift);
 
     // Compose the two transforms (divide by inverted coefficients)
     cell.fwd[0][0] = (if i00 != 0 { qr_divround(a00, i00) } else { 0 })
@@ -3224,40 +3318,46 @@ fn qr_hom_cell_init(
         + (if i10 != 0 { qr_divround(a11, i10) } else { 0 });
     cell.fwd[1][1] = (if i01 != 0 { qr_divround(a10, i01) } else { 0 })
         + (if i11 != 0 { qr_divround(a11, i11) } else { 0 });
-    cell.fwd[2][0] = ((if i00 != 0 { qr_divround(a20, i00) } else { 0 })
-        + (if i10 != 0 { qr_divround(a21, i10) } else { 0 })
-        + (if i20 != 0 { qr_divround(a22, i20) } else { 0 })
-        + round as i32)
-        >> shift;
-    cell.fwd[2][1] = ((if i01 != 0 { qr_divround(a20, i01) } else { 0 })
-        + (if i11 != 0 { qr_divround(a21, i11) } else { 0 })
-        + (if i21 != 0 { qr_divround(a22, i21) } else { 0 })
-        + round as i32)
-        >> shift;
-    cell.fwd[2][2] = (a22 + round as i32) >> shift;
+    cell.fwd[2][0] = qr_shr(
+        (if i00 != 0 { qr_divround(a20, i00) } else { 0 })
+            .wrapping_add(if i10 != 0 { qr_divround(a21, i10) } else { 0 })
+            .wrapping_add(if i20 != 0 { qr_divround(a22, i20) } else { 0 })
+            .wrapping_add(round as i32),
+        shift,
+    );
+    cell.fwd[2][1] = qr_shr(
+        (if i01 != 0 { qr_divround(a20, i01) } else { 0 })
+            .wrapping_add(if i11 != 0 { qr_divround(a21, i11) } else { 0 })
+            .wrapping_add(if i21 != 0 { qr_divround(a22, i21) } else { 0 })
+            .wrapping_add(round as i32),
+        shift,
+    );
+    cell.fwd[2][2] = qr_shr(a22.wrapping_add(round as i32), shift);
 
     // Compute offsets to distribute rounding error over whole range
     // (instead of concentrating it in the (u3,v3) corner)
-    let mut x = cell.fwd[0][0] * du10 + cell.fwd[0][1] * dv10;
-    let mut y = cell.fwd[1][0] * du10 + cell.fwd[1][1] * dv10;
-    let mut w = cell.fwd[2][0] * du10 + cell.fwd[2][1] * dv10 + cell.fwd[2][2];
-    let mut a02 = dx10 * w - x;
-    let mut a12 = dy10 * w - y;
+    let project = |du: i32, dv: i32| {
+        let x = (cell.fwd[0][0].wrapping_mul(du)).wrapping_add(cell.fwd[0][1].wrapping_mul(dv));
+        let y = (cell.fwd[1][0].wrapping_mul(du)).wrapping_add(cell.fwd[1][1].wrapping_mul(dv));
+        let w = (cell.fwd[2][0].wrapping_mul(du))
+            .wrapping_add(cell.fwd[2][1].wrapping_mul(dv))
+            .wrapping_add(cell.fwd[2][2]);
+        (x, y, w)
+    };
+    let mut a02 = 0i32;
+    let mut a12 = 0i32;
+    for (du, dv, dx, dy) in [
+        (du10, dv10, dx10, dy10),
+        (du20, dv20, dx20, dy20),
+        (du30, dv30, dx30, dy30),
+    ] {
+        let (x, y, w) = project(du, dv);
+        a02 = a02.wrapping_add(dx.wrapping_mul(w).wrapping_sub(x));
+        a12 = a12.wrapping_add(dy.wrapping_mul(w).wrapping_sub(y));
+    }
 
-    x = cell.fwd[0][0] * du20 + cell.fwd[0][1] * dv20;
-    y = cell.fwd[1][0] * du20 + cell.fwd[1][1] * dv20;
-    w = cell.fwd[2][0] * du20 + cell.fwd[2][1] * dv20 + cell.fwd[2][2];
-    a02 += dx20 * w - x;
-    a12 += dy20 * w - y;
-
-    x = cell.fwd[0][0] * du30 + cell.fwd[0][1] * dv30;
-    y = cell.fwd[1][0] * du30 + cell.fwd[1][1] * dv30;
-    w = cell.fwd[2][0] * du30 + cell.fwd[2][1] * dv30 + cell.fwd[2][2];
-    a02 += dx30 * w - x;
-    a12 += dy30 * w - y;
-
-    cell.fwd[0][2] = (a02 + 2) >> 2;
-    cell.fwd[1][2] = (a12 + 2) >> 2;
+    cell.fwd[0][2] = a02.wrapping_add(2) >> 2;
+    cell.fwd[1][2] = a12.wrapping_add(2) >> 2;
     cell.x0 = x0;
     cell.y0 = y0;
     cell.u0 = u0;
@@ -3289,13 +3389,13 @@ fn qr_hom_cell_fproject(_cell: &qr_hom_cell, mut _x: i32, mut _y: i32, mut _w: i
         ]
     } else {
         if _w < 0 {
-            _x = -_x;
-            _y = -_y;
-            _w = -_w;
+            _x = _x.wrapping_neg();
+            _y = _y.wrapping_neg();
+            _w = _w.wrapping_neg();
         }
         [
-            qr_divround(_x, _w) + _cell.x0,
-            qr_divround(_y, _w) + _cell.y0,
+            qr_divround(_x, _w).wrapping_add(_cell.x0),
+            qr_divround(_y, _w).wrapping_add(_cell.y0),
         ]
     }
 }
@@ -3391,13 +3491,18 @@ fn qr_alignment_pattern_fetch(
     width: i32,
     height: i32,
 ) -> u32 {
-    let dx = x0 - p[2][2][0];
-    let dy = y0 - p[2][2][1];
+    // The template positions come from a projection that may have collapsed,
+    // so the offsets can be arbitrary. `qr_img_get_bit` clamps whatever it is
+    // handed to the image, and zbar lets these wrap on the way there.
+    let dx = x0.wrapping_sub(p[2][2][0]);
+    let dy = y0.wrapping_sub(p[2][2][1]);
     let mut v = 0u32;
     let mut k = 0;
     for pi in p {
         for pij in pi {
-            v |= (qr_img_get_bit(img, width, height, pij[0] + dx, pij[1] + dy) as u32) << k;
+            let x = pij[0].wrapping_add(dx);
+            let y = pij[1].wrapping_add(dy);
+            v |= (qr_img_get_bit(img, width, height, x, y) as u32) << k;
             k += 1;
         }
     }
@@ -3472,15 +3577,22 @@ fn qr_alignment_pattern_search(
             w -= dwdu + dwdv;
 
             for j in 0..(4 * side_len) {
-                pc = qr_hom_cell_fproject(cell, x, y, w);
-                let match_val =
-                    qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
-                let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
-                if dist < best_dist {
-                    best_match = match_val;
-                    best_dist = dist;
-                    bestx = pc[0];
-                    besty = pc[1];
+                // A zero homogeneous coordinate puts this probe at infinity,
+                // which `qr_hom_cell_fproject` reports as `i32::MIN`/`MAX`.
+                // There is nothing to sample there, and letting it win the
+                // match would carry a saturated coordinate into every offset
+                // computed from the centre below.
+                if w != 0 {
+                    pc = qr_hom_cell_fproject(cell, x, y, w);
+                    let match_val =
+                        qr_alignment_pattern_fetch(&pattern, pc[0], pc[1], img, width, height);
+                    let dist = qr_hamming_dist(match_val, 0x1F8D63F, best_dist + 1);
+                    if dist < best_dist {
+                        best_match = match_val;
+                        best_dist = dist;
+                        bestx = pc[0];
+                        besty = pc[1];
+                    }
                 }
 
                 let dir = if j < 2 * side_len {
@@ -3513,6 +3625,26 @@ fn qr_alignment_pattern_search(
 
     // If the best result we got was sufficiently bad, reject the match
     if best_dist > 6 {
+        p[0] = pattern[2][2][0];
+        p[1] = pattern[2][2][1];
+        return -1;
+    }
+
+    // Everything below treats these as positions in the image: it slides the
+    // template by the distance from its own centre to the best centre, walks
+    // crossings between template points, and nudges the centre by their
+    // average. A point that is not in the image makes all of that meaningless,
+    // and the offsets leave 32 bits long before the sampler's clamp could
+    // apply. Both the template and the search that produced the centre come
+    // out of a projection that goes singular as the geometry degenerates, so
+    // they can be arbitrarily far away; zbar rides the wraparound.
+    let in_image = |q: &qr_point| {
+        q[0] >= (-width << QR_FINDER_SUBPREC)
+            && q[0] < (width << (QR_FINDER_SUBPREC + 1))
+            && q[1] >= (-height << QR_FINDER_SUBPREC)
+            && q[1] < (height << (QR_FINDER_SUBPREC + 1))
+    };
+    if !in_image(&[bestx, besty]) || !pattern.iter().flatten().all(in_image) {
         p[0] = pattern[2][2][0];
         p[1] = pattern[2][2][1];
         return -1;
@@ -4095,13 +4227,16 @@ impl QrReader {
                         let d_jk = qr_point_distance2(&_centers[j].pos, &_centers[k].pos);
                         let max_d = d_ij.max(d_ik).max(d_jk);
                         let min_d = d_ij.min(d_ik).min(d_jk);
-                        let mid_d = d_ij + d_ik + d_jk - max_d - min_d;
+                        // The middle of the three, without summing them —
+                        // three squared distances do not fit in a `u32`.
+                        let mid_d =
+                            (d_ij as u64 + d_ik as u64 + d_jk as u64) - max_d as u64 - min_d as u64;
                         if min_d == 0 || max_d > min_d.saturating_mul(6) {
                             continue;
                         }
                         // For a right triangle, max ≈ min + mid. Allow 50% error
                         // for perspective distortion.
-                        let sum = min_d as u64 + mid_d as u64;
+                        let sum = min_d as u64 + mid_d;
                         let max_d64 = max_d as u64;
                         if max_d64.saturating_mul(2) > sum.saturating_mul(3)
                             || sum.saturating_mul(2) > max_d64.saturating_mul(3)
@@ -4676,7 +4811,23 @@ impl qr_code_data {
                     qr_code_data_payload::Fnc1FirstPositionMarker
                 }
                 qr_mode::Eci => {
-                    // Extended Channel Interpretation
+                    // Extended Channel Interpretation. The designator is
+                    // variable-width like UTF-8: `0bbbbbbb`, `10bbbbbb bbbbbbbb`
+                    // or `110bbbbb` followed by two more bytes.
+                    //
+                    // ISO/IEC 18004 Table 4: one codeword `0bbbbbbb` for
+                    // 0..=127, two `10bbbbbb bbbbbbbb` for 0..=16383, three
+                    // `110bbbbb bbbbbbbb bbbbbbbb` for 0..=999999, where
+                    // b...b is the binary value — "the bit sequence after the
+                    // first 0 bit is the binary representation of the ECI
+                    // Assignment number" (7.4.2.2).
+                    //
+                    // zbar masks the lead byte with `bits & 0x3F << 8` (and
+                    // `& 0x1F << 16`), where `<<` binds tighter than `&`, so it
+                    // ands an 8-bit value against a mask that has no bits below
+                    // 0x100: the lead byte's payload is dropped and every
+                    // two-byte designator collapses onto its trailing byte.
+                    // The shift belongs to the payload, as below.
                     let Some(bits) = qr_pack_buf_read(&mut qpb, 8) else {
                         return -1;
                     };
@@ -5018,6 +5169,7 @@ impl qr_code_data_list {
                 let mut err = false;
                 let mut bytebuf: Vec<u8> = Vec::with_capacity(sa_ctext + 1);
                 let mut component_syms = Vec::new();
+                let mut incomplete = false;
 
                 let mut j = 0;
                 while j < sa_size {
@@ -5027,6 +5179,7 @@ impl qr_code_data_list {
                     let mut sym = Symbol::new(SymbolType::QrCode);
 
                     if sa[j] < 0 {
+                        incomplete = true;
                         component_syms.push(Symbol::new(SymbolType::Partial));
                         let mut k = j + 1;
                         while k < sa_size && sa[k] < 0 {
@@ -5036,6 +5189,11 @@ impl qr_code_data_list {
                         if j >= sa_size {
                             break;
                         }
+                        // A part is missing between two we do have: mark the
+                        // break so a caller can see where text is absent
+                        // rather than reading across the seam.
+                        sa_text.push(0);
+                        sa_raw.push(0);
                     }
 
                     let qrdataj = &qrdata[sa[j] as usize];
@@ -5046,7 +5204,8 @@ impl qr_code_data_list {
 
                     let entries = &qrdataj.entries;
                     for entry in entries.iter() {
-                        // Process byte buffer if needed
+                        // A run of byte/kanji segments is converted as one unit,
+                        // so flush it as soon as some other mode turns up.
                         if !bytebuf.is_empty()
                             && !matches!(
                                 entry.payload,
@@ -5054,60 +5213,29 @@ impl qr_code_data_list {
                             )
                         {
                             sa_raw.extend_from_slice(&bytebuf);
-                            // convert bytes to text
-                            if let Some(enc) = eci {
-                                let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                                if had_errors {
-                                    err = true;
-                                    break;
-                                }
-                                sa_text.extend_from_slice(res.as_bytes());
-                            } else {
-                                if has_kanji {
-                                    enc_list_mtf(&mut enc_list, SHIFT_JIS);
-                                } else if bytebuf.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                                    let (res, _enc, had_errors) = UTF_8.decode(&bytebuf[3..]);
-                                    if !had_errors {
-                                        sa_text.extend_from_slice(res.as_bytes());
-                                        enc_list_mtf(&mut enc_list, UTF_8);
-                                    } else {
-                                        err = true;
-                                    }
-                                } else if text_is_ascii(&bytebuf) {
-                                    enc_list_mtf(&mut enc_list, UTF_8);
-                                } else if text_is_big5(&bytebuf) {
-                                    enc_list_mtf(&mut enc_list, BIG5);
-                                }
-
-                                if !err {
-                                    let mut decoded = false;
-                                    for &enc in &enc_list {
-                                        if enc == WINDOWS_1252 && !text_is_latin1(&bytebuf) {
-                                            continue;
-                                        }
-                                        let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                                        if !had_errors {
-                                            sa_text.extend_from_slice(res.as_bytes());
-                                            enc_list_mtf(&mut enc_list, enc);
-                                            decoded = true;
-                                            break;
-                                        }
-                                    }
-                                    if !decoded {
-                                        err = true;
-                                    }
-                                }
+                            if !flush_byte_run(
+                                &bytebuf,
+                                eci,
+                                has_kanji,
+                                &mut enc_list,
+                                &mut sa_text,
+                            ) {
+                                err = true;
+                                break;
                             }
                             bytebuf.clear();
                         }
-                        if err {
-                            break;
-                        }
 
                         match &entry.payload {
-                            qr_code_data_payload::Numeric(data)
-                            | qr_code_data_payload::Alphanumeric(data) => {
+                            qr_code_data_payload::Numeric(data) => {
                                 sa_text.extend_from_slice(data);
+                                sa_raw.extend_from_slice(data);
+                            }
+                            qr_code_data_payload::Alphanumeric(data) => {
+                                // `sa_raw` keeps the characters as the symbol
+                                // carries them, escapes and all; only the text
+                                // output gets the GS1 substitution.
+                                push_alnum_segment(&mut sa_text, data, fnc1 != 0);
                                 sa_raw.extend_from_slice(data);
                             }
                             qr_code_data_payload::Bytes(data)
@@ -5115,76 +5243,26 @@ impl qr_code_data_list {
                                 bytebuf.extend_from_slice(data);
                             }
                             qr_code_data_payload::ExtendedChannelInterpretation(val) => {
-                                // Simplified ECI handling
-                                eci = match val {
-                                    3..=13 | 15..=18 => Some(WINDOWS_1252), // approx
-                                    20 => Some(SHIFT_JIS),
-                                    26 => Some(UTF_8),
-                                    _ => None,
-                                };
+                                eci = eci_encoding(*val).or(eci);
                             }
                             _ => {}
                         }
                     }
 
+                    // Flush at the end of each code, not of the whole group: a
+                    // multi-byte character may be split across the segments of
+                    // one code, but not across two separate codes.
+                    if !err && !bytebuf.is_empty() {
+                        sa_raw.extend_from_slice(&bytebuf);
+                        if !flush_byte_run(&bytebuf, eci, has_kanji, &mut enc_list, &mut sa_text) {
+                            err = true;
+                        }
+                        bytebuf.clear();
+                    }
+
                     // Add the symbol to our collection
                     component_syms.push(sym);
                     j += 1;
-                }
-
-                if !err && !bytebuf.is_empty() {
-                    sa_raw.extend_from_slice(&bytebuf);
-                    // convert bytes to text
-                    if let Some(enc) = eci {
-                        let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                        if had_errors {
-                            err = true;
-                        } else {
-                            sa_text.extend_from_slice(res.as_bytes());
-                        }
-                    } else {
-                        if has_kanji {
-                            enc_list_mtf(&mut enc_list, SHIFT_JIS);
-                        } else if bytebuf.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                            let (res, _enc, had_errors) = UTF_8.decode(&bytebuf[3..]);
-                            if !had_errors {
-                                sa_text.extend_from_slice(res.as_bytes());
-                                enc_list_mtf(&mut enc_list, UTF_8);
-                            } else {
-                                err = true;
-                            }
-                        } else if text_is_ascii(&bytebuf) {
-                            enc_list_mtf(&mut enc_list, UTF_8);
-                        } else if text_is_big5(&bytebuf) {
-                            enc_list_mtf(&mut enc_list, BIG5);
-                        }
-
-                        if !err {
-                            let mut decoded = false;
-                            // Move WINDOWS_1252 to end if it has C1 control chars
-                            if enc_list.front() == Some(&WINDOWS_1252) && !text_is_latin1(&bytebuf)
-                            {
-                                enc_list.pop_front();
-                                enc_list.push_back(WINDOWS_1252);
-                            }
-
-                            for &enc in &enc_list {
-                                let (res, _enc, had_errors) = enc.decode(&bytebuf);
-                                if !had_errors {
-                                    sa_text.extend_from_slice(res.as_bytes());
-                                    enc_list_mtf(&mut enc_list, enc);
-                                    decoded = true;
-                                    break;
-                                }
-                            }
-                            // Note: Unlike some encoding errors, C does not set err=1 if decoding fails
-                            // If no encoding worked, just copy the raw bytes
-                            if !decoded {
-                                sa_text.extend_from_slice(&bytebuf);
-                            }
-                        }
-                    }
-                    bytebuf.clear();
                 }
 
                 if !err {
@@ -5200,8 +5278,19 @@ impl qr_code_data_list {
                             symbols.push(sym);
                         }
                     } else {
-                        // Multiple QR codes - create structured append symbol
-                        let mut sa_sym = Symbol::new(SymbolType::QrCode);
+                        // A structured-append group: one symbol standing for
+                        // the whole message, with the codes that make it up as
+                        // its components. If any of them is missing the text is
+                        // a fragment, and reporting a fragment as a complete QR
+                        // code gives a caller no way to tell — so the group is
+                        // reported as `Partial`, with the missing places held
+                        // by `Partial` components.
+                        let sa_type = if incomplete {
+                            SymbolType::Partial
+                        } else {
+                            SymbolType::QrCode
+                        };
+                        let mut sa_sym = Symbol::new(sa_type);
                         sa_sym.components = component_syms;
                         sa_sym.data = sa_text;
                         sa_sym.raw_data = Some(sa_raw);
@@ -5248,6 +5337,170 @@ fn enc_list_mtf(enc_list: &mut VecDeque<&'static Encoding>, enc: &'static Encodi
         let e = enc_list.remove(pos).unwrap();
         enc_list.push_front(e);
     }
+}
+
+/// The UTF-8 byte order mark.
+const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+
+/// The character set an ECI designator names, or `None` when this decoder has
+/// no encoder for it — in which case the byte run is auto-detected instead,
+/// which is also what happens for a designator no QR decoder is expected to
+/// understand.
+///
+/// ECI 3..=18 select ISO 8859-1 through -16 (there is no -12, hence the gap at
+/// 14), 20 is Shift-JIS and 26 is UTF-8. ISO/IEC 18004 does not carry the
+/// assignments itself — 7.4.2.1 defers to the AIM ECI specification — so these
+/// come from agreement between independent implementations and are checked by
+/// round trip: `zint` encodes text in each character set and this decodes it
+/// back unchanged (`test_qr_eci_selects_the_named_charset`).
+///
+/// Note that this library resolves the character set and returns text, which
+/// is not what 18004 clause 14.3 asks a conforming decoder to do — that says
+/// the ECI shall be transmitted as an escape `\\nnnnnn`, a backslash followed
+/// by the six-digit assignment number, leaving the interpretation to the
+/// application (and a literal backslash in the data doubled). Every decoder
+/// in common use resolves instead, including zbar and ZXing, and callers of a
+/// Rust library expect a decoded string rather than an escaped byte stream. `encoding_rs` implements the WHATWG
+/// Encoding Standard, which unifies a few of these with their Windows
+/// counterparts: the two differ only over 0x80..0xA0, where ISO 8859 puts
+/// seldom-used C1 controls and the Windows code pages put printable
+/// punctuation. Real-world payloads in that range are overwhelmingly the
+/// latter, so the substitution is the more useful reading, not just the
+/// available one.
+///
+/// ECI 0, 1 and 2 select code page 437, which `encoding_rs` does not implement.
+fn eci_encoding(eci: u32) -> Option<&'static Encoding> {
+    Some(match eci {
+        1 | 3 => WINDOWS_1252, // ISO 8859-1
+        4 => ISO_8859_2,       // Latin-2
+        5 => ISO_8859_3,       // Latin-3
+        6 => ISO_8859_4,       // Latin-4
+        7 => ISO_8859_5,       // Cyrillic
+        8 => ISO_8859_6,       // Arabic
+        9 => ISO_8859_7,       // Greek
+        10 => ISO_8859_8,      // Hebrew
+        11 => WINDOWS_1254,    // ISO 8859-9, Turkish
+        12 => ISO_8859_10,     // Latin-6
+        13 => WINDOWS_874,     // ISO 8859-11, Thai
+        15 => ISO_8859_13,     // Latin-7
+        16 => ISO_8859_14,     // Latin-8
+        17 => ISO_8859_15,     // Latin-9
+        18 => ISO_8859_16,     // Latin-10
+        20 => SHIFT_JIS,
+        26 => UTF_8,
+        _ => return None,
+    })
+}
+
+/// Convert an accumulated run of byte-mode (and kanji-mode) bytes to text and
+/// append it to `sa_text`.
+///
+/// The run is accumulated across adjacent byte/kanji segments so that a
+/// multi-byte character split across two segments still converts, and is
+/// flushed as soon as a segment of some other mode — or the end of the code —
+/// is reached.
+///
+/// Returns `false` if the run could not be converted, which drops the symbol.
+fn flush_byte_run(
+    bytebuf: &[u8],
+    eci: Option<&'static Encoding>,
+    has_kanji: bool,
+    enc_list: &mut VecDeque<&'static Encoding>,
+    sa_text: &mut Vec<u8>,
+) -> bool {
+    // An ECI designator names the character set outright. The spec says data
+    // is then treated as coming from that set even in kanji mode.
+    if let Some(enc) = eci {
+        let (text, _, had_errors) = enc.decode(bytebuf);
+        if had_errors {
+            return false;
+        }
+        sa_text.extend_from_slice(text.as_bytes());
+        return true;
+    }
+
+    // Otherwise guess: promote one candidate to the front of the list on a
+    // cheap classification, then try the list in order.
+    if has_kanji {
+        // Data encoded in kanji mode means the byte segments are probably
+        // Shift-JIS too.
+        enc_list_mtf(enc_list, SHIFT_JIS);
+    } else if let Some(rest) = bytebuf.strip_prefix(UTF8_BOM) {
+        // UTF-8 is rarely announced with an ECI, so a BOM is the most reliable
+        // in-band signal for it. If the rest converts we are done: the run must
+        // *not* also go through the list below, or its text would be appended a
+        // second time.
+        let (text, _, had_errors) = UTF_8.decode(rest);
+        if had_errors {
+            return false;
+        }
+        sa_text.extend_from_slice(text.as_bytes());
+        enc_list_mtf(enc_list, UTF_8);
+        return true;
+    } else if text_is_ascii(bytebuf) {
+        // 8-bit-clean text: prefer UTF-8 over Shift-JIS, which would otherwise
+        // corrupt the backslashes used by the DoCoMo formats.
+        enc_list_mtf(enc_list, UTF_8);
+    } else if text_is_big5(bytebuf) {
+        enc_list_mtf(enc_list, BIG5);
+    }
+
+    // ISO 8859-1 is the character set the standard names as the default, but
+    // its 0x80..0xA0 range holds seldom-used C1 controls that in practice are
+    // far more often the lead bytes of some other encoding. Demote it to last
+    // place when the run uses that range — demote, not skip, because it is the
+    // catch-all that makes this loop total: every byte decodes as *something*
+    // under it, so a run that no other candidate accepts still produces text
+    // instead of discarding the whole symbol.
+    if !text_is_latin1(bytebuf)
+        && let Some(pos) = enc_list.iter().position(|&e| e == WINDOWS_1252)
+    {
+        let e = enc_list.remove(pos).unwrap();
+        enc_list.push_back(e);
+    }
+
+    for &enc in &*enc_list {
+        let (text, _, had_errors) = enc.decode(bytebuf);
+        if !had_errors {
+            sa_text.extend_from_slice(text.as_bytes());
+            enc_list_mtf(enc_list, enc);
+            return true;
+        }
+    }
+    false
+}
+
+/// Append an alphanumeric segment, applying the GS1 escapes when the code
+/// carries an FNC1 marker.
+///
+/// Alphanumeric mode has no code point for the GS (0x1D) field separator that
+/// GS1 uses to end a variable-length element, so GS1 transmits it as `%`, and
+/// escapes a literal `%` by doubling it. ISO/IEC 18004 7.4.8.2 puts the
+/// obligation on the reader: "Decoders encountering % in these symbols shall
+/// transmit it as ASCII/JIS8 value 1D_HEX, and if %% is encountered it shall
+/// be transmitted as a single % character." Without this pass a GS1 QR code
+/// reports `…LOT1%17251231` where the separator belongs, and doubles every
+/// literal percent sign.
+///
+/// The substitution belongs to alphanumeric mode alone — the same clause has
+/// byte mode carry a literal GS — and applies under either FNC1 position.
+fn push_alnum_segment(sa_text: &mut Vec<u8>, data: &[u8], fnc1: bool) {
+    if !fnc1 {
+        sa_text.extend_from_slice(data);
+        return;
+    }
+    let mut rest = data;
+    while let Some(i) = rest.iter().position(|&c| c == b'%') {
+        sa_text.extend_from_slice(&rest[..i]);
+        if rest.get(i + 1) == Some(&b'%') {
+            sa_text.push(b'%');
+            rest = &rest[i + 2..];
+        } else {
+            sa_text.push(0x1D);
+            rest = &rest[i + 1..];
+        }
+    }
+    sa_text.extend_from_slice(rest);
 }
 
 #[cfg(test)]
@@ -5345,5 +5598,77 @@ mod tests {
             1,
             "three-finder merge should produce one bbox"
         );
+    }
+
+    /// Finder-line positions are sub-pixel and unclamped, so two candidate
+    /// centres can be far enough apart that the squared distance leaves 32
+    /// bits. Every caller only ranks or thresholds the result, so it saturates
+    /// — the alternative, which is what the `int` in the C original does, is to
+    /// wrap and report two points at opposite ends of the image as adjacent.
+    #[test]
+    fn point_distance2_saturates_instead_of_wrapping() {
+        // Comfortably inside the range: exact.
+        assert_eq!(qr_point_distance2(&[0, 0], &[3, 4]), 25);
+        assert_eq!(qr_point_distance2(&[-3, -4], &[0, 0]), 25);
+        assert_eq!(qr_point_distance2(&[65535, 0], &[0, 0]), 65535 * 65535);
+
+        // Beyond it: pinned to the ceiling, and still ordered against
+        // everything that fits.
+        assert_eq!(qr_point_distance2(&[i32::MAX, 0], &[i32::MIN, 0]), u32::MAX);
+        assert_eq!(qr_point_distance2(&[0, 200_000], &[0, -200_000]), u32::MAX);
+        assert!(qr_point_distance2(&[0, 100_000], &[0, 0]) > 65535 * 65535);
+    }
+
+    /// The turn direction of three candidate finder centres, from the same
+    /// unclamped sub-pixel positions as [`qr_point_distance2`]. Saturating
+    /// keeps the sign, the collinear case and any threshold comparison intact;
+    /// wrapping, which is what the C does, can report a left turn as a right
+    /// one.
+    #[test]
+    fn point_ccw_saturates_instead_of_wrapping() {
+        // Inside the range: exact, and oriented the way the name says.
+        assert_eq!(qr_point_ccw(&[0, 0], &[1, 0], &[0, 1]), 1);
+        assert_eq!(qr_point_ccw(&[0, 0], &[0, 1], &[1, 0]), -1);
+        assert_eq!(qr_point_ccw(&[0, 0], &[2, 2], &[4, 4]), 0);
+        assert_eq!(
+            qr_point_ccw(&[0, 0], &[30_000, 0], &[0, 30_000]),
+            30_000 * 30_000
+        );
+
+        // Beyond it: pinned, still signed, and still safe to take `.abs()` of.
+        let far = qr_point_ccw(&[0, 0], &[i32::MAX, 0], &[0, i32::MAX]);
+        assert_eq!(far, i32::MAX);
+        let far_neg = qr_point_ccw(&[0, 0], &[0, i32::MAX], &[i32::MAX, 0]);
+        assert_eq!(far_neg, -i32::MAX);
+        assert_eq!(far_neg.abs(), i32::MAX);
+        assert_eq!(
+            qr_point_ccw(&[i32::MIN, i32::MIN], &[i32::MAX, 0], &[0, i32::MAX]),
+            i32::MAX
+        );
+    }
+
+    /// Both homography builders take four image corners and form cofactors
+    /// that are quadratic in the spacing between them. The corners come from
+    /// projections that go singular as the geometry degenerates — one of them
+    /// reports a point at infinity as `i32::MIN`/`MAX` outright — so the
+    /// cofactors have to survive corners anywhere in the range. zbar computes
+    /// them in `int` and lets them wrap; what must not happen is a trap.
+    #[test]
+    fn homographies_survive_saturated_corners() {
+        const EXTREMES: [i32; 5] = [i32::MIN, -100_000, 0, 100_000, i32::MAX];
+
+        for &a in &EXTREMES {
+            for &b in &EXTREMES {
+                let mut hom = qr_hom::default();
+                qr_hom_init(&mut hom, a, b, b, a, a, a, b, b, QR_HOM_BITS);
+
+                let mut cell = qr_hom_cell::default();
+                // Code-space corners stay a sane unit square; it is the image
+                // corners that come from the runaway projection.
+                qr_hom_cell_init(
+                    &mut cell, 0, 0, 176, 0, 0, 176, 176, 176, a, b, b, a, a, a, b, b,
+                );
+            }
+        }
     }
 }

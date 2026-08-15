@@ -1163,3 +1163,187 @@ fn test_nine_barcodes() {
         assert_eq!(actual.1, expected.1, "data mismatch for {:?}", expected.0);
     }
 }
+
+/// GS1 QR codes carry their field separators through alphanumeric mode, which
+/// has no code point for GS (0x1D): GS1 sends `%` for the separator and doubles
+/// a literal `%` to escape it. Without the unescaping pass, a variable-length
+/// element reports `LOT1%17…` where the separator belongs and every literal
+/// percent sign comes out doubled.
+///
+/// Fixture: `zint -b 58 --gs1 -d "[01]09501101530003[10]A%B[17]251231" --scale=4`
+#[test]
+fn test_qr_gs1_percent_escapes() {
+    let path = "examples/test-qr-gs1.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("GS1 QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    // (01) is fixed-length so it runs straight into (10); (10) is variable, so
+    // the separator before (17) is a GS, and the escaped `%%` collapses to one.
+    let expected = b"010950110153000310A%B\x1d17251231".to_vec();
+    assert_eq!(data, expected);
+    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(expected));
+}
+
+/// A UTF-8 BOM is the one reliable in-band signal that a byte segment is UTF-8,
+/// since encoders rarely announce it with an ECI. Recognising it must not also
+/// let the run fall through to the general encoding search, which would append
+/// its text a second time.
+///
+/// Fixture: `zint -b 58 --binary --esc -d '\xEF\xBB\xBFcaf\xC3\xA9 \xE2\x9C\x93' --scale=4`
+#[test]
+fn test_qr_utf8_bom_is_not_decoded_twice() {
+    let path = "examples/test-qr-utf8-bom.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("BOM QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    assert_eq!(String::from_utf8_lossy(&data), "café ✓");
+    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+}
+
+/// Bytes in 0x80..0xA0 are C1 controls in ISO 8859-1 and printable punctuation
+/// in the Windows code pages, so a run that uses them is decoded by the
+/// single-byte catch-all only after every multi-byte candidate has been tried.
+/// That candidate has to stay in the list — dropping it leaves runs that
+/// nothing else accepts with no encoding at all, which used to discard the
+/// whole symbol whenever another segment followed the byte run.
+///
+/// Fixture: `zint -b 58 --binary --esc -d '\x93quoted\x94 12345678901234567890' --scale=4`
+#[test]
+fn test_qr_byte_run_followed_by_another_segment() {
+    let path = "examples/test-qr-latin1-mixed.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("mixed-mode QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    // zbar reads 0x93/0x94 as the ISO 8859-1 C1 controls U+0093/U+0094; this
+    // port reads them through Windows-1252, where they are the typographic
+    // quotes that real payloads in that range almost always mean.
+    assert_eq!(
+        String::from_utf8_lossy(&data),
+        "\u{201c}quoted\u{201d} 12345678901234567890"
+    );
+}
+
+/// Structured append splits one message across several QR codes, which are
+/// reported as a single symbol whose `components` are the codes it was
+/// assembled from.
+///
+/// Fixture: three codes from `zint -b 58 --structapp="N,3" -d "Part … "`,
+/// appended side by side with quiet zones.
+#[test]
+fn test_qr_structured_append_complete() {
+    let path = "examples/test-qr-structured-append.png";
+    let img = image::open(path).unwrap().to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let result = Scanner::new().scan(&mut image);
+
+    assert_eq!(result.len(), 1);
+    let sym = &result[0];
+    assert_eq!(sym.symbol_type(), SymbolType::QrCode);
+    assert_eq!(
+        sym.data_string(),
+        Some("Part one of three. Part two of three. Part three of three.")
+    );
+    assert_eq!(sym.components().len(), 3);
+    assert_matches_zbars(path, &decode_image(path));
+}
+
+/// When a member of the group is missing, the text is a fragment. Reporting a
+/// fragment as a complete QR code leaves a caller no way to tell, so the group
+/// comes back as `Partial`, with a NUL where the absent part belongs and a
+/// `Partial` component standing in its place.
+///
+/// Fixture: parts 1 and 3 of the same three-code group, part 2 omitted.
+#[test]
+fn test_qr_structured_append_with_a_missing_part() {
+    let path = "examples/test-qr-structured-append-gap.png";
+    let img = image::open(path).unwrap().to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+    let result = Scanner::new().scan(&mut image);
+
+    assert_eq!(result.len(), 1);
+    let sym = &result[0];
+    assert_eq!(sym.symbol_type(), SymbolType::Partial);
+    assert_eq!(
+        sym.data(),
+        b"Part one of three. \0Part three of three.".as_slice()
+    );
+    let kinds: Vec<_> = sym.components().iter().map(|c| c.symbol_type()).collect();
+    assert_eq!(
+        kinds,
+        [SymbolType::QrCode, SymbolType::Partial, SymbolType::QrCode]
+    );
+}
+
+/// ECI designators 3..=18 select ISO 8859-1 through -16 (there is no -12).
+/// Reading them all as Latin-1 turns anything outside Western European text
+/// into mojibake, so each one has to reach the character set it names.
+///
+/// Fixture: three codes from `zint -b 58 --eci=N`, N = 4 (Latin-2), 7
+/// (Cyrillic) and 9 (Greek), appended side by side with quiet zones.
+#[test]
+fn test_qr_eci_selects_the_named_charset() {
+    let path = "examples/test-qr-eci-charsets.png";
+    let img = image::open(path).unwrap().to_luma8();
+    let mut image = Image::from_gray(img.as_raw(), img.width(), img.height()).unwrap();
+
+    let mut decoded: Vec<_> = Scanner::new()
+        .scan(&mut image)
+        .iter()
+        .map(|s| s.data_string().unwrap_or("<not utf-8>").to_string())
+        .collect();
+    decoded.sort();
+
+    let mut expected = ["Příliš žluťoučký kůň", "Привет мир", "Γειά σου κόσμε"];
+    expected.sort();
+    assert_eq!(decoded, expected);
+}
+
+/// Code 93 encodes lowercase, punctuation and control characters as a shift
+/// character followed by a letter, and the four shifts each map their operand
+/// differently. Nothing exercised that path — the suite and every generated
+/// corpus used uppercase and digits, which never shift — so the whole
+/// lower half of the character set went undecoded by any test.
+///
+/// Fixture: `zint -b 25 -d 'Code93 shift: a-z {|}~' --scale=4`
+#[test]
+fn test_code93_shift_characters() {
+    let path = "examples/test-code93-shifts.png";
+    let expected = Some(("CODE-93".to_string(), "Code93 shift: a-z {|}~".to_string()));
+    assert_eq!(decode_image(path), expected, "zedbar failed");
+    assert_matches_zbars(path, &expected);
+}
+
+/// GS1-128 marks a variable-length element's end with FNC1, which the decoder
+/// turns into the GS (0x1D) separator — the same rule that was missing from
+/// the QR alphanumeric path, on a symbology that had no test for it either.
+/// The FNC1 in first position also sets the GS1 modifier.
+///
+/// Fixture: `zint -b 16 -d '[01]09501101530003[10]AB12[17]251231' --scale=4`
+#[test]
+fn test_code128_gs1_separators() {
+    let path = "examples/test-code128-gs1.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("GS1-128 should decode");
+    assert_eq!(symbol_type, "CODE-128");
+    // (10) is variable-length, so a GS closes it before (17).
+    assert_eq!(data, b"010950110153000310AB12\x1d17251231".to_vec());
+    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+}
+
+/// An ECI designator above 127 is sent as two bytes, `10bbbbbb bbbbbbbb`.
+/// zbar masks the lead byte with `bits & 0x3F << 8`, where `<<` binds tighter
+/// than `&`, so it ands an 8-bit value against a mask with no bits below 0x100
+/// and keeps only the trailing byte — turning ECI 264 into ECI 8, which it
+/// reads as ISO 8859-6 and then fails to convert, dropping the symbol.
+///
+/// This is the one path where the port and the reference are meant to differ,
+/// so there is no cross-check here: 264 is not a value this decoder has a
+/// character set for, and leaving an unrecognised designator alone lets the
+/// payload be detected instead — which recovers a symbol `zbarimg` reports
+/// nothing at all for.
+///
+/// Fixture: `zint -b 58 --eci=264 --binary --esc -d '\x82\xa0\x82\xa2 test'`
+#[test]
+fn test_qr_multibyte_eci_designator() {
+    let path = "examples/test-qr-eci-multibyte.png";
+    let (symbol_type, data) = decode_image_binary(path).expect("QR should decode");
+    assert_eq!(symbol_type, "QR-Code");
+    // Shift-JIS 0x82A0 0x82A2 are the kana that follow.
+    assert_eq!(String::from_utf8_lossy(&data), "あい test");
+}

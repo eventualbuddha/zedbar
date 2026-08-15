@@ -56,8 +56,12 @@ fn gf16_hmul(a: u32, logb: u32) -> u32 {
 fn bch15_5_calc_syndrome(y: u32) -> ([u32; 3], bool) {
     let mut s = [0u32; 3];
 
+    // Only the 15 code word bits contribute. `GF16_EXP` is 31 entries long —
+    // the cycle repeated, so the sums below can index it with i+j and skip a
+    // modulo — and iterating the whole table here would fold in bits 15..30 of
+    // a caller's word, which are not part of the code word.
     let mut p = 0;
-    for (i, &exp) in GF16_EXP.iter().enumerate() {
+    for (i, &exp) in GF16_EXP.iter().take(15).enumerate() {
         if (y & (1 << i)) != 0 {
             p ^= exp as u32;
         }
