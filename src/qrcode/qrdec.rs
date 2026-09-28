@@ -365,6 +365,174 @@ pub(crate) struct qr_finder_center {
     edge_pts: Vec<qr_finder_edge_pt>,
 }
 
+/// One scan across a candidate finder, perpendicular to its surviving
+/// cluster. Positions are in subpixel units.
+struct FinderProbe {
+    /// Position of the scan along the cluster's own axis.
+    fixed: i32,
+    /// Center of the three-module core, along the scan.
+    center: i32,
+    /// Midpoints of the outer ring on either side of the core, along the
+    /// scan. At most one of them is mirrored from the other.
+    edges: [i32; 2],
+}
+
+/// Scan across a candidate finder at pixel `fixed` (a column when `axis` is
+/// 0, a row when it is 1), starting from the pixel `seed` inside its core.
+///
+/// The core must be about three modules of black. On at least one side it
+/// must be followed by about one module of white and one of black; a side
+/// missing that pair has its outer edge mirrored from the other side.
+fn probe_finder_cross_section(
+    bin: &[u8],
+    width: usize,
+    height: usize,
+    axis: usize,
+    fixed: i32,
+    seed: i32,
+    module: i32,
+) -> Option<FinderProbe> {
+    let (scan_len, fixed_len) = if axis == 0 {
+        (height, width)
+    } else {
+        (width, height)
+    };
+    if fixed < 0 || fixed >= fixed_len as i32 {
+        return None;
+    }
+    let black = |p: i32| -> Option<bool> {
+        if p < 0 || p >= scan_len as i32 {
+            return None;
+        }
+        let (x, y) = if axis == 0 { (fixed, p) } else { (p, fixed) };
+        Some(bin[y as usize * width + x as usize] != 0)
+    };
+    // Follow a run of `color` from `start` in direction `step`. Stop at its
+    // end, the image boundary, or once its length exceeds `max`.
+    let run_end = |start: i32, step: i32, color: bool, max: i32| {
+        let mut p = start;
+        while (p - start).abs() <= max && black(p) == Some(color) {
+            p += step;
+        }
+        p
+    };
+    let about_one_module = |n: i32| n * 2 >= module && n * 2 <= 3 * module;
+
+    if black(seed) != Some(true) {
+        return None;
+    }
+    let core_start = run_end(seed, -1, true, 5 * module);
+    let core_end = run_end(seed, 1, true, 5 * module);
+    let core = core_end - core_start - 1;
+    if core < 2 * module || core > 4 * module {
+        return None;
+    }
+    let center = (core_start + core_end) * (1 << QR_FINDER_SUBPREC) / 2;
+
+    let mut edges = [None, None];
+    for (edge, (start, step)) in edges.iter_mut().zip([(core_start, -1), (core_end, 1)]) {
+        let white_end = run_end(start, step, false, 2 * module);
+        let ring_end = run_end(white_end, step, true, 2 * module);
+        if about_one_module((white_end - start).abs())
+            && about_one_module((ring_end - white_end).abs())
+        {
+            *edge = Some((white_end + ring_end - step) * (1 << QR_FINDER_SUBPREC) / 2);
+        }
+    }
+    let edges = match edges {
+        [Some(near), Some(far)] => [near, far],
+        [Some(near), None] => [near, 2 * center - near],
+        [None, Some(far)] => [2 * center - far, far],
+        [None, None] => return None,
+    };
+    Some(FinderProbe {
+        fixed: fixed << QR_FINDER_SUBPREC,
+        center,
+        edges,
+    })
+}
+
+/// Recover a finder with one erased outer bar when at least two complete
+/// finders already exist. A surviving cluster supplies one axis; three
+/// perpendicular probes must confirm the central bar and at least one intact
+/// white/black pair. Only the missing outer edge is inferred by symmetry.
+/// The normal geometry, format and Reed-Solomon checks still decide whether
+/// these candidates belong to a QR code.
+///
+/// At most `MAX_CLUSTERS` clusters per direction are examined and at most
+/// `MAX_RECOVERED` centers added, so in a cluttered image the real damaged
+/// finder may be missed.
+fn recover_partial_finders(
+    centers: &mut Vec<qr_finder_center>,
+    horizontal: &ClusteredLines,
+    vertical: &ClusteredLines,
+    bin: &[u8],
+    width: usize,
+    height: usize,
+) {
+    const MAX_CLUSTERS: usize = 64;
+    const MAX_RECOVERED: usize = 4;
+    let original_count = centers.len();
+    for (axis, clusters, direction) in [
+        (0, horizontal, Direction::Horizontal),
+        (1, vertical, Direction::Vertical),
+    ] {
+        for i in 0..clusters.cluster_count().min(MAX_CLUSTERS) {
+            if centers.len() == original_count + MAX_RECOVERED {
+                return;
+            }
+            let indices = &clusters.cluster(i).line_indices;
+            let first = clusters.line(indices[0]);
+            let last = clusters.line(*indices.last().unwrap());
+            let middle = clusters.line(indices[indices.len() / 2]);
+            let mut pos = middle.pos;
+            pos[axis] += middle.len / 2;
+            pos[1 - axis] = (first.pos[1 - axis] + last.pos[1 - axis]) / 2;
+            if centers.iter().any(|c| {
+                qr_point_distance2(&c.pos, &pos)
+                    < (middle.len as u32).saturating_mul(middle.len as u32)
+            }) {
+                continue;
+            }
+            // The cluster must span most of the central three-module bar,
+            // rather than just a few coincident scan lines through data.
+            let span = last.pos[1 - axis] - first.pos[1 - axis];
+            if span < middle.len / 2 || span > middle.len * 2 {
+                continue;
+            }
+            let module = (middle.len >> QR_FINDER_SUBPREC) / 3;
+            if module < 2 {
+                continue;
+            }
+            let seed = pos[1 - axis] >> QR_FINDER_SUBPREC;
+            let Some(probes) = [-module, 0, module]
+                .into_iter()
+                .map(|offset| {
+                    let fixed = (pos[axis] >> QR_FINDER_SUBPREC) + offset;
+                    probe_finder_cross_section(bin, width, height, axis, fixed, seed, module)
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            pos[1 - axis] = probes.iter().map(|p| p.center).sum::<i32>() / 3;
+            let mut edge_pts = qr_finder_get_edge_pts(clusters, &[i], direction);
+            for probe in probes {
+                for edge in probe.edges {
+                    let mut point = pos;
+                    point[axis] = probe.fixed;
+                    point[1 - axis] = edge;
+                    edge_pts.push(qr_finder_edge_pt {
+                        pos: point,
+                        ..Default::default()
+                    });
+                }
+            }
+            centers.push(qr_finder_center { pos, edge_pts });
+        }
+    }
+}
+
 /// Determine if a horizontal line crosses a vertical line.
 ///
 /// # Returns
@@ -4162,11 +4330,17 @@ impl QrReader {
         0
     }
 
-    /// Match finder centers and decode QR codes
+    /// Match finder centers and decode QR codes.
+    ///
+    /// Only triplets containing at least one center at index `first_new` or
+    /// later are tried, so a second pass over newly appended centers does not
+    /// repeat triplets that already failed. Pass 0 to try every triplet.
+    #[allow(clippy::too_many_arguments)]
     fn match_centers(
         &mut self,
         qrlist: &mut qr_code_data_list,
         _centers: &mut [qr_finder_center],
+        first_new: usize,
         img: &[u8],
         width: i32,
         height: i32,
@@ -4207,7 +4381,7 @@ impl QrReader {
                     break;
                 }
 
-                for k in j + 1.._centers.len() {
+                for k in (j + 1).max(first_new).._centers.len() {
                     if mark[j] != 0 {
                         break;
                     }
@@ -4312,6 +4486,7 @@ impl QrReader {
                                 self.match_centers(
                                     qrlist,
                                     &mut inside,
+                                    0,
                                     img,
                                     width,
                                     height,
@@ -4417,7 +4592,7 @@ impl QrReader {
             fail_regions.push(bb);
         }
 
-        let mut centers = if hclustered.cluster_count() >= 3 && vclustered.cluster_count() >= 3 {
+        let mut centers = if hclustered.cluster_count() >= 2 && vclustered.cluster_count() >= 2 {
             qr_finder_find_crossings(&hclustered, &vclustered)
         } else {
             Vec::new()
@@ -4428,7 +4603,12 @@ impl QrReader {
         // cluttered image without three crossings takes.
         fail_regions.truncate(MAX_FAIL_REGIONS);
 
-        if centers.len() < 3 {
+        // Each center consumes at least one cluster per axis. Recovery needs
+        // another cluster from the damaged finder, so fewer than five total
+        // clusters rules it out when there are two centers. Five or more is
+        // only a necessary condition: a center can consume multiple clusters.
+        let can_recover = centers.len() == 2 && total_clusters >= 5;
+        if centers.len() < 3 && !can_recover {
             return (vec![], fail_regions);
         }
 
@@ -4437,14 +4617,50 @@ impl QrReader {
         let mut qrlist = qr_code_data_list::default();
         let mut triplet_fail_regions: Vec<BBox> = Vec::new();
 
-        self.match_centers(
-            &mut qrlist,
-            &mut centers,
-            &bin,
-            img.width as i32,
-            img.height as i32,
-            &mut triplet_fail_regions,
-        );
+        if centers.len() >= 3 {
+            self.match_centers(
+                &mut qrlist,
+                &mut centers,
+                0,
+                &bin,
+                img.width as i32,
+                img.height as i32,
+                &mut triplet_fail_regions,
+            );
+        }
+
+        // Recover a damaged third finder only after ordinary decoding fails.
+        // Data modules can produce a few spurious centers, so allow a small
+        // pool rather than requiring exactly two. With at most eight original
+        // centers and four recovered ones, the second pass tries only triplets
+        // containing a recovered center: at most C(12,3) - C(8,3) = 164,
+        // independent of image size or the number of noisy clusters.
+        //
+        // This is skipped when any code in the image decoded, or when there
+        // are more than eight centers, so a damaged code sharing an image
+        // with a clean one, or sitting among many others, is not recovered.
+        if qrlist.qrdata.is_empty() && centers.len() <= 8 {
+            let original_count = centers.len();
+            recover_partial_finders(
+                &mut centers,
+                &hclustered,
+                &vclustered,
+                &bin,
+                img.width as usize,
+                img.height as usize,
+            );
+            if centers.len() > original_count {
+                self.match_centers(
+                    &mut qrlist,
+                    &mut centers,
+                    original_count,
+                    &bin,
+                    img.width as i32,
+                    img.height as i32,
+                    &mut triplet_fail_regions,
+                );
+            }
+        }
 
         let symbols = if !qrlist.qrdata.is_empty() {
             qrlist.extract_text()
@@ -5506,6 +5722,82 @@ fn push_alnum_segment(sa_text: &mut Vec<u8>, data: &[u8], fnc1: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn center_retry_requires_a_new_center() {
+        // Use a real encoded payload and ideal finder geometry, so this tests
+        // which candidates can actually decode, rather than loop indices.
+        const MODULE: i32 = 4;
+        let payload = b"retry boundary";
+        let code = qrcode::QrCode::new(payload).unwrap();
+        let gray = code
+            .render::<image::Luma<u8>>()
+            .module_dimensions(MODULE as u32, MODULE as u32)
+            .build();
+        let width = gray.width() as i32;
+        let height = gray.height() as i32;
+        let bin = binarize(gray.as_raw(), width as usize, height as usize);
+        // Four quiet-zone modules plus 3.5 modules to a finder center.
+        let near = 15 * MODULE / 2;
+        let far = near + (code.width() as i32 - 7) * MODULE;
+        let centers: Vec<_> = [[near, near], [far, near], [near, far]]
+            .into_iter()
+            .map(|pixel_pos| {
+                let pos = pixel_pos.map(|p| p << QR_FINDER_SUBPREC);
+                let mut edge_pts = Vec::new();
+                for axis in 0..2 {
+                    for side in [-3, 3] {
+                        for offset in [-1, 0, 1] {
+                            let mut point = pos;
+                            point[axis] += side * MODULE * (1 << QR_FINDER_SUBPREC);
+                            point[1 - axis] += offset * MODULE * (1 << QR_FINDER_SUBPREC);
+                            edge_pts.push(qr_finder_edge_pt {
+                                pos: point,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+                qr_finder_center { pos, edge_pts }
+            })
+            .collect();
+
+        for (first_new, add_distractor, expected) in [
+            (0, false, true),  // Ordinary pass.
+            (2, false, true),  // Third finder is exactly the first new center.
+            (3, false, false), // No new centers.
+            (3, true, false),  // New noise must not cause the old code to be retried.
+        ] {
+            let mut candidates = centers.clone();
+            if add_distractor {
+                candidates.push(qr_finder_center::default());
+            }
+            let mut qrlist = qr_code_data_list::default();
+            QrReader::default().match_centers(
+                &mut qrlist,
+                &mut candidates,
+                first_new,
+                &bin,
+                width,
+                height,
+                &mut Vec::new(),
+            );
+            let decoded: Vec<_> = qrlist
+                .extract_text()
+                .iter()
+                .map(|s| s.data().to_vec())
+                .collect();
+            let expected = if expected {
+                vec![payload.to_vec()]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(
+                decoded, expected,
+                "first_new={first_new}, distractor={add_distractor}"
+            );
+        }
+    }
 
     /// Pixel coordinates → subpixel SubpixelBBox.
     fn px_bbox(x: i32, y: i32, w: i32, h: i32) -> SubpixelBBox {
