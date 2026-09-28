@@ -1180,7 +1180,9 @@ fn test_qr_gs1_percent_escapes() {
     // the separator before (17) is a GS, and the escaped `%%` collapses to one.
     let expected = b"010950110153000310A%B\x1d17251231".to_vec();
     assert_eq!(data, expected);
-    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(expected));
+    if zbarimg_available() {
+        assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(expected));
+    }
 }
 
 /// A UTF-8 BOM is the one reliable in-band signal that a byte segment is UTF-8,
@@ -1195,7 +1197,9 @@ fn test_qr_utf8_bom_is_not_decoded_twice() {
     let (symbol_type, data) = decode_image_binary(path).expect("BOM QR should decode");
     assert_eq!(symbol_type, "QR-Code");
     assert_eq!(String::from_utf8_lossy(&data), "café ✓");
-    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+    if zbarimg_available() {
+        assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+    }
 }
 
 /// Bytes in 0x80..0xA0 are C1 controls in ISO 8859-1 and printable punctuation
@@ -1323,7 +1327,9 @@ fn test_code128_gs1_separators() {
     assert_eq!(symbol_type, "CODE-128");
     // (10) is variable-length, so a GS closes it before (17).
     assert_eq!(data, b"010950110153000310AB12\x1d17251231".to_vec());
-    assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+    if zbarimg_available() {
+        assert_eq!(decode_with_zbars_binary(path).map(|r| r.1), Some(data));
+    }
 }
 
 /// An ECI designator above 127 is sent as two bytes, `10bbbbbb bbbbbbbb`.
