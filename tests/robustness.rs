@@ -6,6 +6,18 @@
 //! bounds anywhere — so these tests push shapes and pixel patterns that the
 //! image fixtures never produce through the whole scanner.
 
+// Probes several decoders and the `image` conversions, so it only builds
+// with all of those enabled.
+#![cfg(all(
+    feature = "qrcode",
+    feature = "code128",
+    feature = "code39",
+    feature = "code93",
+    feature = "codabar",
+    feature = "i25",
+    feature = "image"
+))]
+
 #[cfg(all(
     feature = "code39",
     feature = "code93",

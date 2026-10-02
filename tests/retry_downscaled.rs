@@ -4,7 +4,7 @@
 //! resolution even though the code is large and sharp. Averaging the image
 //! down removes the stripe; `retry_downscaled` does that automatically.
 
-#![cfg(feature = "qrcode")]
+#![cfg(all(feature = "qrcode", feature = "image"))]
 
 use image::Luma;
 use zedbar::config::*;

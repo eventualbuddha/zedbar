@@ -4,7 +4,7 @@
 //! decoded. A 3x3 Gaussian closes the gaps; `retry_smoothed` applies it and
 //! re-scans automatically.
 
-#![cfg(feature = "qrcode")]
+#![cfg(all(feature = "qrcode", feature = "image"))]
 
 use zedbar::config::*;
 use zedbar::{DecoderConfig, Image, Scanner};

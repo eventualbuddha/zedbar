@@ -82,8 +82,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The crate advertises building with only the symbologies you need, so every
-  # feature subset has to keep compiling. Scoped to `--lib`, which is what a
-  # dependent consumes: the test targets assume the default features.
+  # feature subset has to keep compiling. Checked for the library, which is
+  # what a dependent consumes, and for the integration tests, each of which
+  # declares the features it needs in a crate-level `cfg` and has to honor
+  # that claim. The unit tests inside `src` assume the default features and
+  # are left out: `--test '*'` selects only the integration test targets.
   #
   # Compile errors only, no `-D warnings`. A subset that leaves a decoder out
   # legitimately leaves its shared helpers unused, and gating those per
@@ -104,7 +107,7 @@ jobs:
       # library and bench_rxing pulls a large dependency, and neither is
       # something a dependent enables.
       - name: Check each feature subset
-        run: cargo hack --each-feature --exclude-features bench_zbar_c,bench_rxing check --lib
+        run: cargo hack --each-feature --exclude-features bench_zbar_c,bench_rxing check --lib --test '*'
 
   wasm:
     runs-on: ubuntu-latest
