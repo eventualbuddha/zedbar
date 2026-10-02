@@ -10,12 +10,19 @@ use zedbar::config::*;
 use zedbar::{DecoderConfig, Image, Scanner};
 
 /// Two scans from the same batch of printed labels, one with the code about
-/// 200px across and one about 100px.
+/// 200px across and one about 100px, and a 112px render whose modules are
+/// under three pixels wide (eventualbuddha/zedbar#60). Smoothing closes
+/// the halftone gaps in the first two and evens out the aliased module
+/// edges in the third.
 const FIXTURES: &[(&str, &str)] = &[
     ("examples/qr-code-halftone-print.jpg", "22931-10-407766"),
     (
         "examples/qr-code-halftone-print-small.jpg",
         "22852-10-407707",
+    ),
+    (
+        "examples/qr-code-tiny-modules.png",
+        "10103GGNTBPUXTTKQGCTYD9QT4M0D",
     ),
 ];
 
