@@ -3156,6 +3156,276 @@ fn qr_sampling_grid_sample(
     _data_bits
 }
 
+/// Sub-module precision of the timing-pattern grid correction: offsets and
+/// scan positions are in eighths of a module.
+const QR_TIMING_SUBPREC: i32 = 3;
+
+/// The largest version whose timing patterns are uninterrupted. From version
+/// 7 on, alignment patterns sit on row and column 6.
+const QR_TIMING_MAX_VERSION: i32 = 6;
+
+/// The largest per-module offset the timing patterns are trusted to report,
+/// in modules. An acceptance limit, not a recovery range.
+const QR_TIMING_MAX_OFFSET: f32 = 0.75;
+
+/// The cell owning grid coordinate `c` along one axis.
+fn qr_sampling_grid_cell_index(_grid: &qr_sampling_grid, c: i32) -> usize {
+    let n = _grid.cells.len();
+    _grid.cell_limits[..n]
+        .iter()
+        .position(|&limit| c < limit)
+        .unwrap_or(n - 1)
+}
+
+/// Read the binarized pixel under grid position `(u, v)`, both in
+/// `QR_TIMING_SUBPREC` units, through the cell that owns it.
+fn qr_sampling_grid_get_bit(
+    _grid: &qr_sampling_grid,
+    _img: &[u8],
+    _width: i32,
+    _height: i32,
+    u: i32,
+    v: i32,
+) -> i32 {
+    let cell = &_grid.cells[qr_sampling_grid_cell_index(_grid, v >> QR_TIMING_SUBPREC)]
+        [qr_sampling_grid_cell_index(_grid, u >> QR_TIMING_SUBPREC)];
+    let p = qr_hom_cell_project_wide(cell, u, v, QR_TIMING_SUBPREC);
+    qr_img_get_bit(_img, _width, _height, p[0], p[1])
+}
+
+/// Sample the data bits like [`qr_sampling_grid_sample`], but with each
+/// module center moved by `du[u]` and `dv[v]`, in `QR_TIMING_SUBPREC` units.
+///
+/// Runs only after plain sampling failed error correction, so it takes the
+/// simple route of one projection per module.
+#[allow(clippy::too_many_arguments)]
+fn qr_sampling_grid_sample_offset(
+    _grid: &qr_sampling_grid,
+    _dim: usize,
+    _fmt_info: i32,
+    _img: &[u8],
+    _width: i32,
+    _height: i32,
+    du: &[i32],
+    dv: &[i32],
+) -> Vec<u32> {
+    let mut _data_bits = qr_make_data_mask(_dim, _fmt_info & 7);
+    let stride = (_dim + QR_INT_BITS as usize - 1) >> QR_INT_LOGBITS as usize;
+    for u in 0.._dim as i32 {
+        for v in 0.._dim as i32 {
+            if qr_sampling_grid_is_in_fp(_grid, _dim, u, v) {
+                continue;
+            }
+            let bit = qr_sampling_grid_get_bit(
+                _grid,
+                _img,
+                _width,
+                _height,
+                (u << QR_TIMING_SUBPREC) + du[u as usize],
+                (v << QR_TIMING_SUBPREC) + dv[v as usize],
+            );
+            _data_bits[(u as usize) * stride + ((v >> QR_INT_LOGBITS) as usize)] ^=
+                (bit as u32) << (v & (QR_INT_BITS - 1));
+        }
+    }
+    _data_bits
+}
+
+/// Measure how far each column and row of modules sits from where the
+/// sampling grid expects it, using the two timing patterns.
+///
+/// A scan of a print or a screenshot resampled to a few pixels per module
+/// can carry a smooth warp of half a module or more that no homography
+/// anchored on the finders can express. The timing patterns on row 6 and
+/// column 6 give the true boundary of every interior module along each
+/// axis; if the warp is separable, those boundaries place every module.
+///
+/// Returns per-column and per-row offsets in `QR_TIMING_SUBPREC` units, or
+/// `None` when either pattern does not read as exactly the expected
+/// alternation or any offset exceeds `QR_TIMING_MAX_OFFSET`.
+fn qr_timing_offsets(
+    _grid: &qr_sampling_grid,
+    _version: i32,
+    _img: &[u8],
+    _width: i32,
+    _height: i32,
+) -> Option<(Vec<i32>, Vec<i32>)> {
+    if _version > QR_TIMING_MAX_VERSION {
+        return None;
+    }
+    let dim = 17 + (_version << 2);
+    let nominal = 6 << QR_TIMING_SUBPREC;
+    // Each timing pattern is one module wide, so a scan along it must run
+    // at the position the other axis actually puts it, or it grazes the
+    // neighboring column or row. Measure one axis at the nominal position,
+    // the other at the corrected one, then re-measure the first.
+    let du = qr_timing_axis_offsets(_grid, dim, _img, _width, _height, true, nominal)?;
+    let dv = qr_timing_axis_offsets(_grid, dim, _img, _width, _height, false, nominal + du[6])?;
+    let du = qr_timing_axis_offsets(_grid, dim, _img, _width, _height, true, nominal + dv[6])
+        .unwrap_or(du);
+    Some((du, dv))
+}
+
+/// Offsets along one axis: the horizontal timing pattern on row 6 gives
+/// column offsets, the vertical one on column 6 gives row offsets. `fixed`
+/// is the scan line's position on the other axis, in `QR_TIMING_SUBPREC`
+/// units.
+fn qr_timing_axis_offsets(
+    _grid: &qr_sampling_grid,
+    dim: i32,
+    _img: &[u8],
+    _width: i32,
+    _height: i32,
+    horizontal: bool,
+    fixed: i32,
+) -> Option<Vec<i32>> {
+    let one = 1 << QR_TIMING_SUBPREC;
+    // Row 6 and column 6 each run along the edge of two finders, so the
+    // scan is bracketed by a seven-module dark run at either end. Walk the
+    // whole axis, center of module 0 to center of module `dim - 1`.
+    let start = 0;
+    let end = (dim - 1) * one;
+    let raw: Vec<i32> = (start..=end)
+        .map(|s| {
+            let (u, v) = if horizontal { (s, fixed) } else { (fixed, s) };
+            qr_sampling_grid_get_bit(_grid, _img, _width, _height, u, v)
+        })
+        .collect();
+    // A scan line grazing a pixel edge can flip for a single step; a short
+    // majority vote removes that without moving real boundaries.
+    let bits: Vec<i32> = (0..raw.len())
+        .map(|i| {
+            let lo = i.saturating_sub(2);
+            let hi = (i + 3).min(raw.len());
+            let window = &raw[lo..hi];
+            (window.iter().sum::<i32>() * 2 > window.len() as i32) as i32
+        })
+        .collect();
+    // Both ends must sit inside a finder edge: dark, and dark for at least
+    // five modules before the first transition.
+    let min_run = 5 * one as usize;
+    let first_white = bits.iter().position(|&b| b == 0)?;
+    let last_white = bits.iter().rposition(|&b| b == 0)?;
+    if first_white < min_run || bits.len() - 1 - last_white < min_run {
+        return None;
+    }
+    // Boundaries in modules. A transition between samples k-1 and k sits
+    // half a step before sample k.
+    let boundaries: Vec<f32> = (1..bits.len())
+        .filter(|&k| bits[k] != bits[k - 1])
+        .map(|k| (start + k as i32) as f32 / one as f32 - 0.5 / one as f32)
+        .collect();
+    qr_timing_offsets_from_boundaries(dim, &boundaries)
+}
+
+/// Turn the measured boundaries along a timing scan, finder edge through
+/// finder edge, into an offset for every module along the axis.
+///
+/// Modules 7 through `dim - 8` are measured directly. The finder columns
+/// are function patterns on the timing row, so their offsets cannot be
+/// read; they ramp linearly from the measured finder edge to zero at the
+/// outer corner of the code, which the sampling grid's base cell maps
+/// exactly.
+fn qr_timing_offsets_from_boundaries(dim: i32, boundaries: &[f32]) -> Option<Vec<i32>> {
+    // Finder edge, separator edge, one boundary per alternation, separator
+    // edge, finder edge.
+    if boundaries.len() != (dim - 13) as usize {
+        return None;
+    }
+    let mut offsets = vec![0f32; dim as usize];
+    for u in 7..=dim - 8 {
+        let k = (u - 7) as usize;
+        let center = (boundaries[k] + boundaries[k + 1]) / 2.0;
+        offsets[u as usize] = center - u as f32;
+    }
+    let left_edge = boundaries[0] - 6.5;
+    let right_edge = boundaries[(dim - 14) as usize] - (dim as f32 - 7.5);
+    for u in 0..7 {
+        offsets[u as usize] = left_edge * (u as f32 + 0.5) / 7.0;
+    }
+    for u in dim - 7..dim {
+        offsets[u as usize] = right_edge * (dim as f32 - 0.5 - u as f32) / 7.0;
+    }
+    if offsets.iter().any(|o| o.abs() > QR_TIMING_MAX_OFFSET) {
+        return None;
+    }
+    let one = (1 << QR_TIMING_SUBPREC) as f32;
+    Some(offsets.iter().map(|o| (o * one).round() as i32).collect())
+}
+
+/// Group sampled bits into Reed-Solomon blocks and correct them.
+///
+/// Returns the concatenated data codewords and the number of corrected
+/// errors, or `Err(())` when a block cannot be corrected or uses more parity
+/// than the version allows.
+fn qr_correct_blocks(
+    version: i32,
+    ecc_level: i32,
+    data_bits: &[u32],
+    fpmask: &[u32],
+    dim: usize,
+) -> Result<(Vec<u8>, i32), ()> {
+    let nblocks = QR_RS_NBLOCKS[(version - 1) as usize][ecc_level as usize] as usize;
+    let npar = QR_RS_NPAR_VALS
+        [(QR_RS_NPAR_OFFS[(version - 1) as usize] as usize) + (ecc_level as usize)]
+        as usize;
+    let ncodewords = qr_code_ncodewords(version as u32);
+    let block_sz = ncodewords / nblocks;
+    let nshort_blocks = nblocks - (ncodewords % nblocks);
+
+    let mut block_data = vec![0u8; ncodewords];
+    let mut block_positions = vec![0usize; nblocks];
+    for i in 1..nblocks {
+        block_positions[i] = block_positions[i - 1] + block_sz + (i > nshort_blocks) as usize;
+    }
+    qr_samples_unpack(
+        &mut block_data,
+        block_positions,
+        block_sz - npar,
+        nshort_blocks,
+        data_bits,
+        fpmask,
+        dim,
+    );
+
+    let mut ndata = 0;
+    let mut processed = 0;
+    let mut ret = 0;
+    for i in 0..nblocks {
+        let block_szi = block_sz + (i >= nshort_blocks) as usize;
+        let block = &mut block_data[processed..][..block_szi];
+        let original = block.to_vec();
+        let decoder = RSDecoder::new(npar);
+        ret = match decoder.correct(&original, None) {
+            Ok(corrected) => {
+                let corrected = corrected.to_vec();
+                block.copy_from_slice(&corrected);
+                original
+                    .iter()
+                    .zip(&corrected)
+                    .filter(|(a, b)| a != b)
+                    .count() as i32
+            }
+            Err(_) => -1,
+        };
+        // For version 1 symbols and version 2-L and 3-L symbols, we aren't
+        // allowed to use all the parity bytes for correction. They are
+        // instead used to improve detection.
+        if ret < 0
+            || (version == 1 && ret > ((ecc_level + 1) << 1))
+            || (version == 2 && ecc_level == 0 && ret > 4)
+        {
+            return Err(());
+        }
+        let ndatai = block_szi - npar;
+        block_data.copy_within(processed..processed + ndatai, ndata);
+        processed += block_szi;
+        ndata += ndatai;
+    }
+    block_data.truncate(ndata);
+    Ok((block_data, ret))
+}
+
 /// Arrange sample bits into bytes and Reed-Solomon blocks
 ///
 /// Takes the bit data read from the QR code and groups it into bytes,
@@ -3579,6 +3849,39 @@ fn qr_hom_cell_project(_cell: &qr_hom_cell, mut _u: i32, mut _v: i32, _res: i32)
     )
 }
 
+/// [`qr_hom_cell_project`] with the products and the division done in 64
+/// bits.
+///
+/// `qr_hom_cell_init` scales the forward coefficients to leave
+/// `QR_ALIGN_SUBPREC` bits of headroom above `dim`, which the existing
+/// callers at `res` 0 and 1 stay inside. The timing-pattern correction
+/// projects at `QR_TIMING_SUBPREC`, one bit past that budget, so it goes
+/// through here.
+fn qr_hom_cell_project_wide(_cell: &qr_hom_cell, _u: i32, _v: i32, _res: i32) -> qr_point {
+    let u = (_u - (_cell.u0 << _res)) as i64;
+    let v = (_v - (_cell.v0 << _res)) as i64;
+    let f = |i: usize| {
+        _cell.fwd[i][0] as i64 * u + _cell.fwd[i][1] as i64 * v + ((_cell.fwd[i][2] as i64) << _res)
+    };
+    let (mut x, mut y, mut w) = (f(0), f(1), f(2));
+    if w == 0 {
+        return [
+            if x < 0 { i32::MIN } else { i32::MAX },
+            if y < 0 { i32::MIN } else { i32::MAX },
+        ];
+    }
+    if w < 0 {
+        x = -x;
+        y = -y;
+        w = -w;
+    }
+    let divround = |a: i64| (a + a.signum() * (w >> 1)) / w;
+    [
+        (divround(x) + _cell.x0 as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+        (divround(y) + _cell.y0 as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+    ]
+}
+
 /// Locate the crossing of a finder or alignment pattern along a line
 ///
 /// Uses Bresenham's algorithm to trace along the line and find the exact
@@ -3939,6 +4242,10 @@ pub(crate) struct QrReader {
     pub(crate) rng: rand_chacha::ChaCha8Rng,
     ///  current finder state, horizontal and vertical lines
     pub(crate) finder_lines: [QrFinderLines; 2],
+    /// Whether a code whose plain sampling fails error correction is
+    /// re-sampled with the offsets its timing patterns report. Always on in
+    /// production; a test turns it off to show the correction did the work.
+    pub(crate) timing_correction: bool,
 }
 
 impl Default for QrReader {
@@ -3947,6 +4254,7 @@ impl Default for QrReader {
         Self {
             rng: ChaCha8Rng::from_seed([0u8; 32]),
             finder_lines: [QrFinderLines::default(), QrFinderLines::default()],
+            timing_correction: true,
         }
     }
 }
@@ -4266,6 +4574,7 @@ impl QrReader {
                     img,
                     _width,
                     _height,
+                    self.timing_correction,
                 ) < 0
             {
                 // The code may be flipped.
@@ -4312,6 +4621,7 @@ impl QrReader {
                     img,
                     _width,
                     _height,
+                    self.timing_correction,
                 ) < 0
                 {
                     continue;
@@ -5132,14 +5442,9 @@ impl qr_code_data {
         0
     }
 
-    /// Decode a QR code from an image
-    ///
-    /// This is the main decoding function that:
-    /// 1. Initializes the sampling grid
-    /// 2. Samples data bits from the image
-    /// 3. Groups bits into Reed-Solomon codewords
-    /// 4. Performs error correction on each block
-    /// 5. Parses the corrected data
+    /// Sample, error-correct and parse the code whose finder centers are
+    /// given. `refine` enables the timing-pattern grid correction when plain
+    /// sampling fails error correction.
     #[allow(clippy::too_many_arguments)]
     fn decode(
         &mut self,
@@ -5151,6 +5456,7 @@ impl qr_code_data {
         _img: &[u8],
         _width: i32,
         _height: i32,
+        refine: bool,
     ) -> i32 {
         let mut grid: qr_sampling_grid = qr_sampling_grid {
             cells: Vec::new(),
@@ -5172,98 +5478,38 @@ impl qr_code_data {
         );
 
         let dim = 17 + (version << 2) as usize;
-        let data_bits = qr_sampling_grid_sample(&grid, dim, _fmt_info, _img, _width, _height);
-
-        // Group those bits into Reed-Solomon codewords
         let ecc_level = (_fmt_info >> 3) ^ 1;
-        let nblocks = QR_RS_NBLOCKS[(version - 1) as usize][ecc_level as usize] as usize;
-        let npar = QR_RS_NPAR_VALS
-            [(QR_RS_NPAR_OFFS[(version - 1) as usize] as usize) + (ecc_level as usize)]
-            as usize;
-        let ncodewords = qr_code_ncodewords(version as u32);
-        let block_sz = ncodewords / nblocks;
-        let nshort_blocks = nblocks - (ncodewords % nblocks);
 
-        let mut block_data = vec![0u8; ncodewords];
-        let mut block_positions = vec![0usize; nblocks];
+        let data_bits = qr_sampling_grid_sample(&grid, dim, _fmt_info, _img, _width, _height);
+        let mut corrected = qr_correct_blocks(version, ecc_level, &data_bits, &grid.fpmask, dim);
 
-        // Initialize block starting positions
-        block_positions[0] = 0;
-        for i in 1..nblocks {
-            block_positions[i] = block_positions[i - 1] + block_sz + (i > nshort_blocks) as usize;
+        // When the finder-anchored grid reads too many modules wrong, the
+        // timing patterns may still place them: re-sample with the module
+        // offsets they report and correct again.
+        let timing = if refine && corrected.is_err() {
+            qr_timing_offsets(&grid, version, _img, _width, _height)
+        } else {
+            None
+        };
+        if let Some((du, dv)) = timing {
+            let data_bits = qr_sampling_grid_sample_offset(
+                &grid, dim, _fmt_info, _img, _width, _height, &du, &dv,
+            );
+            corrected = qr_correct_blocks(version, ecc_level, &data_bits, &grid.fpmask, dim);
         }
 
-        qr_samples_unpack(
-            &mut block_data,
-            block_positions,
-            block_sz - npar,
-            nshort_blocks,
-            &data_bits,
-            &grid.fpmask,
-            dim,
-        );
-
-        // Perform the error correction using reed-solomon crate
-        let mut ndata = 0;
-        let mut ncodewords_processed = 0;
-        let mut ret = 0;
-
-        for i in 0..nblocks {
-            let block_szi = block_sz + (i >= nshort_blocks) as usize;
-
-            // Use reed-solomon crate for error correction
-            // QR codes always use m0=0, so we can use the crate directly
-            let block_slice = &mut block_data[ncodewords_processed..][..block_szi];
-
-            // Save original for error counting
-            let original = block_slice.to_vec();
-
-            let decoder = RSDecoder::new(npar);
-            ret = match decoder.correct(&original, None) {
-                Ok(corrected) => {
-                    // Copy corrected data back
-                    let corrected_data = corrected.to_vec();
-                    block_slice.copy_from_slice(&corrected_data);
-                    // Count errors by comparing original with corrected
-                    let mut error_count = 0;
-                    for j in 0..block_szi {
-                        if original[j] != corrected_data[j] {
-                            error_count += 1;
-                        }
-                    }
-                    if error_count > 0 { error_count } else { 0 }
-                }
-                Err(_) => -1, // Correction failed
-            };
-
-            // For version 1 symbols and version 2-L and 3-L symbols, we aren't allowed
-            // to use all the parity bytes for correction.
-            // They are instead used to improve detection.
-            if ret < 0
-                || (version == 1 && ret > ((ecc_level + 1) << 1))
-                || (version == 2 && ecc_level == 0 && ret > 4)
-            {
-                ret = -1;
-                break;
-            }
-
-            let ndatai = block_szi - npar;
-            block_data.copy_within(ncodewords_processed..ncodewords_processed + ndatai, ndata);
-            ncodewords_processed += block_szi;
-            ndata += ndatai;
-        }
+        let Ok((block_data, _)) = corrected else {
+            return -1;
+        };
 
         // Parse the corrected bitstream
-        if ret >= 0 {
-            ret = self.parse(version, &block_data[..ndata]);
-            if ret < 0 {
-                self.clear();
-            }
-            self.version = version as u8;
-            self.ecc_level = ecc_level as u8;
+        let parsed = self.parse(version, &block_data);
+        if parsed < 0 {
+            self.clear();
         }
-
-        ret
+        self.version = version as u8;
+        self.ecc_level = ecc_level as u8;
+        parsed
     }
 
     /// Clear a QR code data structure.
@@ -5797,6 +6043,423 @@ mod tests {
                 "first_new={first_new}, distractor={add_distractor}"
             );
         }
+    }
+
+    /// A code-space to image-space cell for a version with `dim` modules
+    /// whose corner module centers land on `corners`, in finder subpixels.
+    fn cell_for(dim: i32, corners: [[i32; 2]; 4]) -> qr_hom_cell {
+        let mut cell = qr_hom_cell::default();
+        let [p0, p1, p2, p3] = corners;
+        qr_hom_cell_init(
+            &mut cell,
+            0,
+            0,
+            dim - 1,
+            0,
+            0,
+            dim - 1,
+            dim - 1,
+            dim - 1,
+            p0[0],
+            p0[1],
+            p1[0],
+            p1[1],
+            p2[0],
+            p2[1],
+            p3[0],
+            p3[1],
+        );
+        cell
+    }
+
+    #[test]
+    fn wide_projector_matches_the_narrow_one_inside_its_budget() {
+        let dim = 37;
+        let cells = [
+            cell_for(dim, [[100, 120], [2000, 180], [60, 1900], [1700, 1750]]),
+            cell_for(dim, [[400, 400], [1840, 400], [400, 1840], [1840, 1840]]),
+        ];
+        for cell in &cells {
+            for res in 0..=1 {
+                for u in 0..dim {
+                    for v in 0..dim {
+                        assert_eq!(
+                            qr_hom_cell_project_wide(cell, u << res, v << res, res),
+                            qr_hom_cell_project(cell, u << res, v << res, res),
+                            "res {res} at ({u}, {v})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A version 6 grid on a 4000px image with one corner pulled 40% inward,
+    /// projected at timing resolution with every module pushed to the offset
+    /// bound, matches a floating-point evaluation of the same cell. Debug
+    /// builds would also panic here on any `i32` overflow in the production
+    /// path.
+    #[test]
+    fn wide_projector_agrees_with_floating_point_at_timing_resolution() {
+        let dim = 41;
+        let s = 4000 << QR_FINDER_SUBPREC;
+        let cell = cell_for(
+            dim,
+            [
+                [200, 300],
+                [s - 200, 500],
+                [400, s - 400],
+                [s * 3 / 5, s * 3 / 5],
+            ],
+        );
+        let res = QR_TIMING_SUBPREC;
+        let bound = (QR_TIMING_MAX_OFFSET * (1 << res) as f32) as i32;
+        let reference = |u: i32, v: i32| -> [f64; 2] {
+            let u = (u - (cell.u0 << res)) as f64;
+            let v = (v - (cell.v0 << res)) as f64;
+            let row = |i: usize| {
+                cell.fwd[i][0] as f64 * u
+                    + cell.fwd[i][1] as f64 * v
+                    + (cell.fwd[i][2] as f64) * (1 << res) as f64
+            };
+            let w = row(2);
+            [row(0) / w + cell.x0 as f64, row(1) / w + cell.y0 as f64]
+        };
+        let mut checked = 0;
+        for u in 0..dim {
+            for v in 0..dim {
+                // Data modules at the bound, and the timing scan lines.
+                let offsets: &[(i32, i32)] = if u == 6 || v == 6 {
+                    &[(0, 0)]
+                } else {
+                    &[(-bound, -bound), (0, 0), (bound, bound), (-bound, bound)]
+                };
+                for &(du, dv) in offsets {
+                    let (pu, pv) = ((u << res) + du, (v << res) + dv);
+                    let got = qr_hom_cell_project_wide(&cell, pu, pv, res);
+                    let want = reference(pu, pv);
+                    for axis in 0..2 {
+                        assert!(
+                            (got[axis] as f64 - want[axis]).abs() <= 1.0,
+                            "({u}, {v}) offset ({du}, {dv}) axis {axis}: {} vs {}",
+                            got[axis],
+                            want[axis]
+                        );
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 4 * 1000);
+    }
+
+    /// Render `payload` with a four-module quiet zone and return the
+    /// grayscale image, its size, and the module count.
+    fn rendered(
+        payload: &[u8],
+        version: i32,
+        ec: qrcode::EcLevel,
+        module: i32,
+    ) -> (Vec<u8>, i32, i32, i32) {
+        let code =
+            qrcode::QrCode::with_version(payload, qrcode::Version::Normal(version as i16), ec)
+                .expect("encode");
+        let gray = code
+            .render::<image::Luma<u8>>()
+            .module_dimensions(module as u32, module as u32)
+            .build();
+        let (w, h) = (gray.width() as i32, gray.height() as i32);
+        (gray.into_raw(), w, h, code.width() as i32)
+    }
+
+    fn binarized(gray: &[u8], w: i32, h: i32) -> Vec<u8> {
+        binarize(gray, w as usize, h as usize)
+    }
+
+    /// The center of module `(u, v)` of a render with a four-module quiet
+    /// zone, in finder subpixels.
+    fn module_center(u: i32, v: i32, module: i32) -> qr_point {
+        [
+            ((4 + u) * module * 2 + module) << QR_FINDER_SUBPREC >> 1,
+            ((4 + v) * module * 2 + module) << QR_FINDER_SUBPREC >> 1,
+        ]
+    }
+
+    /// A sampling grid for a clean render, built the way `decode` builds it.
+    fn grid_for(bin: &[u8], w: i32, h: i32, version: i32, module: i32) -> qr_sampling_grid {
+        let dim = 17 + (version << 2);
+        let mut grid = qr_sampling_grid {
+            cells: Vec::new(),
+            fpmask: Vec::new(),
+            cell_limits: [0; 6],
+        };
+        let mut bbox = [
+            module_center(0, 0, module),
+            module_center(dim - 1, 0, module),
+            module_center(0, dim - 1, module),
+            module_center(dim - 1, dim - 1, module),
+        ];
+        qr_sampling_grid_init(
+            &mut grid,
+            version,
+            &module_center(3, 3, module),
+            &module_center(dim - 4, 3, module),
+            &module_center(3, dim - 4, module),
+            &mut bbox,
+            bin,
+            w,
+            h,
+        );
+        grid
+    }
+
+    /// Format info of a code with the given level and mask, as the decoder
+    /// sees it: ECC bits then mask, with the ECC bits in finder order.
+    fn fmt_info(ec: qrcode::EcLevel, mask: i32) -> i32 {
+        let ecc = match ec {
+            qrcode::EcLevel::L => 0,
+            qrcode::EcLevel::M => 1,
+            qrcode::EcLevel::Q => 2,
+            qrcode::EcLevel::H => 3,
+        };
+        ((ecc ^ 1) << 3) | mask
+    }
+
+    /// The mask a clean render used, found by trying each one.
+    fn find_mask(
+        grid: &qr_sampling_grid,
+        version: i32,
+        ec: qrcode::EcLevel,
+        bin: &[u8],
+        w: i32,
+        h: i32,
+    ) -> i32 {
+        let dim = 17 + (version << 2);
+        (0..8)
+            .find(|&mask| {
+                let fi = fmt_info(ec, mask);
+                let bits = qr_sampling_grid_sample(grid, dim as usize, fi, bin, w, h);
+                qr_correct_blocks(version, (fi >> 3) ^ 1, &bits, &grid.fpmask, dim as usize)
+                    .map(|(_, errors)| errors == 0)
+                    .unwrap_or(false)
+            })
+            .expect("one mask decodes a clean render without errors")
+    }
+
+    #[test]
+    fn offset_sampler_with_zero_offsets_matches_the_plain_sampler() {
+        let (version, ec, module) = (3, qrcode::EcLevel::M, 4);
+        let (gray, w, h, dim) = rendered(b"zero offsets change nothing", version, ec, module);
+        let bin = binarized(&gray, w, h);
+        let grid = grid_for(&bin, w, h, version, module);
+        let fi = fmt_info(ec, find_mask(&grid, version, ec, &bin, w, h));
+        let zeros = vec![0i32; dim as usize];
+        assert_eq!(
+            qr_sampling_grid_sample_offset(&grid, dim as usize, fi, &bin, w, h, &zeros, &zeros),
+            qr_sampling_grid_sample(&grid, dim as usize, fi, &bin, w, h)
+        );
+    }
+
+    #[test]
+    fn timing_offsets_from_boundaries_enforce_count_and_bound() {
+        let dim = 37;
+        let nominal: Vec<f32> = (0..dim - 13).map(|k| 6.5 + k as f32).collect();
+        let zero = qr_timing_offsets_from_boundaries(dim, &nominal).expect("clean boundaries");
+        assert_eq!(zero, vec![0; dim as usize]);
+
+        assert!(
+            qr_timing_offsets_from_boundaries(dim, &nominal[1..]).is_none(),
+            "one short"
+        );
+        let mut extra = nominal.clone();
+        extra.push(30.0);
+        assert!(
+            qr_timing_offsets_from_boundaries(dim, &extra).is_none(),
+            "one long"
+        );
+
+        // Module 12 sits between boundaries 11.5 and 12.5, indices 5 and 6.
+        let mut shifted = nominal.clone();
+        shifted[5] += 0.5;
+        shifted[6] += 0.5;
+        let got = qr_timing_offsets_from_boundaries(dim, &shifted).expect("within the bound");
+        assert_eq!(got[12], 4, "half a module in eighths");
+        assert_eq!(got[11], 2, "the neighbor shares one moved boundary");
+
+        shifted[5] += 0.4;
+        shifted[6] += 0.4;
+        assert!(
+            qr_timing_offsets_from_boundaries(dim, &shifted).is_none(),
+            "past the bound"
+        );
+
+        // The outermost finder edge is extrapolated toward the corner, so a
+        // large shift there is bounded too.
+        let mut edge = nominal.clone();
+        edge[0] -= 0.9;
+        assert!(qr_timing_offsets_from_boundaries(dim, &edge).is_none());
+    }
+
+    #[test]
+    fn timing_offsets_read_a_clean_render_and_reject_a_damaged_module() {
+        let (version, ec, module) = (3, qrcode::EcLevel::M, 4);
+        let (gray, w, h, _) = rendered(b"timing pattern gate", version, ec, module);
+        let mut bin = binarized(&gray, w, h);
+        let grid = grid_for(&bin, w, h, version, module);
+        let (du, dv) = qr_timing_offsets(&grid, version, &bin, w, h).expect("clean timing");
+        assert!(du.iter().chain(&dv).all(|o| o.abs() <= 1), "{du:?} {dv:?}");
+
+        // Flip the dark timing module at (10, 6).
+        let x0 = (4 + 10) * module;
+        let y0 = (4 + 6) * module;
+        for y in y0..y0 + module {
+            for x in x0..x0 + module {
+                let p = &mut bin[(y * w + x) as usize];
+                *p = if *p != 0 { 0 } else { 0xFF };
+            }
+        }
+        assert!(qr_timing_offsets(&grid, version, &bin, w, h).is_none());
+    }
+
+    #[test]
+    fn timing_offsets_are_not_measured_above_version_six() {
+        let (version, ec, module) = (7, qrcode::EcLevel::M, 4);
+        let (gray, w, h, _) = rendered(
+            b"version seven has alignment patterns on row six",
+            version,
+            ec,
+            module,
+        );
+        let bin = binarized(&gray, w, h);
+        let grid = grid_for(&bin, w, h, version, module);
+        assert!(qr_timing_offsets(&grid, version, &bin, w, h).is_none());
+    }
+
+    /// Warp a clean grayscale render with a smooth per-column and per-row
+    /// displacement, then binarize it. The displacement is one sine period
+    /// across the code, so it vanishes at the finder columns and peaks at
+    /// `amp` pixels a quarter of the way in, like a screenshot resampled
+    /// through a non-uniform scale. Returns the binarized image and a map
+    /// from clean pixel positions to warped ones.
+    fn warped(
+        gray: &[u8],
+        w: i32,
+        h: i32,
+        module: i32,
+        dim: i32,
+        amp: f64,
+    ) -> (Vec<u8>, impl Fn([i32; 2]) -> [i32; 2]) {
+        let origin = (4 * module) as f64;
+        let span = (dim * module) as f64;
+        let fx = move |x: f64| amp * ((x - origin) / span * std::f64::consts::TAU).sin();
+        let fy = move |y: f64| amp * 0.5 * ((y - origin) / span * std::f64::consts::TAU).cos();
+        let sample = |x: f64, y: f64| -> f64 {
+            let x = x.clamp(0.0, (w - 1) as f64);
+            let y = y.clamp(0.0, (h - 1) as f64);
+            let (x0, y0) = (x.floor() as i32, y.floor() as i32);
+            let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+            let (fx, fy) = (x - x0 as f64, y - y0 as f64);
+            let g = |x: i32, y: i32| gray[(y * w + x) as usize] as f64;
+            g(x0, y0) * (1.0 - fx) * (1.0 - fy)
+                + g(x1, y0) * fx * (1.0 - fy)
+                + g(x0, y1) * (1.0 - fx) * fy
+                + g(x1, y1) * fx * fy
+        };
+        let mut out = vec![0u8; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                out[(y * w + x) as usize] =
+                    sample(x as f64 - fx(x as f64), y as f64 - fy(y as f64)).round() as u8;
+            }
+        }
+        let bin = binarize(&out, w as usize, h as usize);
+        // Solve x - fx(x) = source by fixed-point iteration.
+        let forward = move |p: [i32; 2]| {
+            let mut x = p[0] as f64;
+            let mut y = p[1] as f64;
+            for _ in 0..8 {
+                x = p[0] as f64 + fx(x);
+                y = p[1] as f64 + fy(y);
+            }
+            [x.round() as i32, y.round() as i32]
+        };
+        (bin, forward)
+    }
+
+    /// A finder center with edge points three modules out on each side,
+    /// every position passed through `map`.
+    fn finder_center(
+        pixel: [i32; 2],
+        module: i32,
+        map: &impl Fn([i32; 2]) -> [i32; 2],
+    ) -> qr_finder_center {
+        let sub = |p: [i32; 2]| p.map(|c| c << QR_FINDER_SUBPREC);
+        let mut edge_pts = Vec::new();
+        for axis in 0..2 {
+            for side in [-3, 3] {
+                for offset in [-1, 0, 1] {
+                    let mut point = pixel;
+                    point[axis] += side * module;
+                    point[1 - axis] += offset * module;
+                    edge_pts.push(qr_finder_edge_pt {
+                        pos: sub(map(point)),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        qr_finder_center {
+            pos: sub(map(pixel)),
+            edge_pts,
+        }
+    }
+
+    /// The same warped image, decoded with and without the timing-pattern
+    /// correction, from fresh reader state each time.
+    #[test]
+    fn timing_correction_decodes_a_warped_render_the_plain_grid_cannot() {
+        let (version, ec, module) = (5, qrcode::EcLevel::M, 3);
+        let payload = b"https://zedbar.invalid/warped-grid?resampled=true&px=3";
+        let (gray, w, h, dim) = rendered(payload, version, ec, module);
+        // Half a module at the peaks. At 1.0 px the plain grid still
+        // decodes; at 2.0 px the finder-edge fit upstream of sampling fails,
+        // so neither path reaches Reed-Solomon.
+        let (bin, map) = warped(&gray, w, h, module, dim, 1.5);
+        let center =
+            |u: i32, v: i32| [(4 + u) * module + module / 2, (4 + v) * module + module / 2];
+        let centers = vec![
+            finder_center(center(3, 3), module, &map),
+            finder_center(center(dim - 4, 3), module, &map),
+            finder_center(center(3, dim - 4), module, &map),
+        ];
+
+        let decode = |timing_correction: bool| -> Vec<Vec<u8>> {
+            let mut reader = QrReader {
+                timing_correction,
+                ..Default::default()
+            };
+            let mut qrlist = qr_code_data_list::default();
+            reader.match_centers(
+                &mut qrlist,
+                &mut centers.clone(),
+                0,
+                &bin,
+                w,
+                h,
+                &mut Vec::new(),
+            );
+            qrlist
+                .extract_text()
+                .iter()
+                .map(|s| s.data().to_vec())
+                .collect()
+        };
+        assert_eq!(
+            decode(false),
+            Vec::<Vec<u8>>::new(),
+            "the plain grid must fail on this warp"
+        );
+        assert_eq!(decode(true), vec![payload.to_vec()]);
     }
 
     /// Pixel coordinates → subpixel SubpixelBBox.
