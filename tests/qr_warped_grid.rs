@@ -4,7 +4,7 @@
 //! Reed-Solomon to recover (eventualbuddha/zedbar#58). The decoder measures
 //! the warp from the timing patterns and re-samples.
 
-#![cfg(feature = "qrcode")]
+#![cfg(all(feature = "qrcode", feature = "image"))]
 
 use zedbar::config::*;
 use zedbar::{DecoderConfig, Image, Scanner};
