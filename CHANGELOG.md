@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/eventualbuddha/zedbar/compare/v0.6.0...v0.7.0) (2026-10-02)
+
+
+### Features
+
+* **qrcode:** correct the sampling grid from the timing patterns ([feb1baf](https://github.com/eventualbuddha/zedbar/commit/feb1bafa6eb817d02d32dbaa934e101868572ccc))
+* **qrcode:** correct the sampling grid from the timing patterns ([3d449f4](https://github.com/eventualbuddha/zedbar/commit/3d449f4adb01846cf0b758169023e49fabd47b36))
+
 ## [0.6.0](https://github.com/eventualbuddha/zedbar/compare/v0.5.2...v0.6.0) (2026-10-02)
 
 
