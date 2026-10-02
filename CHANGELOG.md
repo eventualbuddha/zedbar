@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/eventualbuddha/zedbar/compare/v0.5.1...v0.5.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* recover QR codes with an erased finder bar ([4835f04](https://github.com/eventualbuddha/zedbar/commit/4835f0442ad92c85e29599b9383fa05e779f579d))
+* recover QR codes with an erased finder bar ([e1fbe40](https://github.com/eventualbuddha/zedbar/commit/e1fbe40c4544a46b23c0b3dbc809662907695ae2))
+
 ## [0.5.1](https://github.com/eventualbuddha/zedbar/compare/v0.5.0...v0.5.1) (2026-08-15)
 
 
