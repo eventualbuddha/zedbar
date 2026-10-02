@@ -5,6 +5,18 @@
 //! - System zbar (via zbarimg command)
 //! - rqrr (for QR codes only)
 
+// Exercises every symbology, so it only builds with all of them enabled.
+#![cfg(all(
+    feature = "qrcode",
+    feature = "sqcode",
+    feature = "ean",
+    feature = "code128",
+    feature = "code39",
+    feature = "code93",
+    feature = "codabar",
+    feature = "i25"
+))]
+
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
 use zedbar::config::{DecoderConfig, Upca, Upce};
