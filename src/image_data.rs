@@ -104,4 +104,63 @@ impl ImageData {
             data,
         })
     }
+
+    /// Downscales the image by an integer factor with a box filter twice
+    /// the size of the step, so each output pixel averages a `2f x 2f`
+    /// window and adjacent windows overlap by half.
+    ///
+    /// Output pixel `(ox, oy)` is centered on source pixel
+    /// `(ox * f + f, oy * f + f)`.
+    ///
+    /// Returns None if `factor` < 2 or either side is shorter than one
+    /// window, `2 * factor`.
+    pub(crate) fn downscale(&self, factor: u32) -> Option<Self> {
+        if factor < 2 {
+            return None;
+        }
+        let f = factor as usize;
+        let w = self.width as usize;
+        let h = self.height as usize;
+        let new_width = (w / f).checked_sub(1)?;
+        let new_height = (h / f).checked_sub(1)?;
+        if new_width == 0 || new_height == 0 {
+            return None;
+        }
+
+        let window = 2 * f;
+        let area = (window * window) as u64;
+        let half = area / 2;
+
+        // Sum each row over a sliding horizontal window first, then sum
+        // those over the vertical window: O(f) per output pixel instead of
+        // O(f^2).
+        let mut row_sums = vec![0u64; h * new_width];
+        for y in 0..h {
+            let row = &self.data[y * w..(y + 1) * w];
+            let sums = &mut row_sums[y * new_width..(y + 1) * new_width];
+            for (ox, sum) in sums.iter_mut().enumerate() {
+                *sum = row[ox * f..ox * f + window].iter().map(|&p| p as u64).sum();
+            }
+        }
+
+        let mut data = vec![0u8; new_width * new_height];
+        let mut acc = vec![0u64; new_width];
+        for oy in 0..new_height {
+            acc.fill(0);
+            for sy in oy * f..oy * f + window {
+                let sums = &row_sums[sy * new_width..(sy + 1) * new_width];
+                acc.iter_mut().zip(sums).for_each(|(a, &s)| *a += s);
+            }
+            let out = &mut data[oy * new_width..(oy + 1) * new_width];
+            for (o, a) in out.iter_mut().zip(&acc) {
+                *o = ((a + half) / area) as u8;
+            }
+        }
+
+        Some(Self {
+            width: new_width as u32,
+            height: new_height as u32,
+            data,
+        })
+    }
 }

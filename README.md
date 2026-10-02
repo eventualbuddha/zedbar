@@ -155,6 +155,7 @@ let config = DecoderConfig::new()
     .set_length_limits(Code39, 4, 20)  // also enables Code39
     .test_inverted(true)               // Try inverted image if no symbols found
     .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically
+    .retry_downscaled(true)            // Re-scan large images at half/quarter size
     .scan_density(2, 2);               // Scan every 2nd line (faster)
 
 let mut scanner = Scanner::with_config(config);
@@ -202,6 +203,34 @@ for region in result.finder_regions() {
 
 With automatic retry, the regions left in `finder_regions()` are the ones the
 retry could not resolve.
+
+### Photos of Screens
+
+A phone photo of a QR code on a display carries the screen's pixel grid as a
+stripe a few pixels wide. At full resolution that stripe breaks every scan line
+running across it, so no finder pattern is found even though the code is large
+and sharp. Averaging the image down removes the stripe:
+
+```rust
+use zedbar::config::*;
+use zedbar::{DecoderConfig, Scanner, Image};
+
+// Option 1: Automatic retry. When no QR code decodes, the image is box-filtered
+// to half and then quarter size and rescanned, each step as long as the shorter
+// side is still at least 1024px, with coordinates mapped back to the original.
+let config = DecoderConfig::new()
+    .enable(QrCode)
+    .retry_downscaled(true);
+let mut scanner = Scanner::with_config(config);
+let result = scanner.scan(&mut img);
+
+// Option 2: Manual control. `downscale(2)` averages a 4x4 window at every
+// other pixel, which a plain 2x2 average would not do well enough.
+if let Some(mut half) = img.downscale(2) {
+    let retry = scanner.scan(&mut half);
+    // Output pixel (x, y) is centered on source pixel (2x + 2, 2y + 2).
+}
+```
 
 ### Command-line Tool
 

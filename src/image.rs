@@ -77,6 +77,21 @@ impl Image {
     pub fn upscale(&self, scale: u32) -> Option<Self> {
         self.image.upscale(scale).map(|image| Image { image })
     }
+
+    /// Downscale the image by an integer factor using a box filter twice
+    /// the size of the step.
+    ///
+    /// The overlapping window suppresses periodic texture up to twice the
+    /// step, such as the pixel grid in a photo of a screen, which a plain
+    /// `factor x factor` average would alias rather than remove. Output
+    /// pixel `(x, y)` is centered on source pixel
+    /// `(x * factor + factor, y * factor + factor)`.
+    ///
+    /// Returns `None` if `factor` < 2 or either side is shorter than one
+    /// window, `2 * factor`.
+    pub fn downscale(&self, factor: u32) -> Option<Self> {
+        self.image.downscale(factor).map(|image| Image { image })
+    }
 }
 
 #[cfg(feature = "image")]

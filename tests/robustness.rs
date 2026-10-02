@@ -219,6 +219,72 @@ fn upscale_rejects_invalid_factors() {
 }
 
 #[test]
+fn downscale_rejects_invalid_factors_and_tiny_images() {
+    let image = Image::from_gray(&[0u8; 64], 8, 8).expect("valid dimensions");
+
+    assert!(image.downscale(0).is_none());
+    assert!(image.downscale(1).is_none());
+    // A side shorter than one window (twice the factor) has no output.
+    assert!(image.downscale(5).is_none());
+    assert!(image.downscale(u32::MAX).is_none());
+
+    let half = image.downscale(2).expect("valid factor");
+    assert_eq!(half.width(), 3);
+    assert_eq!(half.height(), 3);
+    assert_eq!(half.data().len(), 9);
+
+    let one_window = image.downscale(4).expect("exactly one window");
+    assert_eq!((one_window.width(), one_window.height()), (1, 1));
+
+    let empty = Image::from_gray(&[], 0, 0).expect("valid dimensions");
+    assert!(empty.downscale(2).is_none());
+}
+
+/// A single output pixel of a large factor sums more than `u32::MAX` worth
+/// of white; the average must still come out as 255.
+#[test]
+fn downscale_survives_factors_whose_window_sum_exceeds_u32() {
+    let side = 4200u32;
+    let image = Image::from_gray(&vec![255u8; (side * side) as usize], side, side)
+        .expect("valid dimensions");
+    let one = image.downscale(side / 2).expect("one window");
+    assert_eq!((one.width(), one.height()), (1, 1));
+    assert_eq!(one.data(), &[255]);
+}
+
+/// Each output pixel of `downscale(2)` averages the 4x4 source window whose
+/// top-left corner is at twice its coordinates.
+#[test]
+fn downscale_averages_overlapping_windows() {
+    let (w, h) = (8u32, 6u32);
+    let data: Vec<u8> = (0..w * h).map(|i| (i % w) as u8 * 10).collect();
+    let image = Image::from_gray(&data, w, h).expect("valid dimensions");
+    let half = image.downscale(2).expect("valid factor");
+    assert_eq!((half.width(), half.height()), (3, 2));
+
+    // Columns in the window at output x are 2x..2x+4, with values 10 apart,
+    // so the mean is 10 * (2x + 1.5), rounded.
+    for y in 0..2 {
+        for x in 0..3u32 {
+            let expected = ((2 * x) as f32 + 1.5) * 10.0;
+            let got = half.data()[(y * 3 + x) as usize] as f32;
+            assert!(
+                (got - expected).abs() <= 0.5,
+                "({x}, {y}): {got} vs {expected}"
+            );
+        }
+    }
+
+    // A stripe with a period of four source pixels is removed entirely.
+    let stripe: Vec<u8> = (0..w * h)
+        .map(|i| if (i / w) % 4 < 2 { 40 } else { 120 })
+        .collect();
+    let image = Image::from_gray(&stripe, w, h).expect("valid dimensions");
+    let half = image.downscale(2).expect("valid factor");
+    assert!(half.data().iter().all(|&p| p == 80), "{:?}", half.data());
+}
+
+#[test]
 fn from_gray_rejects_mismatched_dimensions() {
     assert!(Image::from_gray(&[0u8; 10], 4, 4).is_err());
     assert!(Image::from_gray(&[0u8; 16], 4, 4).is_ok());

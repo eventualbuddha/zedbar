@@ -284,7 +284,8 @@ fn main() {
         }
         cfg
     }
-    .retry_undecoded_regions(true);
+    .retry_undecoded_regions(true)
+    .retry_downscaled(true);
 
     let mut total_symbols = 0;
     let mut partial_symbols = 0;

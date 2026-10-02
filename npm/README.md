@@ -128,9 +128,10 @@ Scans grayscale image data for barcodes and QR codes.
 ### `ScanOptions`
 
 A class, not a plain object: construct it with `new ScanOptions()` and assign
-the properties you want. Both are write-only setters.
+the properties you want. All of them are write-only setters.
 
 - `retryUndecodedRegions` (`boolean`, default: `true`) - Automatically retry undecoded QR finder regions by cropping and upscaling. Disable to skip the retry and reduce processing time for images that are known to have sufficient resolution.
+- `retryDownscaled` (`boolean`, default: `true`) - When no QR code decodes at full resolution, re-scan at half and then quarter size, each step as long as the image's shorter side is still at least 1024px. This recovers QR codes in photos of screens, whose pixel grid breaks finder detection at full resolution. Disable to skip the retry on images that are known not to be photos of displays.
 - `symbologies` (`string[]`, optional) - Restrict scanning to the listed symbologies. When omitted, every supported symbology is enabled. Names match the `symbolType` field on results — see [Supported Formats](#supported-formats) — and are case-sensitive; an unrecognized name throws `unknown symbology: "..."`.
 
 ```javascript

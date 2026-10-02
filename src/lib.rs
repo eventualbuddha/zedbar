@@ -41,6 +41,7 @@
 //!     .set_length_limits(Code39, 4, 20)  // Code39 must be 4-20 chars
 //!     .test_inverted(true)               // Try inverted image if no symbols found
 //!     .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically
+//!     .retry_downscaled(true)            // Re-scan large images at half/quarter size
 //!     .scan_density(2, 2);               // Scan every 2nd line (faster)
 //!
 //! let mut scanner = Scanner::with_config(config);
@@ -54,6 +55,14 @@
 //! to retry those regions, or enable
 //! [`retry_undecoded_regions`](DecoderConfig::retry_undecoded_regions)
 //! to do this automatically.
+//!
+//! # Photos of Screens
+//!
+//! A photo of a QR code on a display carries the screen's pixel grid as a
+//! stripe that defeats finder detection at full resolution. Use
+//! [`Image::downscale`] to average it out, or enable
+//! [`retry_downscaled`](DecoderConfig::retry_downscaled) to re-scan large
+//! images at half and quarter size automatically.
 //!
 //! # Supported Formats
 //!
