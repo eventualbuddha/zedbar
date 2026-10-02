@@ -35,6 +35,8 @@ use image;
 #[derive(Default)]
 pub struct ScanOptions {
     retry_undecoded_regions: Option<bool>,
+    retry_downscaled: Option<bool>,
+    retry_smoothed: Option<bool>,
     symbologies: Option<Vec<String>>,
 }
 
@@ -51,6 +53,22 @@ impl ScanOptions {
     #[wasm_bindgen(setter, js_name = "retryUndecodedRegions")]
     pub fn set_retry_undecoded_regions(&mut self, value: bool) {
         self.retry_undecoded_regions = Some(value);
+    }
+
+    /// Whether to re-scan a large image at half and quarter size when no
+    /// QR code decodes at full resolution, which recovers codes in photos
+    /// of screens. Default: `true`.
+    #[wasm_bindgen(setter, js_name = "retryDownscaled")]
+    pub fn set_retry_downscaled(&mut self, value: bool) {
+        self.retry_downscaled = Some(value);
+    }
+
+    /// Whether to re-scan a smoothed copy of the image when no QR code
+    /// decodes, which recovers codes in scans of halftone prints.
+    /// Default: `true`.
+    #[wasm_bindgen(setter, js_name = "retrySmoothed")]
+    pub fn set_retry_smoothed(&mut self, value: bool) {
+        self.retry_smoothed = Some(value);
     }
 
     /// Restrict scanning to the listed symbologies. When omitted, every
@@ -73,6 +91,14 @@ impl ScanOptions {
 
     fn retry(&self) -> bool {
         self.retry_undecoded_regions.unwrap_or(Self::DEFAULT_RETRY)
+    }
+
+    fn retry_downscaled(&self) -> bool {
+        self.retry_downscaled.unwrap_or(Self::DEFAULT_RETRY)
+    }
+
+    fn retry_smoothed(&self) -> bool {
+        self.retry_smoothed.unwrap_or(Self::DEFAULT_RETRY)
     }
 }
 
@@ -217,7 +243,10 @@ fn build_scanner(options: Option<ScanOptions>) -> Result<Scanner, JsValue> {
         }
         None => DecoderConfig::all(),
     };
-    config = config.retry_undecoded_regions(options.retry());
+    config = config
+        .retry_undecoded_regions(options.retry())
+        .retry_downscaled(options.retry_downscaled())
+        .retry_smoothed(options.retry_smoothed());
     Ok(Scanner::with_config(config))
 }
 

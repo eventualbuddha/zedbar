@@ -31,7 +31,7 @@
 use crate::config::DecoderConfig;
 use crate::image::Image;
 use crate::img_scanner::ImageScanner;
-use crate::symbol::{Symbol, SymbolType};
+use crate::symbol::{Bounds, Point, Symbol, SymbolType};
 
 /// A region where QR finder patterns were detected but decoding failed.
 ///
@@ -177,7 +177,81 @@ impl std::ops::Deref for ScanResult {
 /// ```
 pub struct Scanner {
     scanner: ImageScanner,
-    retry_undecoded_regions: bool,
+    retries: Vec<Retry>,
+}
+
+/// A way of deriving an image to re-scan when the full-resolution pass
+/// leaves a QR code undecoded. Listed cheapest first, which is the order
+/// they run in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Retry {
+    /// Crop and upscale each undecoded finder region.
+    UndecodedRegions,
+    /// Box-filter a large image to half and then quarter size.
+    Downscaled,
+    /// Smooth the whole image with a 3x3 Gaussian.
+    Smoothed,
+}
+
+impl Retry {
+    fn enabled(config: &DecoderConfig) -> Vec<Retry> {
+        let mut retries = Vec::new();
+        if config.retry_undecoded_regions {
+            retries.push(Retry::UndecodedRegions);
+        }
+        if config.retry_downscaled {
+            retries.push(Retry::Downscaled);
+        }
+        if config.retry_smoothed {
+            retries.push(Retry::Smoothed);
+        }
+        retries
+    }
+}
+
+/// Carries a point in a derived image back to the original frame as
+/// `p * num / den + offset`, rounded to nearest.
+#[derive(Debug, Clone, Copy)]
+struct Mapping {
+    num: i32,
+    den: i32,
+    dx: i32,
+    dy: i32,
+}
+
+impl Mapping {
+    const IDENTITY: Self = Self {
+        num: 1,
+        den: 1,
+        dx: 0,
+        dy: 0,
+    };
+
+    /// A crop whose top-left corner is at `(x, y)`, upscaled by `scale`.
+    fn upscaled_crop(scale: u32, x: u32, y: u32) -> Self {
+        Self {
+            num: 1,
+            den: scale as i32,
+            dx: x as i32,
+            dy: y as i32,
+        }
+    }
+
+    /// The image downscaled by `scale`, with output pixel `(0, 0)` centered
+    /// on source pixel `(offset, offset)`.
+    fn downscaled(scale: i32, offset: i32) -> Self {
+        Self {
+            num: scale,
+            den: 1,
+            dx: offset,
+            dy: offset,
+        }
+    }
+
+    fn apply(&self, pt: &mut Point) {
+        pt.x = (pt.x * self.num + self.den / 2) / self.den + self.dx;
+        pt.y = (pt.y * self.num + self.den / 2) / self.den + self.dy;
+    }
 }
 
 impl Scanner {
@@ -210,10 +284,10 @@ impl Scanner {
     /// let scanner = Scanner::with_config(config);
     /// ```
     pub fn with_config(config: DecoderConfig) -> Self {
-        let retry = config.retry_undecoded_regions;
+        let retries = Retry::enabled(&config);
         Self {
             scanner: ImageScanner::with_config(config),
-            retry_undecoded_regions: retry,
+            retries,
         }
     }
 
@@ -231,9 +305,21 @@ impl Scanner {
     /// nothing from upscaling a fragment it already saw at full resolution.
     /// Recovered symbols have their coordinates mapped back to the original
     /// image frame.
+    ///
+    /// When [`DecoderConfig::retry_downscaled`] is enabled and no QR or SQ
+    /// code has been found by then, a large image is box-filtered to half
+    /// and then quarter size and re-scanned, which recovers codes in photos
+    /// of screens whose pixel grid defeats finder detection at full
+    /// resolution. The same symbol filter and coordinate mapping apply.
+    ///
+    /// When [`DecoderConfig::retry_smoothed`] is enabled, still no QR or SQ
+    /// code has been found, and an undecoded finder region remains, the
+    /// image is smoothed with a 3x3 Gaussian and re-scanned once, which
+    /// closes the halftone gaps that keep a scanned print from decoding. The
+    /// same symbol filter applies.
     pub fn scan(&mut self, image: &mut Image) -> ScanResult {
         let (mut symbols, raw_regions) = self.scanner.scan_image(image.as_mut_image());
-        let finder_regions: Vec<FinderRegion> = raw_regions
+        let mut finder_regions: Vec<FinderRegion> = raw_regions
             .into_iter()
             .map(|(x, y, w, h)| FinderRegion {
                 x,
@@ -243,10 +329,96 @@ impl Scanner {
             })
             .collect();
 
-        if !self.retry_undecoded_regions || finder_regions.is_empty() {
-            return ScanResult::new(symbols, finder_regions);
+        for i in 0..self.retries.len() {
+            match self.retries[i] {
+                // A leftover region may point at a second, smaller code next
+                // to one already decoded, so this runs regardless.
+                Retry::UndecodedRegions => {
+                    if !finder_regions.is_empty() {
+                        let regions = std::mem::take(&mut finder_regions);
+                        finder_regions = self.retry_regions(image, &mut symbols, regions);
+                    }
+                }
+                Retry::Downscaled => self.retry_whole_image(
+                    image,
+                    &mut symbols,
+                    &mut finder_regions,
+                    Self::retry_downscaled,
+                ),
+                // Smoothing helps a code that was located but not read, so
+                // an image with no finder patterns at all skips the pass.
+                Retry::Smoothed if !finder_regions.is_empty() => self.retry_whole_image(
+                    image,
+                    &mut symbols,
+                    &mut finder_regions,
+                    Self::retry_smoothed,
+                ),
+                Retry::Smoothed => {}
+            }
         }
 
+        ScanResult::new(symbols, finder_regions)
+    }
+
+    /// Scan a derived image and keep the QR and SQ codes it yields, with
+    /// their coordinates carried back to the original frame. Returns whether
+    /// it yielded any.
+    ///
+    /// Only 2D symbols are kept: every retry is driven by QR finder patterns,
+    /// and a derived image carries no detail the linear decoders did not
+    /// already have at full resolution — only more scan lines across a
+    /// fragment of the image, which is how a short read happens. Interleaved
+    /// 2 of 5 is the clearest case: any even-length substring of one is
+    /// itself a valid symbol.
+    fn rescan(&mut self, derived: &mut Image, mapping: Mapping, symbols: &mut Vec<Symbol>) -> bool {
+        let (found, _) = self.scanner.scan_image(derived.as_mut_image());
+        let mut found: Vec<Symbol> = found
+            .into_iter()
+            .filter(|s| is_2d(s.symbol_type()))
+            .collect();
+        if found.is_empty() {
+            return false;
+        }
+        for sym in &mut found {
+            for pt in &mut sym.pts {
+                mapping.apply(pt);
+            }
+        }
+        merge_symbols(symbols, found);
+        true
+    }
+
+    /// Run a whole-image retry, which exists to find a code the earlier
+    /// passes missed entirely, so one already in hand makes it redundant.
+    /// A region the full-resolution pass could not decode is resolved once
+    /// a recovered code covers it; the rest stay undecoded.
+    fn retry_whole_image(
+        &mut self,
+        image: &Image,
+        symbols: &mut Vec<Symbol>,
+        finder_regions: &mut Vec<FinderRegion>,
+        retry: fn(&mut Self, &Image, &mut Vec<Symbol>),
+    ) {
+        if symbols.iter().any(|s| is_2d(s.symbol_type())) {
+            return;
+        }
+        let before = symbols.len();
+        retry(self, image, symbols);
+        let recovered: Vec<Bounds> = symbols[before..]
+            .iter()
+            .filter_map(Symbol::bounds)
+            .collect();
+        finder_regions.retain(|region| !recovered.iter().any(|b| intersects(region, b)));
+    }
+
+    /// Crop, upscale and re-scan each undecoded finder region. Returns the
+    /// regions that still did not decode.
+    fn retry_regions(
+        &mut self,
+        image: &Image,
+        symbols: &mut Vec<Symbol>,
+        finder_regions: Vec<FinderRegion>,
+    ) -> Vec<FinderRegion> {
         // Try multiple scale factors: the adaptive binarization window size
         // is chosen in power-of-2 steps based on image size, and certain
         // intermediate sizes land in a range where the window extends too
@@ -304,49 +476,89 @@ impl Scanner {
             };
 
             retried += 1;
-            let mut decoded = false;
-            for &scale in SCALES {
-                let Some(mut upscaled) = cropped.upscale(scale) else {
-                    continue;
-                };
-                let (retry_symbols, _) = self.scanner.scan_image(upscaled.as_mut_image());
-                // The crop is a QR finder region and the upscale carries no
-                // detail the linear decoders did not already have at full
-                // resolution — only more scan lines across a fragment of the
-                // image, which is how a short read happens. Interleaved 2 of 5
-                // is the clearest case: any even-length substring of one is
-                // itself a valid symbol. Take only what the retry exists for.
-                let mut retry_symbols: Vec<Symbol> = retry_symbols
-                    .into_iter()
-                    .filter(|s| matches!(s.symbol_type(), SymbolType::QrCode | SymbolType::SqCode))
-                    .collect();
-                if retry_symbols.is_empty() {
-                    continue;
-                }
-                let half = scale as i32 / 2;
-                for sym in &mut retry_symbols {
-                    for pt in &mut sym.pts {
-                        pt.x = (pt.x + half) / scale as i32 + cx as i32;
-                        pt.y = (pt.y + half) / scale as i32 + cy as i32;
-                    }
-                }
-                for sym in retry_symbols {
-                    if !symbols
-                        .iter()
-                        .any(|s| s.symbol_type() == sym.symbol_type() && s.data == sym.data)
-                    {
-                        symbols.push(sym);
-                    }
-                }
-                decoded = true;
-                break;
-            }
+            let decoded = SCALES.iter().any(|&scale| {
+                cropped.upscale(scale).is_some_and(|mut upscaled| {
+                    self.rescan(
+                        &mut upscaled,
+                        Mapping::upscaled_crop(scale, cx, cy),
+                        symbols,
+                    )
+                })
+            });
             if !decoded {
                 unresolved.push(*region);
             }
         }
 
-        ScanResult::new(symbols, unresolved)
+        unresolved
+    }
+
+    /// Re-scan the image at half and quarter size, keeping any QR or SQ
+    /// codes found. Stops at the first size that decodes one.
+    fn retry_downscaled(&mut self, image: &Image, symbols: &mut Vec<Symbol>) {
+        // A photographed QR module spans several pixels, so halving a large
+        // image keeps the code decodable while the screen's pixel grid
+        // averages out. Below this size halving starts costing codes the
+        // full-resolution pass could read, and the pixel grid of a screen is
+        // no longer resolved anyway. Checked before every step, so the
+        // quarter-size pass needs an image about twice this size.
+        const MIN_SIDE: u32 = 1024;
+        const MAX_STEPS: u32 = 2;
+
+        // Output pixel (x, y) of `downscale(2)` is centered on source pixel
+        // (2x + 2, 2y + 2). Compose that over the steps taken so far.
+        let mut scale = 1i32;
+        let mut offset = 0i32;
+        let mut current = None;
+
+        for _ in 0..MAX_STEPS {
+            let source = current.as_ref().unwrap_or(image);
+            if source.width().min(source.height()) < MIN_SIDE {
+                return;
+            }
+            let Some(mut smaller) = source.downscale(2) else {
+                return;
+            };
+            offset += 2 * scale;
+            scale *= 2;
+
+            if self.rescan(&mut smaller, Mapping::downscaled(scale, offset), symbols) {
+                return;
+            }
+            current = Some(smaller);
+        }
+    }
+
+    /// Re-scan a smoothed copy of the image, keeping any QR or SQ codes
+    /// found. Smoothing keeps the image size, so coordinates carry over.
+    fn retry_smoothed(&mut self, image: &Image, symbols: &mut Vec<Symbol>) {
+        self.rescan(&mut image.smooth(), Mapping::IDENTITY, symbols);
+    }
+}
+
+/// Whether a finder region and a symbol's bounding box share any area.
+fn intersects(region: &FinderRegion, bounds: &Bounds) -> bool {
+    let (rx0, ry0) = (region.x as i64, region.y as i64);
+    let (rx1, ry1) = (rx0 + region.width as i64, ry0 + region.height as i64);
+    let (bx0, by0) = (bounds.x as i64, bounds.y as i64);
+    let (bx1, by1) = (bx0 + bounds.width as i64, by0 + bounds.height as i64);
+    rx0 < bx1 && bx0 < rx1 && ry0 < by1 && by0 < ry1
+}
+
+/// The symbologies a QR-driven retry is allowed to contribute.
+fn is_2d(sym: SymbolType) -> bool {
+    matches!(sym, SymbolType::QrCode | SymbolType::SqCode)
+}
+
+/// Append the retry's symbols that the earlier passes did not already find.
+fn merge_symbols(symbols: &mut Vec<Symbol>, retry_symbols: Vec<Symbol>) {
+    for sym in retry_symbols {
+        if !symbols
+            .iter()
+            .any(|s| s.symbol_type() == sym.symbol_type() && s.data == sym.data)
+        {
+            symbols.push(sym);
+        }
     }
 }
 

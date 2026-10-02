@@ -182,6 +182,8 @@ pub struct DecoderConfig {
     pub(crate) x_density: u32,
     pub(crate) y_density: u32,
     pub(crate) retry_undecoded_regions: bool,
+    pub(crate) retry_downscaled: bool,
+    pub(crate) retry_smoothed: bool,
 }
 
 impl DecoderConfig {
@@ -219,6 +221,8 @@ impl DecoderConfig {
             x_density: 1,
             y_density: 1,
             retry_undecoded_regions: false,
+            retry_downscaled: false,
+            retry_smoothed: false,
         };
 
         // Preconfigure per-symbology defaults so that enabling a symbology
@@ -420,6 +424,51 @@ impl DecoderConfig {
     /// Default: `false`.
     pub fn retry_undecoded_regions(mut self, enabled: bool) -> Self {
         self.retry_undecoded_regions = enabled;
+        self
+    }
+
+    /// Retry large images at reduced resolution when no QR code decodes.
+    ///
+    /// A phone photo of a screen carries the display's pixel grid as a
+    /// stripe a few pixels wide. At full resolution that stripe breaks
+    /// every scan line that runs across it, so no QR finder pattern is
+    /// detected even though the code is large and sharp. Averaging the
+    /// image down removes the stripe while leaving the modules intact.
+    ///
+    /// When enabled, if the initial scan (and the region retry, if that
+    /// is enabled too) finds no QR or SQ code, the scanner box-filters the
+    /// image to half size and re-scans, then once more at quarter size.
+    /// Each step runs only while the image's shorter side is at least 1024
+    /// pixels, so the half-size pass needs a 1024-pixel image and the
+    /// quarter-size pass one of about 2050 pixels. Only QR and SQ codes are
+    /// taken from those re-scans, with their coordinates mapped back to the
+    /// original image frame.
+    ///
+    /// Default: `false`.
+    pub fn retry_downscaled(mut self, enabled: bool) -> Self {
+        self.retry_downscaled = enabled;
+        self
+    }
+
+    /// Retry a smoothed copy of the image when no QR code decodes.
+    ///
+    /// A scan or photocopy of a printed QR code renders each dark module
+    /// as a halftone of specks and gaps a pixel or two across. At full
+    /// resolution those gaps split every finder-pattern run, so the code
+    /// is located but never decoded. A 3x3 Gaussian closes the gaps
+    /// without blurring modules together.
+    ///
+    /// When enabled, if the initial scan and the other enabled retries
+    /// find no QR or SQ code but did report an undecoded finder region,
+    /// the scanner smooths the whole image with [`Image::smooth`] and
+    /// re-scans it once. An image with no finder patterns at all skips the
+    /// pass, so images that only ever held a linear barcode pay nothing.
+    /// Only QR and SQ codes are taken from that re-scan; their coordinates
+    /// need no mapping, since smoothing keeps the image size.
+    ///
+    /// Default: `false`.
+    pub fn retry_smoothed(mut self, enabled: bool) -> Self {
+        self.retry_smoothed = enabled;
         self
     }
 
