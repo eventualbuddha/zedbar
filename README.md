@@ -156,6 +156,7 @@ let config = DecoderConfig::new()
     .test_inverted(true)               // Try inverted image if no symbols found
     .retry_undecoded_regions(true)     // Crop+upscale small QR codes automatically
     .retry_downscaled(true)            // Re-scan large images at half/quarter size
+    .retry_smoothed(true)              // Re-scan a smoothed copy of halftone scans
     .scan_density(2, 2);               // Scan every 2nd line (faster)
 
 let mut scanner = Scanner::with_config(config);
@@ -230,6 +231,31 @@ if let Some(mut half) = img.downscale(2) {
     let retry = scanner.scan(&mut half);
     // Output pixel (x, y) is centered on source pixel (2x + 2, 2y + 2).
 }
+```
+
+### Scans of Printed Codes
+
+A scan or photocopy of a printed QR code renders each dark module as a
+halftone of specks and gaps a pixel or two across. At full resolution those gaps
+split every finder-pattern run, so the code is located but never decoded. A
+small blur closes the gaps without merging modules:
+
+```rust
+use zedbar::config::*;
+use zedbar::{DecoderConfig, Scanner, Image};
+
+// Option 1: Automatic retry. When finder patterns were found but no QR code
+// decodes, the image is smoothed with a 3x3 Gaussian and rescanned once. The
+// size is unchanged, so coordinates need no mapping.
+let config = DecoderConfig::new()
+    .enable(QrCode)
+    .retry_smoothed(true);
+let mut scanner = Scanner::with_config(config);
+let result = scanner.scan(&mut img);
+
+// Option 2: Manual control.
+let mut smoothed = img.smooth();
+let retry = scanner.scan(&mut smoothed);
 ```
 
 ### Command-line Tool

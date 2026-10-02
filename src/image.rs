@@ -92,6 +92,18 @@ impl Image {
     pub fn downscale(&self, factor: u32) -> Option<Self> {
         self.image.downscale(factor).map(|image| Image { image })
     }
+
+    /// Smooth the image with a 3x3 Gaussian kernel.
+    ///
+    /// The kernel is `[1, 2, 1]` in each direction, so it removes texture
+    /// one or two pixels across, such as the halftone speckle of a scanned
+    /// print, while leaving modules of four pixels or more intact. Borders
+    /// are clamped. The dimensions are unchanged.
+    pub fn smooth(&self) -> Self {
+        Image {
+            image: self.image.smooth(),
+        }
+    }
 }
 
 #[cfg(feature = "image")]

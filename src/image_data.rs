@@ -163,4 +163,44 @@ impl ImageData {
             data,
         })
     }
+
+    /// Smooths the image with a 3x3 Gaussian kernel (`[1, 2, 1]` in each
+    /// direction, weights summing to 16), clamping at the borders.
+    pub(crate) fn smooth(&self) -> Self {
+        let w = self.width as usize;
+        let h = self.height as usize;
+        if w == 0 || h == 0 {
+            return self.copy(false);
+        }
+
+        let mut rows = vec![0u16; w * h];
+        for y in 0..h {
+            let src = &self.data[y * w..(y + 1) * w];
+            let dst = &mut rows[y * w..(y + 1) * w];
+            for x in 0..w {
+                let l = src[x.saturating_sub(1)] as u16;
+                let c = src[x] as u16;
+                let r = src[(x + 1).min(w - 1)] as u16;
+                dst[x] = l + 2 * c + r;
+            }
+        }
+
+        let mut data = vec![0u8; w * h];
+        for y in 0..h {
+            let up = &rows[y.saturating_sub(1) * w..];
+            let mid = &rows[y * w..];
+            let down = &rows[(y + 1).min(h - 1) * w..];
+            let out = &mut data[y * w..(y + 1) * w];
+            for x in 0..w {
+                let sum = up[x] + 2 * mid[x] + down[x];
+                out[x] = ((sum + 8) / 16) as u8;
+            }
+        }
+
+        Self {
+            width: self.width,
+            height: self.height,
+            data,
+        }
+    }
 }

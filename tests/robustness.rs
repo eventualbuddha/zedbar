@@ -566,3 +566,33 @@ fn retry_does_not_invent_linear_symbols() {
         assert_eq!(data, ["11632351768220"], "retry_undecoded_regions({retry})");
     }
 }
+
+/// `smooth` keeps the dimensions, leaves a flat image alone, clamps at the
+/// borders, and weights the 3x3 neighbourhood as `[1, 2, 1]` each way.
+#[test]
+fn smooth_keeps_dimensions_and_applies_the_gaussian_kernel() {
+    let empty = Image::from_gray(&[], 0, 0).expect("valid dimensions");
+    let smoothed = empty.smooth();
+    assert_eq!((smoothed.width(), smoothed.height()), (0, 0));
+
+    let flat = Image::from_gray(&[200u8; 12], 4, 3).expect("valid dimensions");
+    assert_eq!(flat.smooth().data(), &[200u8; 12]);
+
+    // A single black pixel in a white 3x3 image spreads with weights 4, 2
+    // and 1 out of 16: the centre drops to 255 - 255 * 4 / 16, the edges by
+    // half that, the corners by a quarter.
+    let mut dot = [255u8; 9];
+    dot[4] = 0;
+    let image = Image::from_gray(&dot, 3, 3).expect("valid dimensions");
+    let got = image.smooth();
+    assert_eq!(got.data(), &[239, 223, 239, 223, 191, 223, 239, 223, 239]);
+
+    // A speck one pixel across inside a dark 5x5 module is nearly closed,
+    // while a module edge stays an edge.
+    let mut module = [0u8; 25];
+    module[12] = 255;
+    let image = Image::from_gray(&module, 5, 5).expect("valid dimensions");
+    let got = image.smooth();
+    assert_eq!(got.data()[12], 64);
+    assert!(got.data()[0] == 0 && got.data()[24] == 0);
+}
