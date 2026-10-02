@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/eventualbuddha/zedbar/compare/v0.5.2...v0.6.0) (2026-10-02)
+
+
+### Features
+
+* **scanner:** retry a smoothed copy of halftone scans ([4f71901](https://github.com/eventualbuddha/zedbar/commit/4f71901bd14040e1fc0257b4578f341fbbb386ea))
+* **scanner:** retry large images at reduced resolution ([4e2993a](https://github.com/eventualbuddha/zedbar/commit/4e2993a2cc045995a0b4b3cb7b442b8f7e9aafc7))
+* **scanner:** retry photos of screens and halftone scans ([aac69ec](https://github.com/eventualbuddha/zedbar/commit/aac69ec322cad0181b762dff5e72bb183d09c140))
+
 ## [0.5.2](https://github.com/eventualbuddha/zedbar/compare/v0.5.1...v0.5.2) (2026-09-28)
 
 
